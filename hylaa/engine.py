@@ -179,7 +179,7 @@ class HylaaEngine(object):
             guard_constraints_a = []
             guard_constraints_b = []
 
-            for g in transition.guard_list:
+            for g in transition.condition_list:
                 empty = [0.0] * num_dims
                 center_value = np.dot(standard_center, g.vector)
 
@@ -192,7 +192,7 @@ class HylaaEngine(object):
             c = [0.0] * (2 * num_dims) # objective function is not important
 
             # use the first guard as the objective function
-            #first_guard = transition.guard_list[0]
+            #first_guard = transition.condition_list[0]
             #c = [-ele for ele in first_guard.vector] + [0.0] * num_dims
 
             result = optutil.optimize_multi(Star.solver, [c], lp_constraints)[0]
@@ -211,7 +211,7 @@ class HylaaEngine(object):
                                                                     basis_center, transition)
 
                 # convert each of the guard conditions to the star's basis
-                for g in transition.guard_list:
+                for g in transition.condition_list:
 
                     # basis vectors (non-transpose) * standard_condition
                     basis_influence = np.dot(state.star.basis_matrix, g.vector)
@@ -316,7 +316,7 @@ class HylaaEngine(object):
 
         if self.settings.add_guard_during_aggregation:
             assert isinstance(first_star_parent, DiscretePostParent)
-            add_guard_to_star(hull_star, first_star_parent.transition.guard_list)
+            add_guard_to_star(hull_star, first_star_parent.transition.condition_list)
 
         if self.settings.add_box_during_aggregation:
             add_box_to_star(hull_star)

@@ -263,7 +263,7 @@ class WaitingList(object):
                 hull_star.parent = AggregationParent(new_state.mode, [cur_star, new_state.star])
 
                 if hylaa_settings.add_guard_during_aggregation:
-                    add_guard_to_star(hull_star, cur_star.parent.transition.guard_list)
+                    add_guard_to_star(hull_star, cur_star.parent.transition.condition_list)
 
                 if hylaa_settings.add_box_during_aggregation:
                     add_box_to_star(hull_star)

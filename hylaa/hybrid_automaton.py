@@ -173,7 +173,7 @@ class LinearAutomatonTransition(object):
         self.parent = parent
         self.from_mode = from_mode
         self.to_mode = to_mode
-        self.guard_list = [] # a list of LinearConstraint, if all are true then the guard is enabled
+        self.condition_list = [] # a list of LinearConstraint, if all are true then the guard is enabled
         from_mode.transitions.append(self)
 
         self.reset_matrix = None # a matrix (x_post := Ax + b)
@@ -214,16 +214,16 @@ class LinearHybridAutomaton(object):
                 continue
 
             inv_list = t.to_mode.inv_list
-            guard_list = t.guard_list
+            condition_list = t.condition_list
 
             for inv_constraint in inv_list:
-                already_in_guard_list = False
+                already_in_condition_list = False
 
-                for guard_constraint in guard_list:
+                for guard_constraint in condition_list:
                     if guard_constraint.almost_equals(inv_constraint, 1e-13):
-                        already_in_guard_list = True
+                        already_in_condition_list = True
                         break
 
-                if not already_in_guard_list:
-                    guard_list.append(inv_constraint)
+                if not already_in_condition_list:
+                    condition_list.append(inv_constraint)
 
