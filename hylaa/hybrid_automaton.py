@@ -3,10 +3,40 @@ Hybrid Automaton generic definition for Hylaa
 Stanley Bak (Sept 2016)
 '''
 
-import itertools
-
 import numpy as np
 
+from hylaa.util import Freezable
+from hylaa.timerutil import Timers
+from hylaa.simutil import SimulationBundle
+
+class LinearConstraint(object):
+    'a single linear constraint: vector * x <= value'
+
+    def __init__(self, vector, value):
+        self.vector = np.array(vector, dtype=float)
+        self.value = float(value)
+
+    def almost_equals(self, other, tol):
+        'equality up to a tolerance'
+        assert isinstance(other, LinearConstraint)
+
+        rv = True
+
+        if abs(self.value - other.value) > tol:
+            rv = False
+        else:
+            for i in xrange(self.vector.shape[0]):
+                a = self.vector[i]
+                b = other.vector[i]
+
+                if abs(a - b) > tol:
+                    rv = False
+                    break
+
+        return rv
+
+    def __str__(self):
+        return '[LinearConstraint: {} * x <= {}]'.format(self.vector, self.value)
 
 class HyperRectangle(object):
     'An n-dimensional box'
@@ -34,7 +64,7 @@ class HyperRectangle(object):
         center = self.center()
         num_dims = len(self.dims)
         rv = []
-        
+
         for index in xrange(num_dims):
             # min edge in dimension d
             pt = list(center)
@@ -66,7 +96,7 @@ class HyperRectangle(object):
 
         for it in xrange(max_iterator):
             point = []
-            
+
             # construct point
             for d in xrange(num_dims):
                 if is_flat[d]:
@@ -81,103 +111,171 @@ class HyperRectangle(object):
 
         return rv
 
-class LinearConstraint(object):
-    'a single linear constraint: vector * x <= value'
-
-    def __init__(self, vector, value):
-        self.vector = np.array(vector, dtype=float)
-        self.value = float(value)
-
-    def almost_equals(self, other, tol):
-        'equality up to a tolerance'
-        assert isinstance(other, LinearConstraint)
-
-        rv = True
-
-        if abs(self.value - other.value) > tol:
-            rv = False
-        else:
-            for i in xrange(self.vector.shape[0]):
-                a = self.vector[i]
-                b = other.vector[i]
-
-                if abs(a - b) > tol:
-                    rv = False
-                    break
-
-        return rv
-
-    def __str__(self):
-        return '[LinearConstraint: {} * x <= {}]'.format(self.vector, self.value)
-
-class LinearAutomatonMode(object):
+class LinearAutomatonMode(Freezable):
     'A single mode of a hybrid automaton'
 
     def __init__(self, parent, name):
 
-        self.a_matrix = None # dynamics are x' = Ax + b
-        self.b_vector = None # dynamics are x' = Ax + b
+        self.a_matrix = None # dynamics are x' = Ax + Bu + c
+        self.c_vector = None # dynamics are x' = Ax + Bu + c
+
+        # inputs. set using set_inputs
+        self.b_matrix = None # dynamics are x' = Ax + Bu + c
+        self.u_constraints_a = None # linear constraints on inputs u are Au <= b
+        self.u_constraints_a_t = None
+        self.u_constraints_b = None # linear constraints on inputs u are Au <= b
+        self.num_inputs = 0
 
         self.inv_list = [] # a list of LinearConstraint, if all are true then the invariant is true
 
         self.parent = parent
         self.name = name
-        self.transitions = []
+        self.transitions = [] # outgoing transitions
 
-        self._null_dynamics = None # gets set on first call to is_null_dynamcics
-        
-    def set_dynamics(self, a_matrix, b_vector=None):
+        self.is_error = False # is this an error mode of the automaton?
+
+        self.sim_settings = None # assigned first time get_sim_bundle() is called
+        self._sim_bundle = None # assigned first time get_sim_bundle() is called
+        self._gbt_matrix = None # assigned first time get_gb_t() is called
+        self.freeze_attrs()
+
+    def get_sim_bundle(self, sim_settings, star, max_steps_remaining):
+        '''
+        Get the simulation bundle associated with the dynamics in this mode.
+
+        sim_settings - instance of SimulationSettings
+        star - the current star that was popped (used for presimulation)
+        max_steps_remaining - maximum number of remaining simulation steps (used for presimulation)
+        '''
+
+        if self._sim_bundle is None:
+            self.sim_settings = sim_settings
+            self._sim_bundle = SimulationBundle(self.a_matrix, self.c_vector, sim_settings)
+
+            if sim_settings.use_presimulation:
+                self.presimulate(star, max_steps_remaining)
+
+        return self._sim_bundle
+
+    def presimulate(self, star, max_steps_remaining):
+        'this is an optimation where we try to guess the dwell time using a simulation, so we avoid repeated calls'
+
+        sim_bundle = self._sim_bundle
+
+        if len(self.inv_list) == 0:
+            num_presimulation_steps = max_steps_remaining
+        else:
+            pt_in_star = np.array(star.get_feasible_point(), dtype=float)
+            origin_sim = sim_bundle.sim_until_inv_violated(pt_in_star, self.inv_list, max_steps_remaining)
+            num_presimulation_steps = int(len(origin_sim) * 1.2) # simulate slightly past where the point leaves inv
+
+        if num_presimulation_steps > max_steps_remaining:
+            num_presimulation_steps = max_steps_remaining
+
+        sim_bundle.presimulate(num_presimulation_steps)
+
+    def get_gb_t(self):
+        ''''get the transpose of G(A, h) * B, where G(A, h) is either:
+
+        G(A,h) = A^{-1}(e^{Ah} - I)
+        -or-
+        G(A,h) = (1/1!)*I*h + (1/2!)*A*h^2 + (1/3!)*A*A*h^3 + ...
+        '''
+
+        assert self.sim_settings is not None, "get_sim_bundle() must be called before get_gb_t()"
+
+        rv = None
+
+        if self._gbt_matrix is not None:
+            rv = self._gbt_matrix
+        else:
+            Timers.tic("Computing G(A, h) * U")
+
+            self._gbt_matrix = self._sim_bundle.compute_gbt(self.b_matrix)
+            # compute_gbt_series(self.a_matrix, self.b_matrix, self.sim_settings.step)
+            rv = self._gbt_matrix
+
+            #print "U = {}".format(self.b_matrix)
+            #print "G(A, g) * U matrix = {}".format(rv.transpose())
+            #print "(G(A, g) * U)^T matrix = {}".format(rv)
+
+            Timers.toc("Computing G(A, h) * U")
+
+        return rv
+
+    def set_dynamics(self, a_matrix, c_vector=None):
         'sets the non-inputs dynamics. c_vector can be None, in which case zeros are used'
 
         assert len(self.parent.variables) > 0, "automaton.variables should be set before dynamics"
 
-        if b_vector is None:
-            b_vector = np.zeros(len(self.parent.variables))
+        if c_vector is None:
+            c_vector = np.zeros(len(self.parent.variables))
 
         assert isinstance(a_matrix, np.ndarray)
         assert len(a_matrix.shape) == 2
 
-        assert isinstance(b_vector, np.ndarray)
-        assert len(b_vector.shape) == 1
+        assert isinstance(c_vector, np.ndarray)
+        assert len(c_vector.shape) == 1
 
-        assert a_matrix.shape[0] == b_vector.shape[0]
+        assert a_matrix.shape[0] == c_vector.shape[0]
         assert a_matrix.shape[1] == len(self.parent.variables)
 
         self.a_matrix = a_matrix
-        self.b_vector = b_vector
+        self.c_vector = c_vector
 
-    def is_null_dynamics(self):
-        '''is this mode's dynamics null?'''
+    def set_inputs(self, u_constraints_a, u_constraints_b, b_matrix=None):
+        'sets the input dynamics. B matrix can be None, in which case identity matrix is used.'
 
-        rv = self._null_dynamics
+        assert self.a_matrix is not None, 'dynamics should be set before inputs'
+        
+        if b_matrix is None:
+            b_matrix = np.identity(len(self.parent.variables))
 
-        if rv is None:
-            rv = True
+        assert isinstance(b_matrix, np.ndarray)
+        assert isinstance(u_constraints_a, np.ndarray)
+        assert isinstance(u_constraints_b, np.ndarray)
+        
+        assert len(b_matrix.shape) == 2, "input B matrix should be 2-d"
+        assert len(u_constraints_a.shape) == 2
+        assert len(u_constraints_b.shape) == 1
 
-            for val in itertools.chain(self.b_vector, self.a_matrix.flat):
-                if val != 0:
-                    rv = False
-                    break
+        # number of rows of b_matrix should match number of variables for x' = Ax + Bu + c to make sense
+        assert b_matrix.shape[0] == len(self.parent.variables), ("the number of rows in the input B matrix ({}) " + \
+            "must be equal to the number of variables in the automaton ({})").format(\
+            b_matrix.shape[0], len(self.parent.variables))
+        self.num_inputs = b_matrix.shape[1]
 
-            self._null_dynamics = rv
+        assert u_constraints_a.shape[0] == u_constraints_b.shape[0], \
+            "input constraints a-matrix and b-vector must have the same number of rows" 
+        assert u_constraints_a.shape[1] == self.num_inputs, ("the number of columns in the input constraint " + \
+            "a-matrix ({}) must equal the number of variables in the input B matrix ({})").format( \
+            u_constraints_a.shape[1], self.num_inputs)
 
-        return rv
+        self.b_matrix = b_matrix
+        self.u_constraints_a = u_constraints_a
+        self.u_constraints_a_t = u_constraints_a.transpose().copy()
+        self.u_constraints_b = u_constraints_b
 
     def __str__(self):
-        return '[LinearAutomatonMode: ' + self.name + ']'
+        extra = ' (error mode)' if self.is_error else '' 
 
-class LinearAutomatonTransition(object):
+        return '[LinearAutomatonMode: ' + self.name + extra + ']'
+
+class LinearAutomatonTransition(Freezable):
     'A transition of a hybrid automaton'
 
     def __init__(self, parent, from_mode, to_mode):
         self.parent = parent
         self.from_mode = from_mode
         self.to_mode = to_mode
+
         self.condition_list = [] # a list of LinearConstraint, if all are true then the guard is enabled
         from_mode.transitions.append(self)
 
         self.reset_matrix = None # a matrix (x_post := Ax + b)
         self.reset_vector = None # a vector (x_post := Ax + b)
+
+        self.freeze_attrs()
 
     def __str__(self):
         return self.from_mode.name + " -> " + self.to_mode.name
@@ -217,13 +315,16 @@ class LinearHybridAutomaton(object):
             condition_list = t.condition_list
 
             for inv_constraint in inv_list:
-                already_in_condition_list = False
+                already_in_cond_list = False
 
                 for guard_constraint in condition_list:
                     if guard_constraint.almost_equals(inv_constraint, 1e-13):
-                        already_in_condition_list = True
+                        already_in_cond_list = True
                         break
 
-                if not already_in_condition_list:
+                if not already_in_cond_list:
                     condition_list.append(inv_constraint)
+
+
+
 

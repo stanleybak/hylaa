@@ -6,167 +6,432 @@ Stanley Bak
 September 2016
 '''
 
+import os
+import time
+import multiprocessing
+from multiprocessing.pool import ThreadPool
+
 from scipy.integrate import odeint
+from scipy.sparse import csr_matrix, csc_matrix
+from scipy.sparse.linalg import expm as sparse_expm
+from scipy.linalg import expm as dense_expm
 
 import numpy as np
 
+from hylaa.containers import SimulationSettings
+from hylaa.util import Freezable
 from hylaa.timerutil import Timers
 
-class SimulationBundle(object):
-    'a simulation bundle of basis vectors in a fixed set of dynamics (single mode)'
-    
-    def __init__(self, a_matrix, b_vector, step_size, sim_tol=None):
-        if isinstance(a_matrix, list):
-            a_matrix = np.array(a_matrix, dtype=float)        
+class DyData(Freezable):
+    'a container for dynamics-related data in a serializable (picklable) format'
 
-        if isinstance(b_vector, list):
-            b_vector = np.array(b_vector, dtype=float)
+    def __init__(self, a_matrix, b_vector, sparse):
+        ''' a' = ax + b_vec, b_vec can be null'''
 
-        if sim_tol is not None:
-            assert isinstance(sim_tol, float)
+        assert isinstance(a_matrix, csr_matrix)
 
-        assert isinstance(a_matrix, np.ndarray), "a matrix should be array of floats (no integers)"
-        assert isinstance(b_vector, np.ndarray), "b vector should be array of floats (no integers)"
-        
-        assert step_size > 0
-        self.step_size = step_size
-            
-        self.num_dims = b_vector.shape[0]
-        assert self.num_dims > 0
-        assert a_matrix.shape[0] == a_matrix.shape[1], "expected A matrix to be a square"
-        assert len(b_vector.shape) == 1, "expected b_vector to be a single row: {}".format(b_vector)
-        assert a_matrix.shape[0] == b_vector.shape[0], "A matrix and b vector sizes should match"
-        
-        self.sim_tol = sim_tol # tolerance for use in the simulation
+        if b_vector is not None:
+            assert isinstance(b_vector, csr_matrix)
 
-        self.der_func = lambda state, dummy_t: np.add(np.dot(a_matrix, state), b_vector)
+        self.sparse = sparse
 
-        banded_jac, max_upper, max_lower = make_banded_jacobian(a_matrix)
+        self.sparse_a_matrix = a_matrix
+        self.sparse_b_vector = b_vector
+        self.affine = b_vector is not None
+        self.num_dims = a_matrix.shape[0]
 
-        if len(banded_jac) * len(banded_jac[0]) < a_matrix.shape[0] * a_matrix.shape[1]:
-            # use banded jacobian
-            
-            banded_jac_transpose = np.array(banded_jac, dtype=float).T # pylint false positive
-            self.jac_func = lambda dummy_state, dummy_t: banded_jac_transpose
-            self.max_upper = max_upper
-            self.max_lower = max_lower
+        # constructed from sparse matrix only after make_*_func() is called
+        self.dense_a_matrix = None 
+        self.dense_b_vector = None
+
+        # sometimes used with dense matrix
+        self.jac_func = None
+        self.max_upper = None
+        self.max_lower = None
+
+        self.freeze_attrs()
+
+    def make_dense_matrices(self):
+        '''
+        make the dense versions of a_matrix and b_vector, if needed
+        '''
+
+        if self.dense_a_matrix is None:
+            self.dense_a_matrix = self.sparse_a_matrix.toarray()
+
+            if self.affine:
+                self.dense_b_vector = self.sparse_b_vector.toarray()
+                self.dense_b_vector.shape = (self.num_dims,)
+
+    def make_der_func(self):
+        '''
+        get the function which returns the derivative, for use in ODEINT
+        '''
+
+        if self.sparse:
+            if self.affine:
+                def der_func(state, _):
+                    'affine derivative function'
+
+                    rv = np.array(self.sparse_a_matrix * state + self.sparse_b_vector)
+                    rv.shape = (self.num_dims,)
+
+                    return rv
+            else:
+                def der_func(state, _):
+                    'linear derivative function'
+
+                    rv = np.array(self.sparse_a_matrix * state)
+                    rv.shape = (self.num_dims,)
+
+                    return rv
+
+        else: # use dense matrix
+            self.make_dense_matrices()
+
+            if self.affine:
+                der_func = lambda state, _: np.add(np.dot(self.dense_a_matrix, state), self.dense_b_vector)
+            else:
+                der_func = lambda state, _: np.dot(self.dense_a_matrix, state)
+
+        return der_func
+
+    def make_jac_func(self):
+        '''get the function which returns the jacobian, for use in ODEINT. 
+
+        This returns a tuple, (jac_func, max_upper, max_lower) where the second two are params for banded jacobians
+        if self.sparse, returns (None, None, None)
+        '''
+
+        if self.sparse:
+            rv = None, None, None
         else:
-            # use non-banded jacobian
-            a_transpose = a_matrix.T
-            self.jac_func = lambda dummy_state, dummy_t: a_transpose
-            self.max_upper = self.max_lower = None
+            if self.jac_func is None:
+                self.make_dense_matrices()
 
-        # initialize simulation variables
-        self.vec_values = [] # index is step, value is ndarray for the basis_matrix at that step
-        self.last_states = []
+                a_matrix = self.dense_a_matrix
 
-        self.origin_sim = [np.array([0.0] * self.num_dims, dtype=float)]
+                banded_jac, max_upper, max_lower = self.make_banded_jacobian()
 
-        self.vec_values.append(np.empty([self.num_dims, self.num_dims]))
+                if len(banded_jac) * len(banded_jac[0]) < a_matrix.shape[0] * a_matrix.shape[1]:
+                    # use banded jacobian
+                    banded_jac_transpose = np.transpose(np.array(banded_jac, dtype=a_matrix.dtype)).copy()
+                    self.jac_func = lambda dummy_state, dummy_t: banded_jac_transpose
+                    self.max_upper = max_upper
+                    self.max_lower = max_lower
+                else:
+                    # use non-banded jacobian
+                    a_transpose = a_matrix.transpose().copy()
+                    self.jac_func = lambda dummy_state, dummy_t: a_transpose
 
-        for index in xrange(self.num_dims):
-            orthonormal_vec = np.array([1.0 if d == index else 0.0 for d in xrange(self.num_dims)])
-            self.last_states.append(orthonormal_vec)
-            self.vec_values[0][index][:] = orthonormal_vec
+            rv = self.jac_func, self.max_upper, self.max_lower
+
+        return rv
+
+    def make_banded_jacobian(self):
+        '''returns a banded jacobian list (in odeint's format), along with mu and ml parameters'''
+
+        assert not self.sparse
+
+        if self.dense_a_matrix is None:
+            self.dense_a_matrix = self.sparse_a_matrix.toarray()
+
+        matrix = self.dense_a_matrix
+
+        # first find the values of mu and ml
+        dims = matrix.shape[0]
+        assert dims == matrix.shape[1]
+        mu = 0
+        ml = 0
+
+        for row in xrange(dims):
+            for col in xrange(dims):
+                if matrix[row][col] != 0:
+                    if col > row:
+                        dif = col - row
+                        mu = max(mu, dif)
+                    else:
+                        dif = row - col
+                        ml = max(ml, dif)
+
+        banded = []
+
+        for yoffset in xrange(-mu, ml+1):
+            row = []
+
+            for diag in xrange(dims):
+                x_index = diag
+                y_index = diag + yoffset
+
+                if y_index < 0 or y_index >= dims:
+                    row.append(0.0)
+                else:
+                    row.append(matrix[y_index][x_index])
+
+            banded.append(row)
+
+        return (banded, mu, ml)
+
+class SimulationBundle(Freezable):
+    'a simulation bundle of basis vectors in a fixed set of dynamics (single mode)'
+
+    def __init__(self, a_mat, b_vec, settings):
+        '''x' = Ax + b  (b_vector here is the constant part of the dynamics, NOT the B input-effect matrix in 'BU') '''
+
+        if isinstance(a_mat, list):
+            a_mat = np.array(a_mat, dtype=float)
+
+        if isinstance(b_vec, list):
+            b_vec = np.array(b_vec, dtype=float)
+
+        assert isinstance(a_mat, np.ndarray)
+        assert isinstance(b_vec, np.ndarray)
+
+        assert isinstance(settings, SimulationSettings)
+        assert settings.step > 0
+
+        self.settings = settings
+        self.num_dims = b_vec.shape[0]
+        assert self.num_dims > 0
+        assert a_mat.shape[0] == a_mat.shape[1], "expected A matrix to be a square"
+        assert len(b_vec.shape) == 1, "expected passed-in b_vector to be a single row: {}".format(b_vec)
+        assert a_mat.shape[0] == b_vec.shape[0], "A matrix and b vector sizes should match"
+
+        self.dy_data = DyData(csr_matrix(a_mat), csr_matrix(b_vec), settings.sparse)
+
+        if settings.threads is None:
+            settings.threads = multiprocessing.cpu_count()
+        elif settings.threads < 2:
+            settings.threads = 1
+
+        if settings.sim_mode == SimulationSettings.SIMULATION:
+            # scipy.integrate.odeint is not reentrant, and therefore requires ProcessPool instead of ThreadPool
+            self.process_pool = multiprocessing.Pool(settings.threads) if settings.threads > 1 else None
+        else:
+            self.thread_pool = ThreadPool(settings.threads) if settings.threads > 1 else None
+
+        # initialize simulation result variables
+        self.origin_sim = None
+        self.vec_values = None
+        self.step_offset = None
+
+        # itemsize is bytes per float
+        if self.settings.sim_mode == SimulationSettings.SIMULATION:
+            mb_per_step = np.dtype(float).itemsize * self.num_dims * self.num_dims / 1024.0 / 1024.0
+            self.max_steps_in_mem = max(1, int(settings.sim_in_memory_mb / mb_per_step) - 1)
+        elif self.settings.sim_mode == SimulationSettings.MATRIX_EXP:
+            self.max_steps_in_mem = 1
+
+            if self.num_dims < 150:
+                # dense expm is fast if dims < 150
+                self.matrix_exp = dense_expm(a_mat * settings.step).transpose().copy()
+            else:
+                # sparse expm
+                self.matrix_exp = sparse_expm(csc_matrix(a_mat * settings.step)).transpose().toarray()
+
+        self.freeze_attrs()
+
+    def simulate_origin(self, start, steps, include_step_zero=False):
+        '''simulate the origin, from the last point in self.origin_sim, for a certain number of steps'''
+
+        Timers.tic("simulation")
+        result = raw_sim_one(start, steps, self.dy_data, self.settings, include_step_zero=include_step_zero)
+        Timers.toc("simulation")
+
+        return result
+
+    def simulate_vecs(self, start_list, steps, include_step_zero=False):
+        '''simulate from each of the vector points, from the last state in self.vec_values'''
+
+        Timers.tic("simulation")
+
+        # create the linear (nonaffine) dynamics
+        linear_dy = DyData(self.dy_data.sparse_a_matrix, None, self.settings.sparse)
+        sim_start = time.time()
+        args = []
+
+        for dim in xrange(self.num_dims):
+            args.append([sim_start, start_list[dim], steps, include_step_zero, linear_dy, self.settings])
+
+        if self.settings.stdout:
+            SHARED_NEXT_PRINT.value = sim_start + self.settings.print_interval_secs
+            SHARED_COMPLETED_SIMS.value = 0
+
+            mb_per_step = np.dtype(float).itemsize * self.num_dims * self.num_dims / 1024.0 / 1024.0
+            print "Simulating {} steps (~{:.2f} GB in memory)...".format(
+                steps, steps * mb_per_step / 1024.0)
+
+        if self.process_pool is not None:
+            result = self.process_pool.map(parallel_sim_func, args)
+        else:
+            result = [parallel_sim_func(a) for a in args]
+
+        if self.settings.stdout:
+            print "Total Simulation Time: {:.2f} secs".format(time.time() - sim_start)
+
+        Timers.toc("simulation")
+
+        # need to convert the results to a list at each time step before returning
+        transpose_start = time.time()
+
+        rv = []
+
+        for step in xrange(result[0].shape[0]):
+            single_step_result = np.empty((self.num_dims, self.num_dims))
+
+            for dim in xrange(self.num_dims):
+                single_step_result[dim] = result[dim][step]
+
+            rv.append(single_step_result)
+
+        # was like 11.5 seconds for PDE transpose time
+        if self.settings.stdout:
+            print "Transpose time: {:.2f} secs".format(time.time() - transpose_start)
+
+        return rv
+
+    def presimulate(self, desired_step):
+        '''
+        as an optimization, run simulations up to some bound in preperation for many consecutive calls to 
+        get_vecs_origin_at_step(). This may get truncated due to memory limits.
+        '''
+
+        Timers.tic("sim + overhead")
+
+        # if there are currently no simulations, or if the offset != 0
+        if self.settings.sim_mode == SimulationSettings.SIMULATION and self.step_offset != 0:
+            self.step_offset = 0
+
+            # try to ensure step [0, desired_step] is in memory
+            if desired_step >= self.max_steps_in_mem:
+                desired_step = self.max_steps_in_mem - 1
+
+            # presimulate origin
+            start = np.zeros((self.num_dims))
+            self.origin_sim = self.simulate_origin(start, desired_step, include_step_zero=True)
+
+            assert len(self.origin_sim) == 1 + desired_step
+
+            # presimulate vec_values
+            start_list = np.identity(self.num_dims)
+            self.vec_values = self.simulate_vecs(start_list, desired_step, include_step_zero=True)
+
+            assert len(self.vec_values) == 1 + desired_step
+            assert len(self.vec_values) == len(self.origin_sim)
+
+        Timers.toc("sim + overhead")
 
     def get_vecs_origin_at_step(self, step, max_steps):
         '''
         get the exact state of the basis vectors and origin simulation 
-        at a specific step number (multiply by self.size to get time)
+        at a specific, absolute step number (multiply by self.size to get time)
 
-        max_step is the maximum number of steps we'd ever want (optimization 
-            so we don't waste time simulating too far)
+        max_step is the maximum number of steps we'd ever want (optimization so we don't waste time simulating too far)
 
-        returns a tuple (list_of_basis_vecs, origin_sim)
+        returns a tuple (list_of_basis_vecs, origin_sim_list)
         '''
-
-        assert isinstance(max_steps, int), "max_steps should be an integer. Got: {} ({})".format(
-            max_steps, type(max_steps))
+        
         assert step <= max_steps
 
         Timers.tic("sim + overhead")
 
-        # makes sure our simulations are long enough
-        self._sim_all_past_step(step, max_steps)
+        if step == 0 or self.step_offset is None:
+            if self.step_offset != 0:
+                # reset origin sim and, if needed, vec_values
+                self.origin_sim = [np.zeros((self.num_dims, 1))] # index is step (may be offset)
+                self.vec_values = [np.identity(self.num_dims)] # index is step (may be offset)
+                self.step_offset = 0
 
+        rel_step = step - self.step_offset
+        assert rel_step >= 0, 'relative step < 0?'
+        assert rel_step <= len(self.origin_sim), 'steps must increase one by one'
+
+        # if we need to compute more steps
+        if rel_step == len(self.origin_sim):
+            self.step_offset += len(self.origin_sim)
+            rel_step = step - self.step_offset
+
+            # double the simulation length each time
+            num_new_steps = 2 * len(self.origin_sim)
+
+            # but don't simulate past max_steps
+            if self.step_offset + num_new_steps > max_steps + 1:
+                num_new_steps = max_steps + 1 - self.step_offset
+
+            # and obey desired memory limits
+            if num_new_steps > self.max_steps_in_mem:
+                num_new_steps = self.max_steps_in_mem
+                
+            # always advance by at least one step
+            num_new_steps = max(1, num_new_steps)
+
+            # advance origin
+            start = self.origin_sim[-1].copy()
+            self.origin_sim = None
+            self.origin_sim = self.simulate_origin(start, num_new_steps)
+
+            # also advance vec_values
+            start_list = self.vec_values[-1].copy()
+            self.vec_values = None
+
+            if self.settings.sim_mode == SimulationSettings.SIMULATION:
+                self.vec_values = self.simulate_vecs(start_list, num_new_steps)
+            elif self.settings.sim_mode == SimulationSettings.MATRIX_EXP:
+                self.vec_values = self.matrix_exp_vecs(start_list, num_new_steps)
+ 
         Timers.toc("sim + overhead")
 
-        return (self.vec_values[step], self.origin_sim[step])
+        return (self.vec_values[rel_step], self.origin_sim[rel_step])
 
-    def _sim_all_past_step(self, step, max_steps):
-        '''
-        Continue the simulations up to at least some given step
-        '''
+    def matrix_exp_vecs(self, start_list, num_steps):
+        'use the one-step matrix exp strategy to get the next value of the basis vectors and origin simulation'
 
-        num_completed_steps = len(self.vec_values) - 1
+        assert num_steps == 1, "sim_mode = MATRIX_EXP, so we expected to advance one step. Got {} steps.".format(num_steps)
 
-        if step > num_completed_steps:            
-            num_new_steps = step - num_completed_steps
+        # vec_values[-1] is the previous step's matrix
+        cur_matrix = start_list
+        result = self.fast_dot(cur_matrix, self.matrix_exp)
 
-            # make sure we're at least doubling the number of steps (reduces overhead for repeated small extensions)
-            if num_new_steps < num_completed_steps:
-                num_new_steps = num_completed_steps # doubles the length
+        return [result]
 
-            # make sure we don't go past max_step (reduces overhead by not simulating too far)
-            if num_completed_steps + num_new_steps > max_steps:
-                num_new_steps = max_steps - num_completed_steps
+    def fast_dot(self, a, b):
+        '''fast implementaiton (using multiprocessing) of dot product of two matrices.
+        uses parallelism if matrix is large'''
 
-            assert num_new_steps >= 1
-            #num_new_steps = 300
+        size = a.shape[1]
 
-            # pre-allocate result
-            self.vec_values += [np.empty([self.num_dims, self.num_dims]) for _ in xrange(num_new_steps)]
-
-            max_time = self.step_size * num_new_steps
-            epsilon = self.step_size / 8.0 # to prevent round-off error on the end range
-            times = np.arange(0.0, max_time + epsilon, self.step_size)
-
-            # simulate origin
-            origin_sim_start = self.origin_sim[-1]
-            origin_sim_states = self._sim_one(origin_sim_start, times)[1:]
-
-            for state in origin_sim_states:
-                self.origin_sim.append(state)
-
-            for vec_index in xrange(self.num_dims):
-                last_state = self.last_states[vec_index]
-
-                sim = self._sim_one(last_state, times)[1:]
-
-                # compute the difference between origin_sim and sim, at each step
-                diff = sim - origin_sim_states
-
-                for sim_index in xrange(len(sim)):
-                    absolute_step = sim_index + num_completed_steps + 1
-                    self.vec_values[absolute_step][vec_index] = diff[sim_index]
-                    #vec = diff[sim_index]
-                    #self.vec_values[vec_index].append(vec)
-
-                assert len(sim) > 0
-                self.last_states[vec_index] = sim[-1]
-
-    def _sim_one(self, start, times):
-        '''
-        simulate from a single point at the given times 
-
-        return an nparray of states at those times
-        '''
-
-        Timers.tic("simulation")
-
-        res = None
-
-        if self.sim_tol is None:
-            res = odeint(self.der_func, start, times, Dfun=self.jac_func, col_deriv=True, mxstep=5000, 
-                         mu=self.max_upper, ml=self.max_lower)
+        if self.thread_pool is None or size < 150:
+            # single-threaded is fast if dims < 150
+            rv = np.dot(a, b)
         else:
-            tol = self.sim_tol
-            res = odeint(self.der_func, start, times, Dfun=self.jac_func, col_deriv=True, mxstep=5000, 
-                         mu=self.max_upper, ml=self.max_lower, atol=tol, rtol=tol)
+            rv = pdot(a, b, self.thread_pool)
 
-        Timers.toc("simulation")
+        return rv
 
-        return res
+    def compute_gbt(self, b_matrix):
+        '''
+        compute the transpose of G(A, h) * B using simulations
+
+        Simulates from the origin for one step, using a fixed u1, u2, ...
+        '''
+
+        Timers.tic("input-effect simulation")
+
+        if b_matrix.shape[1] > 0:
+            raise RuntimeError("input-effect simulation unimplemented")
+
+        assert b_matrix.shape[0] == self.num_dims
+
+        rv = np.zeros([b_matrix.shape[1], self.num_dims], dtype=float)
+        #times = [0.0, self.settings.step]
+
+        #for col_index in xrange(b_matrix.shape[1]):
+            # for every column index of inputs, create an input file
+            #b_col = b_matrix[:, col_index]
+            #start = origin
+            #res = self.sim_one(b_col, times)[1:]
+
+        return rv
 
     def sim_until_inv_violated(self, pt, inv_list, max_steps):
         '''
@@ -186,14 +451,8 @@ class SimulationBundle(object):
             if len(rv) - 1 + num_steps > max_steps:
                 num_steps = max_steps - len(rv) + 1
 
-            max_time = self.step_size * num_steps
-
-            epsilon = self.step_size / 8.0 # to prevent round-off error on the end range
-            times = np.arange(0.0, max_time + epsilon, self.step_size)
-
-            # simulate 
             start = rv[-1]
-            new_states = self._sim_one(start, times)[1:]
+            new_states = raw_sim_one(start, num_steps, self.dy_data, self.settings)
 
             # for every new state, check if it violates the invariant
             for state in new_states:
@@ -214,40 +473,102 @@ class SimulationBundle(object):
 
         return rv
 
-def make_banded_jacobian(matrix):
-    '''returns a banded jacobian list (in odeint's format), along with mu and ml parameters'''
+def mult_func((a, b)):
+    'multiplication of matrices, for parallel map'
 
-    # first find the values of mu and ml
-    dims = matrix.shape[0]
-    assert dims == matrix.shape[1]
-    mu = 0
-    ml = 0
+    return np.dot(a, b)
 
-    for row in xrange(dims):
-        for col in xrange(dims):
-            if matrix[row][col] != 0:
-                if col > row:
-                    dif = col - row
-                    mu = max(mu, dif)
-                else:
-                    dif = row - col
-                    ml = max(ml, dif)
+def pdot(a, b, pool):
+    'parallel dot product'
 
-    banded = []
+    size = a.shape[1]
+    split = multiprocessing.cpu_count()
+    args = []
 
-    for yoffset in xrange(-mu, ml+1):
-        row = []
+    for i in xrange(split):
+        start_index = i * size / split
+        end_index = (i+1) * size / split
 
-        for diag in xrange(dims):
-            x_index = diag
-            y_index = diag + yoffset
+        if start_index == end_index:
+            continue
 
-            if y_index < 0 or y_index >= dims:
-                row.append(0.0)
-            else:
-                row.append(matrix[y_index][x_index])
+        tall_matrix = b[:, start_index:end_index]
+        args.append((a, tall_matrix))
 
-        banded.append(row)
+    result = pool.map(mult_func, args)
 
-    return (banded, mu, ml)
+    return np.concatenate(result, axis=1)
 
+def get_sim_results_filesize(temp_base_filename, num_threads):
+    'get the file size, as a string, of the simulation results files'
+
+    filesize_gb = 0.0
+
+    for t in xrange(num_threads):
+        filename = temp_base_filename + "thread_{}.result".format(t)
+        try:
+            filesize_gb += os.stat(filename).st_size / 1000.0 / 1000.0 / 1000.0
+        except OSError:
+            pass
+
+    if filesize_gb > 1.0:
+        rv = "{:.1f} GB".format(filesize_gb)
+    else:
+        rv = "{:.1f} MB".format(filesize_gb * 1000)
+
+    return rv
+
+# shared time variable used for occasional printing across processes
+SHARED_NEXT_PRINT = multiprocessing.Value('d')
+SHARED_COMPLETED_SIMS = multiprocessing.Value('i')
+
+def parallel_sim_func(args):
+    'perform a single simulation as part of parallel solving'
+
+    sim_start_time, start_point, steps, include_step_zero, dy_data, settings = args
+    num_dims = start_point.shape[0]
+
+    rv = raw_sim_one(start_point, steps, dy_data, settings, include_step_zero=include_step_zero)
+
+    # print progress occasionally
+    if settings.stdout:
+        with SHARED_COMPLETED_SIMS.get_lock():
+            SHARED_COMPLETED_SIMS.value += 1
+
+        with SHARED_NEXT_PRINT.get_lock():
+            now = time.time()
+
+            if now > SHARED_NEXT_PRINT.value:
+                SHARED_NEXT_PRINT.value = now + settings.print_interval_secs
+
+                elapsed_time = now - sim_start_time
+                percent = 100.0 * (SHARED_COMPLETED_SIMS.value) / (num_dims)
+                total_time = elapsed_time / (percent / 100.0)
+
+                print "{}/{} simulations ({:.1f}%); {:.1f}s (elapsed) / {:.1f}s (estimate)".format(
+                    SHARED_COMPLETED_SIMS.value, num_dims, percent, elapsed_time, total_time)
+
+    return rv
+
+def raw_sim_one(start, steps, dy_data, settings, include_step_zero=False):
+    '''
+    simulate from a single point at the given times 
+
+    return an nparray of states at those times, possibly excluding time zero
+    '''
+
+    start.shape = (dy_data.num_dims,)
+
+    times = np.linspace(0, settings.step * steps, num=steps+1)
+
+    der_func = dy_data.make_der_func()
+    jac_func, max_upper, max_lower = dy_data.make_jac_func()
+    sim_tol = settings.sim_tol
+
+    result = odeint(der_func, start, times, Dfun=jac_func, col_deriv=True, mxstep=9999999, 
+                    mu=max_upper, ml=max_lower, atol=sim_tol, rtol=sim_tol)
+
+    if not include_step_zero:
+        result = result[1:]
+
+    return result

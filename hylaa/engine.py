@@ -4,17 +4,18 @@ Stanley Bak
 Aug 2016
 '''
 
+from collections import OrderedDict
 import numpy as np
 
-import hylaa.optutil as optutil
 from hylaa.plotutil import PlotManager
-from hylaa.star import init_hr_to_star, init_constraints_to_star, Star
-from hylaa.star import InitParent, AggregationParent, ContinuousPostParent, DiscretePostParent
-from hylaa.star import add_guard_to_star, add_box_to_star
+from hylaa.star import Star
+from hylaa.star import init_hr_to_star, init_constraints_to_star
+from hylaa.starutil import InitParent, AggregationParent, ContinuousPostParent, DiscretePostParent
+from hylaa.starutil import add_guard_to_star, add_box_to_star
 from hylaa.hybrid_automaton import LinearHybridAutomaton, LinearAutomatonMode, LinearConstraint, HyperRectangle
-from hylaa.simutil import SimulationBundle
 from hylaa.timerutil import Timers
-from hylaa.containers import HylaaSettings, SymbolicState, PlotSettings, HylaaResult, WaitingList
+from hylaa.containers import HylaaSettings, SymbolicState, PlotSettings, HylaaResult
+from hylaa.glpk_interface import LpInstance
 
 class HylaaEngine(object):
     'main computation object. initialize and call run()'
@@ -27,14 +28,13 @@ class HylaaEngine(object):
         self.ha = ha
         self.settings = hylaa_settings
         self.num_vars = len(ha.variables)
-        Star.solver = hylaa_settings.solver # set LP solver
 
-        self.settings.plot.init_plot_vecs(self.num_vars)
-        self.plotman = PlotManager(self, self.settings.plot, Star.solver)
+        if self.settings.plot.plot_mode != PlotSettings.PLOT_NONE:
+            Star.init_plot_vecs(self.num_vars, self.settings.plot)
+
+        self.plotman = PlotManager(self, self.settings.plot)
 
         # computation
-        self.sim_bundles = {} # map of mode_name -> SimulationBundle
-
         self.waiting_list = WaitingList()
 
         self.cur_state = None # a SymbolicState object
@@ -42,12 +42,11 @@ class HylaaEngine(object):
         self.max_steps_remaining = None # bound on num steps left in current mode ; assigned on pop
         self.cur_sim_bundle = None # set on pop
 
-        self.selected_stars = [] # set
-
+        self.reached_error = False
         self.result = None # a HylaaResult... assigned on run()
 
         if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE:
-            self.settings.use_presimulation = True
+            self.settings.simulation.use_presimulation = True
 
     def load_waiting_list(self, init_list):
         '''convert the init list into self.waiting_list'''
@@ -58,26 +57,23 @@ class HylaaEngine(object):
             assert isinstance(mode, LinearAutomatonMode)
 
             if isinstance(shape, HyperRectangle):
-                star = init_hr_to_star(shape, mode)
+                star = init_hr_to_star(self.settings, shape, mode)
             elif isinstance(shape, list):
                 assert len(shape) > 0, "initial constraints in mode '{}' was empty list".format(mode.name)
                 assert isinstance(shape[0], LinearConstraint)
 
-                star = init_constraints_to_star(shape, mode)
+                star = init_constraints_to_star(self.settings, shape, mode)
             else:
                 raise RuntimeError("Unsupported initial state type '{}': {}".format(type(shape), shape))
 
-            self.plotman.cache_star_verts(star)
             self.waiting_list.add_deaggregated(SymbolicState(mode, star))
-
-            optutil.MultiOpt.reset_per_mode_vars()
 
     def is_finished(self):
         'is the computation finished'
 
         rv = self.waiting_list.is_empty() and self.cur_state is None
 
-        return rv
+        return rv or (self.settings.stop_when_error_reachable and self.reached_error)
 
     def plot_invariant_violation(self, star, invariant_lc):
         '''
@@ -153,11 +149,8 @@ class HylaaEngine(object):
                         break # don't check the remaining invariant linear conditions
 
         if still_feasible:
-            if len(star.temp_constraints) > 0 and self.settings.trim_redundant_inv_constraints:
-                star.trim_redundant_temp_constraints()
-
-                if added_invariant_constraint is False:
-                    star.commit_temp_constraints()
+            # TODO: trim redundant temp constraints
+            pass
 
         return still_feasible
 
@@ -166,39 +159,18 @@ class HylaaEngine(object):
 
         assert state is not None
 
-        transitions = state.mode.transitions
+        for i in xrange(len(state.mode.transitions)):
+            result = state.star.guard_opt_data.get_guard_intersection(i)
+            
+            if result is not None:
+                transition = state.star.mode.transitions[i]
+                successor_mode = transition.to_mode
 
-        if len(transitions) > 0:
-            standard_center = state.star.center()
-            num_dims = len(standard_center)
-
-        for transition in transitions:
-            # all the guards must be true at the same time for it to be a successor
-
-            lp_constraints = state.star.to_lp_constraints()
-            guard_constraints_a = []
-            guard_constraints_b = []
-
-            for g in transition.condition_list:
-                empty = [0.0] * num_dims
-                center_value = np.dot(standard_center, g.vector)
-
-                guard_constraints_a.append([ele for ele in g.vector] + empty)
-                guard_constraints_b.append(g.value - center_value)
-
-            lp_constraints.a_temp_ub += guard_constraints_a
-            lp_constraints.b_temp_ub += guard_constraints_b
-
-            c = [0.0] * (2 * num_dims) # objective function is not important
-
-            # use the first guard as the objective function
-            #first_guard = transition.condition_list[0]
-            #c = [-ele for ele in first_guard.vector] + [0.0] * num_dims
-
-            result = optutil.optimize_multi(Star.solver, [c], lp_constraints)[0]
-
-            if result is not None: # if a guard intersection exists
-                print "; guard intersection exists at {}".format(result[0:num_dims])
+                if successor_mode.is_error:
+                    self.reached_error = True
+        
+                    if self.settings.stop_when_error_reachable:
+                        raise FoundErrorTrajectory("Found error trajectory")
 
                 # copy the current star to be the frozen pre-state of the discrete post operation
                 discrete_prestate_star = state.star.clone()
@@ -211,7 +183,7 @@ class HylaaEngine(object):
                                                                     basis_center, transition)
 
                 # convert each of the guard conditions to the star's basis
-                for g in transition.condition_list:
+                for g in transition.guard_list:
 
                     # basis vectors (non-transpose) * standard_condition
                     basis_influence = np.dot(state.star.basis_matrix, g.vector)
@@ -316,7 +288,7 @@ class HylaaEngine(object):
 
         if self.settings.add_guard_during_aggregation:
             assert isinstance(first_star_parent, DiscretePostParent)
-            add_guard_to_star(hull_star, first_star_parent.transition.condition_list)
+            add_guard_to_star(hull_star, first_star_parent.transition.guard_list)
 
         if self.settings.add_box_during_aggregation:
             add_box_to_star(hull_star)
@@ -359,7 +331,7 @@ class HylaaEngine(object):
 
         if rv and self.plotman.settings.plot_mode != PlotSettings.PLOT_NONE:
             if isinstance(star.parent, ContinuousPostParent):
-                sim_bundle = self.sim_bundles[star.parent.mode.name]
+                sim_bundle = star.parent.mode.get_sim_bundle(self.settings.simulation)
                 num_steps = star.fast_forward_steps + star.total_steps - star.parent.star.total_steps
                 start_basis_matrix = star.start_basis_matrix
 
@@ -367,23 +339,11 @@ class HylaaEngine(object):
 
         return rv
 
-    def presimulate(self, sim_bundle, point_in_star, inv_list):
-        'this is an optimation where we try to guess the dwell time using a simulation, so we avoid repeated calls'
-
-        origin_sim = sim_bundle.sim_until_inv_violated(point_in_star, inv_list, self.max_steps_remaining)
-        num_presimulation_steps = int(len(origin_sim) * 1.2)
-
-        if num_presimulation_steps > self.max_steps_remaining:
-            num_presimulation_steps = self.max_steps_remaining
-
-        self.cur_sim_bundle.get_vecs_origin_at_step(num_presimulation_steps, self.max_steps_remaining)
-
     def do_step_pop(self, output):
         'do a step where we pop from the waiting list'
 
         self.plotman.state_popped() # reset certain per-mode plot variables
 
-        optutil.MultiOpt.reset_per_mode_vars()
         self.cur_step_in_mode = 0
 
         if output:
@@ -396,17 +356,7 @@ class HylaaEngine(object):
                 state.mode.name, state.star.total_steps * self.settings.step, state.star.fast_forward_steps)
 
         self.max_steps_remaining = self.settings.num_steps - state.star.total_steps + state.star.fast_forward_steps
-        self.cur_sim_bundle = self.sim_bundles.get(state.mode.name)
-        
-        if self.cur_sim_bundle is None:
-            self.cur_sim_bundle = SimulationBundle(state.mode.a_matrix, state.mode.b_vector, self.settings.step, 
-                                                   sim_tol=self.settings.sim_tol)
-            self.sim_bundles[state.mode.name] = self.cur_sim_bundle
-
-            # optimization: presimulate sim bundle until after invariant becomes false
-            if self.settings.use_presimulation:
-                pt_in_star = np.array(state.star.get_feasible_point(), dtype=float)
-                self.presimulate(self.cur_sim_bundle, pt_in_star, state.mode.inv_list)
+        self.cur_sim_bundle = state.mode.get_sim_bundle(self.settings.simulation, state.star, self.max_steps_remaining)
 
         parent_star = state.star        
         state.star = parent_star.clone()
@@ -431,11 +381,11 @@ class HylaaEngine(object):
                 # cur_state is not Null
                 print "Doing continuous post in mode '{}': ".format(self.cur_state.mode.name)
 
-        if self.cur_state is not None and state.mode.is_null_dynamics():
+        if self.cur_state is not None and state.mode.is_error:
             self.cur_state = None
 
             if output:
-                print "Mode dynamics in '{}' were null; skipping.".format(state.mode.name)
+                print "Mode '{}' was an error mode; skipping.".format(state.mode.name)
 
         # pause after discrete post
         if self.plotman.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
@@ -453,14 +403,15 @@ class HylaaEngine(object):
             sim_bundle = self.cur_sim_bundle
 
             if self.settings.print_step_times:
-                print "{}".format(self.settings.step * (self.cur_step_in_mode + 1))
+                print "Step: {} / {} ({})".format(self.cur_step_in_mode + 1, self.settings.num_steps,
+                                                  self.settings.step * (self.cur_step_in_mode))
 
             sim_step = self.cur_step_in_mode + 1 + state.star.fast_forward_steps
 
             sim_basis_matrix, sim_center = sim_bundle.get_vecs_origin_at_step(
                 sim_step, self.max_steps_remaining)
 
-            state.star.update_from_sim(sim_basis_matrix, sim_center)
+            state.star.update_from_sim(sim_basis_matrix, sim_center, self.settings.step)
 
             # increment step            
             self.cur_step_in_mode += 1
@@ -495,7 +446,10 @@ class HylaaEngine(object):
             if self.cur_state is None:
                 self.do_step_pop(output)
             else:
-                self.do_step_continuous_post(output)
+                try:
+                    self.do_step_continuous_post(output)
+                except FoundErrorTrajectory: # this gets raised if an error mode is reachable and we should quit early
+                    pass
 
             if self.cur_state is not None:
                 skipped_plot = self.plotman.plot_current_state(self.cur_state)
@@ -503,6 +457,12 @@ class HylaaEngine(object):
             if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE or \
                                     not skipped_plot or self.is_finished():
                 break
+
+        if self.is_finished():
+            if self.reached_error:
+                print "Result: Error modes are reachable.\n"
+            else:
+                print "Result: Error modes are NOT reachable.\n"
 
     def run_to_completion(self):
         'run the computation until it finishes (without plotting)'
@@ -514,8 +474,11 @@ class HylaaEngine(object):
 
         Timers.toc("total")
 
+        LpInstance.print_stats()
+        Timers.print_stats()
+
         self.result.time = Timers.timers["total"].total_secs
-        
+
     def run(self, init_list):
         '''
         run the computation
@@ -537,16 +500,124 @@ class HylaaEngine(object):
         self.load_waiting_list(init_list)
 
         if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE:
-            # proceed without plotting
-            Timers.tic("total")
-            
-            while not self.is_finished():
-                self.do_step()
-
-            Timers.toc("total")
-            Timers.print_time_stats()
-
-            self.result.time = Timers.timers["total"].total_secs
+            # run without plotting
+            self.run_to_completion()
         else:
             # plot during computation
             self.plotman.compute_and_animate(self.do_step, self.is_finished)
+
+class WaitingList(object):
+    '''
+    The set of to-be computed values (discrete sucessors).
+
+    There are aggregated states, and deaggregated states. The idea is states first
+    go into the aggregrated ones, but may be later split and placed into the 
+    deaggregated list. Thus, deaggregated states, if they exist, are popped first.
+    The states here are SymbolicStates
+    '''
+
+    def __init__(self):
+        self.aggregated_mode_to_state = OrderedDict()
+        self.deaggregated_list = []
+
+    def pop(self):
+        'pop a state from the waiting list'
+
+        assert len(self.aggregated_mode_to_state) + len(self.deaggregated_list) > 0, \
+            "pop() called on empty waiting list"
+
+        if len(self.deaggregated_list) > 0:
+            rv = self.deaggregated_list[0]
+            self.deaggregated_list = self.deaggregated_list[1:]
+        else:
+            # pop from aggregated list
+            rv = self.aggregated_mode_to_state.popitem(last=False)[1]
+
+            assert isinstance(rv, SymbolicState)
+    
+            # pylint false positive
+            if isinstance(rv.star.parent, AggregationParent):
+                rv.star.trim_redundant_perm_constraints()
+
+        return rv
+
+    def print_stats(self):
+        'print statistics about the waiting list'
+
+        total = len(self.aggregated_mode_to_state) + len(self.deaggregated_list)
+
+        print "Waiting list contains {} states ({} aggregated and {} deaggregated):".format(
+            total, len(self.aggregated_mode_to_state), len(self.deaggregated_list))
+
+        counter = 1
+
+        for ss in self.deaggregated_list:
+            print " {}. Deaggregated Successor in Mode '{}'".format(counter, ss.mode.name)
+            counter += 1
+
+        for mode, ss in self.aggregated_mode_to_state.iteritems():
+            if isinstance(ss.star.parent, AggregationParent):
+                print " {}. Aggregated Sucessor in Mode '{}': {} stars".format(counter, mode, len(ss.star.parent.stars))
+            else:
+                # should be a DiscretePostParent
+                print " {}. Aggregated Sucessor in Mode '{}': single star".format(counter, mode)
+
+            counter += 1
+
+    def is_empty(self):
+        'is the waiting list empty'
+
+        return len(self.deaggregated_list) == 0 and len(self.aggregated_mode_to_state) == 0
+
+    def add_deaggregated(self, state):
+        'add a state to the deaggregated list'
+
+        assert isinstance(state, SymbolicState)
+
+        self.deaggregated_list.append(state)
+
+    def add_aggregated(self, new_state, hylaa_settings):
+        'add a state to the aggregated map'
+
+        assert isinstance(new_state, SymbolicState)
+
+        mode_name = new_state.mode.name
+
+        existing_state = self.aggregated_mode_to_state.get(mode_name)
+
+        if existing_state is None:
+            self.aggregated_mode_to_state[mode_name] = new_state
+        else:
+            # combine the two stars
+            cur_star = existing_state.star
+
+            cur_star.current_step = min(
+                cur_star.total_steps, new_state.star.total_steps)
+
+            # if the parent of this star is not an aggregation, we need to create one
+            # otherwise, we need to add it to the list of parents
+
+            if isinstance(cur_star.parent, AggregationParent):
+                # add it to the list of parents
+                cur_star.parent.stars.append(new_state.star)
+
+                cur_star.eat_star(new_state.star)
+            else:
+                # create the aggregation parent
+                hull_star = cur_star.clone()
+                hull_star.parent = AggregationParent(new_state.mode, [cur_star, new_state.star])
+
+                if hylaa_settings.add_guard_during_aggregation:
+                    add_guard_to_star(hull_star, cur_star.parent.transition.guard_list)
+
+                if hylaa_settings.add_box_during_aggregation:
+                    add_box_to_star(hull_star)
+
+                # there may be temp constraints from invariant trimming
+                hull_star.commit_temp_constraints()
+
+                hull_star.eat_star(new_state.star)
+                existing_state.star = hull_star
+
+class FoundErrorTrajectory(RuntimeError):
+    'gets thrown if a trajectory to the error states is found when settings.stop_when_error_reachable is True'

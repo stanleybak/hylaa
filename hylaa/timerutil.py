@@ -7,6 +7,7 @@ September 2016
 '''
 
 import time 
+from collections import OrderedDict
 
 class TimerData(object):
     'Performance timer which can be started with tic() and paused with toc()'
@@ -39,11 +40,11 @@ class Timers(object):
     '''
     a static class for doing timer messuarements. Use
     Timers.tic(name) and Timers.tic(name) to start and stop timers, use
-    print_time_stats to get time statistics
+    print_stats to print time statistics
     '''
 
     # map of timer_name -> TimerData
-    timers = {'total': TimerData('total')} 
+    timers = OrderedDict([('total', TimerData('total'))])
 
     def __init__(self):
         raise RuntimeError('Timers is a static class; should not be instantiated')
@@ -71,7 +72,7 @@ class Timers(object):
         Timers.timers[name].toc()
 
     @staticmethod
-    def print_time_stats():
+    def print_stats():
         'print statistics about performance timers to stdout'
 
         total = Timers.timers["total"].total_secs

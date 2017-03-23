@@ -4,7 +4,6 @@ Stanley Bak
 Sept 2016
 '''
 
-import math
 import time
 import random
 import traceback
@@ -15,16 +14,17 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib import collections
 from matplotlib.path import Path
-from matplotlib.patches import Polygon
 from matplotlib import colors
 from matplotlib.widgets import Button
+from matplotlib.lines import Line2D
 
 import numpy as np
 
-from hylaa.star import find_star_boundaries, AggregationParent, ContinuousPostParent
+from hylaa.starutil import AggregationParent, ContinuousPostParent
 from hylaa.timerutil import Timers
 from hylaa.containers import PlotSettings
-import hylaa.optutil as optutil
+from hylaa.util import Freezable
+from hylaa.glpk_interface import LpInstance
 
 def lighter(rgb_col):
     'return a lighter variant of an rgb color'
@@ -45,7 +45,7 @@ class AxisLimits(object):
         self.ymin = None
         self.ymax = None
 
-class DrawnShapes(object):
+class DrawnShapes(Freezable):
     'maintains shapes to be drawn'
 
     def __init__(self, axes, plotman):
@@ -60,11 +60,12 @@ class DrawnShapes(object):
         self.inv_vio_polys = collections.PolyCollection([], animated=True, alpha=0.7, edgecolor='none', facecolor='red')
         axes.add_collection(self.inv_vio_polys)
 
-        # create a blank currently-tracked set of states poly
-        self.cur_poly = Polygon([(0, 0)], animated=True, edgecolor='k', lw=2, facecolor='none')
-        axes.add_patch(self.cur_poly)
+        # create a blank currently-tracked set of states poly 
+        self.cur_state_line2d = Line2D([], [], animated=True, color='k', lw=2, mew=2, ms=5, fillstyle='none')
+        axes.add_line(self.cur_state_line2d)
 
         self.parent_to_polys = OrderedDict() 
+        self.parent_to_markers = OrderedDict()
 
         self.waiting_list_mode_to_polys = OrderedDict()
         self.aggregation_mode_to_polys = OrderedDict()
@@ -81,6 +82,8 @@ class DrawnShapes(object):
         else:
             self.extra_lines_col = None
 
+        self.freeze_attrs()
+
     def get_artists(self, waiting_list):
         'get the list of artists, to be returned by animate function'
 
@@ -88,6 +91,9 @@ class DrawnShapes(object):
 
         for polys in self.parent_to_polys.values():
             rv.append(polys)
+
+        for markers in self.parent_to_markers.values():
+            rv.append(markers)
 
         self.set_waiting_list_polys(waiting_list)
 
@@ -104,7 +110,7 @@ class DrawnShapes(object):
 
         rv.append(self.trace)
  
-        rv.append(self.cur_poly)
+        rv.append(self.cur_state_line2d)
 
         return rv
 
@@ -115,19 +121,19 @@ class DrawnShapes(object):
 
         # add deaggregated
         for ss in waiting_list.deaggregated_list:
-            verts = self.get_waiting_list_star_verts(ss.star)
+            verts = ss.star.verts()
             self.add_waiting_list_poly(verts, ss.mode.name)
 
         # add aggregated
         for ss in waiting_list.aggregated_mode_to_state.values():
-            verts = self.get_waiting_list_star_verts(ss.star)
-            
+            verts = ss.star.verts()
+
             self.add_aggregation_poly(verts, ss.mode.name)
 
             # also show the sub-stars
             if isinstance(ss.star.parent, AggregationParent):
                 for star in ss.star.parent.stars:
-                    verts = self.get_waiting_list_star_verts(star)
+                    verts = star.verts()
                     self.add_waiting_list_poly(verts, ss.mode.name)
 
     def add_aggregation_poly(self, poly_verts, mode_name):
@@ -165,20 +171,6 @@ class DrawnShapes(object):
 
         codes = [Path.MOVETO] + [Path.LINETO] * (len(poly_verts) - 2) + [Path.CLOSEPOLY]
         paths.append(Path(poly_verts, codes))
-
-    def get_waiting_list_star_verts(self, star):
-        'get the verts for a star in the waiting list'
-
-        if star.verts is not None:
-            verts = star.verts
-        else:
-            # this is slow, we might be able to update verts during aggregation (edit eat_star)
-            optutil.MultiOpt.reset_per_mode_vars()
-            verts = self.plotman.get_star_verts(star)
-            star.verts = verts
-            optutil.MultiOpt.reset_per_mode_vars()
-
-        return verts
 
     def clear_waiting_list_polys(self):
         'clears all the polygons drawn representing the waiting list'
@@ -266,18 +258,30 @@ class DrawnShapes(object):
         self.inv_vio_star = None
         self.inv_vio_polys.get_paths()[:] = []
         
-        self.set_cur_poly([(0, 0), (0, 0), (0, 0)])
+        self.set_cur_state(None)
 
         self.trace.set_paths([])
 
-    def set_cur_poly(self, verts):
-        'set the current polygon for one frame (black)'
-
-        poly_path = self.cur_poly.get_path()
-        poly_path.vertices = np.array(verts)
+    def set_cur_state(self, verts):
+        'set the currently tracked set of states for one frame'
         
-        codes = [Path.MOVETO] + [Path.LINETO] * (len(verts) - 2) + [Path.CLOSEPOLY]
-        poly_path.codes = codes
+        l = self.cur_state_line2d
+
+        if verts is None:
+            l.set_visible(False)
+        else:
+            l.set_visible(True)
+
+            if len(verts) <= 2:
+                l.set_marker('o')                
+            else:
+                l.set_marker(None)
+
+            xdata = [x for x, _ in verts]
+            ydata = [y for _, y in verts]
+
+            l.set_xdata(xdata)
+            l.set_ydata(ydata)
 
     def add_inv_vio_poly(self, poly_verts):
         'add an invariant violation polygon'
@@ -300,7 +304,14 @@ class DrawnShapes(object):
         # polys may be none if it was an urgent transition
         if polys is not None:
             polys.remove() # reverses axes.add_collection
-            polys.get_paths()[:] = []        
+            polys.get_paths()[:] = []
+
+        markers = self.parent_to_markers.pop(parent, None)
+
+        if markers is not None:        
+            markers.remove()
+            markers.set_xdata([])
+            markers.set_ydata([])
 
     def thin_reachable_set(self):
         '''thin our the drawn reachable set to have less polygons (drawing optimization)'''
@@ -319,24 +330,60 @@ class DrawnShapes(object):
 
             paths[:] = new_paths
 
+        for line in self.parent_to_markers.values():
+            xdata = line.get_xdata()
+            ydata = line.get_ydata()
+            new_xdata = []
+            new_ydata = []
+
+            keep = True
+
+            for i in xrange(len(xdata)):
+                if keep:
+                    new_xdata.append(xdata[i])
+                    new_ydata.append(ydata[i])
+                
+                keep = not keep
+
+            line.set_xdata(new_xdata)
+            line.set_ydata(new_ydata)
+
     def add_reachable_poly(self, poly_verts, parent, mode_name):
         '''add a polygon which was reachable'''
     
         assert isinstance(parent, ContinuousPostParent)
 
-        polys = self.parent_to_polys.get(parent)
+        if len(poly_verts) <= 2:
+            markers = self.parent_to_markers.get(parent)
 
-        if polys is None:
-            face_col, edge_col = self.get_mode_colors(mode_name)
-            polys = collections.PolyCollection([], lw=2, animated=True, alpha=0.5, 
-                                               edgecolor=edge_col, facecolor=face_col)
-            self.axes.add_collection(polys)
-            self.parent_to_polys[parent] = polys
+            if markers is None:
+                face_col, edge_col = self.get_mode_colors(mode_name)
 
-        paths = polys.get_paths()
+                markers = Line2D([], [], animated=True, ls='None', alpha=0.5, marker='o', mew=2, ms=5, 
+                                 mec=edge_col, mfc=face_col)
+                self.axes.add_line(markers)
+                self.parent_to_markers[parent] = markers
 
-        codes = [Path.MOVETO] + [Path.LINETO] * (len(poly_verts) - 2) + [Path.CLOSEPOLY]
-        paths.append(Path(poly_verts, codes))
+            xdata = markers.get_xdata()
+            ydata = markers.get_ydata()
+            xdata.append(poly_verts[0][0])
+            ydata.append(poly_verts[0][1])
+            markers.set_xdata(xdata)
+            markers.set_ydata(ydata)
+        else:
+            polys = self.parent_to_polys.get(parent)
+
+            if polys is None:
+                face_col, edge_col = self.get_mode_colors(mode_name)
+                polys = collections.PolyCollection([], lw=2, animated=True, alpha=0.5, 
+                                                   edgecolor=edge_col, facecolor=face_col)
+                self.axes.add_collection(polys)
+                self.parent_to_polys[parent] = polys
+
+            paths = polys.get_paths()
+
+            codes = [Path.MOVETO] + [Path.LINETO] * (len(poly_verts) - 2) + [Path.CLOSEPOLY]
+            paths.append(Path(poly_verts, codes))
 
 class InteractiveState(object):
     'container object for interactive plot state'
@@ -348,14 +395,13 @@ class InteractiveState(object):
 class PlotManager(object):
     'manager object for plotting during or after computation'
 
-    def __init__(self, hylaa_engine, plot_settings, opt_engine):
+    def __init__(self, hylaa_engine, plot_settings):
         assert isinstance(plot_settings, PlotSettings)
 
         # matplotlib default rcParams caused incorrect trace output due to interpolation
         rcParams['path.simplify'] = False
 
         self.engine = hylaa_engine
-        self.opt_engine = opt_engine
         self.settings = plot_settings 
 
         self.fig = None
@@ -369,8 +415,9 @@ class PlotManager(object):
         self.drew_first_frame = False # one-time flag
         self._anim = None # animation object
 
-        if self.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
-            self.settings.min_frame_time = 0.0 # for interactive plots, draw every frame
+        if self.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE or \
+           self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
+            self.settings.min_frame_time = 0.0 # for interactive or video plots, draw every frame
 
         self.cur_reachable_polys = 0 # number of polygons currently drawn
         self.draw_stride = plot_settings.draw_stride # draw every 2nd poly, or every 4th, ect. (if over poly limit)
@@ -385,7 +432,6 @@ class PlotManager(object):
             for step in xrange(num_steps+1):
                 basis_vec_list, sim_center = sim_bundle.get_vecs_origin_at_step(step, num_steps)
 
-                
                 if start_basis_matrix is None:
                     basis_matrix = basis_vec_list
                 else:
@@ -404,7 +450,10 @@ class PlotManager(object):
     def update_axis_limits(self, points_list):
         'update the axes limits to include the passed-in point list'
 
+        first_draw = False
+
         if self.drawn_limits is None:
+            first_draw = True
             first_x, first_y = points_list[0]
             self.actual_limits = AxisLimits()
             self.drawn_limits = AxisLimits()
@@ -430,7 +479,7 @@ class PlotManager(object):
                 lim.ymax = y
 
         is_outside = lim.xmin < drawn.xmin or lim.xmax > drawn.xmax or lim.ymin < drawn.ymin or lim.ymax > drawn.ymax
-        if is_outside and lim.xmin != lim.xmax and lim.ymin != lim.ymax:
+        if first_draw or (is_outside and lim.xmin != lim.xmax and lim.ymin != lim.ymax):
             
             # expand drawn limits to surpass actual
             dx = lim.xmax - lim.xmin
@@ -442,8 +491,15 @@ class PlotManager(object):
             drawn.ymin = lim.ymin - dy * ratio
             drawn.ymax = lim.ymax + dy * ratio
 
-            self.axes.set_xlim(drawn.xmin, drawn.xmax)
-            self.axes.set_ylim(drawn.ymin, drawn.ymax)
+            if drawn.xmin == drawn.xmax:
+                self.axes.set_xlim(drawn.xmin - 1e-1, drawn.xmax + 1e-1)
+            else:
+                self.axes.set_xlim(drawn.xmin, drawn.xmax)
+    
+            if drawn.ymin == drawn.ymax:
+                self.axes.set_ylim(drawn.ymin - 1e-1, drawn.ymax + 1e-1)
+            else:
+                self.axes.set_ylim(drawn.ymin, drawn.ymax)
 
     def reset_temp_polys(self):
         'clear the invariant violation polygons (called once per iteration)'
@@ -455,7 +511,7 @@ class PlotManager(object):
         'add an invariant violation region'
 
         if self.settings.plot_mode != PlotSettings.PLOT_NONE:
-            verts = self.get_star_verts(star)
+            verts = star.get_star_verts()
             self.shapes.add_inv_vio_poly(verts)
             self.shapes.inv_vio_star = star
             self.update_axis_limits(verts)
@@ -490,26 +546,6 @@ class PlotManager(object):
 
             self.shapes = DrawnShapes(self.axes, self)
 
-    def cache_star_verts(self, star):
-        '''if plotting, compute this star's verts and store them in the star object'''
-
-        if self.settings.plot_mode != PlotSettings.PLOT_NONE:
-            star.verts = self.get_star_verts(star)
-
-    def get_star_verts(self, star):
-        'get the verticies of the polygon projection of the star'
-
-        xdim = self.settings.xdim
-        ydim = self.settings.ydim
-
-        pts = find_star_boundaries(star, self.settings.plot_vecs)
-        verts = [[pt[xdim], pt[ydim]] for pt in pts]
-
-        # wrap polygon back to first point
-        verts.append(verts[0])
-
-        return verts
-
     def del_parent_successors(self, parent):
         '''stop plotting a parent's's sucessors'''
 
@@ -538,9 +574,9 @@ class PlotManager(object):
             if self.draw_cur_step % self.draw_stride == 0:
                 skipped_plot = False
 
-                verts = self.get_star_verts(state.star)
+                verts = state.star.verts()
                 self.update_axis_limits(verts)
-                self.shapes.set_cur_poly(verts)
+                self.shapes.set_cur_state(verts)
             
                 # possibly thin out the reachable set of states
                 max_polys = self.settings.max_shown_polys
@@ -587,7 +623,7 @@ class PlotManager(object):
                     self.interactive.paused = True
 
                 if is_finished_func():
-                    self.shapes.cur_poly.set_visible(False)
+                    #self.shapes.set_cur_state(None)
                     self.shapes.inv_vio_polys.set_visible(False)
 
                 Timers.toc("frame")
@@ -623,11 +659,13 @@ class PlotManager(object):
             while not is_finished_func():
                 yield False
 
-            # redraw one more (will clear cur_poly)
-            yield False
+            # redraw one more (will clear cur_state)
+            #yield False
         
             Timers.toc("total")
-            Timers.print_time_stats()
+            
+            LpInstance.print_stats()
+            Timers.print_stats()
 
         def next_pressed(_):
             'event function for next button press'
@@ -641,10 +679,10 @@ class PlotManager(object):
         iterator = anim_iterator
 
         if self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
-            if self.settings.video_frames is None:
-                print "Warning: PLOT_VIDEO requires explicitly setting plot_settings.video_frames (default is 100)."
+            if self.settings.video.frames is None:
+                print "Warning: PLOT_VIDEO requires explicitly setting plot_settings.video.frames (default is 100)."
             else:
-                iterator = self.settings.video_frames
+                iterator = self.settings.video.frames
 
         if self.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
             # shrink plot, add buttons
@@ -670,9 +708,9 @@ class PlotManager(object):
                 self.save_video(self._anim)
             elif self.settings.plot_mode == PlotSettings.PLOT_IMAGE:
                 self.save_image()
-            else:            
+            else:         
                 plt.show()
-
+    
     def save_image(self):
         'save an image file'
 
@@ -681,14 +719,14 @@ class PlotManager(object):
         filename = self.settings.filename
 
         if filename is None:
-            filename = "hylaa_plot.png"
+            filename = "plot.png"
 
         plt.savefig(filename, bbox_inches='tight') 
-        
+
     def save_video(self, func_anim_obj):
         'save a video file of the given FuncAnimation object'
         
-        filename = self.settings.video_filename
+        filename = self.settings.filename
 
         if filename is None:
             filename = "video.avi" # mp4 is also possible
@@ -700,7 +738,7 @@ class PlotManager(object):
         elif self.settings.min_frame_time > 0:
             fps = 1.0 / self.settings.min_frame_time
 
-        codec = self.settings.video_codec
+        codec = self.settings.video.codec
 
         print "Saving {} at {:.2f} fps using ffmpeg with codec '{}'.".format(
             filename, fps, codec)
@@ -729,21 +767,7 @@ def debug_plot_star(star, xdim=0, ydim=1, col='k-', num_angles=256, lw=1):
     to call plt.show() afterwards
     '''
 
-    plot_vecs = []
-    step = 2.0 * math.pi / num_angles
-
-    for theta in np.arange(0.0, 2.0*math.pi, step):
-        x = math.cos(theta)
-        y = math.sin(theta)
-
-        vec = np.array([0.0] * star.num_dims)
-        vec[xdim] = x
-        vec[ydim] = y
-
-        plot_vecs.append(vec)
-
-    pts = find_star_boundaries(star, plot_vecs)
-    verts = [[pt[xdim], pt[ydim]] for pt in pts]
+    verts = star.verts()
 
     # wrap polygon back to first point
     verts.append(verts[0])
