@@ -64,7 +64,7 @@ class HyperRectangle(object):
         center = self.center()
         num_dims = len(self.dims)
         rv = []
-
+        
         for index in xrange(num_dims):
             # min edge in dimension d
             pt = list(center)
@@ -96,7 +96,7 @@ class HyperRectangle(object):
 
         for it in xrange(max_iterator):
             point = []
-
+            
             # construct point
             for d in xrange(num_dims):
                 if is_flat[d]:
