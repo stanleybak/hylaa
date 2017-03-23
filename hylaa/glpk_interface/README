@@ -1,0 +1,7 @@
+This a custom C++ interface to GLPK for use in Hylaa. It interfaces with the Hylaa python code using ctypes.
+
+This was done for efficiency. cvxopt did not support the warm-start LP interface to glpk, and python-glpk was excessively slow in setting up the LP.
+
+The code is based off of glpk-4.60 (newer than what's available in the ubuntu packages at the time of this writing), so you may need to install that from source: https://ftp.gnu.org/gnu/glpk/
+
+
