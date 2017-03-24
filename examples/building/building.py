@@ -201,11 +201,19 @@ def define_init_states(ha):
 def define_settings():
     'get the hylaa settings object'
     plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_NONE
     plot_settings.xdim = 48
     plot_settings.ydim = 24
+    
+    plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
+    #plot_settings.filename = 'hylaa_building_1sec.png'
+    plot_settings.num_angles = 3
+    plot_settings.max_shown_polys = 2048
+    plot_settings.label.y_label = '$x_{25}$'
+    plot_settings.label.x_label = 'Time'
+    plot_settings.label.title = 'Building'
+    plot_settings.label.axes_limits = (0, 1, -0.007, 0.006)
 
-    settings = HylaaSettings(step=0.005, max_time=20.0, plot_settings=plot_settings)
+    settings = HylaaSettings(step=0.002, max_time=1.0, plot_settings=plot_settings)
 
     return settings
 

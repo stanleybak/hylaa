@@ -21,6 +21,53 @@ def make_settings(step_time):
 
     return sett
 
+def compute_gbt_series(a_matrix, b_matrix, step_size, tol=1e-12, max_val=1e100, max_terms=2500, stdout=False):
+    '''
+    compute the transpose of G(A, h) * B, where G(A, h) is computed using the series expansion:
+
+    G(A,h) = (1/1!)*I*h + (1/2!)*A*h^2 + (1/3!)*A*A*h^3 + ...
+
+    This has issues if A^n gets too large (floating-point error)
+    '''
+
+    num_vars = a_matrix.shape[0]
+
+    h = float(step_size) # h
+    ah_matrix = np.array(a_matrix, dtype=float) * h
+    term = np.array(np.identity(num_vars), dtype=float) * h
+
+    g_sum = term # (1/1!)*I*h
+    term_num = 2
+
+    while True:
+        term = np.dot(term, ah_matrix) # h * (h*A)^{term_num - 1}
+        term /= term_num # 1 / (term_num)!
+
+        delta = max(abs(term.max()), abs(term.min()))
+        g_sum += term
+
+        if stdout:
+            print "Computing G(A, h) - Term #{}, delta = {}".format(term_num, delta)
+
+        if delta > max_val:
+            raise RuntimeError(('Computing G(A, h) * U exceeded limit value of {} after ' + \
+                '{} terms (value = {}). Consider reducing time step.').format(max_val, term_num, delta))
+
+        if delta < tol:
+            break
+
+        if term_num >= max_terms:
+            raise RuntimeError(('Computing G(A, h) * U did not converge within a tolerance of {} after ' + \
+                '{} terms. Delta of last term was {}').format(tol, max_terms, delta))
+
+        term_num += 1
+
+    if stdout:
+        print "G(A, g) matrix = {}".format(g_sum)
+        print "G(A, g) * B = {}".format(np.dot(g_sum, b_matrix))
+
+    return np.array(np.dot(g_sum, b_matrix).transpose(), dtype=float)
+
 class TestSimUtil(unittest.TestCase):
     'Unit tests object'
 
@@ -227,7 +274,7 @@ class TestSimUtil(unittest.TestCase):
             for x in xrange(2):
                 for y in xrange(2):
                     self.assertAlmostEqual(vals[0][x][y], vals[1][x][y], places=5)
-                    
+
     def test_sim_step_one(self):
         '''test simulating the harmonic oscillator requesting step 1 first'''
 
@@ -264,6 +311,26 @@ class TestSimUtil(unittest.TestCase):
 
             self.assertAlmostEqual(vals[0][1], vec2[0])
             self.assertAlmostEqual(vals[1][1], vec2[1])
+
+    def test_input_sim(self):
+        '''test the computation of G(A, h) * B using simulations'''
+
+        # x' = y + u1 + 2*u3,   y' = -x + 0.5*u2 + u3
+        a_matrix = np.array([[0.0, 1.0], [-1.0, 0.0]], dtype=float)
+        c_vector = [1.0, 0.0]
+        b_matrix = np.array([[1.0, 0.0, 2.0], [0.0, 0.5, 1.0]], dtype=float)
+        step_time = 0.1
+
+        bundle = SimulationBundle(a_matrix, c_vector, make_settings(step_time))
+
+        # make sure it matches the series computation
+        series_result = compute_gbt_series(a_matrix, b_matrix, step_time)
+        sim_result = bundle.compute_gbt(b_matrix)
+
+        self.assertEquals(sim_result.shape[0], series_result.shape[0])
+        self.assertEquals(sim_result.shape[1], series_result.shape[1])
+
+        assert_array_almost_equal(sim_result, series_result)
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,17 +1,15 @@
 '''
-Harmonic oscialltor with inputs, with dynamics:
-
-x' == y + [-0.5, 0.5]
-y' == -x + [-0.5, 0.5]
-
-from (-5, 0) for reach_time = pi
+Created by Hyst v1.3
+Hybrid Automaton in Hylaa
+Converted from file: /home/stan/Desktop/repositories/hylaa/examples/input_oscillator/osc_spaceex.xml
+Command Line arguments: -tool hylaa "" -output /home/stan/Desktop/repositories/hylaa/examples/input_oscillator/osc_spaceex_converted.py -input /home/stan/Desktop/repositories/hylaa/examples/input_oscillator/osc_spaceex.xml /home/stan/Desktop/repositories/hylaa/examples/input_oscillator/osc_spaceex.cfg
 '''
 
 import numpy as np
-from hylaa.hybrid_automaton import LinearHybridAutomaton, HyperRectangle, LinearConstraint
+from hylaa.hybrid_automaton import LinearHybridAutomaton, LinearConstraint
 from hylaa.engine import HylaaSettings
 from hylaa.engine import HylaaEngine
-from hylaa.plotutil import PlotSettings
+from hylaa.containers import PlotSettings, SimulationSettings
 
 def define_ha():
     '''make the hybrid automaton and return it'''
@@ -19,56 +17,51 @@ def define_ha():
     ha = LinearHybridAutomaton()
     ha.variables = ["x", "y"]
 
+    # input variable order: [u1, u2]
+
     loc1 = ha.new_mode('loc1')
-    a_matrix = np.array([[0, 1], [-1, 0]], dtype=float)
-    c_vector = np.array([1.0, 0.0], dtype=float)
+    a_matrix = np.array([ \
+        [0, 1], \
+        [-1, 0], \
+        ], dtype=float)
+    c_vector = np.array([0, 0], dtype=float)
     loc1.set_dynamics(a_matrix, c_vector)
-
-    u_constraints_a = np.array([[1], [-1]], dtype=float)
-    u_constraints_b = np.array([0.5, 0.5], dtype=float)
-    b_matrix = np.array([[1.0], [0.0]], dtype=float)
+    
+    # -0.5 <= u1
+    # u1 <= 0.5
+    # -0.5 <= u2
+    # u2 <= 0.5
+    u_constraints_a = np.array([[-1, 0], [1, 0], [0, -1], [0, 1]], dtype=float)
+    u_constraints_b = np.array([0.5, 0.5, 0.5, 0.5], dtype=float)
+    b_matrix = np.array([[1, 0], [0, 1]], dtype=float)
     loc1.set_inputs(u_constraints_a, u_constraints_b, b_matrix)
-
-    error_loc = ha.new_mode('error')
-    error_loc.is_error = True
-
-    trans = ha.new_transition(loc1, error_loc)
-    trans.condition_list.append(LinearConstraint([-1, 0], -6.0)) # x >= 6.0
 
     return ha
 
 def define_init_states(ha):
-    '''returns a list of (mode, HyperRectangle)'''
+    '''returns a list of (mode, list(LinearConstraint])'''
     # Variable ordering: [x, y]
     rv = []
-
-    r = HyperRectangle([(-5, -5), (0, 0)])
-    #r = HyperRectangle([(0, 0), (0, 0)])
-    rv.append((ha.modes['loc1'], r))
-
+    
+    constraints = []
+    constraints.append(LinearConstraint([-1, 0], 5)) # -5.0 <= x
+    constraints.append(LinearConstraint([1, 0], -5)) # x <= -5.0
+    constraints.append(LinearConstraint([0, -1], 0)) # 0.0 <= y
+    constraints.append(LinearConstraint([0, 1], 0)) # y <= 0.0
+    rv.append((ha.modes['loc1'], constraints))
+    
     return rv
+
 
 def define_settings():
     'get the hylaa settings object'
     plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_FULL
+    plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
     plot_settings.xdim = 0
     plot_settings.ydim = 1
 
-    #plot_settings.make_video('harmonic_osc_inputs.avi', 45, 50)
-    #return HylaaSettings(step=0.001, max_time=6, plot_settings=plot_settings)
-    settings = HylaaSettings(step=0.5, max_time=3.5, plot_settings=plot_settings)
+    settings = HylaaSettings(step=0.1, max_time=3.2, plot_settings=plot_settings)
 
-    #settings = HylaaSettings(step=0.001, max_time=5, plot_settings=plot_settings)
-    # 5.5 secs (5.1 in minimize 2600 calls)
-    # optimized: 0.46 secs; Guard_opt_data.update_from_sim Time (2522 calls): 0.30 sec (65.5%)
-    
-    settings.print_step_times = False
-    settings.opt_decompose_lp = False
-    settings.opt_warm_start_lp = False
-    
-    settings.simulation.sparse=True
-    
     return settings
 
 def run_hylaa(settings):
@@ -82,5 +75,5 @@ def run_hylaa(settings):
     return engine.result
 
 if __name__ == '__main__':
-    settings = define_settings()
-    run_hylaa(settings)
+    run_hylaa(define_settings())
+

@@ -1,5 +1,5 @@
 '''
-Simulation utility functions for Hylaa. 
+Simulation Utility functions for Hylaa
 This is a version which performs simulations at fixed time steps.
 
 Stanley Bak
@@ -26,7 +26,7 @@ class DyData(Freezable):
     'a container for dynamics-related data in a serializable (picklable) format'
 
     def __init__(self, a_matrix, b_vector, sparse):
-        ''' a' = ax + b_vec, b_vec can be null'''
+        '''a' = ax + b_vec, b_vec can be null'''
 
         assert isinstance(a_matrix, csr_matrix)
 
@@ -41,7 +41,7 @@ class DyData(Freezable):
         self.num_dims = a_matrix.shape[0]
 
         # constructed from sparse matrix only after make_*_func() is called
-        self.dense_a_matrix = None 
+        self.dense_a_matrix = None
         self.dense_b_vector = None
 
         # sometimes used with dense matrix
@@ -97,7 +97,7 @@ class DyData(Freezable):
         return der_func
 
     def make_jac_func(self):
-        '''get the function which returns the jacobian, for use in ODEINT. 
+        '''get the function which returns the jacobian, for use in ODEINT.
 
         This returns a tuple, (jac_func, max_upper, max_lower) where the second two are params for banded jacobians
         if self.sparse, returns (None, None, None)
@@ -247,14 +247,14 @@ class SimulationBundle(Freezable):
 
         # create the linear (nonaffine) dynamics
         linear_dy = DyData(self.dy_data.sparse_a_matrix, None, self.settings.sparse)
-        sim_start = time.time()
+        sim_start_time = time.time()
         args = []
 
         for dim in xrange(self.num_dims):
-            args.append([sim_start, start_list[dim], steps, include_step_zero, linear_dy, self.settings])
+            args.append([sim_start_time, start_list[dim], steps, include_step_zero, linear_dy, self.settings])
 
         if self.settings.stdout:
-            SHARED_NEXT_PRINT.value = sim_start + self.settings.print_interval_secs
+            SHARED_NEXT_PRINT.value = sim_start_time + self.settings.print_interval_secs
             SHARED_COMPLETED_SIMS.value = 0
 
             mb_per_step = np.dtype(float).itemsize * self.num_dims * self.num_dims / 1024.0 / 1024.0
@@ -267,7 +267,7 @@ class SimulationBundle(Freezable):
             result = [parallel_sim_func(a) for a in args]
 
         if self.settings.stdout:
-            print "Total Simulation Time: {:.2f} secs".format(time.time() - sim_start)
+            print "Total Simulation Time: {:.2f} secs".format(time.time() - sim_start_time)
 
         Timers.toc("simulation")
 
@@ -292,7 +292,7 @@ class SimulationBundle(Freezable):
 
     def presimulate(self, desired_step):
         '''
-        as an optimization, run simulations up to some bound in preperation for many consecutive calls to 
+        as an optimization, run simulations up to some bound in preperation for many consecutive calls to
         get_vecs_origin_at_step(). This may get truncated due to memory limits.
         '''
 
@@ -323,14 +323,14 @@ class SimulationBundle(Freezable):
 
     def get_vecs_origin_at_step(self, step, max_steps):
         '''
-        get the exact state of the basis vectors and origin simulation 
+        get the exact state of the basis vectors and origin simulation
         at a specific, absolute step number (multiply by self.size to get time)
 
         max_step is the maximum number of steps we'd ever want (optimization so we don't waste time simulating too far)
 
         returns a tuple (list_of_basis_vecs, origin_sim_list)
         '''
-        
+
         assert step <= max_steps
 
         Timers.tic("sim + overhead")
@@ -361,7 +361,7 @@ class SimulationBundle(Freezable):
             # and obey desired memory limits
             if num_new_steps > self.max_steps_in_mem:
                 num_new_steps = self.max_steps_in_mem
-                
+
             # always advance by at least one step
             num_new_steps = max(1, num_new_steps)
 
@@ -378,7 +378,7 @@ class SimulationBundle(Freezable):
                 self.vec_values = self.simulate_vecs(start_list, num_new_steps)
             elif self.settings.sim_mode == SimulationSettings.MATRIX_EXP:
                 self.vec_values = self.matrix_exp_vecs(start_list, num_new_steps)
- 
+
         Timers.toc("sim + overhead")
 
         return (self.vec_values[rel_step], self.origin_sim[rel_step])
@@ -386,7 +386,7 @@ class SimulationBundle(Freezable):
     def matrix_exp_vecs(self, start_list, num_steps):
         'use the one-step matrix exp strategy to get the next value of the basis vectors and origin simulation'
 
-        assert num_steps == 1, "sim_mode = MATRIX_EXP, so we expected to advance one step. Got {} steps.".format(num_steps)
+        assert num_steps == 1, "sim_mode == MATRIX_EXP so expected to advance 1 step but got {}".format(num_steps)
 
         # vec_values[-1] is the previous step's matrix
         cur_matrix = start_list
@@ -416,20 +416,38 @@ class SimulationBundle(Freezable):
         '''
 
         Timers.tic("input-effect simulation")
-
-        if b_matrix.shape[1] > 0:
-            raise RuntimeError("input-effect simulation unimplemented")
-
         assert b_matrix.shape[0] == self.num_dims
 
-        rv = np.zeros([b_matrix.shape[1], self.num_dims], dtype=float)
-        #times = [0.0, self.settings.step]
+        num_inputs = b_matrix.shape[1]
+        sim_start_time = time.time()
 
-        #for col_index in xrange(b_matrix.shape[1]):
-            # for every column index of inputs, create an input file
-            #b_col = b_matrix[:, col_index]
-            #start = origin
-            #res = self.sim_one(b_col, times)[1:]
+        args = []
+        origin = np.zeros((self.num_dims), dtype=float)
+
+        for dim in xrange(num_inputs):
+            b_col = csr_matrix(b_matrix[:, dim])
+            input_dy_data = DyData(self.dy_data.sparse_a_matrix, b_col, self.settings.sparse)
+
+            args.append([sim_start_time, origin, 1, False, input_dy_data, self.settings])
+
+        if self.settings.stdout:
+            SHARED_NEXT_PRINT.value = sim_start_time + self.settings.print_interval_secs
+            SHARED_COMPLETED_SIMS.value = 0
+
+        if self.process_pool is not None:
+            result = self.process_pool.map(parallel_sim_func, args)
+        else:
+            result = [parallel_sim_func(a) for a in args]
+
+        if self.settings.stdout:
+            print "Total Input Simulation Time: {:.2f} secs".format(time.time() - sim_start_time)
+
+        rv = np.zeros((num_inputs, self.num_dims), dtype=float)
+
+        for dim in xrange(num_inputs):
+            rv[dim, :] = result[dim][0]
+
+        Timers.toc("input-effect simulation")
 
         return rv
 
@@ -552,7 +570,7 @@ def parallel_sim_func(args):
 
 def raw_sim_one(start, steps, dy_data, settings, include_step_zero=False):
     '''
-    simulate from a single point at the given times 
+    simulate from a single point at the given times
 
     return an nparray of states at those times, possibly excluding time zero
     '''
@@ -565,7 +583,7 @@ def raw_sim_one(start, steps, dy_data, settings, include_step_zero=False):
     jac_func, max_upper, max_lower = dy_data.make_jac_func()
     sim_tol = settings.sim_tol
 
-    result = odeint(der_func, start, times, Dfun=jac_func, col_deriv=True, mxstep=9999999, 
+    result = odeint(der_func, start, times, Dfun=jac_func, col_deriv=True, mxstep=int(1e8),
                     mu=max_upper, ml=max_lower, atol=sim_tol, rtol=sim_tol)
 
     if not include_step_zero:

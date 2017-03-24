@@ -180,28 +180,16 @@ class LinearAutomatonMode(Freezable):
         G(A,h) = A^{-1}(e^{Ah} - I)
         -or-
         G(A,h) = (1/1!)*I*h + (1/2!)*A*h^2 + (1/3!)*A*A*h^3 + ...
+
+        The actual computation of this, however, is done using simulations.
         '''
 
         assert self.sim_settings is not None, "get_sim_bundle() must be called before get_gb_t()"
 
-        rv = None
-
-        if self._gbt_matrix is not None:
-            rv = self._gbt_matrix
-        else:
-            Timers.tic("Computing G(A, h) * U")
-
+        if self._gbt_matrix is None:
             self._gbt_matrix = self._sim_bundle.compute_gbt(self.b_matrix)
-            # compute_gbt_series(self.a_matrix, self.b_matrix, self.sim_settings.step)
-            rv = self._gbt_matrix
 
-            #print "U = {}".format(self.b_matrix)
-            #print "G(A, g) * U matrix = {}".format(rv.transpose())
-            #print "(G(A, g) * U)^T matrix = {}".format(rv)
-
-            Timers.toc("Computing G(A, h) * U")
-
-        return rv
+        return self._gbt_matrix
 
     def set_dynamics(self, a_matrix, c_vector=None):
         'sets the non-inputs dynamics. c_vector can be None, in which case zeros are used'
@@ -227,14 +215,14 @@ class LinearAutomatonMode(Freezable):
         'sets the input dynamics. B matrix can be None, in which case identity matrix is used.'
 
         assert self.a_matrix is not None, 'dynamics should be set before inputs'
-        
+
         if b_matrix is None:
             b_matrix = np.identity(len(self.parent.variables))
 
         assert isinstance(b_matrix, np.ndarray)
         assert isinstance(u_constraints_a, np.ndarray)
         assert isinstance(u_constraints_b, np.ndarray)
-        
+
         assert len(b_matrix.shape) == 2, "input B matrix should be 2-d"
         assert len(u_constraints_a.shape) == 2
         assert len(u_constraints_b.shape) == 1
@@ -246,7 +234,7 @@ class LinearAutomatonMode(Freezable):
         self.num_inputs = b_matrix.shape[1]
 
         assert u_constraints_a.shape[0] == u_constraints_b.shape[0], \
-            "input constraints a-matrix and b-vector must have the same number of rows" 
+            "input constraints a-matrix and b-vector must have the same number of rows"
         assert u_constraints_a.shape[1] == self.num_inputs, ("the number of columns in the input constraint " + \
             "a-matrix ({}) must equal the number of variables in the input B matrix ({})").format( \
             u_constraints_a.shape[1], self.num_inputs)
@@ -257,7 +245,7 @@ class LinearAutomatonMode(Freezable):
         self.u_constraints_b = u_constraints_b
 
     def __str__(self):
-        extra = ' (error mode)' if self.is_error else '' 
+        extra = ' (error mode)' if self.is_error else ''
 
         return '[LinearAutomatonMode: ' + self.name + extra + ']'
 

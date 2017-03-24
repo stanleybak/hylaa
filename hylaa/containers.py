@@ -39,7 +39,7 @@ class HylaaSettings(Freezable):
         self.opt_decompose_lp = True # use the Minkowski sum decomposition optimization (for systems with inputs)
         self.opt_warm_start_lp = True # reuse the LP instances between guard checks (warm-start LP)
 
-        self.counter_example_filename = "test_counterexample.py"
+        self.counter_example_filename = "counterexample.py"
         self.simulation = SimulationSettings(step)
 
         self.freeze_attrs()
@@ -144,9 +144,10 @@ class LabelSettings(Freezable):
         self.title_size = 32
         self.label_size = 24
         self.tick_label_size = 18
-        
+        self.axes_limits = None # fixed axes limits; a 4-tuple (xmin, xmax, ymin, ymax) or None for auto
+
         self.freeze_attrs()
-        
+
     def big(self):
         'increase sizes of labels'
 

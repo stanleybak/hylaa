@@ -331,10 +331,14 @@ class GuardOptData(Freezable):
             diff_iterations = combined_lpi.total_iterations() - before_iterations
 
             print "Exact LP was feasible at step {}! Final LP iterations = {}".format(self.total_steps, diff_iterations)
-            print "Writing counter-example to {}".format(ce_filename)
 
-            export_counter_example(ce_filename, self.star.mode, result, self.star.sim_center, dims, \
-                self.star.settings.step, self.total_steps, constraints[0])
+            if ce_filename is not None:
+                print "Writing counter-example to {}".format(ce_filename)
+
+                export_counter_example(ce_filename, self.star.mode, result, self.star.sim_center, dims, \
+                    self.star.settings.step, self.total_steps, constraints[0])
+            else:
+                print "Counter-example file disabled in settings; skipping"
         else:
             rv = None
 

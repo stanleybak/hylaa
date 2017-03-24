@@ -145,7 +145,7 @@ class DrawnShapes(Freezable):
             _, edge_col = self.get_mode_colors(mode_name)
             edge_col = darker(edge_col)
 
-            polys = collections.PolyCollection([], lw=4, animated=True, 
+            polys = collections.PolyCollection([], lw=4, animated=True,
                                                edgecolor=edge_col, facecolor='none')
             self.axes.add_collection(polys)
             self.aggregation_mode_to_polys[mode_name] = polys
@@ -162,7 +162,7 @@ class DrawnShapes(Freezable):
 
         if polys is None:
             face_col, edge_col = self.get_mode_colors(mode_name)
-            polys = collections.PolyCollection([], lw=2, animated=True, alpha=0.3, 
+            polys = collections.PolyCollection([], lw=2, animated=True, alpha=0.3,
                                                edgecolor=edge_col, facecolor=face_col)
             self.axes.add_collection(polys)
             self.waiting_list_mode_to_polys[mode_name] = polys
@@ -402,7 +402,7 @@ class PlotManager(object):
         rcParams['path.simplify'] = False
 
         self.engine = hylaa_engine
-        self.settings = plot_settings 
+        self.settings = plot_settings
 
         self.fig = None
         self.axes = None
@@ -480,7 +480,7 @@ class PlotManager(object):
 
         is_outside = lim.xmin < drawn.xmin or lim.xmax > drawn.xmax or lim.ymin < drawn.ymin or lim.ymax > drawn.ymax
         if first_draw or (is_outside and lim.xmin != lim.xmax and lim.ymin != lim.ymax):
-            
+
             # expand drawn limits to surpass actual
             dx = lim.xmax - lim.xmin
             dy = lim.ymax - lim.ymin
@@ -495,7 +495,7 @@ class PlotManager(object):
                 self.axes.set_xlim(drawn.xmin - 1e-1, drawn.xmax + 1e-1)
             else:
                 self.axes.set_xlim(drawn.xmin, drawn.xmax)
-    
+
             if drawn.ymin == drawn.ymax:
                 self.axes.set_ylim(drawn.ymin - 1e-1, drawn.ymax + 1e-1)
             else:
@@ -514,10 +514,12 @@ class PlotManager(object):
             verts = star.get_star_verts()
             self.shapes.add_inv_vio_poly(verts)
             self.shapes.inv_vio_star = star
-            self.update_axis_limits(verts)
+
+            if self.settings.label.axes_limits is None:
+                self.update_axis_limits(verts)
 
     def create_plot(self):
-        'create the plot' 
+        'create the plot'
 
         if self.settings.plot_mode != PlotSettings.PLOT_NONE:
             self.fig, self.axes = plt.subplots(nrows=1, figsize=self.settings.plot_size)
@@ -533,6 +535,13 @@ class PlotManager(object):
             self.axes.set_xlabel(x_label, fontsize=self.settings.label.label_size)
             self.axes.set_ylabel(y_label, fontsize=self.settings.label.label_size)
             self.axes.set_title(title, fontsize=self.settings.label.title_size)
+
+            if self.settings.label.axes_limits is not None:
+                # hardcoded axes limits
+                xmin, xmax, ymin, ymax = self.settings.label.axes_limits
+
+                self.axes.set_xlim(xmin, xmax)
+                self.axes.set_ylim(ymin, ymax)
 
             if self.settings.grid:
                 self.axes.grid(True)
@@ -575,9 +584,11 @@ class PlotManager(object):
                 skipped_plot = False
 
                 verts = state.star.verts()
-                self.update_axis_limits(verts)
                 self.shapes.set_cur_state(verts)
-            
+
+                if self.settings.label.axes_limits is None:
+                    self.update_axis_limits(verts)
+
                 # possibly thin out the reachable set of states
                 max_polys = self.settings.max_shown_polys
 
@@ -593,9 +604,9 @@ class PlotManager(object):
             self.draw_cur_step += 1
 
             Timers.toc("plot_current_state()")
-            
+
         return skipped_plot
- 
+
     def compute_and_animate(self, step_func, is_finished_func):
         'do the computation, plotting during the process'
 
@@ -647,7 +658,7 @@ class PlotManager(object):
             #    self.drew_first_frame = True
 
             #    print "drew first frame"
-            rv += [self.axes.xaxis, self.axes.yaxis]    
+            rv += [self.axes.xaxis, self.axes.yaxis]
 
             return rv
 
