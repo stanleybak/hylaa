@@ -8,14 +8,14 @@ Utility functions/classes for star.py
 import itertools
 
 import numpy as np
-from hylaa.hybrid_automaton import LinearAutomatonMode
+from hylaa.hybrid_automaton import LinearAutomatonMode, LinearAutomatonTransition
 from hylaa.util import Freezable
 from hylaa.glpk_interface import LpInstance
 
 class StarParent(object):
     '''
     The parent object of a star. Used to track predecessors. This is a parent class for
-    the more specific parent types: 
+    the more specific parent types:
     InitParent, ContinuousPostParent, DiscretePostParent, and AggregationParent
     '''
 
@@ -93,23 +93,24 @@ class GuardOptData(Freezable):
         self.total_steps = 0
         self.freeze_attrs()
 
-    def make_combined_lpi(self, automaton_transition, skip_inputs=False):
+    def make_combined_lpi(self, automaton_transition=None, skip_inputs=False):
         'create one lpi per guard, which will have both the star and input effects, as well as the guard condition'
 
         lpi = LpInstance(self.star.num_dims, self.star.num_dims)
         lpi.update_basis_matrix(self.star.basis_matrix)
 
-        for i in xrange(len(self.star.b_list)):
-            lpi.add_basis_constraint(self.star.a_list[i], self.star.b_list[i])
+        for lc in self.star.constraint_list:
+            lpi.add_basis_constraint(lc.vector, lc.value)
 
-        # add standard basis guard constraints (if it's more than one condition)
-        for lc in automaton_transition.condition_list:
-            lpi.add_standard_constraint(lc.vector, lc.value)
+        # add standard basis guard constraints
+        if automaton_transition is not None:
+            for lc in automaton_transition.condition_list:
+                lpi.add_standard_constraint(lc.vector, lc.value)
 
         # add any input star constraints
         mode = self.star.mode
 
-        if not skip_inputs:
+        if not skip_inputs and self.star.input_stars is not None:
             for input_star in self.star.input_stars:
                 lpi.add_input_star(mode.u_constraints_a_t, mode.u_constraints_b, input_star.input_basis_matrix)
 
@@ -124,14 +125,14 @@ class GuardOptData(Freezable):
         rv = LpInstance(self.star.num_dims, self.star.num_dims)
         rv.update_basis_matrix(basis_matrix)
 
-        for i in xrange(len(self.star.b_list)):
-            rv.add_basis_constraint(self.star.a_list[i], self.star.b_list[i])
+        for lc in self.star.constraint_list:
+            rv.add_basis_constraint(lc.vector, lc.value)
 
         return rv
 
     def make_input_lpi(self, basis_matrix=None):
         'make the lpi object for the input star'
-        
+
         rv = None
 
         if self.star.mode.num_inputs > 0:
@@ -139,7 +140,7 @@ class GuardOptData(Freezable):
 
             if basis_matrix is None:
                 basis_matrix = np.zeros((self.star.mode.num_inputs, self.star.num_dims))
-            
+
             rv.update_basis_matrix(basis_matrix)
 
             for i in xrange(self.star.mode.u_constraints_b.shape[0]):
@@ -158,7 +159,7 @@ class GuardOptData(Freezable):
             if self.star.settings.opt_warm_start_lp:
                 for guard_index in xrange(len(mode.transitions)):
                     combined_lpi = self.combined_lpis[guard_index]
-                    combined_lpi.add_input_star(mode.u_constraints_a_t, mode.u_constraints_b, 
+                    combined_lpi.add_input_star(mode.u_constraints_a_t, mode.u_constraints_b,
                                                 input_star.input_basis_matrix)
 
             # update no-input and input lpis
@@ -205,11 +206,11 @@ class GuardOptData(Freezable):
                                 input_lpi.get_row_statuses(rows)
                                 input_lpi.get_col_statuses(cols)
 
-                                total_basic = sum([1 if stat == 1 else 0 for stat in 
+                                total_basic = sum([1 if stat == 1 else 0 for stat in
                                                    itertools.chain(rows[-numcons:], cols[-numi:])])
 
                                 if total_basic != numcons:
-                                    # in certain cases at certain times, the input value doesn't affect 
+                                    # in certain cases at certain times, the input value doesn't affect
                                     # the variables we're optimizing (the input effect is orthogonal)
                                     # in that case, the LP has multiple possible solutions, and can choose to make
                                     # both input constraints basic variables... we shouldn't try to reuse the solution
@@ -242,7 +243,7 @@ class GuardOptData(Freezable):
             no_input_basis_matrix = self.star.basis_matrix
 
             for condition_index in xrange(len(condition_list)):
-                if not self.star.settings.opt_warm_start_lp: 
+                if not self.star.settings.opt_warm_start_lp:
                     no_input_lpi = self.make_no_input_lpi(basis_matrix=no_input_basis_matrix)
                 else:
                     no_input_lpi = self.no_input_lpis[guard_index][condition_index]
@@ -256,7 +257,7 @@ class GuardOptData(Freezable):
                 accumulated_min = np.dot(result, lc.vector)
 
                 # add center term
-                accumulated_min += np.dot(self.star.sim_center, lc.vector)
+                accumulated_min += np.dot(self.star.center, lc.vector)
 
                 # add input term
                 accumulated_min += self.guard_constraint_min_list[guard_index][condition_index]
@@ -272,7 +273,7 @@ class GuardOptData(Freezable):
             rv = self.get_guard_intersection_exact(guard_index)
 
         return rv
-        
+
     def get_guard_intersection_exact(self, guard_index):
         '''Does the star intersect the guard with the given index?
         This one uses the combined lpi to do the check (slow).
@@ -290,14 +291,14 @@ class GuardOptData(Freezable):
             # update combined_lpi to have the current basis matrix
             combined_lpi.update_basis_matrix(self.star.basis_matrix)
 
-        # update combined_lpi to account for sim_center
+        # update combined_lpi to account for star.center
         constraints = self.star.mode.transitions[guard_index].condition_list
         constraint_vals = np.zeros(len(constraints))
 
         for i in xrange(len(constraints)):
             lc = constraints[i]
-            sim_value = np.dot(self.star.sim_center, lc.vector)
-            
+            sim_value = np.dot(self.star.center, lc.vector)
+
             constraint_vals[i] = lc.value - sim_value
 
             combined_lpi.set_standard_constraint_values(constraint_vals)
@@ -309,7 +310,7 @@ class GuardOptData(Freezable):
             self.solved_full_lp = True
 
             cols = np.array([0] * (dims * 2), dtype=np.dtype('int8'))
-            rows = np.array([0] * (dims + len(self.star.b_list)), dtype=np.dtype('int8'))
+            rows = np.array([0] * (dims + len(self.star.constraint_list)), dtype=np.dtype('int8'))
             self.no_input_lpis[guard_index][0].get_row_statuses(rows)
             self.no_input_lpis[guard_index][0].get_col_statuses(cols)
             combined_lpi.set_standard_basis_statuses(rows, cols)
@@ -325,7 +326,7 @@ class GuardOptData(Freezable):
         if combined_lpi.minimize(opt_direction, result, error_if_infeasible=False):
             # lp was feasible
 
-            rv = result[0:dims] + self.star.sim_center
+            rv = result[0:dims] + self.star.center
 
             ce_filename = self.star.settings.counter_example_filename
             diff_iterations = combined_lpi.total_iterations() - before_iterations
@@ -335,19 +336,14 @@ class GuardOptData(Freezable):
             if ce_filename is not None:
                 print "Writing counter-example to {}".format(ce_filename)
 
-                export_counter_example(ce_filename, self.star.mode, result, self.star.sim_center, dims, \
+                export_counter_example(ce_filename, self.star.mode, result, self.star.center, dims, \
                     self.star.settings.step, self.total_steps, constraints[0])
             else:
                 print "Counter-example file disabled in settings; skipping"
         else:
             rv = None
 
-        #lpi.print_lp()
-        #print "\nExact LP Iterations = {}, result = {}\n".format(lpi.total_iterations() - before_it, rv)
-
         return rv
-
-
 
 # helper functions for adding constraints to a star
 def add_guard_to_star(star, guard_lc_list):
@@ -464,10 +460,10 @@ def array_str(nums):
 
     return '[{}]'.format(rv)
 
-def export_counter_example(filename, mode, result, sim_center, dims, step_size, total_steps, lc):
+def export_counter_example(filename, mode, result, center, dims, step_size, total_steps, lc):
     'export a counter-example to a file which can be run using the HyLAA trace generator'
 
-    end_point = result[0:dims] + sim_center
+    end_point = result[0:dims] + center
 
     with open(filename, 'w') as f:
 
@@ -483,7 +479,7 @@ def export_counter_example(filename, mode, result, sim_center, dims, step_size, 
         f.write('    # dynamics x\' = Ax + Bu + c\n')
         f.write('    a_matrix = np.array([\\\n')
 
-        for row in mode.a_matrix:  
+        for row in mode.a_matrix:
             f.write('        {}, \\\n'.format(array_str(row)))
 
         f.write('        ])\n\n')
@@ -515,11 +511,6 @@ def export_counter_example(filename, mode, result, sim_center, dims, step_size, 
                 cur_inputs = inputs[offset:offset+mode.num_inputs]
 
                 ordered_inputs.append([num for num in reversed(cur_inputs)])
-
-            #f.write("    inputs = [\n")
-            #for single_input in ordered_inputs:
-            #    f.write("        [{}],\n".format(", ".join([str(num) for num in single_input])))
-            #f.write("        ]\n\n")
 
             f.write("    inputs = []\n")
 

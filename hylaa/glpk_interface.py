@@ -17,7 +17,7 @@ class LpInstance(Freezable):
     'Linear programm instance using the hylaa python/c++ glpk interface'
 
     # static members (from hylaa_glpk.so)
-    _lib = None 
+    _lib = None
     _init_lp = None
     _del_lp = None
     _update_basis_matrix = None
@@ -31,7 +31,7 @@ class LpInstance(Freezable):
         'open the library (if not opened already) and initialize the static members'
 
         if LpInstance._lib is None:
-            lib_path = os.path.join(get_script_path(__file__), 'glpk_interface', 'hylaa_glpk.so') 
+            lib_path = os.path.join(get_script_path(__file__), 'glpk_interface', 'hylaa_glpk.so')
             LpInstance._lib = lib = ctypes.CDLL(lib_path)
 
             # void* initLp(int numStandardVars, int numBasisVars)
@@ -62,14 +62,14 @@ class LpInstance(Freezable):
             LpInstance._add_standard_constraint.argtypes = \
                 [ctypes.c_void_p, ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, ctypes.c_double]
 
-            # void addInputStar(void* lpdata, double* aMatrix, int aWidth, int aHeight, double* bVec, int bLen, 
+            # void addInputStar(void* lpdata, double* aMatrix, int aWidth, int aHeight, double* bVec, int bLen,
             #                   double* basisMatrix, int bmWidth, int bmHeight)
             LpInstance._add_input_star = lib.addInputStar
             LpInstance._add_input_star.restype = None
             LpInstance._add_input_star.argtypes = \
                 [ctypes.c_void_p,
                  ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, ctypes.c_int,
-                 ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, 
+                 ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int,
                  ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, ctypes.c_int]
 
             # int minimize(void* lpdata, double* direction, int dirLen, double* result, int resLen)
@@ -81,13 +81,13 @@ class LpInstance(Freezable):
             # void getColStatuses(void* lpdata, char* store, int storeLen)
             LpInstance._get_col_statuses = lib.getColStatuses
             LpInstance._get_col_statuses.restype = ctypes.c_int
-            LpInstance._get_col_statuses.argtypes = [ctypes.c_void_p, ndpointer(ctypes.c_int8, flags="C_CONTIGUOUS"), 
+            LpInstance._get_col_statuses.argtypes = [ctypes.c_void_p, ndpointer(ctypes.c_int8, flags="C_CONTIGUOUS"),
                                                      ctypes.c_int]
 
             # void getRowStatuses(void* lpdata, char* store, int storeLen)
             LpInstance._get_row_statuses = lib.getRowStatuses
             LpInstance._get_row_statuses.restype = ctypes.c_int
-            LpInstance._get_row_statuses.argtypes = [ctypes.c_void_p, ndpointer(ctypes.c_int8, flags="C_CONTIGUOUS"), 
+            LpInstance._get_row_statuses.argtypes = [ctypes.c_void_p, ndpointer(ctypes.c_int8, flags="C_CONTIGUOUS"),
                                                      ctypes.c_int]
 
             # void setLastInputStatuses(void* lpdata, char* rowStats, int rLen, char* colStats, int cLen)
@@ -269,7 +269,7 @@ class LpInstance(Freezable):
 
     def minimize(self, direction, result, error_if_infeasible=False):
         '''
-        add a constraint in the star's basis. this returns True of False, depending on
+        minimize a constraint in the star's basis. this returns True of False, depending on
         whether the LP was feasible. If it was feasible, the passed-in 'result' vector is assigned
         '''
 

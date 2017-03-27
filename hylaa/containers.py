@@ -34,8 +34,6 @@ class HylaaSettings(Freezable):
         self.print_output = True # print status and waiting list information to stdout
         self.print_step_times = True # print the times at each step
 
-        self.use_guard_strengthening = True # add the invariants of scucessor modes into the guards?
-
         self.opt_decompose_lp = True # use the Minkowski sum decomposition optimization (for systems with inputs)
         self.opt_warm_start_lp = True # reuse the LP instances between guard checks (warm-start LP)
 
@@ -79,7 +77,7 @@ class PlotSettings(Freezable):
 
         self.xdim = 0 # plotting x dimendion index
         self.ydim = 1 # plotting y dimension index
-        
+
         self.plot_size = (12, 8) # inches
         self.label = LabelSettings() # plot title, axis labels, font sizes, ect.
 
@@ -148,12 +146,12 @@ class LabelSettings(Freezable):
 
         self.freeze_attrs()
 
-    def big(self):
+    def big(self, size=30):
         'increase sizes of labels'
 
-        self.title_size = 30
-        self.label_size = 30
-        self.tick_label_size = 28
+        self.title_size = size
+        self.label_size = size
+        self.tick_label_size = int(0.9 * size)
 
     def turn_off(self):
         'turn off plot labels'

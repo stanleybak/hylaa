@@ -75,100 +75,21 @@ class HylaaEngine(object):
 
         return rv or (self.settings.stop_when_error_reachable and self.reached_error)
 
-    def plot_invariant_violation(self, star, invariant_lc):
-        '''
-        plot the invariant violation star
-        
-        star is the original (untrimmed) star
-        invariant_lc is a LinearConstraint (the invariant condition that was violated)
-        lp_result is the linear programming result point showing the violation
-        '''
-
-        if self.plotman.settings.plot_mode != PlotSettings.PLOT_NONE:
-            inv_vio_star = star.clone()
-
-            # add the inverse of the linear constraint as the invariant-violation
-            inv_lc = LinearConstraint([-v for v in invariant_lc.vector], -invariant_lc.value)
-            inv_vio_star.temp_constraints.append(inv_lc)
-
-            # re-check for feasibility after adding the constraint
-
-            if inv_vio_star.is_feasible() is not None:
-                self.plotman.add_inv_violation_star(inv_vio_star)
-
-    def trim_to_invariant(self, state):
-        '''
-        trim the passed-in state to the invariant.
-
-        returns true if the star is still feasible
-        '''
-
-        star = state.star
-        still_feasible = True
-        added_invariant_constraint = False
-
-        if len(state.mode.inv_list) > 0:
-            # if any of the invariant conditions are violated, we need to trim the star
-            standard_center = star.center()
-            num_dims = len(standard_center)
-
-            lp_constraints = star.to_lp_constraints()
-            c_list = []
-
-            for lin_con in state.mode.inv_list:
-                c_list.append([-ele for ele in lin_con.vector] + [0.0] * star.num_dims)
-
-            result_list = optutil.optimize_multi(Star.solver, c_list, lp_constraints)
-
-            for inv_index in xrange(len(result_list)):
-                lin_con = state.mode.inv_list[inv_index]
-                result = result_list[inv_index]
-                offset = result[0:num_dims]
-                point = standard_center + offset
-
-                val = np.dot(point, lin_con.vector)
-
-                if val > lin_con.value:
-                    # convert the condition to the star's basis
-
-                    # basis vectors (non-transpose) * standard_condition
-                    basis_influence = np.dot(star.basis_matrix, lin_con.vector)
-                    center_value = np.dot(standard_center, lin_con.vector)
-                    remaining_value = lin_con.value - center_value
-
-                    lc = LinearConstraint(basis_influence, remaining_value)
-
-                    self.plot_invariant_violation(star, lc)
-
-                    star.temp_constraints.append(lc)
-                    added_invariant_constraint = True
-                
-                    # we added a new constraint to the star, check if it's still feasible
-                    if not star.is_feasible():
-                        still_feasible = False
-                        break # don't check the remaining invariant linear conditions
-
-        if still_feasible:
-            # TODO: trim redundant temp constraints
-            pass
-
-        return still_feasible
-
     def check_guards(self, state):
         'check for discrete successors with the guards'
 
         assert state is not None
 
         for i in xrange(len(state.mode.transitions)):
-            result = state.star.guard_opt_data.get_guard_intersection(i)
-            
+            result = state.star.get_guard_intersection(i)
+
             if result is not None:
                 transition = state.star.mode.transitions[i]
                 successor_mode = transition.to_mode
 
                 if successor_mode.is_error:
                     self.reached_error = True
-        
+
                     if self.settings.stop_when_error_reachable:
                         raise FoundErrorTrajectory("Found error trajectory")
 
@@ -178,16 +99,19 @@ class HylaaEngine(object):
 
                 discrete_poststate_star = state.star.clone()
                 discrete_poststate_star.fast_forward_steps = 0 # reset fast forward on transitions
-                basis_center = state.star.vector_to_star_basis(state.star.sim_center)
-                discrete_poststate_star.parent = DiscretePostParent(state.mode, discrete_prestate_star, 
+                basis_center = state.star.vector_to_star_basis(state.star.center)
+                discrete_poststate_star.parent = DiscretePostParent(state.mode, discrete_prestate_star,
                                                                     basis_center, transition)
 
+                print "~ converting each guard condition to the star's basis"
+
                 # convert each of the guard conditions to the star's basis
-                for g in transition.guard_list:
+                for g in transition.condition_list:
 
                     # basis vectors (non-transpose) * standard_condition
                     basis_influence = np.dot(state.star.basis_matrix, g.vector)
 
+                    standard_center = state.star.vector_to_star_basis(state.star.center)
                     center_value = np.dot(standard_center, g.vector)
                     remaining_value = g.value - center_value
 
@@ -202,14 +126,14 @@ class HylaaEngine(object):
                 # re-check for feasibility
 
                 if discrete_poststate_star.is_feasible():
-                    violation_basis_vec = result[num_dims:]
+                    violation_basis_vec = result[star.num_dims:]
 
                     if not self.settings.aggregation or not self.settings.deaggregation or \
                        self.has_counterexample(state.star, violation_basis_vec, state.star.total_steps):
 
                         # convert origin offset to star basis and add to basis_center
                         successor = discrete_poststate_star
-                        #successor.start_center = successor.center()
+                        #successor.start_center = successor.center
                         successor.center_into_constraints(basis_center)
 
                         self.plotman.cache_star_verts(successor) # do this before committing temp constriants
@@ -236,7 +160,6 @@ class HylaaEngine(object):
 
         assert isinstance(star.parent, AggregationParent)
 
-        # star is
         elapsed_aggregated_steps = steps_in_cur_star - star.total_steps - 1
 
         if elapsed_aggregated_steps < 0: # happens on urgent transitions
@@ -358,27 +281,18 @@ class HylaaEngine(object):
         self.max_steps_remaining = self.settings.num_steps - state.star.total_steps + state.star.fast_forward_steps
         self.cur_sim_bundle = state.mode.get_sim_bundle(self.settings.simulation, state.star, self.max_steps_remaining)
 
-        parent_star = state.star        
+        parent_star = state.star
         state.star = parent_star.clone()
         state.star.parent = ContinuousPostParent(state.mode, parent_star)
         self.cur_state = state
 
-        is_still_feasible = self.trim_to_invariant(state)
-
-        if not is_still_feasible:
-            self.cur_state = None
-
-            if output:
-                print "State after invariant trimming was not feasible; skipping."
-
-        if self.cur_state is not None and self.settings.process_urgent_guards:
+        if self.settings.process_urgent_guards:
             self.check_guards(self.cur_state)
 
             if self.cur_state is None:
                 if output:
                     print "After urgent checking guards, state was refined away."
-            else:
-                # cur_state is not Null
+            elif output:
                 print "Doing continuous post in mode '{}': ".format(self.cur_state.mode.name)
 
         if self.cur_state is not None and state.mode.is_error:
@@ -387,7 +301,7 @@ class HylaaEngine(object):
             if output:
                 print "Mode '{}' was an error mode; skipping.".format(state.mode.name)
 
-        # pause after discrete post
+        # pause after discrete post when using PLOT_INTERACTIVE
         if self.plotman.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
             self.plotman.interactive.paused = True
 
@@ -408,14 +322,14 @@ class HylaaEngine(object):
 
             sim_step = self.cur_step_in_mode + 1 + state.star.fast_forward_steps
 
-            sim_basis_matrix, sim_center = sim_bundle.get_vecs_origin_at_step(
+            new_basis_matrix, new_center = sim_bundle.get_vecs_origin_at_step(
                 sim_step, self.max_steps_remaining)
 
-            state.star.update_from_sim(sim_basis_matrix, sim_center, self.settings.step)
+            state.star.update_from_sim(new_basis_matrix, new_center)
 
-            # increment step            
+            # increment step
             self.cur_step_in_mode += 1
-            state.star.total_steps += 1 
+            state.star.total_steps += 1
 
             self.check_guards(self.cur_state)
 
@@ -424,7 +338,10 @@ class HylaaEngine(object):
                 if output:
                     print "After checking guards, state was refined away."
             else:
-                is_still_feasible = self.trim_to_invariant(self.cur_state)
+                is_still_feasible, inv_vio_star_list = self.cur_state.star.trim_to_invariant()
+
+                for star in inv_vio_star_list:
+                    self.plotman.add_inv_violation_star(star)
 
                 if not is_still_feasible:
                     self.cur_state = None
@@ -482,16 +399,15 @@ class HylaaEngine(object):
     def run(self, init_list):
         '''
         run the computation
-    
+
         init is a list of (LinearAutomatonMode, HyperRectangle)
         '''
 
         assert len(init_list) > 0
 
         # strengthen guards to inclunde invariants of targets
-        if self.settings.use_guard_strengthening:
-            ha = init_list[0][0].parent
-            ha.do_guard_strengthening()
+        ha = init_list[0][0].parent
+        ha.do_guard_strengthening()
 
         self.result = HylaaResult()
         self.plotman.create_plot()
@@ -608,7 +524,7 @@ class WaitingList(object):
                 hull_star.parent = AggregationParent(new_state.mode, [cur_star, new_state.star])
 
                 if hylaa_settings.add_guard_during_aggregation:
-                    add_guard_to_star(hull_star, cur_star.parent.transition.guard_list)
+                    add_guard_to_star(hull_star, cur_star.parent.transition.condition_list)
 
                 if hylaa_settings.add_box_during_aggregation:
                     add_box_to_star(hull_star)

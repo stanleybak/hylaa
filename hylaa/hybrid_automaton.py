@@ -6,7 +6,6 @@ Stanley Bak (Sept 2016)
 import numpy as np
 
 from hylaa.util import Freezable
-from hylaa.timerutil import Timers
 from hylaa.simutil import SimulationBundle
 
 class LinearConstraint(object):
@@ -59,12 +58,12 @@ class HyperRectangle(object):
 
         return rv
 
-    def star(self):
-        'Returns a list of the so-called star points of this box (2*dims of them)'
+    def diamond(self):
+        'Returns a list of the so-called diamond points of this box (2*dims of them)'
         center = self.center()
         num_dims = len(self.dims)
         rv = []
-        
+
         for index in xrange(num_dims):
             # min edge in dimension d
             pt = list(center)
@@ -96,7 +95,7 @@ class HyperRectangle(object):
 
         for it in xrange(max_iterator):
             point = []
-            
+
             # construct point
             for d in xrange(num_dims):
                 if is_flat[d]:
@@ -312,6 +311,10 @@ class LinearHybridAutomaton(object):
 
                 if not already_in_cond_list:
                     condition_list.append(inv_constraint)
+
+
+
+
 
 
 
