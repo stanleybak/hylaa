@@ -24,6 +24,7 @@ class LpInstance(Freezable):
     _add_basis_constraint = None
     _add_standard_constraint = None
     _minimize = None
+    _add_basis_constraint = None
     _test = None
 
     @staticmethod
@@ -139,7 +140,8 @@ class LpInstance(Freezable):
         self.del_lp = LpInstance._del_lp
 
         # for error-checking
-        self.num_dims = None
+        self.num_standard_vars = None
+        self.num_basis_vars = None
         self.num_inputs = None
 
         self.freeze_attrs()
@@ -198,8 +200,9 @@ class LpInstance(Freezable):
         assert isinstance(matrix, np.ndarray)
         assert len(matrix.shape) == 2, "expected 2d matrix"
 
-        if self.num_dims is None:
-            self.num_dims = matrix.shape[0]
+        if self.num_standard_vars is None:
+            self.num_basis_vars = matrix.shape[0]
+            self.num_standard_vars = matrix.shape[1]
 
         Timers.tic("lp update_basis_matrix")
         rv = LpInstance._update_basis_matrix(self.lp_data, matrix, matrix.shape[1], matrix.shape[0])
@@ -216,6 +219,10 @@ class LpInstance(Freezable):
         else:
             h, w = a_vec.shape
             assert h == 1, "expected 1-d vector in add_basis_constaint()"
+
+        assert self.num_inputs is None, "add_basis_constraint() called after adding inputs to LP"
+        assert w == self.num_basis_vars, "add_basis_constraint() had incorrect length: {}; expected: {}".format(
+            w, self.num_basis_vars)
 
         Timers.tic("lp add_basis_constraint")
         LpInstance._add_basis_constraint(self.lp_data, a_vec, w, b_val)
@@ -239,12 +246,12 @@ class LpInstance(Freezable):
 
         assert len(a_matrix_t.shape) == 2
         assert len(b_vec.shape) == 1
-        
+
         assert a_matrix_t.shape[1] == b_vec.shape[0], "number of rows in constraints must match"
         assert a_matrix_t.shape[0] == input_basis_matrix.shape[0], \
             "number of columns in constraint matix / rows in input basis matrix must match"
 
-        assert input_basis_matrix.shape[1] == self.num_dims, "input basis matrix cols must match standard dims count"
+        assert input_basis_matrix.shape[1] == self.num_standard_vars, "input basis matrix cols must match standard vars"
 
         if self.num_inputs is None:
             self.num_inputs = input_basis_matrix.shape[0]
@@ -272,6 +279,10 @@ class LpInstance(Freezable):
         minimize a constraint in the star's basis. this returns True of False, depending on
         whether the LP was feasible. If it was feasible, the passed-in 'result' vector is assigned
         '''
+
+        assert len(direction) == self.num_standard_vars, \
+            "minimize objective length({}) should match number of standard variables({})".format(
+                len(direction), self.num_standard_vars)
 
         dir_len, = direction.shape
         res_len, = result.shape

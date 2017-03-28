@@ -24,7 +24,7 @@ class TestEngine(unittest.TestCase):
         # x' = x
         loc1 = ha.new_mode('loc')
         loc1.a_matrix = np.array([[0, 0], [0, 0]])
-        loc1.b_vector = np.array([1, 2])
+        loc1.c_vector = np.array([1, 2])
 
         # x(0) = 1, y(0) = 2
         init_list = [(ha.modes['loc'], HyperRectangle([(0.99, 1.01), (1.99, 2.01)]))]
@@ -71,7 +71,7 @@ class TestEngine(unittest.TestCase):
         plot_settings = PlotSettings()
         plot_settings.plot_mode = PlotSettings.PLOT_NONE
         settings = HylaaSettings(step=0.1, max_time=1.1, plot_settings=plot_settings)
-        settings.print_output = True
+        settings.print_output = False
 
         engine = HylaaEngine(ha, settings)
 
@@ -99,18 +99,18 @@ class TestEngine(unittest.TestCase):
         # x' = x + 1
         loc1 = ha.new_mode('loc')
         loc1.a_matrix = np.array([[1]])
-        loc1.b_vector = np.array([1])
+        loc1.c_vector = np.array([1])
 
         # x(0) = 1
         init_list = [(ha.modes['loc'], HyperRectangle([(0.99, 1.01)]))]
-                            
+
         plot_settings = PlotSettings()
         plot_settings.plot_mode = PlotSettings.PLOT_NONE
         settings = HylaaSettings(step=0.1, max_time=1.1, plot_settings=plot_settings)
         settings.print_output = False
 
         engine = HylaaEngine(ha, settings)
-        
+
         engine.load_waiting_list(init_list)
 
         # pop from waiting_list (doesn't advance state)
@@ -120,7 +120,7 @@ class TestEngine(unittest.TestCase):
         for i in xrange(10):
             engine.do_step()
 
-            t = 0.1 * (i+1)        
+            t = 0.1 * (i+1)
             state = engine.cur_state
             star = state.star
 
@@ -128,8 +128,3 @@ class TestEngine(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-
-
-
-
-

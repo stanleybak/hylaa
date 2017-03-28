@@ -258,10 +258,11 @@ void test2dInputs()
 
     // add one input with range [-1, 1] for both variables
     double inputBasis[] = {1.0, 0.0, /* */ 0.0, 1.0};
-    double inputConstraintA[] = {1.0, 0.0, /* */ -1.0, 0.0, /* */ 0.0, 1.0, /* */ 0.0, -1.0};
-    double inputConstraintB[] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+    double inputConstraintATranspose[] = {1.0, -1.0, 0.0, 0.0, /* */ 0.0, 0.0, 1.0, -1.0};
+    double inputConstraintB[] = {1.0, 1.0, 1.0, 1.0};
 
-    lpd->addInputStar(inputConstraintA, 2, 4, inputConstraintB, 4, inputBasis, 2, 2);
+    int bLen = sizeof(inputConstraintB) / sizeof(inputConstraintB[0]);
+    lpd->addInputStar(inputConstraintATranspose, 4, 2, inputConstraintB, bLen, inputBasis, 2, 2);
 
     direction[0] = direction[1] = -1;
 
@@ -306,7 +307,7 @@ void test2dInputs()
     // from the first input to be copied
 
     int startIter = totalIterations();
-    lpd->addInputStar(inputConstraintA, 2, 4, inputConstraintB, 4, inputBasis, 2, 2);
+    lpd->addInputStar(inputConstraintATranspose, 4, 2, inputConstraintB, bLen, inputBasis, 2, 2);
 
     if (minimize(lpd, direction, 2, result, 2))
     {
@@ -386,10 +387,11 @@ void test2dUnsat()
 
     // add one input with range [-1, 1] for both variables
     double inputBasis[] = {1.0, 0.0, /* */ 0.0, 1.0};
-    double inputConstraintA[] = {1.0, 0.0, /* */ -1.0, 0.0, /* */ 0.0, 1.0, /* */ 0.0, -1.0};
-    double inputConstraintB[] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+    double inputConstraintATranspose[] = {1.0, -1.0, 0.0, 0.0, /* */ 0.0, 0.0, 1.0, -1.0};
+    double inputConstraintB[] = {1.0, 1.0, 1.0, 1.0};
 
-    lpd->addInputStar(inputConstraintA, 2, 4, inputConstraintB, 4, inputBasis, 2, 2);
+    int bLen = sizeof(inputConstraintB) / sizeof(inputConstraintB[0]);
+    lpd->addInputStar(inputConstraintATranspose, 4, 2, inputConstraintB, bLen, inputBasis, 2, 2);
 
     if (minimize(lpd, direction, 2, result, 2) != 1)
     {
@@ -403,7 +405,7 @@ void test2dUnsat()
     // from the first input to be copied
 
     int startIter = totalIterations();
-    lpd->addInputStar(inputConstraintA, 2, 4, inputConstraintB, 4, inputBasis, 2, 2);
+    lpd->addInputStar(inputConstraintATranspose, 4, 2, inputConstraintB, bLen, inputBasis, 2, 2);
 
     if (minimize(lpd, direction, 2, result, 2))
     {

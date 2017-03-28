@@ -7,6 +7,7 @@ import numpy as np
 
 from hylaa.util import Freezable
 from hylaa.simutil import SimulationBundle
+from hylaa.containers import HylaaSettings
 
 class LinearConstraint(object):
     'a single linear constraint: vector * x <= value'
@@ -138,7 +139,7 @@ class LinearAutomatonMode(Freezable):
         self._gbt_matrix = None # assigned first time get_gb_t() is called
         self.freeze_attrs()
 
-    def get_sim_bundle(self, sim_settings, star, max_steps_remaining):
+    def get_sim_bundle(self, settings, star, max_steps_remaining):
         '''
         Get the simulation bundle associated with the dynamics in this mode.
 
@@ -147,11 +148,17 @@ class LinearAutomatonMode(Freezable):
         max_steps_remaining - maximum number of remaining simulation steps (used for presimulation)
         '''
 
-        if self._sim_bundle is None:
-            self.sim_settings = sim_settings
-            self._sim_bundle = SimulationBundle(self.a_matrix, self.c_vector, sim_settings)
+        assert isinstance(settings, HylaaSettings)
 
-            if sim_settings.use_presimulation:
+        if self._sim_bundle is None:
+            self.sim_settings = settings.simulation
+
+            if settings.print_output is False:
+                self.sim_settings.stdout = False
+
+            self._sim_bundle = SimulationBundle(self.a_matrix, self.c_vector, self.sim_settings)
+
+            if self.sim_settings.use_presimulation:
                 self.presimulate(star, max_steps_remaining)
 
         return self._sim_bundle
@@ -174,11 +181,9 @@ class LinearAutomatonMode(Freezable):
         sim_bundle.presimulate(num_presimulation_steps)
 
     def get_gb_t(self):
-        ''''get the transpose of G(A, h) * B, where G(A, h) is either:
+        ''''get the transpose of G(A, h) * B, where G(A, h) is defined as:
 
         G(A,h) = A^{-1}(e^{Ah} - I)
-        -or-
-        G(A,h) = (1/1!)*I*h + (1/2!)*A*h^2 + (1/3!)*A*A*h^3 + ...
 
         The actual computation of this, however, is done using simulations.
         '''

@@ -101,7 +101,7 @@ class Star(Freezable):
         for lc in constraint_list:
             assert lc.vector.shape[0] == self.num_dims, "each star's constraint's size should match num_dims"
 
-        self.constraint_list = constraint_list
+        self.constraint_list = [c for c in constraint_list]
 
         self.total_steps = 0
         self.fast_forward_steps = 0
@@ -282,9 +282,13 @@ class Star(Freezable):
         assert self.mode.num_inputs == 0, "add_basis_constraint() w/ time-varying inputs not yet supported"
 
         # add to predicate list
-        ## WORKING HERE!!!!!
+        self.constraint_list.append(lc)
 
         # add to guard opt data
+        self._guard_opt_data.add_basis_constraint(lc)
+
+        if self._star_lpi is not None:
+            self._star_lpi.add_basis_constraint(lc.vector, lc.value)
 
     def trim_to_invariant(self):
         '''
@@ -303,7 +307,7 @@ class Star(Freezable):
             lpi = self.get_star_lpi()
 
             for lin_con in self.mode.inv_list:
-                objective = np.array([-ele for ele in lin_con.vector] + [0.0] * self.num_dims, dtype=float)
+                objective = np.array([-ele for ele in lin_con.vector], dtype=float)
                 result = np.zeros(2 * self.num_dims)
 
                 lpi.minimize(objective, result, error_if_infeasible=True)
@@ -323,26 +327,24 @@ class Star(Freezable):
                     remaining_value = lin_con.value - center_value
 
                     basis_lc = LinearConstraint(basis_influence, remaining_value)
-                    self.add_basis_constraint(basis_lc)
 
                     if self.settings.plot.plot_mode != PlotSettings.PLOT_NONE:
                         # use the inverse of the invariant constraint for plotting
-                        inv_lc = LinearConstraint(-basis_lc.vector, -basis_lc.value)
+                        inv_lc = LinearConstraint([-1 * ele for ele in basis_lc.vector], -basis_lc.value)
                         inv_vio_star = self.clone()
                         inv_vio_star.add_basis_constraint(inv_lc)
 
                         # re-check for feasibility after adding the constraint
-                        if inv_vio_star.is_feasible() is not None:
+                        if inv_vio_star.is_feasible():
                             inv_vio_star_list.append(inv_vio_star)
+
+                    # add the constraint AFTER making the plot violation star
+                    self.add_basis_constraint(basis_lc)
 
                 # we added a new constraint to the star, check if it's still feasible
                 if not self.is_feasible():
                     still_feasible = False
                     break # don't check the remaining invariant linear conditions
-
-        if still_feasible:
-            # TODO: trim redundant temp constraints
-            pass
 
         return (still_feasible, inv_vio_star_list)
 
@@ -515,7 +517,7 @@ class Star(Freezable):
 
     def __repr__(self):
         '''
-        this does not print parent. mode is printed as ha.modes['name']  
+        this does not print parent. mode is printed as ha.modes['name']
         '''
 
         return "Star(HylaaSettings(), {}, {}, {}, {}, None, ha.modes['{}'], {}, {}, {})".format(
@@ -530,24 +532,22 @@ class Star(Freezable):
 
     def contains_basis(self, basis_vals, atol=0):
         ''''
-        is the passed-in point (already offset by the star's center and 
+        is the passed-in point (already offset by the star's center and
         expressed as basis vectors) contained in the set?
         '''
 
-        result = np.dot(self.a_mat, basis_vals)
+        a_mat = np.zeros((len(self.constraint_list), self.num_dims))
+
+        for i in xrange(len(self.constraint_list)):
+            a_mat[i, :] = self.constraint_list[i].vector
+
+        result = np.dot(a_mat, basis_vals)
         rv = True
 
         for i in xrange(len(result)):
-            if result[i] > atol + self.b_vec[i]:
+            if result[i] > atol + self.constraint_list[i].value:
                 rv = False
                 break
-
-        # also check the temporary constraints
-        if rv:
-            for lc in self.temp_constraints:
-                if np.dot(lc.vector, basis_vals) > atol + lc.value:
-                    rv = False
-                    break
 
         return rv
 
@@ -643,7 +643,7 @@ class Star(Freezable):
 
         points which match start_point or end_point are not returned
         '''
-    
+
         star_lpi = self.get_star_lpi()
 
         dirs = Star.plot_vecs
@@ -671,9 +671,9 @@ class Star(Freezable):
 
     def _find_star_boundaries(self, use_binary_search=True):
         '''
-        find a constaint-star's boundaries in the passed-in directions. This solves several LPs and
+        find a constaint-star's boundaries using Star.plot_vecs. This solves several LPs and
         returns a list of points on the boundary (in the standard basis) which maximize each
-            of the passed-in directions
+        of the passed-in directions
         '''
 
         star_lpi = self.get_star_lpi()

@@ -93,6 +93,21 @@ class GuardOptData(Freezable):
         self.total_steps = 0
         self.freeze_attrs()
 
+    def add_basis_constraint(self, lc):
+        '''
+        add a constraint which is given in the star's basis. This assumes there are no inputs.
+        '''
+
+        assert self.star.mode.num_inputs == 0, 'adding constaints w/ inputs unsupported'
+
+        if self.star.settings.opt_warm_start_lp:
+            for lpi in self.combined_lpis:
+                lpi.add_basis_constraint(lc.vector, lc.value)
+
+        if self.star.settings.opt_decompose_lp:
+            for lpi in self.no_input_lpis:
+                lpi.add_basis_constraint(lc.vector, lc.value)
+
     def make_combined_lpi(self, automaton_transition=None, skip_inputs=False):
         'create one lpi per guard, which will have both the star and input effects, as well as the guard condition'
 
@@ -331,14 +346,18 @@ class GuardOptData(Freezable):
             ce_filename = self.star.settings.counter_example_filename
             diff_iterations = combined_lpi.total_iterations() - before_iterations
 
-            print "Exact LP was feasible at step {}! Final LP iterations = {}".format(self.total_steps, diff_iterations)
+            if self.star.settings.print_output:
+                print "Exact LP was feasible at step {}! Final LP iterations = {}".format(
+                    self.total_steps, diff_iterations)
 
             if ce_filename is not None:
-                print "Writing counter-example to {}".format(ce_filename)
+    
+                if self.star.settings.print_output:
+                    print "Writing counter-example to {}".format(ce_filename)
 
                 export_counter_example(ce_filename, self.star.mode, result, self.star.center, dims, \
                     self.star.settings.step, self.total_steps, constraints[0])
-            else:
+            elif self.star.settings.print_output:
                 print "Counter-example file disabled in settings; skipping"
         else:
             rv = None

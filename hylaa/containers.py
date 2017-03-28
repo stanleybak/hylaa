@@ -32,7 +32,7 @@ class HylaaSettings(Freezable):
         self.stop_when_error_reachable = True # should we stop computing immediately when an error mode is reached?
 
         self.print_output = True # print status and waiting list information to stdout
-        self.print_step_times = True # print the times at each step
+        self.skip_step_times = False # print the times at each step
 
         self.opt_decompose_lp = True # use the Minkowski sum decomposition optimization (for systems with inputs)
         self.opt_warm_start_lp = True # reuse the LP instances between guard checks (warm-start LP)
@@ -116,11 +116,11 @@ class PlotSettings(Freezable):
 
         # looks better (but takes longer to plot)
         self.extend_plot_range_ratio = 0.0
-   
+
         video = VideoSettings()
         video.frames = num_frames
 
-        self.video = video        
+        self.video = video
 
 class VideoSettings(Freezable):
     'settings for video'

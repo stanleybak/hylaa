@@ -254,7 +254,7 @@ class HylaaEngine(object):
 
         if rv and self.plotman.settings.plot_mode != PlotSettings.PLOT_NONE:
             if isinstance(star.parent, ContinuousPostParent):
-                sim_bundle = star.parent.mode.get_sim_bundle(self.settings.simulation)
+                sim_bundle = star.parent.mode.get_sim_bundle(self.settings)
                 num_steps = star.fast_forward_steps + star.total_steps - star.parent.star.total_steps
                 start_basis_matrix = star.start_basis_matrix
 
@@ -279,7 +279,7 @@ class HylaaEngine(object):
                 state.mode.name, state.star.total_steps * self.settings.step, state.star.fast_forward_steps)
 
         self.max_steps_remaining = self.settings.num_steps - state.star.total_steps + state.star.fast_forward_steps
-        self.cur_sim_bundle = state.mode.get_sim_bundle(self.settings.simulation, state.star, self.max_steps_remaining)
+        self.cur_sim_bundle = state.mode.get_sim_bundle(self.settings, state.star, self.max_steps_remaining)
 
         parent_star = state.star
         state.star = parent_star.clone()
@@ -316,7 +316,7 @@ class HylaaEngine(object):
         else:
             sim_bundle = self.cur_sim_bundle
 
-            if self.settings.print_step_times:
+            if self.settings.print_output and not self.settings.skip_step_times:
                 print "Step: {} / {} ({})".format(self.cur_step_in_mode + 1, self.settings.num_steps,
                                                   self.settings.step * (self.cur_step_in_mode))
 
@@ -375,7 +375,7 @@ class HylaaEngine(object):
                                     not skipped_plot or self.is_finished():
                 break
 
-        if self.is_finished():
+        if self.is_finished() and self.settings.print_output:
             if self.reached_error:
                 print "Result: Error modes are reachable.\n"
             else:
@@ -383,7 +383,7 @@ class HylaaEngine(object):
 
     def run_to_completion(self):
         'run the computation until it finishes (without plotting)'
-    
+
         Timers.tic("total")
 
         while not self.is_finished():
@@ -391,8 +391,9 @@ class HylaaEngine(object):
 
         Timers.toc("total")
 
-        LpInstance.print_stats()
-        Timers.print_stats()
+        if self.settings.print_output:
+            LpInstance.print_stats()
+            Timers.print_stats()
 
         self.result.time = Timers.timers["total"].total_secs
 

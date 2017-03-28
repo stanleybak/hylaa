@@ -56,15 +56,14 @@ class DrawnShapes(Freezable):
         self.mode_to_color = {} # map mode name -> color string
 
         # create a blank invariant violation polys
-        self.inv_vio_star = None
-        self.inv_vio_polys = collections.PolyCollection([], animated=True, alpha=0.7, edgecolor='none', facecolor='red')
+        self.inv_vio_polys = collections.PolyCollection([], animated=True, alpha=0.7, edgecolor='red', facecolor='red')
         axes.add_collection(self.inv_vio_polys)
 
-        # create a blank currently-tracked set of states poly 
+        # create a blank currently-tracked set of states poly
         self.cur_state_line2d = Line2D([], [], animated=True, color='k', lw=2, mew=2, ms=5, fillstyle='none')
         axes.add_line(self.cur_state_line2d)
 
-        self.parent_to_polys = OrderedDict() 
+        self.parent_to_polys = OrderedDict()
         self.parent_to_markers = OrderedDict()
 
         self.waiting_list_mode_to_polys = OrderedDict()
@@ -102,14 +101,14 @@ class DrawnShapes(Freezable):
 
         for polys in self.aggregation_mode_to_polys.values():
             rv.append(polys)
-        
+
         rv.append(self.inv_vio_polys)
 
         if self.extra_lines_col:
             rv.append(self.extra_lines_col)
 
         rv.append(self.trace)
- 
+
         rv.append(self.cur_state_line2d)
 
         return rv
@@ -183,9 +182,9 @@ class DrawnShapes(Freezable):
 
     def init_colors(self):
         'initialize all_colors'
-        
+
         self.all_colors = []
-        
+
         # remove any colors with 'white' or 'yellow in the name
         skip_colors_substrings = ['white', 'yellow']
         skip_colors_exact = ['black', 'red', 'blue']
@@ -202,7 +201,7 @@ class DrawnShapes(Freezable):
                 self.all_colors.append(col)
 
         # we'll re-add these later; remove them before shuffling
-        first_colors = ['lime', 'cyan', 'orange', 'magenta', 'green'] 
+        first_colors = ['lime', 'cyan', 'orange', 'magenta', 'green']
 
         for col in first_colors:
             self.all_colors.remove(col)
@@ -237,7 +236,7 @@ class DrawnShapes(Freezable):
 
     def add_trace(self, pts):
         'add to the current frame counter-example trace'
-     
+
         paths = self.trace.get_segments()
 
         pts = np.array(pts, dtype=float)
@@ -255,16 +254,15 @@ class DrawnShapes(Freezable):
         clear cur_state and invariant violation polygons. call at each step.
         '''
 
-        self.inv_vio_star = None
         self.inv_vio_polys.get_paths()[:] = []
-        
+
         self.set_cur_state(None)
 
         self.trace.set_paths([])
 
     def set_cur_state(self, verts):
         'set the currently tracked set of states for one frame'
-        
+
         l = self.cur_state_line2d
 
         if verts is None:
@@ -273,7 +271,7 @@ class DrawnShapes(Freezable):
             l.set_visible(True)
 
             if len(verts) <= 2:
-                l.set_marker('o')                
+                l.set_marker('o')
             else:
                 l.set_marker(None)
 
@@ -308,7 +306,7 @@ class DrawnShapes(Freezable):
 
         markers = self.parent_to_markers.pop(parent, None)
 
-        if markers is not None:        
+        if markers is not None:
             markers.remove()
             markers.set_xdata([])
             markers.set_ydata([])
@@ -511,9 +509,9 @@ class PlotManager(object):
         'add an invariant violation region'
 
         if self.settings.plot_mode != PlotSettings.PLOT_NONE:
-            verts = star.get_star_verts()
+            verts = star.verts()
+
             self.shapes.add_inv_vio_poly(verts)
-            self.shapes.inv_vio_star = star
 
             if self.settings.label.axes_limits is None:
                 self.update_axis_limits(verts)
@@ -621,7 +619,7 @@ class PlotManager(object):
                 Timers.tic("frame")
 
                 start_time = time.time()
-                while not is_finished_func(): 
+                while not is_finished_func():
                     step_func()
 
                     # do several computation steps per frame if they're fast (optimization)

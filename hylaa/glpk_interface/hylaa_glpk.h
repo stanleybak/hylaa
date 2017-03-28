@@ -248,6 +248,13 @@ class LpData
             printf("Fatal Error: Vector length wrong in addBasisConstraint.\n");
             exit(1);
         }
+        
+        // added this check
+        if (addedInput)
+        {
+            printf("Fatal Error: All basis constraints should be added before inputs.\n");
+            exit(1);
+        }
 
         // create new row for the constraint
         glp_add_rows(lp, 1);
@@ -344,7 +351,9 @@ class LpData
     {
         if (bmWidth != numStandardVars || aHeight != bmHeight || aWidth != bLen)
         {
-            printf("Fatal Error: Matrix size error in addInputStar.\n");
+            printf("Fatal Error: Matrix size error in addInputStar. One of the following conditions failed: "
+                "bmWidth(%d)==numStandardVars(%d) aHeight(%d)==bmHeight(%d), aWidth(%d)==bLen(%d)\n", 
+                bmWidth, numStandardVars, aHeight, bmHeight, aWidth, bLen);
             exit(1);
         }
 
@@ -453,7 +462,7 @@ class LpData
 
         if (dirLen != numStandardVars)
         {
-            printf("Fatal Error: dirLen is not equal to dims in call to minimize()\n");
+            printf("Fatal Error: dirLen(%d) is not equal to numStandardVars(%d) in call to minimize()\n", dirLen, numStandardVars);
             exit(1);
         }
 
