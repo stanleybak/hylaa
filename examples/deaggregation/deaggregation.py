@@ -76,7 +76,6 @@ def main():
                             
     plot_settings = PlotSettings()
     plot_settings.plot_mode = PlotSettings.PLOT_INTERACTIVE
-    #plot_settings.plot_mode = PlotSettings.PLOT_INTERACTIVE
     #plot_settings.plot_mode = PlotSettings.PLOT_VIDEO
     #plot_settings.video_frames = 250
     #plot_settings.video_filename = "hylaa_deaggregation.avi"
@@ -91,7 +90,7 @@ def main():
     plot_settings.extra_lines = [[(-0.5, -4), (-0.5, -2.5), (0.5, -2.5), (0.5, -4)], [(-2, -4), (2, -4)]] 
     
     settings = HylaaSettings(step=0.25, max_time=6.0, plot_settings=plot_settings)
-    settings.process_urgent_guards = True
+    settings.counter_example_filename = None
 
     engine = HylaaEngine(ha, settings)
     engine.run(init)

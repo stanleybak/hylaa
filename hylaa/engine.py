@@ -103,8 +103,6 @@ class HylaaEngine(object):
                 discrete_poststate_star.parent = DiscretePostParent(state.mode, discrete_prestate_star,
                                                                     basis_center, transition)
 
-                print "~ converting each guard condition to the star's basis"
-
                 # convert each of the guard conditions to the star's basis
                 for g in transition.condition_list:
 

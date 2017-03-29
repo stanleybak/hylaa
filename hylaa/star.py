@@ -133,7 +133,7 @@ class Star(Freezable):
         self.total_steps = total_steps # number of continuous post steps completed
         self.fast_forward_steps = fast_forward_steps
 
-    def get_star_lpi(self):
+    def get_lpi(self):
         'get (maybe create) the LpInstance object for this star + inputs, and return it'
 
         rv = self._star_lpi
@@ -185,8 +185,7 @@ class Star(Freezable):
         if self._star_lpi is not None:
             self._star_lpi.update_basis_matrix(self.basis_matrix)
 
-        # reset one-step internal variables
-        self._verts = None
+        self._verts = None # cached vertices for plotting are no longer valid
 
         Timers.toc('star.update_from_sim')
 
@@ -251,7 +250,7 @@ class Star(Freezable):
         if it is feasible, this returns a standard point, otherwise returns None
         '''
 
-        lpi = self.get_star_lpi()
+        lpi = self.get_lpi()
 
         dims = self.num_dims
         num_inputs = self.mode.num_inputs
@@ -290,6 +289,9 @@ class Star(Freezable):
         if self._star_lpi is not None:
             self._star_lpi.add_basis_constraint(lc.vector, lc.value)
 
+        if self._verts is not None:
+            self._verts = None
+
     def trim_to_invariant(self):
         '''
         trim the star to the mode's invariant.
@@ -304,7 +306,7 @@ class Star(Freezable):
             assert self.mode.num_inputs == 0, "mode invariants + dynamics with time-varying inputs not yet supported"
 
             # check each invariant condition to see if it is violated
-            lpi = self.get_star_lpi()
+            lpi = self.get_lpi()
 
             for lin_con in self.mode.inv_list:
                 objective = np.array([-ele for ele in lin_con.vector], dtype=float)
@@ -420,91 +422,41 @@ class Star(Freezable):
 
     def eat_star(self, other_star):
         '''
-        merge the other star into this star, changing this star's linear constraints
-        (self.a_mat * x <= self.b_vec) by increasing self.b_vec, until all the points in both stars
-        satisfy the constraints
-        
-        This assumes origin_offset is 0 and there are no temp constraints (we're not in the middle 
-        of a continuous post).
+        merge the other star into this star, changing this star's linear basis constraints values
+        until all the points in both stars satisfy all the constraints
         '''
+
+        changed = False
 
         # first update total_steps to be the minimum
         self.total_steps = min(self.total_steps, other_star.total_steps)
 
-        # currently, this resets multi-opt optimization... we may not need to do this
-
+        assert self.input_stars is None or len(self.input_stars) == 0
         assert isinstance(other_star, Star)
         assert self.num_dims == other_star.num_dims
-        assert (self.center == np.array(self.num_dims * [0.])).all()
-        assert (other_star.center == np.array(self.num_dims * [0.])).all()
-        assert len(other_star.temp_constraints) == 0
-        assert len(self.temp_constraints) == 0
 
-        dims = self.num_dims    
+        lpi = other_star.get_lpi()
+        result = np.zeros((2 * self.num_dims))
 
-        # 3 copies of variables: (1) standard-basis, (2) self-basis, (3) other-basis
-        lpc = optutil.LpConstraints()
+        # possibly increase every constraint
+        for lc in self.constraint_list:
+            # maximize the basis constraint direction in other_star
+            basis_direction = -1 * lc.vector
+            standard_direction = np.dot(self.basis_matrix, basis_direction)
 
-        # encode relationship between self-basis and standard-basis
-        # V1' * x' - x = 0
-        for c in xrange(dims):
-            constraint = [0.0 if c != d else -1.0 for d in xrange(dims)] # standard-basis                
-            constraint += [ele for ele in self.basis_matrix[:, c]] # self-basis
-            constraint += [0.0] * dims # other-basis
+            lpi.minimize(standard_direction, result, error_if_infeasible=True)
 
-            lpc.a_basis_eq.append(constraint)
-            lpc.b_basis_eq.append(0)
+            opt_val = np.dot(result[:self.num_dims], -1 * standard_direction)
+            opt_val += np.dot(lc.vector, other_star.center)
+            opt_val -= np.dot(lc.vector, self.center)
 
-        # encode relationship between other-basis and standard-basis
-        for c in xrange(dims):
-            constraint = [0.0 if c != d else -1.0 for d in xrange(dims)] # standard-basis
-            constraint += [0.0] * dims # self-basis
-            constraint += [ele for ele in other_star.basis_matrix[:, c]] # other-basis
+            if opt_val > lc.value:
+                lc.value = opt_val
+                changed = True
 
-            lpc.a_basis_eq.append(constraint)
-            lpc.b_basis_eq.append(0)
-
-        # encode other-star constraints
-        for r in xrange(other_star.a_mat.shape[0]):
-            constraint = [0.0] * dims # standard-basis                
-            constraint += [0.0] * dims # self-basis
-            constraint += [other_star.a_mat[r][c] for c in xrange(dims)] # other-basis
-
-            lpc.a_perm_ub.append(constraint)
-
-            # these constraints take into account other_star.basis_center
-            #val = other_star.b_vec[r] + np.dot(other_star.a_mat[r], other_star.basis_center)
-            val = other_star.b_vec[r]
-            lpc.b_perm_ub.append(val)
-
-        c_list = []
- 
-        # optimize each constraint of the self star
-        for row in self.a_mat:
-            constraint = [0.0] * dims # standard-basis
-            constraint += [-ele for ele in row] # basis, minimize negative = maximize
-            constraint += [0.0] * dims # cur-basis
-
-            c_list.append(constraint)
-
-        # different stars can have a different constraint a_matrix, so a reset is required
-        optutil.MultiOpt.reset_per_mode_vars()
-        result_list = optutil.optimize_multi(Star.solver, c_list, lpc)
-
-        # for each self-star constraint, take the maximum of the original value and the optimized value
-        for i in xrange(len(c_list)):
-            # real val is self_center_val + self.b_vec[i]
-
-            result_point = result_list[i][dims:2*dims] # in self-basis
-            result_val = np.dot(self.a_mat[i], result_point)
-
-            self.b_vec[i] = max(self.b_vec[i], result_val)
-
-        # Reset to clear out last optimization since the star may change
-        optutil.MultiOpt.reset_per_mode_vars()
-
-        # reset verts cache, since star may have changed
-        self._verts = None
+        # reset verts cache if star may have changed
+        if changed and self._verts is not None:
+            self._verts = None
 
     def clone(self):
         'return a copy of the star'
@@ -604,9 +556,11 @@ class Star(Freezable):
     def verts(self):
         'get the verticies of the polygon projection of the star used for plotting'
 
+        assert Star.plot_settings is not None, "init_plot_vecs() should be called before verts()"
+
         if self._verts is None:
-            xdim = Star.plot_settings.xdim
-            ydim = Star.plot_settings.ydim
+            xdim = self.settings.plot.xdim
+            ydim = self.settings.plot.ydim
             use_binary_search = True
 
             if Star.high_vert_mode:
@@ -644,7 +598,7 @@ class Star(Freezable):
         points which match start_point or end_point are not returned
         '''
 
-        star_lpi = self.get_star_lpi()
+        star_lpi = self.get_lpi()
 
         dirs = Star.plot_vecs
         rv = []
@@ -676,7 +630,7 @@ class Star(Freezable):
         of the passed-in directions
         '''
 
-        star_lpi = self.get_star_lpi()
+        star_lpi = self.get_lpi()
 
         standard_center = self.center
         point = np.zeros(self.num_dims)

@@ -10,11 +10,16 @@ import unittest
 
 from hylaa.plotutil import PlotSettings
 from hylaa.engine import HylaaEngine
+from hylaa.timerutil import Timers
 
 from models import ball_string, drivetrain, sync_motor
 
 class TestRegression(unittest.TestCase):
     'Regression tests'
+
+    def setUp(self):
+        'setup function'
+        Timers.reset()
 
     def test_sync_motor(self):
         '''test sync motor with input system'''

@@ -40,7 +40,7 @@ class LpData
         // params.meth = GLP_DUALP;
 
         // the first n variables are the standard basis variables
-        // the second n variables are the star's basis variables
+        // the second m variables are the star's basis variables
         glp_add_cols(lp, numStandardVars + numBasisVars);
 
         for (int i = 0; i < numStandardVars + numBasisVars; ++i)
@@ -245,7 +245,14 @@ class LpData
     {
         if (aVecLen != numBasisVars)
         {
-            printf("Fatal Error: Vector length wrong in addBasisConstraint.\n");
+            printf("Fatal Error: Vector length wrong in addBasisConstraint().\n");
+            exit(1);
+        }
+        
+        if (numStandardConstraints != 0)
+        {
+            printf("Fatal Error: addBasisConstraint() added AFTER standard_constraints were added"
+                   " (will interfere with setStandardConstraintValues().\n");
             exit(1);
         }
         
@@ -286,6 +293,7 @@ class LpData
         ++numBasisConstraints;
     }
 
+    // this is used to offset by the center simulation in a combined_lpi with inputs
     void setStandardConstraintValues(double* vals, int len)
     {
         if (len != numStandardConstraints)
@@ -297,6 +305,22 @@ class LpData
         // one row for each standard variable (equality condition with basis variables)
         // one row for each basis constraint
         int startRow = numStandardVars + numBasisConstraints;
+
+        for (int r = 0; r < len; ++r)
+            glp_set_row_bnds(lp, startRow + r + 1, GLP_UP, 0, vals[r]);
+    }
+    
+    // this is used in the eat_star operation, to relax a star's constraints
+    void setBasisConstraintValues(double* vals, int len)
+    {
+        if (len != numBasisConstraints)
+        {
+            printf("Fatal Error: Vector length wrong in setBasisConstraintValues.\n");
+            exit(1);
+        }
+
+        // one row for each standard variable (equality condition with basis variables)
+        int startRow = numStandardVars;
 
         for (int r = 0; r < len; ++r)
             glp_set_row_bnds(lp, startRow + r + 1, GLP_UP, 0, vals[r]);
@@ -456,8 +480,6 @@ class LpData
     // returns 1 on unsat
     int minimize(double* direction, int dirLen, double* result, int resLen)
     {
-        int rv = 0;
-
         ++global.optimizations;
 
         if (dirLen != numStandardVars)
@@ -467,140 +489,22 @@ class LpData
         }
 
         for (int i = 0; i < numStandardVars; ++i)
-            glp_set_obj_coef(lp, i + 1, direction[i]);
+            glp_set_obj_coef(lp, 1 + i, direction[i]);
+            
+        for (int i = 0; i < numBasisVars; ++i)
+            glp_set_obj_coef(lp, 1 + numStandardVars + i, 0);
 
         int startIterations = glp_get_it_cnt(lp);
 
         int simplexRes = glp_simplex(lp, &params);
-
-        if (simplexRes == GLP_ENOPFS)  // no primal feasible w/ presolver
-        {
-            rv = 1;
-        }
-        else if (simplexRes != 0)
-        {
-            const char* msg = "Unknown error";
-
-            int codes[] = {GLP_EBADB,  GLP_ESING,  GLP_ECOND,  GLP_EBOUND, GLP_EFAIL, GLP_EOBJLL,
-                           GLP_EOBJUL, GLP_EITLIM, GLP_ETMLIM, GLP_ENOPFS, GLP_ENODFS};
-
-            const char* msgs[] = {
-                "Unable to start the search, because the initial basis specified "
-                "in the problem object is invalid—the number of basic (auxiliary "
-                "and structural) variables is not the same as the number of rows "
-                "in the problem object.",
-
-                "Unable to start the search, because the basis matrix corresponding "
-                "to the initial basis is singular within the working "
-                "precision.",
-
-                "Unable to start the search, because the basis matrix corresponding "
-                "to the initial basis is ill-conditioned, i.e. its "
-                "condition number is too large.",
-
-                "Unable to start the search, because some double-bounded "
-                "(auxiliary or structural) variables have incorrect bounds.",
-
-                "The search was prematurely terminated due to the solver "
-                "failure.",
-
-                "The search was prematurely terminated, because the objective "
-                "function being maximized has reached its lower "
-                "limit and continues decreasing (the dual simplex only).",
-
-                "The search was prematurely terminated, because the objective "
-                "function being minimized has reached its upper "
-                "limit and continues increasing (the dual simplex only).",
-
-                "The search was prematurely terminated, because the simplex "
-                "iteration limit has been exceeded.",
-
-                "The search was prematurely terminated, because the time "
-                "limit has been exceeded.",
-
-                "The LP problem instance has no primal feasible solution "
-                "(only if the LP presolver is used).",
-
-                "The LP problem instance has no dual feasible solution "
-                "(only if the LP presolver is used).",
-            };
-
-            const int numCodes = sizeof(codes) / sizeof(codes[0]);
-            const int numMsgs = sizeof(msgs) / sizeof(msgs[0]);
-
-            if (numCodes != numMsgs)
-            {
-                printf(
-                    "Fatal error: num simplex error codes(%d) is not equal to num messages (%d).\n",
-                    numCodes, numMsgs);
-                exit(1);
-            }
-
-            for (unsigned int i = 0; i < sizeof(codes) / sizeof(codes[0]); ++i)
-            {
-                if (simplexRes == codes[i])
-                {
-                    msg = msgs[i];
-                    break;
-                }
-            }
-
-            printf("Fatal Error: glp_simplex returned nonzero status (%s): %d\n", msg, simplexRes);
-            exit(1);
-        }
-        else
-        {
-            // glp_get_it_cnt requires a newer version of glpk (4.60 should suffice)
-            int newIterations = glp_get_it_cnt(lp) - startIterations;
-            global.iterations += newIterations;
-
-            int status = glp_get_status(lp);
-
-            if (status == GLP_OPT)
-            {
-                int numCols = glp_get_num_cols(lp);
-
-                for (int col = 0; col < resLen && col < numCols; ++col)
-                    result[col] = glp_get_col_prim(lp, col + 1);
-
-                // print result
-                /*printf("lp result = ");
-                for (int col = 0; col < glp_get_num_cols(lp); ++col)
-                    printf("%f ", glp_get_col_prim(lp, col + 1));
-
-                printf("\n");*/
-            }
-            else if (status == GLP_NOFEAS)
-            {
-                // infeasible LP
-                rv = 1;
-            }
-            else
-            {
-                int codes[] = {GLP_OPT, GLP_FEAS, GLP_INFEAS, GLP_NOFEAS, GLP_UNBND, GLP_UNDEF};
-                const char* msgs[] = {"solution is optimal", "solution is feasible",
-                                      "solution is infeasible", "problem has no feasible solution",
-                                      "problem has unbounded solution", "solution is undefined"};
-
-                const char* message = "Unknown Error";
-
-                for (unsigned int i = 0; i < sizeof(codes) / sizeof(codes[0]); ++i)
-                {
-                    if (status == codes[i])
-                    {
-                        message = msgs[i];
-                        break;
-                    }
-                }
-
-                printf("Fatal Error: LP Status after solving was '%s': %d\n", message, status);
-                exit(1);
-            }
-        }
-
-        return rv;
-    };
-
+        
+        int newIterations = glp_get_it_cnt(lp) - startIterations;
+        global.iterations += newIterations;
+        
+        return processSimplexResult(simplexRes, result, resLen);
+    }
+    
+/////////////////////////////////
    private:
     bool addedInput = false;  // have we added any input stars yet?
     int numStandardVars = 0;  // number of standard variables
@@ -702,6 +606,135 @@ class LpData
             int status = glp_get_col_stat(lp, lpCols - aWidth + c + 1);
             glp_set_col_stat(lp, lpCols + c + 1, status);
         }
+    }
+    
+    // internal function used for getting the result of simplex
+    int processSimplexResult(int simplexRes, double* result, int resLen)
+    {
+        int rv = 0;
+        
+        if (simplexRes == GLP_ENOPFS)  // no primal feasible w/ presolver
+        {
+            rv = 1;
+        }
+        else if (simplexRes != 0)
+        {
+            const char* msg = "Unknown error";
+
+            int codes[] = {GLP_EBADB,  GLP_ESING,  GLP_ECOND,  GLP_EBOUND, GLP_EFAIL, GLP_EOBJLL,
+                           GLP_EOBJUL, GLP_EITLIM, GLP_ETMLIM, GLP_ENOPFS, GLP_ENODFS};
+
+            const char* msgs[] = {
+                "Unable to start the search, because the initial basis specified "
+                "in the problem object is invalid—the number of basic (auxiliary "
+                "and structural) variables is not the same as the number of rows "
+                "in the problem object.",
+
+                "Unable to start the search, because the basis matrix corresponding "
+                "to the initial basis is singular within the working "
+                "precision.",
+
+                "Unable to start the search, because the basis matrix corresponding "
+                "to the initial basis is ill-conditioned, i.e. its "
+                "condition number is too large.",
+
+                "Unable to start the search, because some double-bounded "
+                "(auxiliary or structural) variables have incorrect bounds.",
+
+                "The search was prematurely terminated due to the solver "
+                "failure.",
+
+                "The search was prematurely terminated, because the objective "
+                "function being maximized has reached its lower "
+                "limit and continues decreasing (the dual simplex only).",
+
+                "The search was prematurely terminated, because the objective "
+                "function being minimized has reached its upper "
+                "limit and continues increasing (the dual simplex only).",
+
+                "The search was prematurely terminated, because the simplex "
+                "iteration limit has been exceeded.",
+
+                "The search was prematurely terminated, because the time "
+                "limit has been exceeded.",
+
+                "The LP problem instance has no primal feasible solution "
+                "(only if the LP presolver is used).",
+
+                "The LP problem instance has no dual feasible solution "
+                "(only if the LP presolver is used).",
+            };
+
+            const int numCodes = sizeof(codes) / sizeof(codes[0]);
+            const int numMsgs = sizeof(msgs) / sizeof(msgs[0]);
+
+            if (numCodes != numMsgs)
+            {
+                printf(
+                    "Fatal error: num simplex error codes(%d) is not equal to num messages (%d).\n",
+                    numCodes, numMsgs);
+                exit(1);
+            }
+
+            for (unsigned int i = 0; i < sizeof(codes) / sizeof(codes[0]); ++i)
+            {
+                if (simplexRes == codes[i])
+                {
+                    msg = msgs[i];
+                    break;
+                }
+            }
+
+            printf("Fatal Error: glp_simplex returned nonzero status (%s) in minimize(): %d\n", msg, simplexRes);
+            exit(1);
+        }
+        else
+        {
+            int status = glp_get_status(lp);
+
+            if (status == GLP_OPT)
+            {
+                int numCols = glp_get_num_cols(lp);
+
+                for (int col = 0; col < resLen && col < numCols; ++col)
+                    result[col] = glp_get_col_prim(lp, col + 1);
+
+                // print result
+                /*printf("lp result = ");
+                for (int col = 0; col < glp_get_num_cols(lp); ++col)
+                    printf("%f ", glp_get_col_prim(lp, col + 1));
+
+                printf("\n");*/
+            }
+            else if (status == GLP_NOFEAS)
+            {
+                // infeasible LP
+                rv = 1;
+            }
+            else
+            {
+                int codes[] = {GLP_OPT, GLP_FEAS, GLP_INFEAS, GLP_NOFEAS, GLP_UNBND, GLP_UNDEF};
+                const char* msgs[] = {"solution is optimal", "solution is feasible",
+                                      "solution is infeasible", "problem has no feasible solution",
+                                      "problem has unbounded solution", "solution is undefined"};
+
+                const char* message = "Unknown Error";
+
+                for (unsigned int i = 0; i < sizeof(codes) / sizeof(codes[0]); ++i)
+                {
+                    if (status == codes[i])
+                    {
+                        message = msgs[i];
+                        break;
+                    }
+                }
+
+                printf("Fatal Error: LP Status after solving in minimize() was '%s': %d\n", message, status);
+                exit(1);
+            }
+        }
+
+        return rv;
     }
 };
 

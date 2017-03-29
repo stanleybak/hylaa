@@ -20,25 +20,25 @@ def define_ha():
 
     negAngle = ha.new_mode('negAngle')
     negAngle.a_matrix = np.array([[0, 0, 0, 0, 0, 0, 0.0833333333333333, 0, -1], [13828.8888888889, -26.6666666666667, 60, 60, 0, 0, -5, -60, 0], [0, 0, 0, 1, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 1, 0, 0, 0], [0, 0, 0, 0, -714.285714285714, -0.04, 0, 714.285714285714, 0], [-2777.77777777778, 3.33333333333333, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 1], [100, 0, 0, 0, 1000, 0, 0, -1000, 0]], dtype=float)
-    negAngle.b_vector = np.array([0, 716.666666666667, 0, 5, 0, 0, -83.3333333333333, 0, 3], dtype=float)
+    negAngle.c_vector = np.array([0, 716.666666666667, 0, 5, 0, 0, -83.3333333333333, 0, 3], dtype=float)
     negAngle.inv_list.append(LinearConstraint([1, 0, 0, 0, 0, 0, 0, 0, 0], -0.03)) # x1 <= -0.03
 
     deadzone = ha.new_mode('deadzone')
     deadzone.a_matrix = np.array([[0, 0, 0, 0, 0, 0, 0.0833333333333333, 0, -1], [-60, -26.6666666666667, 60, 60, 0, 0, -5, -60, 0], [0, 0, 0, 1, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 1, 0, 0, 0], [0, 0, 0, 0, -714.285714285714, -0.04, 0, 714.285714285714, 0], [0, 3.33333333333333, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 1], [0, 0, 0, 0, 1000, 0, 0, -1000, 0]], dtype=float)
-    deadzone.b_vector = np.array([0, 300, 0, 5, 0, 0, 0, 0, 0], dtype=float)
+    deadzone.c_vector = np.array([0, 300, 0, 5, 0, 0, 0, 0, 0], dtype=float)
     deadzone.inv_list.append(LinearConstraint([-1, 0, 0, 0, 0, 0, 0, 0, 0], 0.03)) # -0.03 <= x1
     deadzone.inv_list.append(LinearConstraint([1, 0, 0, 0, 0, 0, 0, 0, 0], 0.03)) # x1 <= 0.03
 
     posAngle = ha.new_mode('posAngle')
     posAngle.a_matrix = np.array([[0, 0, 0, 0, 0, 0, 0.0833333333333333, 0, -1], [13828.8888888889, -26.6666666666667, 60, 60, 0, 0, -5, -60, 0], [0, 0, 0, 1, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 1, 0, 0, 0], [0, 0, 0, 0, -714.285714285714, -0.04, 0, 714.285714285714, 0], [-2777.77777777778, 3.33333333333333, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0, 1], [100, 0, 0, 0, 1000, 0, 0, -1000, 0]], dtype=float)
-    posAngle.b_vector = np.array([0, -116.666666666667, 0, 5, 0, 0, 83.3333333333333, 0, -3], dtype=float)
+    posAngle.c_vector = np.array([0, -116.666666666667, 0, 5, 0, 0, 83.3333333333333, 0, -3], dtype=float)
     posAngle.inv_list.append(LinearConstraint([-1, 0, 0, 0, 0, 0, 0, 0, 0], -0.03)) # 0.03 <= x1
 
     trans = ha.new_transition(negAngle, deadzone)
-    trans.guard_list.append(LinearConstraint([-1, -0, -0, -0, -0, -0, -0, -0, -0], 0.03)) # x1 >= -0.03
+    trans.condition_list.append(LinearConstraint([-1, -0, -0, -0, -0, -0, -0, -0, -0], 0.03)) # x1 >= -0.03
 
     trans = ha.new_transition(deadzone, posAngle)
-    trans.guard_list.append(LinearConstraint([-1, -0, -0, -0, -0, -0, -0, -0, -0], -0.03)) # x1 >= 0.03
+    trans.condition_list.append(LinearConstraint([-1, -0, -0, -0, -0, -0, -0, -0, -0], -0.03)) # x1 >= 0.03
 
     return ha
 

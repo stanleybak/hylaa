@@ -11,9 +11,14 @@ import numpy as np
 from hylaa.hybrid_automaton import HyperRectangle, LinearHybridAutomaton
 from hylaa.engine import HylaaEngine, HylaaSettings
 from hylaa.plotutil import PlotSettings
+from hylaa.timerutil import Timers
 
 class TestEngine(unittest.TestCase):
     'Unit tests for hylaa engine'
+
+    def setUp(self):
+        'setup function'
+        Timers.reset()
 
     def test_rectangular(self):
         '''test integration of x' = 1, y' = 2'''

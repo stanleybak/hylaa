@@ -16,16 +16,8 @@ from hylaa.util import Freezable, get_script_path
 class LpInstance(Freezable):
     'Linear programm instance using the hylaa python/c++ glpk interface'
 
-    # static members (from hylaa_glpk.so)
+    # static member (library)
     _lib = None
-    _init_lp = None
-    _del_lp = None
-    _update_basis_matrix = None
-    _add_basis_constraint = None
-    _add_standard_constraint = None
-    _minimize = None
-    _add_basis_constraint = None
-    _test = None
 
     @staticmethod
     def _init_static():
@@ -109,6 +101,12 @@ class LpInstance(Freezable):
             LpInstance._set_standard_constraint_values = lib.setStandardConstraintValues
             LpInstance._set_standard_constraint_values.restype = None
             LpInstance._set_standard_constraint_values.argtypes = [ctypes.c_void_p, \
+                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int]
+
+            # void setBasisConstraintValues(void* lpdata, double* vals, int len)
+            LpInstance._set_basis_constraint_values = lib.setBasisConstraintValues
+            LpInstance._set_basis_constraint_values.restype = None
+            LpInstance._set_basis_constraint_values.argtypes = [ctypes.c_void_p, \
                 ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int]
 
             # void printLp(void* lpdata)
@@ -274,9 +272,14 @@ class LpInstance(Freezable):
 
         LpInstance._set_standard_constraint_values(self.lp_data, constraint_vals, constraint_vals.shape[0])
 
+    def set_basis_constraint_values(self, constraint_vals):
+        '''set the values (right-hand-sides) of each of the basis var constraints'''
+
+        LpInstance._set_basis_constraint_values(self.lp_data, constraint_vals, constraint_vals.shape[0])
+
     def minimize(self, direction, result, error_if_infeasible=False):
         '''
-        minimize a constraint in the star's basis. this returns True of False, depending on
+        minimize a constraint in the standard basis. this returns True of False, depending on
         whether the LP was feasible. If it was feasible, the passed-in 'result' vector is assigned
         '''
 
@@ -294,7 +297,7 @@ class LpInstance(Freezable):
         is_feasible = (res == 0)
 
         if not is_feasible and error_if_infeasible:
-            raise RuntimeError('LP was infeasible when error_if_infeasible=True')
+            raise RuntimeError('minimize LP was infeasible when error_if_infeasible=True')
 
         return is_feasible
 

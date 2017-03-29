@@ -351,7 +351,7 @@ class GuardOptData(Freezable):
                     self.total_steps, diff_iterations)
 
             if ce_filename is not None:
-    
+
                 if self.star.settings.print_output:
                     print "Writing counter-example to {}".format(ce_filename)
 

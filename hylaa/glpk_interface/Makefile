@@ -12,8 +12,8 @@ LDFLAGS = -L/usr/local/lib -lglpk -Wl,-rpath=/usr/local/lib
 
 all: hylaa_glpk.so
 
-hylaa_glpk.so: hylaa_glpk.cpp hylaa_glpk.h
-	$(CC) -shared $(CFLAGS) hylaa_glpk.cpp $(LDFLAGS) -o hylaa_glpk.so
+hylaa_glpk.so: hylaa_glpk.cpp hylaa_glpk.h hylaa_glpk_tests.cpp hylaa_glpk_tests.h
+	$(CC) -shared $(CFLAGS) hylaa_glpk.cpp hylaa_glpk_tests.cpp $(LDFLAGS) -o hylaa_glpk.so
 
 clean:
 	rm -fv hylaa_glpk.so
