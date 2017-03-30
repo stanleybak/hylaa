@@ -11,7 +11,6 @@ from hylaa.plotutil import PlotManager
 from hylaa.star import Star
 from hylaa.star import init_hr_to_star, init_constraints_to_star
 from hylaa.starutil import InitParent, AggregationParent, ContinuousPostParent, DiscretePostParent
-from hylaa.starutil import add_guard_to_star, add_box_to_star
 from hylaa.hybrid_automaton import LinearHybridAutomaton, LinearAutomatonMode, LinearConstraint, HyperRectangle
 from hylaa.timerutil import Timers
 from hylaa.containers import HylaaSettings, PlotSettings, HylaaResult
@@ -502,8 +501,7 @@ class WaitingList(object):
             # combine the two stars
             cur_star = existing_state
 
-            cur_star.current_step = min(
-                cur_star.total_steps, new_state.total_steps)
+            cur_star.total_steps = min(cur_star.total_steps, new_state.total_steps)
 
             # if the parent of this star is not an aggregation, we need to create one
             # otherwise, we need to add it to the list of parents
@@ -518,14 +516,16 @@ class WaitingList(object):
                 hull_star = cur_star.clone()
                 hull_star.parent = AggregationParent(new_state.mode, [cur_star, new_state])
 
-                if hylaa_settings.add_guard_during_aggregation:
-                    add_guard_to_star(hull_star, cur_star.parent.transition.condition_list)
+                #if hylaa_settings.add_guard_during_aggregation:
+                #    for lc in cur_star.parent.transition.condition_list:
+                #        hull_star.add_constraint_direction(lc.vector)
+                #        hull_star.add_constraint_direction(-1 * lc.vector)
 
-                if hylaa_settings.add_box_during_aggregation:
-                    add_box_to_star(hull_star)
-
-                # there may be temp constraints from invariant trimming
-                hull_star.commit_temp_constraints()
+                #if hylaa_settings.add_box_during_aggregation:
+                #    for dim in xrange(hull_star.num_dims):
+                #        vector = np.array([1.0 if d == dim else 0.0 for d in xrange(hull_star.num_dims)], dtype=float)
+                #        hull_star.add_constraint_direction(vector)
+                #        hull_star.add_constraint_direction(-1 * vector)
 
                 hull_star.eat_star(new_state)
                 existing_state = hull_star

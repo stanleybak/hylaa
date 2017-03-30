@@ -379,88 +379,6 @@ class GuardOptData(Freezable):
 
         return rv
 
-# helper functions for adding constraints to a star
-def add_guard_to_star(star, guard_lc_list):
-    '''
-    Add a guard's conditions to the passed-in star.
-
-    star - the star to add the constraints to
-    guard_lc_list - the list of linear constraints in the guard
-    '''
-
-    dims = star.num_dims
-    c_list = []
-    vec_list = []
-
-    for lc in guard_lc_list:
-        vec_list.append([ele for ele in lc.vector])
-        c_list.append([-ele for ele in vec_list[-1]] + [0.0] * dims)
-
-        vec_list.append([-ele for ele in lc.vector])
-        c_list.append([-ele for ele in vec_list[-1]] + [0.0] * dims)
-
-    lpc = star.to_lp_constraints()
-    optutil.MultiOpt.reset_per_mode_vars()
-    result_list = optutil.optimize_multi(Star.solver, c_list, lpc)
-    standard_center = star.center()
-
-    for i in xrange(len(vec_list)):
-        vec = vec_list[i]
-        result = result_list[i]
-        offset = result[0:dims]
-        point = standard_center + offset
-
-        val = np.dot(point, vec)
-
-        # convert the condition to the star's basis
-        basis_influence = np.dot(star.basis_matrix, vec)
-        center_value = np.dot(standard_center, vec)
-        remaining_value = val - center_value
-
-        lc = LinearConstraint(basis_influence, remaining_value)
-        star.temp_constraints.append(lc)
-
-def add_box_to_star(star):
-    '''
-    Add box constraints to the passed-in star.
-
-    star - the star to add the constraints to
-    '''
-
-    dims = star.num_dims
-    c_list = []
-    vec_list = []
-
-    ortho_vec_list = [[1.0 if d == index else 0.0 for d in xrange(dims)] for index in xrange(dims)]
-
-    for vec in ortho_vec_list:
-        vec_list.append([ele for ele in vec])
-        c_list.append([-ele for ele in vec_list[-1]] + [0.0] * dims)
-
-        vec_list.append([-ele for ele in vec])
-        c_list.append([-ele for ele in vec_list[-1]] + [0.0] * dims)
-
-    lpc = star.to_lp_constraints()
-    optutil.MultiOpt.reset_per_mode_vars()
-    result_list = optutil.optimize_multi(Star.solver, c_list, lpc)
-    standard_center = star.center()
-
-    for i in xrange(len(vec_list)):
-        vec = vec_list[i]
-        result = result_list[i]
-        offset = result[0:dims]
-        point = standard_center + offset
-
-        val = np.dot(point, vec)
-
-        # convert the condition to the star's basis
-        basis_influence = np.dot(star.basis_matrix, vec)
-        center_value = np.dot(standard_center, vec)
-        remaining_value = val - center_value
-
-        lc = LinearConstraint(basis_influence, remaining_value)
-        star.temp_constraints.append(lc)
-
 def array_str(nums):
     'get a python-parsable spring reprentation for this list'
 
@@ -475,7 +393,7 @@ def array_str(nums):
     for num in nums:
         if abs(num) > tol:
             elements += 1
-    
+
     if size < 50 or float(elements) / size > 0.2:
         # use dense representation
         rv = '{}'.format(', '.join([str(num) for num in nums]))
