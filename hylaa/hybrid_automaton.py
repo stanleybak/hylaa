@@ -35,8 +35,16 @@ class LinearConstraint(object):
 
         return rv
 
+    def clone(self):
+        'create a deep copy of this LinearConstraints object'
+
+        return LinearConstraint(self.vector.copy(), self.value)
+
     def __str__(self):
         return '[LinearConstraint: {} * x <= {}]'.format(self.vector, self.value)
+
+    def __repr__(self):
+        return 'LinearConstraint({}, {})'.format(repr(self.vector), repr(self.value))
 
 class HyperRectangle(object):
     'An n-dimensional box'
@@ -151,6 +159,7 @@ class LinearAutomatonMode(Freezable):
         assert isinstance(settings, HylaaSettings)
 
         if self._sim_bundle is None:
+
             self.sim_settings = settings.simulation
 
             if settings.print_output is False:
@@ -160,6 +169,13 @@ class LinearAutomatonMode(Freezable):
 
             if self.sim_settings.use_presimulation:
                 self.presimulate(star, max_steps_remaining)
+
+        return self._sim_bundle
+
+    def get_existing_sim_bundle(self):
+        'get the already-created simulation bundle for this mode'
+
+        assert self._sim_bundle is not None
 
         return self._sim_bundle
 

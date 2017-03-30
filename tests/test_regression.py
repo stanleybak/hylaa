@@ -52,6 +52,8 @@ class TestRegression(unittest.TestCase):
         engine = HylaaEngine(ha, settings)
         engine.run(init_list)
 
+        print "engine.plotman.drawn_limits.xmax = {}".format(engine.plotman.drawn_limits.xmax)
+
         self.assertTrue(engine.plotman.drawn_limits.xmax > 0)
 
     def test_invisible_inv_violation(self):

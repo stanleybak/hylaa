@@ -338,7 +338,7 @@ class SimulationBundle(Freezable):
         if step == 0 or self.step_offset is None:
             if self.step_offset != 0:
                 # reset origin sim and, if needed, vec_values
-                self.origin_sim = [np.zeros((self.num_dims, 1))] # index is step (may be offset)
+                self.origin_sim = [np.zeros((self.num_dims,))] # index is step (may be offset)
                 self.vec_values = [np.identity(self.num_dims)] # index is step (may be offset)
                 self.step_offset = 0
 
@@ -516,25 +516,6 @@ def pdot(a, b, pool):
     result = pool.map(mult_func, args)
 
     return np.concatenate(result, axis=1)
-
-def get_sim_results_filesize(temp_base_filename, num_threads):
-    'get the file size, as a string, of the simulation results files'
-
-    filesize_gb = 0.0
-
-    for t in xrange(num_threads):
-        filename = temp_base_filename + "thread_{}.result".format(t)
-        try:
-            filesize_gb += os.stat(filename).st_size / 1000.0 / 1000.0 / 1000.0
-        except OSError:
-            pass
-
-    if filesize_gb > 1.0:
-        rv = "{:.1f} GB".format(filesize_gb)
-    else:
-        rv = "{:.1f} MB".format(filesize_gb * 1000)
-
-    return rv
 
 # shared time variable used for occasional printing across processes
 SHARED_NEXT_PRINT = multiprocessing.Value('d')

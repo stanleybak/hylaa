@@ -77,18 +77,18 @@ class Star(Freezable):
     transitions are currently not compatible.
     '''
 
-    def __init__(self, settings, center, basis_matrix, constraint_list, parent, mode):
+    def __init__(self, settings, center, basis_matrix, constraint_list, parent, mode, extra_init=None):
 
         assert isinstance(center, np.ndarray)
         assert len(constraint_list) > 0
-        assert isinstance(constraint_list[0], LinearConstraint)
         assert isinstance(settings, HylaaSettings)
 
         self.settings = settings
         self.center = center
         self.num_dims = len(center)
 
-        assert isinstance(basis_matrix, np.ndarray)
+        assert isinstance(basis_matrix, np.ndarray), "Expected basis matrix to be np.ndarray, got {}".format(
+            type(basis_matrix))
         self.basis_matrix = basis_matrix # each row is a basis vector
 
         self.start_basis_matrix = None
@@ -99,9 +99,10 @@ class Star(Freezable):
         self.mode = mode # the LinearAutomatonMode
 
         for lc in constraint_list:
+            isinstance(lc, LinearConstraint), "constraint_list should be a list of LinearConstraint objects"
             assert lc.vector.shape[0] == self.num_dims, "each star's constraint's size should match num_dims"
 
-        self.constraint_list = [c for c in constraint_list]
+        self.constraint_list = [c.clone() for c in constraint_list] # copy constraints
 
         self.total_steps = 0
         self.fast_forward_steps = 0
@@ -111,6 +112,10 @@ class Star(Freezable):
             self.input_stars = None
         else:
             self.input_stars = [] # list of InputStars
+
+        if extra_init is not None:
+            start_basis_matrix, total_steps, fast_forward_steps = extra_init
+            self.init_post_jump_data(start_basis_matrix, total_steps, fast_forward_steps)
 
         ###################################
         ## private member initialization ##
@@ -146,8 +151,9 @@ class Star(Freezable):
                 rv.add_basis_constraint(lc.vector, lc.value)
 
             # add the influence of the inputs
-            for input_star in self.input_stars:
-                rv.add_input_star(input_star.a_matrix_t, input_star.b_vector, input_star.input_basis_matrix)
+            if self.input_stars is not None:
+                for input_star in self.input_stars:
+                    rv.add_input_star(input_star.a_matrix_t, input_star.b_vector, input_star.input_basis_matrix)
 
             self._star_lpi = rv
 
@@ -203,19 +209,24 @@ class Star(Freezable):
         computing it twice.
         '''
 
-        offset_vec = np.dot(self.a_mat, basis_center)
-        self.b_vec = self.b_vec + offset_vec # (instances are shared between stars; do not modify in place)
+        new_vals = []
 
-        # for completeness, also offset the temp constraints
-        for index in xrange(len(self.temp_constraints)):
-            lc = self.temp_constraints[index]
+        for lc in self.constraint_list:
             offset = np.dot(lc.vector, basis_center)
+            lc.value += offset
 
-            # make a new instance (instances are shared between stars; do not modify in place)
-            self.temp_constraints[index] = LinearConstraint(lc.vector, lc.value + offset)
+            new_vals.append(lc.value)
+
+        new_vals = np.array(new_vals, dtype=float)
 
         # reset center_sim to 0
-        self.center = np.array([0.0] * self.num_dims, dtype=float)
+        self.center = np.zeros((self.num_dims), dtype=float)
+
+        if self._star_lpi is not None:
+            self._star_lpi.set_basis_constraint_values(new_vals)
+
+        if self._guard_opt_data is not None:
+            self._guard_opt_data.set_basis_constraint_values(new_vals)
 
     def point_to_star_basis(self, standard_pt):
         '''convert a point in the standard basis to the star's basis'''
@@ -247,7 +258,7 @@ class Star(Freezable):
 
     def get_feasible_point(self):
         '''
-        if it is feasible, this returns a standard point, otherwise returns None
+        if it is feasible, this returns a point which is feasible, otherwise returns None
         '''
 
         lpi = self.get_lpi()
@@ -266,9 +277,15 @@ class Star(Freezable):
         return rv
 
     def get_guard_intersection(self, index):
-        'get the intersection (if it exists) with the guard with the given index'
+        '''
+        get the intersection (if it exists) with the guard with the given index
 
-        return self._guard_opt_data.get_guard_intersection(index)
+        returns the optimal lp solution vector, or None if the intersection doesn't exist
+        '''
+
+        is_error_intersection = self.mode.transitions[index].to_mode.is_error
+
+        return self._guard_opt_data.get_guard_intersection(index, is_error_intersection)
 
     def is_feasible(self):
         'check if a star is feasible (not empty set)'
@@ -324,16 +341,19 @@ class Star(Freezable):
                     # first, convert the condition to the star's basis
 
                     # basis vectors (non-transpose) * standard_condition
-                    basis_influence = np.dot(self.basis_matrix, lin_con.vector)
+                    basis_condition = np.dot(self.basis_matrix, lin_con.vector)
                     center_value = np.dot(self.center, lin_con.vector)
                     remaining_value = lin_con.value - center_value
 
-                    basis_lc = LinearConstraint(basis_influence, remaining_value)
+                    basis_lc = LinearConstraint(basis_condition, remaining_value)
 
                     if self.settings.plot.plot_mode != PlotSettings.PLOT_NONE:
                         # use the inverse of the invariant constraint for plotting
+
                         inv_lc = LinearConstraint([-1 * ele for ele in basis_lc.vector], -basis_lc.value)
+
                         inv_vio_star = self.clone()
+
                         inv_vio_star.add_basis_constraint(inv_lc)
 
                         # re-check for feasibility after adding the constraint
@@ -461,6 +481,8 @@ class Star(Freezable):
     def clone(self):
         'return a copy of the star'
 
+        assert self.input_stars is None or len(self.input_stars) == 0, "clone() not supported with input stars"
+
         rv = Star(self.settings, self.center, self.basis_matrix, self.constraint_list, self.parent, self.mode)
 
         rv.init_post_jump_data(self.start_basis_matrix, self.total_steps, self.fast_forward_steps)
@@ -472,15 +494,17 @@ class Star(Freezable):
         this does not print parent. mode is printed as ha.modes['name']
         '''
 
-        return "Star(HylaaSettings(), {}, {}, {}, {}, None, ha.modes['{}'], {}, {}, {})".format(
+        return "Star(HylaaSettings({}, {}), {}, {}, {}, None, ha.modes['{}'], extra_init=({}, {}, {}))".format(
+            self.settings.step,
+            self.settings.step * self.settings.num_steps,
             array_repr(self.center),
             array_repr(self.basis_matrix),
-            array_repr(self.a_mat),
-            array_repr(self.b_vec),
+            self.constraint_list,
             self.mode.name,
             array_repr(self.start_basis_matrix) if self.start_basis_matrix is not None else None,
-            repr(self.temp_constraints),
-            self.total_steps)
+            self.total_steps,
+            self.fast_forward_steps
+            )
 
     def contains_basis(self, basis_vals, atol=0):
         ''''

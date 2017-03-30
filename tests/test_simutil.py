@@ -332,5 +332,25 @@ class TestSimUtil(unittest.TestCase):
 
         assert_array_almost_equal(sim_result, series_result)
 
+    def test_sim_types_shapes(self):
+        '''check that the types and shapes returned by get_vecs_origin_at_step are correct'''
+
+        # harmonic oscillator: x' = y,   y' = -x
+        a_matrix = [[0.0, 1.0], [-1.0, 0.0]]
+        b_vector = [0.0, 0.0]
+        step_time = 0.1
+        max_steps = 10
+
+        bundle = SimulationBundle(a_matrix, b_vector, make_settings(step_time))
+
+        for s in xrange(max_steps+1):
+            vals, center = bundle.get_vecs_origin_at_step(s, max_steps)
+
+            self.assertTrue(isinstance(vals, np.ndarray))
+            self.assertTrue(isinstance(center, np.ndarray))
+
+            self.assertTrue(vals.shape == (2, 2))
+            self.assertTrue(center.shape == (2,))
+
 if __name__ == '__main__':
     unittest.main()

@@ -245,14 +245,7 @@ class LpData
     {
         if (aVecLen != numBasisVars)
         {
-            printf("Fatal Error: Vector length wrong in addBasisConstraint().\n");
-            exit(1);
-        }
-        
-        if (numStandardConstraints != 0)
-        {
-            printf("Fatal Error: addBasisConstraint() added AFTER standard_constraints were added"
-                   " (will interfere with setStandardConstraintValues().\n");
+            printf("Fatal Error: aVecLen wrong in addBasisConstraint().\n");
             exit(1);
         }
         
@@ -290,47 +283,48 @@ class LpData
         }
 
         glp_set_mat_row(lp, row, index - 1, inds, vals);
-        ++numBasisConstraints;
+        basisConstraintRows.push_back(row);
     }
 
     // this is used to offset by the center simulation in a combined_lpi with inputs
     void setStandardConstraintValues(double* vals, int len)
     {
-        if (len != numStandardConstraints)
+        if (len != (int)standardConstraintRows.size())
         {
-            printf("Fatal Error: Vector length wrong in setStandardConstraintValues.\n");
+            printf("Fatal Error: vals array length wrong in setStandardConstraintValues.\n");
             exit(1);
         }
 
-        // one row for each standard variable (equality condition with basis variables)
-        // one row for each basis constraint
-        int startRow = numStandardVars + numBasisConstraints;
-
         for (int r = 0; r < len; ++r)
-            glp_set_row_bnds(lp, startRow + r + 1, GLP_UP, 0, vals[r]);
+        {
+            int row = (int)standardConstraintRows[r];
+            
+            glp_set_row_bnds(lp, row, GLP_UP, 0, vals[r]);
+        }
     }
     
     // this is used in the eat_star operation, to relax a star's constraints
     void setBasisConstraintValues(double* vals, int len)
     {
-        if (len != numBasisConstraints)
+        if (len != (int)basisConstraintRows.size())
         {
-            printf("Fatal Error: Vector length wrong in setBasisConstraintValues.\n");
+            printf("Fatal Error: valls array length wrong in setBasisConstraintValues.\n");
             exit(1);
         }
 
-        // one row for each standard variable (equality condition with basis variables)
-        int startRow = numStandardVars;
-
         for (int r = 0; r < len; ++r)
-            glp_set_row_bnds(lp, startRow + r + 1, GLP_UP, 0, vals[r]);
+        {
+            int row = basisConstraintRows[r];
+            
+            glp_set_row_bnds(lp, row, GLP_UP, 0, vals[r]);
+        }
     }
 
     void addStandardConstraint(double* aVec, int aVecLen, double bVal)
     {
         if (aVecLen != numStandardVars)
         {
-            printf("Fatal Error: Vector length wrong in addStandardConstraint.\n");
+            printf("Fatal Error: aVecLen length wrong in addStandardConstraint.\n");
             exit(1);
         }
 
@@ -364,7 +358,7 @@ class LpData
         }
 
         glp_set_mat_row(lp, row, index - 1, inds, vals);
-        ++numStandardConstraints;
+        standardConstraintRows.push_back(row);
 
         // printf("add_constraint (<= %f): ", b_val);
         // print_inds_vals("set_mat_row", row, index - 1, inds, vals);
@@ -424,20 +418,27 @@ class LpData
             exit(1);
         }
 
-        if (rLen != numStandardVars + numBasisConstraints)
+        if (rLen != numStandardVars + (int)basisConstraintRows.size())
         {
             printf(
                 "Fatal Error: num row statuses (%d) in setStandardBasisStatuses was not equal to "
-                "numStandardVars + numBasisConstraints (%d)\n",
-                rLen, numStandardVars + numBasisConstraints);
+                "numStandardVars + basisConstraints.size() (%d)\n",
+                rLen, numStandardVars + (int)basisConstraintRows.size());
             exit(1);
         }
 
-        for (int r = 0; r < rLen; ++r)
-            glp_set_row_stat(lp, r + 1, rowStats[r]);
-
         for (int c = 0; c < cLen; ++c)
             glp_set_col_stat(lp, c + 1, colStats[c]);
+            
+        // rows are split between standard rows (first few rows) and basis statuses (use basisConstraintRows)
+        for (int r = 0; r < numStandardVars; ++r)
+            glp_set_row_stat(lp, r + 1, rowStats[r]);
+            
+        for (int r = numStandardVars; r < rLen; ++r)
+        {
+            int row = basisConstraintRows[r - numStandardVars];
+            glp_set_row_stat(lp, row, rowStats[r]);
+        }
     }
 
     void setLastInputStatuses(char* rowStats, int rLen, char* colStats, int cLen)
@@ -510,14 +511,16 @@ class LpData
     int numStandardVars = 0;  // number of standard variables
     int numBasisVars = -1;    // number of basis variables
     int numInputConstraints = -1;
-    int numBasisConstraints = 0;
-    int numStandardConstraints = 0;
+
     int numInputs = 0;
     glp_prob* lp = nullptr;
     glp_smcp params;
 
     vector<vector<int>> basisConstraintCols;
     vector<vector<double>> basisConstraintVals;
+    
+    vector<int> standardConstraintRows; //  use size() when numStandardConstraints is needed
+    vector<int> basisConstraintRows; //  use size() when numBasisConstraints is needed
 
     void addRows(int numRows, int num, double* bound)
     {

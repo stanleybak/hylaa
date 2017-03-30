@@ -29,12 +29,12 @@ from hylaa.glpk_interface import LpInstance
 def lighter(rgb_col):
     'return a lighter variant of an rgb color'
 
-    return [(2.0 + val) / 3.0 for val in rgb_col] 
+    return [(2.0 + val) / 3.0 for val in rgb_col]
 
 def darker(rgb_col):
     'return a darker variant of an rgb color'
 
-    return [val / 1.2 for val in rgb_col] 
+    return [val / 1.2 for val in rgb_col]
 
 class AxisLimits(object):
     'container object for the plot axis limits'
@@ -234,12 +234,12 @@ class DrawnShapes(Freezable):
 
         return (face_col, edge_col)
 
-    def add_trace(self, pts):
+    def add_trace(self, trace_pts):
         'add to the current frame counter-example trace'
 
         paths = self.trace.get_segments()
 
-        pts = np.array(pts, dtype=float)
+        pts = np.array(trace_pts, dtype=float)
 
         val = [pts] + paths
         self.trace.set_segments(val)
@@ -247,7 +247,7 @@ class DrawnShapes(Freezable):
         segs = self.trace.get_segments()
 
         # matplotlib does interpolation for larger lines, make sure it was disabled
-        assert len(segs[0]) == len(pts), "first line in collection contains correct number of added points"
+        assert len(segs[0]) == len(pts), "matplotlib interpolation was not disabled"
 
     def reset_temp_polys(self):
         '''
@@ -521,14 +521,15 @@ class PlotManager(object):
 
         if self.settings.plot_mode != PlotSettings.PLOT_NONE:
             self.fig, self.axes = plt.subplots(nrows=1, figsize=self.settings.plot_size)
+            ha = self.engine.hybrid_automaton
 
             title = self.settings.label.title
-            title = title if title is not None else self.engine.ha.name
+            title = title if title is not None else ha.name
 
             x_label = self.settings.label.x_label
-            x_label = x_label if x_label is not None else self.engine.ha.variables[self.settings.xdim].capitalize()
+            x_label = x_label if x_label is not None else ha.variables[self.settings.xdim].capitalize()
             y_label = self.settings.label.y_label
-            y_label = y_label if y_label is not None else self.engine.ha.variables[self.settings.ydim].capitalize()
+            y_label = y_label if y_label is not None else ha.variables[self.settings.ydim].capitalize()
 
             self.axes.set_xlabel(x_label, fontsize=self.settings.label.label_size)
             self.axes.set_ylabel(y_label, fontsize=self.settings.label.label_size)
@@ -558,7 +559,7 @@ class PlotManager(object):
 
         if self.settings.plot_mode != PlotSettings.PLOT_NONE:
             self.shapes.del_reachable_polys_from_parent(parent)
-    
+
             # maybe we want to revert axis limits here?
 
     def state_popped(self):
@@ -670,9 +671,9 @@ class PlotManager(object):
 
             # redraw one more (will clear cur_state)
             #yield False
-        
+
             Timers.toc("total")
-            
+
             LpInstance.print_stats()
             Timers.print_stats()
 

@@ -75,7 +75,7 @@ def main():
     init = define_init_states(ha)
                             
     plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_INTERACTIVE
+    plot_settings.plot_mode = PlotSettings.PLOT_NONE
     #plot_settings.plot_mode = PlotSettings.PLOT_VIDEO
     #plot_settings.video_frames = 250
     #plot_settings.video_filename = "hylaa_deaggregation.avi"

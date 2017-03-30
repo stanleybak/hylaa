@@ -265,13 +265,15 @@ class TestStar(unittest.TestCase):
 
             star1.get_lpi().minimize(direction, result, error_if_infeasible=True)
             val1 = np.dot(direction, result[0:dims])
+            val1 += np.dot(star1.center, direction)
 
             star2.get_lpi().minimize(direction, result, error_if_infeasible=True)
             val2 = np.dot(direction, result[0:dims])
+            val2 += np.dot(star2.center, direction)
 
             if abs(val1 - val2) > tol:
                 msg = "stars are not equal in direction {}. star1={}, star2={}. set show_plot=True to see plots".format(
-                    direction, val1, val2)
+                    -1 * direction, val1, val2)
                 break
 
         show_plot = False
@@ -286,8 +288,8 @@ class TestStar(unittest.TestCase):
             plot_star(star1, col='b-')
             plot_star(star2, col='r--')
 
-            plt.xlim([-5, 5])
-            plt.ylim([-5, 5])
+            #plt.xlim([-5, 5])
+            #plt.ylim([-5, 5])
             plt.show()
 
         self.assertEqual(msg, None, msg=msg)
@@ -505,6 +507,60 @@ class TestStar(unittest.TestCase):
                        LinearConstraint([0, -1], 1), LinearConstraint([0, 1], 1)]
 
         star2 = init_constraints_to_star(make_settings(), constraints, TestStar.loc)
+
+        self.check_stars_equal(star, star2)
+
+    def test_clone(self):
+        'test that clone is working as expected'
+
+        mode = make_debug_mode()
+
+        array = np.array
+
+        star = Star(HylaaSettings(0.1, 1.0), array([-0.11060623, -0.62105371]),
+                    array([[-0.12748444, -6.33082449], [0.06330825, -0.3807174]]),
+                    [LinearConstraint(array([1., 0.]), -0.76877967521149881),
+                     LinearConstraint(array([-1., 0.]), 0.8687796752114989),
+                     LinearConstraint(array([0., 1.]), -1.2821810092782602),
+                     LinearConstraint(array([0., -1.]), 1.4821810092782604)],
+                    None, mode, extra_init=(None, 20, 0))
+
+        self.check_stars_equal(star, star.clone())
+
+    def test_center_into_constraints(self):
+        '''test that center_into_constraints doesn't modify the stars'''
+
+        mode = make_debug_mode()
+        array = np.array
+
+        star = Star(HylaaSettings(0.1, 1.0),
+                    array([5.0, 5.0]), array([[0.707, 0.707], [-0.707, 0.707]]),
+                    [LinearConstraint(array([1., 0.]), 1), LinearConstraint(array([-1., 0.]), 0.),
+                     LinearConstraint(array([0., 1.]), 1), LinearConstraint(array([0., -1.]), 0)],
+                    None, mode, extra_init=(None, 20, 0))
+
+        star2 = star.clone()
+        star2.center_into_constraints(star2.vector_to_star_basis(star2.center))
+
+        self.check_stars_equal(star, star2)
+
+    def test_center_into_constraints_complex(self):
+        '''test that center_into_constraints doesn't modify the stars'''
+
+        mode = make_debug_mode()
+        array = np.array
+
+        star = Star(HylaaSettings(0.01, 2.0),
+                    array([-0.11060623, -0.62105371]), array([[-0.12748444, -6.33082449], [0.06330825, -0.3807174]]),
+                    [LinearConstraint(array([1., 0.]), -0.95), LinearConstraint(array([-1., 0.]), 1.05),
+                     LinearConstraint(array([0., 1.]), 0.1), LinearConstraint(array([0., -1.]), 0.1),
+                     LinearConstraint(array([6.33082449, 0.3807174]), -0.6210537093866693),
+                     LinearConstraint(array([0.12748444, -0.06330825]), -0.11060623185202963),
+                     LinearConstraint(array([-0.12748444, 0.06330825]), 1.1106062318520296)],
+                    None, mode, extra_init=(None, 20, 0))
+
+        star2 = star.clone()
+        star2.center_into_constraints(star2.vector_to_star_basis(star2.center))
 
         self.check_stars_equal(star, star2)
 

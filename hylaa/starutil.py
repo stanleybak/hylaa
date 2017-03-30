@@ -105,8 +105,26 @@ class GuardOptData(Freezable):
                 lpi.add_basis_constraint(lc.vector, lc.value)
 
         if self.star.settings.opt_decompose_lp:
-            for lpi in self.no_input_lpis:
-                lpi.add_basis_constraint(lc.vector, lc.value)
+
+            for guard_lpis in self.no_input_lpis:
+                for lpi in guard_lpis:
+                    lpi.add_basis_constraint(lc.vector, lc.value)
+
+    def set_basis_constraint_values(self, new_vals):
+        '''
+        set the basis constraint values. This assumes there are no inputs.
+        '''
+
+        assert self.star.mode.num_inputs == 0, 'setting constaint values w/ inputs unsupported'
+
+        if self.star.settings.opt_warm_start_lp:
+            for lpi in self.combined_lpis:
+                lpi.set_basis_constraint_values(new_vals)
+
+        if self.star.settings.opt_decompose_lp:
+            for guard_lpis in self.no_input_lpis:
+                for lpi in guard_lpis:
+                    lpi.set_basis_constraint_values(new_vals)
 
     def make_combined_lpi(self, automaton_transition=None, skip_inputs=False):
         'create one lpi per guard, which will have both the star and input effects, as well as the guard condition'
@@ -239,12 +257,13 @@ class GuardOptData(Freezable):
                                     combined_lpi = self.combined_lpis[guard_index]
                                     combined_lpi.set_last_input_statuses(rows[-numcons:], cols[-numi:])
 
-    def get_guard_intersection(self, guard_index):
+    def get_guard_intersection(self, guard_index, is_error_intersection):
         '''Does the star intersect the guard with the given index?
         This one first tries an optimized approach which is a sufficient condition... and only calls
         the more-expensive exact check if that one succeeds.
+        if is_error_intersection is True, this will possibly export a counter-example error trace file.
 
-        returns the point where the guard condition is feasible or None if no intersection
+        returns the optimal lp solution if feasible or None if no intersection
         '''
 
         rv = None
@@ -285,15 +304,17 @@ class GuardOptData(Freezable):
                     break
 
         if all_guards_possible:
-            rv = self.get_guard_intersection_exact(guard_index)
+            rv = self.get_guard_intersection_exact(guard_index, is_error_intersection)
 
         return rv
 
-    def get_guard_intersection_exact(self, guard_index):
+    def get_guard_intersection_exact(self, guard_index, is_error_intersection):
         '''Does the star intersect the guard with the given index?
-        This one uses the combined lpi to do the check (slow).
 
-        returns the point where the guard condition is feasible or None if no intersection
+        This one uses the combined lpi to do the check (slow).
+        if is_error_intersection is True, this will possibly export a counter-example error trace file.
+
+        returns the optimal lp solution if feasible or None if no intersection
         '''
 
         rv = None
@@ -336,29 +357,22 @@ class GuardOptData(Freezable):
         result = np.zeros(2 * dims + input_dims)
 
         opt_direction = np.zeros(dims)
-        before_iterations = combined_lpi.total_iterations()
 
         if combined_lpi.minimize(opt_direction, result, error_if_infeasible=False):
             # lp was feasible
 
-            rv = result[0:dims] + self.star.center
-
+            rv = result
             ce_filename = self.star.settings.counter_example_filename
-            diff_iterations = combined_lpi.total_iterations() - before_iterations
 
-            if self.star.settings.print_output:
-                print "Exact LP was feasible at step {}! Final LP iterations = {}".format(
-                    self.total_steps, diff_iterations)
+            if is_error_intersection:
+                if ce_filename is not None:
+                    if self.star.settings.print_output:
+                        print "Found specification violation! Writing counter-example to {}".format(ce_filename)
 
-            if ce_filename is not None:
-
-                if self.star.settings.print_output:
-                    print "Writing counter-example to {}".format(ce_filename)
-
-                export_counter_example(ce_filename, self.star.mode, result, self.star.center, dims, \
-                    self.star.settings.step, self.total_steps, constraints[0])
-            elif self.star.settings.print_output:
-                print "Counter-example file disabled in settings; skipping"
+                    export_counter_example(ce_filename, self.star.mode, result, self.star.center, dims, \
+                        self.star.settings.step, self.total_steps, constraints[0])
+                elif self.star.settings.print_output:
+                    print "Counter-example file disabled in settings; skipping"
         else:
             rv = None
 

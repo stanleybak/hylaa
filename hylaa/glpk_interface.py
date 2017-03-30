@@ -141,6 +141,7 @@ class LpInstance(Freezable):
         self.num_standard_vars = None
         self.num_basis_vars = None
         self.num_inputs = None
+        self.added_standard_constraint = False
 
         self.freeze_attrs()
 
@@ -238,6 +239,8 @@ class LpInstance(Freezable):
         Timers.tic("lp add_standard_constraint")
         LpInstance._add_standard_constraint(self.lp_data, a_vec, w, b_val)
         Timers.toc("lp add_standard_constraint")
+
+        self.added_standard_constraint = True
 
     def add_input_star(self, a_matrix_t, b_vec, input_basis_matrix):
         '''minkowski add an input star into the lp (creates 1 new variable for each input)'''

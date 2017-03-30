@@ -25,7 +25,7 @@ class HylaaEngine(object):
         assert isinstance(hylaa_settings, HylaaSettings)
         assert isinstance(ha, LinearHybridAutomaton)
 
-        self.ha = ha
+        self.hybrid_automaton = ha
         self.settings = hylaa_settings
         self.num_vars = len(ha.variables)
 
@@ -81,9 +81,9 @@ class HylaaEngine(object):
         assert state is not None
 
         for i in xrange(len(state.mode.transitions)):
-            result = state.star.get_guard_intersection(i)
+            lp_solution = state.star.get_guard_intersection(i)
 
-            if result is not None:
+            if lp_solution is not None:
                 transition = state.star.mode.transitions[i]
                 successor_mode = transition.to_mode
 
@@ -103,19 +103,18 @@ class HylaaEngine(object):
                 discrete_poststate_star.parent = DiscretePostParent(state.mode, discrete_prestate_star,
                                                                     basis_center, transition)
 
-                # convert each of the guard conditions to the star's basis
-                for g in transition.condition_list:
+                # add each of the guard conditions to discrete_poststate_star
+                for lin_con in transition.condition_list:
+
+                    # first, convert the condition to the star's basis
 
                     # basis vectors (non-transpose) * standard_condition
-                    basis_influence = np.dot(state.star.basis_matrix, g.vector)
+                    basis_influence = np.dot(state.star.basis_matrix, lin_con.vector)
+                    center_value = np.dot(state.star.center, lin_con.vector)
+                    remaining_value = lin_con.value - center_value
 
-                    standard_center = state.star.vector_to_star_basis(state.star.center)
-                    center_value = np.dot(standard_center, g.vector)
-                    remaining_value = g.value - center_value
-
-                    lc = LinearConstraint(basis_influence, remaining_value)
-
-                    discrete_poststate_star.temp_constraints.append(lc)
+                    basis_lc = LinearConstraint(basis_influence, remaining_value)
+                    discrete_poststate_star.add_basis_constraint(basis_lc)
 
                 if transition.reset_matrix is not None:
                     raise RuntimeError("only empty resets are currently supported")
@@ -124,7 +123,7 @@ class HylaaEngine(object):
                 # re-check for feasibility
 
                 if discrete_poststate_star.is_feasible():
-                    violation_basis_vec = result[star.num_dims:]
+                    violation_basis_vec = lp_solution[state.star.num_dims:]
 
                     if not self.settings.aggregation or not self.settings.deaggregation or \
                        self.has_counterexample(state.star, violation_basis_vec, state.star.total_steps):
@@ -132,13 +131,14 @@ class HylaaEngine(object):
                         # convert origin offset to star basis and add to basis_center
                         successor = discrete_poststate_star
                         #successor.start_center = successor.center
+
                         successor.center_into_constraints(basis_center)
 
-                        self.plotman.cache_star_verts(successor) # do this before committing temp constriants
-                        successor.commit_temp_constraints()
+                        #self.plotman.cache_star_verts(successor) # do this before committing temp constriants
 
                         successor.start_basis_matrix = state.star.basis_matrix
-                        successor.sim_basis_matrix = None # gets assigned from sim_bundle on pop
+                        #successor.basis_matrix = None # gets assigned from sim_bundle on pop
+                        successor.basis_matrix = np.identity(state.star.num_dims, dtype=float)
 
                         new_state = SymbolicState(transition.to_mode, successor)
 
@@ -252,7 +252,7 @@ class HylaaEngine(object):
 
         if rv and self.plotman.settings.plot_mode != PlotSettings.PLOT_NONE:
             if isinstance(star.parent, ContinuousPostParent):
-                sim_bundle = star.parent.mode.get_sim_bundle(self.settings)
+                sim_bundle = star.parent.mode.get_existing_sim_bundle()
                 num_steps = star.fast_forward_steps + star.total_steps - star.parent.star.total_steps
                 start_basis_matrix = star.start_basis_matrix
 
@@ -281,6 +281,7 @@ class HylaaEngine(object):
 
         parent_star = state.star
         state.star = parent_star.clone()
+
         state.star.parent = ContinuousPostParent(state.mode, parent_star)
         self.cur_state = state
 
@@ -426,7 +427,7 @@ class WaitingList(object):
     The set of to-be computed values (discrete sucessors).
 
     There are aggregated states, and deaggregated states. The idea is states first
-    go into the aggregrated ones, but may be later split and placed into the 
+    go into the aggregrated ones, but may be later split and placed into the
     deaggregated list. Thus, deaggregated states, if they exist, are popped first.
     The states here are SymbolicStates
     '''
@@ -495,6 +496,7 @@ class WaitingList(object):
         'add a state to the aggregated map'
 
         assert isinstance(new_state, SymbolicState)
+        assert new_state.star.basis_matrix is not None
 
         mode_name = new_state.mode.name
 
