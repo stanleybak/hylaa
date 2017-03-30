@@ -369,76 +369,6 @@ class Star(Freezable):
 
         return (still_feasible, inv_vio_star_list)
 
-    def commit_temp_constraints(self):
-        'convert the temp constraints to permanent constraints'
-
-        if len(self.temp_constraints) > 0:
-            temp_a = [lc.vector for lc in self.temp_constraints]
-            temp_b = [lc.value for lc in self.temp_constraints]
-
-            new_a_mat = np.append(self.a_mat, temp_a, axis=0)
-            new_b_vec = np.append(self.b_vec, temp_b, axis=0)
-
-            self.temp_constraints = []
-            self.a_mat = new_a_mat
-            self.b_vec = new_b_vec
-
-    def trim_redundant_temp_constraints(self, tol=1e-9):
-        'remove temp constraints from the star that are redundant'
-
-        if len(self.temp_constraints) > 0:
-            lpc = self.to_lp_constraints()
-            c_list = []
-
-            for i in xrange(len(lpc.b_temp_ub)):
-                vec = lpc.a_temp_ub[i]
-                c_list.append([-ele for ele in vec])
-
-            result_list = optutil.optimize_multi(Star.solver, c_list, lpc)          
-
-            for i in xrange(len(result_list)-1, -1, -1):
-                result_basis = result_list[i][self.num_dims:]
-                vec = lpc.a_temp_ub[i][self.num_dims:]
-                result_val = np.dot(vec, result_basis)
-                condition_val = lpc.b_temp_ub[i]
-
-                # constraint was redundant
-                if result_val + tol <= condition_val:
-                    del self.temp_constraints[i]
-
-    def trim_redundant_perm_constraints(self, tol=1e-9):
-        'remove perm constraints from the star that are redundant'
-
-        assert len(self.temp_constraints) == 0
-
-        lpc = self.to_lp_constraints()
-        c_list = []
-
-        for i in xrange(len(lpc.b_perm_ub)):
-            vec = lpc.a_perm_ub[i]
-            c_list.append([-ele for ele in vec])
-
-        optutil.MultiOpt.reset_per_mode_vars()
-        result_list = optutil.optimize_multi(Star.solver, c_list, lpc)          
-        optutil.MultiOpt.reset_per_mode_vars()
-
-        new_a_matrix = []
-        new_b_vector = []
-
-        for i in xrange(len(result_list)):
-            result_basis = result_list[i][self.num_dims:]
-            vec = lpc.a_perm_ub[i][self.num_dims:]
-            result_val = np.dot(vec, result_basis)
-            condition_val = lpc.b_perm_ub[i]
-
-            # if constaint was not redundant; keep it
-            if result_val + tol > condition_val:
-                new_a_matrix.append(vec)
-                new_b_vector.append(condition_val)
-
-        self.a_mat = np.array(new_a_matrix, dtype=float)
-        self.b_vec = np.array(new_b_vector, dtype=float)
-
     def eat_star(self, other_star):
         '''
         merge the other star into this star, changing this star's linear basis constraints values
@@ -458,6 +388,8 @@ class Star(Freezable):
         result = np.zeros((2 * self.num_dims))
 
         # possibly increase every constraint
+        lc_vals = []
+
         for lc in self.constraint_list:
             # maximize the basis constraint direction in other_star
             basis_direction = -1 * lc.vector
@@ -473,9 +405,19 @@ class Star(Freezable):
                 lc.value = opt_val
                 changed = True
 
-        # reset verts cache if star may have changed
-        if changed and self._verts is not None:
+            lc_vals.append(lc.value)
+
+        # reset cached values if star changed
+        if changed:
             self._verts = None
+
+            lc_vals = np.array(lc_vals, dtype=float)
+
+            if self._star_lpi is not None:
+                self._star_lpi.set_basis_constraint_values(lc_vals)
+
+            if self._guard_opt_data is not None:
+                self._guard_opt_data.set_basis_constraint_values(lc_vals)
 
     def clone(self):
         'return a copy of the star'
