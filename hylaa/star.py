@@ -353,7 +353,6 @@ class Star(Freezable):
                         inv_lc = LinearConstraint([-1 * ele for ele in basis_lc.vector], -basis_lc.value)
 
                         inv_vio_star = self.clone()
-
                         inv_vio_star.add_basis_constraint(inv_lc)
 
                         # re-check for feasibility after adding the constraint
@@ -535,8 +534,8 @@ class Star(Freezable):
         return self.contains_basis(basis_vecs, atol=atol)
 
     def __str__(self):
-        return "[Star: dims={}, center={}, basis_matrix=\n{}\n, a_mat=\n{}\n, b_vec={}, total_steps={}]".format(
-            self.num_dims, self.center, self.basis_matrix, self.a_mat, self.b_vec, self.total_steps)
+        return "[Star: dims={}, center={}, basis_matrix=\n{}\n, constraint_list=\n{}\n, total_steps={}]".format(
+            self.num_dims, self.center, self.basis_matrix, self.constraint_list, self.total_steps)
 
     ######### star plotting methods below ############
 

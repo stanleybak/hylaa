@@ -165,14 +165,3 @@ class HylaaResult(object):
 
     def __init__(self):
         self.time = None
-
-class SymbolicState(object):
-    'a container object for states in the waiting list and other places'
-
-    def __init__(self, mode, star):
-        self.mode = mode
-        self.star = star
-
-
-
-

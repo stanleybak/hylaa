@@ -49,7 +49,8 @@ class DiscretePostParent(StarParent):
 
         assert isinstance(prestar_basis_center, np.ndarray)
         assert isinstance(transition, LinearAutomatonTransition)
-        assert premode == transition.from_mode
+        assert premode == transition.from_mode, "premode({}) != transition.from_mode({})".format(
+            premode, transition.from_mode)
 
 class AggregationParent(StarParent):
     'a parent of a star which resulted from guard successor aggregation'

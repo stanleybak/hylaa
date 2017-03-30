@@ -332,11 +332,3 @@ class LinearHybridAutomaton(object):
 
                 if not already_in_cond_list:
                     condition_list.append(inv_constraint)
-
-
-
-
-
-
-
-

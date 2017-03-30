@@ -119,21 +119,21 @@ class DrawnShapes(Freezable):
         self.clear_waiting_list_polys()
 
         # add deaggregated
-        for ss in waiting_list.deaggregated_list:
-            verts = ss.star.verts()
-            self.add_waiting_list_poly(verts, ss.mode.name)
+        for star in waiting_list.deaggregated_list:
+            verts = star.verts()
+            self.add_waiting_list_poly(verts, star.mode.name)
 
         # add aggregated
-        for ss in waiting_list.aggregated_mode_to_state.values():
-            verts = ss.star.verts()
+        for star in waiting_list.aggregated_mode_to_state.values():
+            verts = star.verts()
 
-            self.add_aggregation_poly(verts, ss.mode.name)
+            self.add_aggregation_poly(verts, star.mode.name)
 
             # also show the sub-stars
-            if isinstance(ss.star.parent, AggregationParent):
-                for star in ss.star.parent.stars:
-                    verts = star.verts()
-                    self.add_waiting_list_poly(verts, ss.mode.name)
+            if isinstance(star.parent, AggregationParent):
+                for substar in star.parent.stars:
+                    verts = substar.verts()
+                    self.add_waiting_list_poly(verts, substar.mode.name)
 
     def add_aggregation_poly(self, poly_verts, mode_name):
         '''add a polygon that's an aggregation on the waiting list'''
@@ -567,7 +567,7 @@ class PlotManager(object):
 
         self.draw_cur_step = 0 # reset the cur_step counter
 
-    def plot_current_state(self, state):
+    def plot_current_star(self, star):
         '''
         plot the current SymbolicState according to the plot settings
 
@@ -577,12 +577,12 @@ class PlotManager(object):
         skipped_plot = True
 
         if self.settings.plot_mode != PlotSettings.PLOT_NONE:
-            Timers.tic("plot_current_state()")
+            Timers.tic("plot_current_star()")
 
             if self.draw_cur_step % self.draw_stride == 0:
                 skipped_plot = False
 
-                verts = state.star.verts()
+                verts = star.verts()
                 self.shapes.set_cur_state(verts)
 
                 if self.settings.label.axes_limits is None:
@@ -598,11 +598,11 @@ class PlotManager(object):
                     self.draw_stride *= 2
 
                 self.cur_reachable_polys += 1
-                self.shapes.add_reachable_poly(verts, state.star.parent, state.mode.name)
+                self.shapes.add_reachable_poly(verts, star.parent, star.mode.name)
 
             self.draw_cur_step += 1
 
-            Timers.toc("plot_current_state()")
+            Timers.toc("plot_current_star()")
 
         return skipped_plot
 

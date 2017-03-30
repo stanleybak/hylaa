@@ -14,7 +14,7 @@ from hylaa.starutil import InitParent, AggregationParent, ContinuousPostParent, 
 from hylaa.starutil import add_guard_to_star, add_box_to_star
 from hylaa.hybrid_automaton import LinearHybridAutomaton, LinearAutomatonMode, LinearConstraint, HyperRectangle
 from hylaa.timerutil import Timers
-from hylaa.containers import HylaaSettings, SymbolicState, PlotSettings, HylaaResult
+from hylaa.containers import HylaaSettings, PlotSettings, HylaaResult
 from hylaa.glpk_interface import LpInstance
 
 class HylaaEngine(object):
@@ -37,7 +37,7 @@ class HylaaEngine(object):
         # computation
         self.waiting_list = WaitingList()
 
-        self.cur_state = None # a SymbolicState object
+        self.cur_state = None # a Star object
         self.cur_step_in_mode = None # how much dwell time in current continuous post
         self.max_steps_remaining = None # bound on num steps left in current mode ; assigned on pop
         self.cur_sim_bundle = None # set on pop
@@ -66,7 +66,7 @@ class HylaaEngine(object):
             else:
                 raise RuntimeError("Unsupported initial state type '{}': {}".format(type(shape), shape))
 
-            self.waiting_list.add_deaggregated(SymbolicState(mode, star))
+            self.waiting_list.add_deaggregated(star)
 
     def is_finished(self):
         'is the computation finished'
@@ -81,10 +81,10 @@ class HylaaEngine(object):
         assert state is not None
 
         for i in xrange(len(state.mode.transitions)):
-            lp_solution = state.star.get_guard_intersection(i)
+            lp_solution = state.get_guard_intersection(i)
 
             if lp_solution is not None:
-                transition = state.star.mode.transitions[i]
+                transition = state.mode.transitions[i]
                 successor_mode = transition.to_mode
 
                 if successor_mode.is_error:
@@ -94,12 +94,13 @@ class HylaaEngine(object):
                         raise FoundErrorTrajectory("Found error trajectory")
 
                 # copy the current star to be the frozen pre-state of the discrete post operation
-                discrete_prestate_star = state.star.clone()
-                discrete_prestate_star.parent = ContinuousPostParent(state.mode, state.star.parent.star)
+                discrete_prestate_star = state.clone()
+                discrete_prestate_star.parent = ContinuousPostParent(state.mode, state.parent.star)
 
-                discrete_poststate_star = state.star.clone()
+                discrete_poststate_star = state.clone()
                 discrete_poststate_star.fast_forward_steps = 0 # reset fast forward on transitions
-                basis_center = state.star.vector_to_star_basis(state.star.center)
+                basis_center = state.vector_to_star_basis(state.center)
+
                 discrete_poststate_star.parent = DiscretePostParent(state.mode, discrete_prestate_star,
                                                                     basis_center, transition)
 
@@ -109,8 +110,8 @@ class HylaaEngine(object):
                     # first, convert the condition to the star's basis
 
                     # basis vectors (non-transpose) * standard_condition
-                    basis_influence = np.dot(state.star.basis_matrix, lin_con.vector)
-                    center_value = np.dot(state.star.center, lin_con.vector)
+                    basis_influence = np.dot(state.basis_matrix, lin_con.vector)
+                    center_value = np.dot(state.center, lin_con.vector)
                     remaining_value = lin_con.value - center_value
 
                     basis_lc = LinearConstraint(basis_influence, remaining_value)
@@ -123,10 +124,10 @@ class HylaaEngine(object):
                 # re-check for feasibility
 
                 if discrete_poststate_star.is_feasible():
-                    violation_basis_vec = lp_solution[state.star.num_dims:]
+                    violation_basis_vec = lp_solution[state.num_dims:]
 
                     if not self.settings.aggregation or not self.settings.deaggregation or \
-                       self.has_counterexample(state.star, violation_basis_vec, state.star.total_steps):
+                       self.has_counterexample(state, violation_basis_vec, state.total_steps):
 
                         # convert origin offset to star basis and add to basis_center
                         successor = discrete_poststate_star
@@ -136,16 +137,15 @@ class HylaaEngine(object):
 
                         #self.plotman.cache_star_verts(successor) # do this before committing temp constriants
 
-                        successor.start_basis_matrix = state.star.basis_matrix
+                        successor.start_basis_matrix = state.basis_matrix
                         #successor.basis_matrix = None # gets assigned from sim_bundle on pop
-                        successor.basis_matrix = np.identity(state.star.num_dims, dtype=float)
 
-                        new_state = SymbolicState(transition.to_mode, successor)
+                        successor.mode = transition.to_mode
 
                         if self.settings.aggregation:
-                            self.waiting_list.add_aggregated(new_state, self.settings)
+                            self.waiting_list.add_aggregated(successor, self.settings)
                         else:
-                            self.waiting_list.add_deaggregated(new_state)
+                            self.waiting_list.add_deaggregated(successor)
                     else:
                         # a refinement occurred, stop processing guards
                         self.cur_state = state = None
@@ -187,9 +187,8 @@ class HylaaEngine(object):
             else:
                 cur_star = self.make_aggregated_star(mode, stars)
 
-            # does aggregation work if start_basis matrix is different for the stars?
-            ss = SymbolicState(mode, cur_star)
-            self.waiting_list.add_deaggregated(ss)
+            cur_star.mode = mode
+            self.waiting_list.add_deaggregated(cur_star)
 
         Timers.toc('deaggregate star')
 
@@ -270,19 +269,18 @@ class HylaaEngine(object):
         if output:
             self.waiting_list.print_stats()
 
-        state = self.waiting_list.pop()
+        parent_star = self.waiting_list.pop()
 
         if output:
             print "Removed state in mode '{}' at time {:.2f}; fast_forward_steps = {}".format(
-                state.mode.name, state.star.total_steps * self.settings.step, state.star.fast_forward_steps)
+                parent_star.mode.name, parent_star.total_steps * self.settings.step, parent_star.fast_forward_steps)
 
-        self.max_steps_remaining = self.settings.num_steps - state.star.total_steps + state.star.fast_forward_steps
-        self.cur_sim_bundle = state.mode.get_sim_bundle(self.settings, state.star, self.max_steps_remaining)
+        self.max_steps_remaining = self.settings.num_steps - parent_star.total_steps + parent_star.fast_forward_steps
+        self.cur_sim_bundle = parent_star.mode.get_sim_bundle(self.settings, parent_star, self.max_steps_remaining)
 
-        parent_star = state.star
-        state.star = parent_star.clone()
+        state = parent_star.clone()
 
-        state.star.parent = ContinuousPostParent(state.mode, parent_star)
+        state.parent = ContinuousPostParent(state.mode, parent_star)
         self.cur_state = state
 
         if self.settings.process_urgent_guards:
@@ -310,7 +308,7 @@ class HylaaEngine(object):
         # advance current state by one time step
         state = self.cur_state
 
-        if state.star.total_steps >= self.settings.num_steps:
+        if state.total_steps >= self.settings.num_steps:
             self.cur_state = None
         else:
             sim_bundle = self.cur_sim_bundle
@@ -319,16 +317,16 @@ class HylaaEngine(object):
                 print "Step: {} / {} ({})".format(self.cur_step_in_mode + 1, self.settings.num_steps,
                                                   self.settings.step * (self.cur_step_in_mode))
 
-            sim_step = self.cur_step_in_mode + 1 + state.star.fast_forward_steps
+            sim_step = self.cur_step_in_mode + 1 + state.fast_forward_steps
 
             new_basis_matrix, new_center = sim_bundle.get_vecs_origin_at_step(
                 sim_step, self.max_steps_remaining)
 
-            state.star.update_from_sim(new_basis_matrix, new_center)
+            state.update_from_sim(new_basis_matrix, new_center)
 
             # increment step
             self.cur_step_in_mode += 1
-            state.star.total_steps += 1
+            state.total_steps += 1
 
             self.check_guards(self.cur_state)
 
@@ -337,7 +335,7 @@ class HylaaEngine(object):
                 if output:
                     print "After checking guards, state was refined away."
             else:
-                is_still_feasible, inv_vio_star_list = self.cur_state.star.trim_to_invariant()
+                is_still_feasible, inv_vio_star_list = self.cur_state.trim_to_invariant()
 
                 for star in inv_vio_star_list:
                     self.plotman.add_inv_violation_star(star)
@@ -368,7 +366,7 @@ class HylaaEngine(object):
                     pass
 
             if self.cur_state is not None:
-                skipped_plot = self.plotman.plot_current_state(self.cur_state)
+                skipped_plot = self.plotman.plot_current_star(self.cur_state)
 
             if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE or \
                                     not skipped_plot or self.is_finished():
@@ -429,7 +427,7 @@ class WaitingList(object):
     There are aggregated states, and deaggregated states. The idea is states first
     go into the aggregrated ones, but may be later split and placed into the
     deaggregated list. Thus, deaggregated states, if they exist, are popped first.
-    The states here are SymbolicStates
+    The states here are Star instances
     '''
 
     def __init__(self):
@@ -449,11 +447,7 @@ class WaitingList(object):
             # pop from aggregated list
             rv = self.aggregated_mode_to_state.popitem(last=False)[1]
 
-            assert isinstance(rv, SymbolicState)
-    
-            # pylint false positive
-            if isinstance(rv.star.parent, AggregationParent):
-                rv.star.trim_redundant_perm_constraints()
+            assert isinstance(rv, Star)
 
         return rv
 
@@ -467,13 +461,13 @@ class WaitingList(object):
 
         counter = 1
 
-        for ss in self.deaggregated_list:
-            print " {}. Deaggregated Successor in Mode '{}'".format(counter, ss.mode.name)
+        for star in self.deaggregated_list:
+            print " {}. Deaggregated Successor in Mode '{}'".format(counter, star.mode.name)
             counter += 1
 
-        for mode, ss in self.aggregated_mode_to_state.iteritems():
-            if isinstance(ss.star.parent, AggregationParent):
-                print " {}. Aggregated Sucessor in Mode '{}': {} stars".format(counter, mode, len(ss.star.parent.stars))
+        for mode, star in self.aggregated_mode_to_state.iteritems():
+            if isinstance(star.parent, AggregationParent):
+                print " {}. Aggregated Sucessor in Mode '{}': {} stars".format(counter, mode, len(star.parent.stars))
             else:
                 # should be a DiscretePostParent
                 print " {}. Aggregated Sucessor in Mode '{}': single star".format(counter, mode)
@@ -488,15 +482,15 @@ class WaitingList(object):
     def add_deaggregated(self, state):
         'add a state to the deaggregated list'
 
-        assert isinstance(state, SymbolicState)
+        assert isinstance(state, Star)
 
         self.deaggregated_list.append(state)
 
     def add_aggregated(self, new_state, hylaa_settings):
         'add a state to the aggregated map'
 
-        assert isinstance(new_state, SymbolicState)
-        assert new_state.star.basis_matrix is not None
+        assert isinstance(new_state, Star)
+        assert new_state.basis_matrix is not None
 
         mode_name = new_state.mode.name
 
@@ -506,23 +500,23 @@ class WaitingList(object):
             self.aggregated_mode_to_state[mode_name] = new_state
         else:
             # combine the two stars
-            cur_star = existing_state.star
+            cur_star = existing_state
 
             cur_star.current_step = min(
-                cur_star.total_steps, new_state.star.total_steps)
+                cur_star.total_steps, new_state.total_steps)
 
             # if the parent of this star is not an aggregation, we need to create one
             # otherwise, we need to add it to the list of parents
 
             if isinstance(cur_star.parent, AggregationParent):
                 # add it to the list of parents
-                cur_star.parent.stars.append(new_state.star)
+                cur_star.parent.stars.append(new_state)
 
-                cur_star.eat_star(new_state.star)
+                cur_star.eat_star(new_state)
             else:
                 # create the aggregation parent
                 hull_star = cur_star.clone()
-                hull_star.parent = AggregationParent(new_state.mode, [cur_star, new_state.star])
+                hull_star.parent = AggregationParent(new_state.mode, [cur_star, new_state])
 
                 if hylaa_settings.add_guard_during_aggregation:
                     add_guard_to_star(hull_star, cur_star.parent.transition.condition_list)
@@ -533,8 +527,8 @@ class WaitingList(object):
                 # there may be temp constraints from invariant trimming
                 hull_star.commit_temp_constraints()
 
-                hull_star.eat_star(new_state.star)
-                existing_state.star = hull_star
+                hull_star.eat_star(new_state)
+                existing_state = hull_star
 
 class FoundErrorTrajectory(RuntimeError):
     'gets thrown if a trajectory to the error states is found when settings.stop_when_error_reachable is True'

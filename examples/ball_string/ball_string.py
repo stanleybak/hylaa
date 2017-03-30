@@ -28,7 +28,7 @@ def define_ha():
 
     trans = ha.new_transition(extension, freefall)
     trans.condition_list.append(LinearConstraint([-0.0, -1.0], -0.0)) # v >= 0
-
+    
     trans = ha.new_transition(freefall, freefall)
     trans.condition_list.append(LinearConstraint([-1.0, -0.0], -1.0)) # x >= 1
 
@@ -51,8 +51,8 @@ def define_settings():
     plot_settings.xdim = 0
     plot_settings.ydim = 1
     #plot_settings.skip_frames = 147
-    plot_settings.skip_frames = 21
-    plot_settings.label.axes_limits = (-1.3, 0.3, -1.0, 8.0)
+    plot_settings.skip_frames = 22
+    #plot_settings.label.axes_limits = (-1.3, 0.3, -1.0, 8.0)
 
     settings = HylaaSettings(step=0.01, max_time=2.0, plot_settings=plot_settings)
     #settings.aggregation = False
