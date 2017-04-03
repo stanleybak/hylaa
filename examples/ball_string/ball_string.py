@@ -51,8 +51,8 @@ def define_settings():
     plot_settings.xdim = 0
     plot_settings.ydim = 1
     #plot_settings.skip_frames = 147
-    plot_settings.skip_frames = 46
-    #plot_settings.label.axes_limits = (-1.3, 0.3, -1.0, 8.0)
+    plot_settings.skip_frames = 41
+    plot_settings.label.axes_limits = (0.9, 1.1, 2.0, 6.0)
 
     settings = HylaaSettings(step=0.01, max_time=2.0, plot_settings=plot_settings)
     #settings.aggregation = False

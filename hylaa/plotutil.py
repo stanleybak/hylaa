@@ -116,6 +116,9 @@ class DrawnShapes(Freezable):
     def set_waiting_list_polys(self, waiting_list):
         'set the polys from the waiting list'
 
+        #print ".plotutil set_waiting_list_polys called... waitinglist ="
+        #waiting_list.print_stats()
+
         self.clear_waiting_list_polys()
 
         # add deaggregated
@@ -144,6 +147,9 @@ class DrawnShapes(Freezable):
             _, edge_col = self.get_mode_colors(mode_name)
             edge_col = darker(edge_col)
 
+            print ".plotutil revert edgecolor to not be orange"
+            edge_col = 'orange'
+
             polys = collections.PolyCollection([], lw=4, animated=True,
                                                edgecolor=edge_col, facecolor='none')
             self.axes.add_collection(polys)
@@ -161,6 +167,7 @@ class DrawnShapes(Freezable):
 
         if polys is None:
             face_col, edge_col = self.get_mode_colors(mode_name)
+
             polys = collections.PolyCollection([], lw=2, animated=True, alpha=0.3,
                                                edgecolor=edge_col, facecolor=face_col)
             self.axes.add_collection(polys)

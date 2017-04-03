@@ -485,36 +485,44 @@ class WaitingList(object):
 
         self.deaggregated_list.append(state)
 
-    def add_aggregated(self, new_state, hylaa_settings):
+    def add_aggregated(self, new_star, hylaa_settings):
         'add a state to the aggregated map'
 
-        assert isinstance(new_state, Star)
-        assert new_state.basis_matrix is not None
+        assert isinstance(new_star, Star)
+        assert new_star.basis_matrix is not None
 
-        mode_name = new_state.mode.name
+        mode_name = new_star.mode.name
 
         existing_state = self.aggregated_mode_to_state.get(mode_name)
 
+        print ".engine add_aggregated called in mode {}. existing_state = {}".format(mode_name, existing_state)
+
         if existing_state is None:
-            self.aggregated_mode_to_state[mode_name] = new_state
+            self.aggregated_mode_to_state[mode_name] = new_star
         else:
             # combine the two stars
             cur_star = existing_state
 
-            cur_star.total_steps = min(cur_star.total_steps, new_state.total_steps)
+            cur_star.total_steps = min(cur_star.total_steps, new_star.total_steps)
 
             # if the parent of this star is not an aggregation, we need to create one
             # otherwise, we need to add it to the list of parents
 
             if isinstance(cur_star.parent, AggregationParent):
-                # add it to the list of parents
-                cur_star.parent.stars.append(new_state)
+                print "parent is AggregationParent, calling eat_star"
 
-                cur_star.eat_star(new_state)
+                # add it to the list of parents
+                cur_star.parent.stars.append(new_star)
+
+                cur_star.eat_star(new_star)
             else:
+                print "parent is NOT aggregationParent... creating hull_star"
                 # create the aggregation parent
                 hull_star = cur_star.clone()
-                hull_star.parent = AggregationParent(new_state.mode, [cur_star, new_state])
+                hull_star.parent = AggregationParent(new_star.mode, [cur_star, new_star])
+
+                print "cur_star = {}".format(repr(cur_star))
+                print "new_star = {}".format(repr(new_star))
 
                 #if hylaa_settings.add_guard_during_aggregation:
                 #    for lc in cur_star.parent.transition.condition_list:
@@ -527,8 +535,8 @@ class WaitingList(object):
                 #        hull_star.add_constraint_direction(vector)
                 #        hull_star.add_constraint_direction(-1 * vector)
 
-                hull_star.eat_star(new_state)
-                existing_state = hull_star
+                hull_star.eat_star(new_star)
+                self.aggregated_mode_to_state[mode_name] = hull_star
 
 class FoundErrorTrajectory(RuntimeError):
     'gets thrown if a trajectory to the error states is found when settings.stop_when_error_reachable is True'

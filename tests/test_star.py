@@ -564,5 +564,181 @@ class TestStar(unittest.TestCase):
 
         self.check_stars_equal(star, star2)
 
+    def test_eat_star_bs1_2d(self):
+        'test 2d eat-star derived from example-1 of the ball_string system'
+
+        array = np.array
+        mode = make_debug_mode()
+        center = array([0., 0.])
+
+        basis_matrix = array([[1.0, 0], [0, 0.5]])
+
+        cur_star = Star(HylaaSettings(0.01, 2.0), center, basis_matrix, [ \
+           LinearConstraint(array([1, 0]), 1), \
+           LinearConstraint(array([-1., 0.]), 0), \
+           LinearConstraint(array([0., 1.]), 1.0), \
+           LinearConstraint(array([0., -1.]), 0.0)], \
+           None, mode)
+
+        new_star = Star(HylaaSettings(0.01, 2.0), center, basis_matrix, [ \
+           LinearConstraint(array([1, 0]), 1), \
+           LinearConstraint(array([-1, 0]), 0), \
+           LinearConstraint(array([0., 1.]), 3.0), \
+           LinearConstraint(array([0., -1.]), -2.0)], \
+           None, mode)
+
+        plot_star(cur_star, col='b:')
+        plot_star(new_star, col='r:')
+
+        cur_star.eat_star(new_star)
+
+        plot_star(cur_star, col='g--')
+
+        plt.xlim([-0.2, 1.2])
+        plt.ylim([-0.5, 2.0])
+        plt.show()
+
+        new_point = new_star.get_feasible_point()
+        self.assertTrue(cur_star.contains_point(new_point))
+
+    def test_eat_star_bs_tricky(self):
+        'test 2d eat-star derived from a tricky example with the ball_string system'
+
+        array = np.array
+        mode = make_debug_mode()
+
+        cur_star = Star(HylaaSettings(0.01, 2.0), array([0., 0.]), array([[-1.39364934, -6.33082449],\
+           [-0.01283523, -0.3807174]]), [LinearConstraint(array([1., 0.]), -0.65858417090053001), \
+           LinearConstraint(array([-1., 0.]), 0.7585841709005301), \
+           LinearConstraint(array([0., 1.]), 2.0388429332115034), \
+           LinearConstraint(array([0., -1.]), -1.8388429332115035), \
+           LinearConstraint(array([6.33082449, 0.3807174]), 1.9619999999999997), \
+           LinearConstraint(array([0.12748444, -0.06330825]), -0.19619999994184489), \
+           LinearConstraint(array([-0.12748444, 0.06330825]), 1.1961999999418449), \
+           LinearConstraint(array([1.39364934, 0.01283523]), -1.0000000000000002)], \
+           None, mode, extra_init=(array([[-1.39364934, -6.33082449],\
+           [-0.01283523, -0.3807174]]), 40, 0))
+
+        new_star = Star(HylaaSettings(0.01, 2.0), array([0., 0.]), array([[-1.45695758, -6.33082449],\
+           [-0.0166424, -0.3807174]]), [LinearConstraint(array([1., 0.]), -0.66180203160723172), \
+           LinearConstraint(array([-1., 0.]), 0.76180203160723181), \
+           LinearConstraint(array([0., 1.]), 2.3500231188180134), \
+           LinearConstraint(array([0., -1.]), -2.1500231188180132), \
+           LinearConstraint(array([6.33082449, 0.3807174]), 2.0600999999999994), \
+           LinearConstraint(array([0.12748444, -0.06330825]), -0.21631049992724288), \
+           LinearConstraint(array([-0.12748444, 0.06330825]), 1.2163104999272427), \
+           LinearConstraint(array([-1.39364934, -0.01283523]), 1.0004904999853983), \
+           LinearConstraint(array([1.45695758, 0.0166424]), -1.0000000000000002)], \
+           None, mode, extra_init=(array([[-1.45695758, -6.33082449],\
+           [-0.0166424, -0.3807174]]), 41, 0))
+
+        cur_star.eat_star(new_star)
+
+        new_point = new_star.get_feasible_point()
+        self.assertTrue(cur_star.contains_point(new_point))
+
+    def test_eat_star_bs2_2d(self):
+        'test 2d eat-star derived from example-2 of the ball_string system'
+
+        array = np.array
+        mode = make_debug_mode()
+        settings = HylaaSettings(0.01, 2.0)
+        center = array([0., 0.])
+
+        basis_matrix = array([[1.0, 0], [0, 1.0]], dtype=float)
+
+        cur_star = Star(settings, center, basis_matrix, [\
+           LinearConstraint(array([-1., 0.]), 1.0), \
+           LinearConstraint(array([0., 1.]), 2.1), \
+           LinearConstraint(array([0., -1.]), -2.0), \
+           LinearConstraint(array([2.0, 0.]), -1),\
+           ], \
+           None, mode)
+
+        new_star = Star(settings, center, basis_matrix, [\
+           LinearConstraint(array([-1., 0.]), 0.7), \
+           LinearConstraint(array([1., 0.]), -0.6), \
+           LinearConstraint(array([0., 1.]), 2.3), \
+           LinearConstraint(array([0., -1.]), -2.2), \
+           ], \
+           None, mode)
+
+        plot_star(cur_star, col='b-')
+        plot_star(new_star, col='r-')
+
+        cur_star.eat_star(new_star)
+
+        plot_star(cur_star, col='g:')
+
+        plt.xlim([-1.2, 0.0])
+        plt.ylim([1.5, 2.5])
+        plt.show()
+
+        new_point = new_star.get_feasible_point()
+        self.assertTrue(cur_star.contains_point(new_point))
+
+    def test_eat_star_bs2_1d(self):
+        'test 1d eat-star derived from example-2 of the ball_string system'
+
+        array = np.array
+        settings = HylaaSettings(0.01, 2.0)
+        ha = LinearHybridAutomaton('Test Automaton')
+        ha.variables = ["x"]
+        mode = ha.new_mode('test_mode')
+        center = array([0.])
+        basis_matrix = array([[1.0]], dtype=float)
+
+        # -alpha <= 1.0  ----> -1.0 <= alpha
+        # 2 * alpha <= -1   ----> alpha <= -0.5
+        cur_star = Star(settings, center, basis_matrix, [\
+           LinearConstraint(array([-1.]), 1.0), \
+           LinearConstraint(array([2.0]), -1.0),\
+           ], \
+           None, mode)
+
+        # -0.7 <= alpha <= -0.6
+        new_star = Star(settings, center, basis_matrix, [\
+           LinearConstraint(array([-1.]), 0.7), \
+           LinearConstraint(array([1.]), -0.6), \
+           ], \
+           None, mode)
+
+        cur_star.eat_star(new_star)
+
+        # should be unchanged: -0.0 <= alpha and 2 * alpha <= 1.0
+        self.assertAlmostEqual(cur_star.constraint_list[0].value, 1.0)
+        self.assertAlmostEqual(cur_star.constraint_list[1].value, -1.0)
+
+    def test_eat_star_bs1_1d(self):
+        'test 1d eat-star with example-1 derived from the ball_string system'
+
+        settings = HylaaSettings(0.01, 2.0)
+        array = np.array
+        ha = LinearHybridAutomaton('Test Automaton')
+        ha.variables = ["x"]
+        mode = ha.new_mode('test_mode')
+
+        center = array([0.])
+
+        # x = 0.5 * alpha    (2x = alpha)
+
+        # 0 <= alpha <= 1.0   -> (0 <= x <= 0.5)
+        cur_star = Star(settings, center, array([[0.5]]), [ \
+           LinearConstraint(array([1.]), 1.0), \
+           LinearConstraint(array([-1.]), 0.0)], \
+           None, mode)
+
+        # 2.0 <= alpha <= 3.0    -> (1.0 <= x <= 1.5)
+        new_star = Star(settings, center, array([[0.5]]), [ \
+           LinearConstraint(array([1.]), 3.0), \
+           LinearConstraint(array([-1.]), -2.0)], \
+           None, mode)
+
+        cur_star.eat_star(new_star)
+
+        # should be 0.0 <= alpha <= 3.0
+        self.assertAlmostEqual(cur_star.constraint_list[0].value, 3.0)
+        self.assertAlmostEqual(cur_star.constraint_list[1].value, 0.0)
+
 if __name__ == '__main__':
     unittest.main()
