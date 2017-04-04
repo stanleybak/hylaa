@@ -778,7 +778,7 @@ class PlotManager(object):
 
             print "\nSaving video file failed! Is ffmpeg installed? Can you run 'ffmpeg' in the terminal?"
 
-def debug_plot_star(star, xdim=0, ydim=1, col='k-', num_angles=256, lw=1):
+def debug_plot_star(star, col='k-', lw=1):
     '''
     debug function for plotting a star. This calls plt.plot(), so it's up to you
     to call plt.show() afterwards
@@ -788,13 +788,13 @@ def debug_plot_star(star, xdim=0, ydim=1, col='k-', num_angles=256, lw=1):
 
     # wrap polygon back to first point
     verts.append(verts[0])
-    
+
     xs = [ele[0] for ele in verts]
     ys = [ele[1] for ele in verts]
 
     plt.plot(xs, ys, col, lw=lw)
 
-# money patch function for blitting tick-labels. 
+# monkey patch function for blitting tick-labels
 # see http://stackoverflow.com/questions/17558096/animated-title-in-matplotlib
 def _blit_draw(_self, artists, bg_cache):
     'money-patch version of animation._blit_draw'

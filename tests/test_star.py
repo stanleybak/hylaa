@@ -421,8 +421,6 @@ class TestStar(unittest.TestCase):
         star = make_star(center, basis, a_mat, b_vec)
         star2 = init_hr_to_star(make_settings(), HyperRectangle([(-1, 1), (-1, 1)]), TestStar.loc)
 
-        plot_star(star2, col='k:')
-
         size = 1
         basis = [[size, size], [size, -size]]
         a_mat = [[1., 0.], [-1., 0.], [0., 1.], [0., -1.]]
@@ -587,16 +585,7 @@ class TestStar(unittest.TestCase):
            LinearConstraint(array([0., -1.]), -2.0)], \
            None, mode)
 
-        plot_star(cur_star, col='b:')
-        plot_star(new_star, col='r:')
-
         cur_star.eat_star(new_star)
-
-        plot_star(cur_star, col='g--')
-
-        plt.xlim([-0.2, 1.2])
-        plt.ylim([-0.5, 2.0])
-        plt.show()
 
         new_point = new_star.get_feasible_point()
         self.assertTrue(cur_star.contains_point(new_point))
@@ -663,19 +652,41 @@ class TestStar(unittest.TestCase):
            ], \
            None, mode)
 
-        plot_star(cur_star, col='b-')
-        plot_star(new_star, col='r-')
-
         cur_star.eat_star(new_star)
-
-        plot_star(cur_star, col='g:')
-
-        plt.xlim([-1.2, 0.0])
-        plt.ylim([1.5, 2.5])
-        plt.show()
 
         new_point = new_star.get_feasible_point()
         self.assertTrue(cur_star.contains_point(new_point))
+
+    def test_eat_star_bs1_1d(self):
+        'test 1d eat-star with example-1 derived from the ball_string system'
+
+        settings = HylaaSettings(0.01, 2.0)
+        array = np.array
+        ha = LinearHybridAutomaton('Test Automaton')
+        ha.variables = ["x"]
+        mode = ha.new_mode('test_mode')
+
+        center = array([0.])
+
+        # x = 0.5 * alpha    (2x = alpha)
+
+        # 0 <= alpha <= 1.0   -> (0 <= x <= 0.5)
+        cur_star = Star(settings, center, array([[0.5]]), [ \
+           LinearConstraint(array([1.]), 1.0), \
+           LinearConstraint(array([-1.]), 0.0)], \
+           None, mode)
+
+        # 2.0 <= alpha <= 3.0    -> (1.0 <= x <= 1.5)
+        new_star = Star(settings, center, array([[0.5]]), [ \
+           LinearConstraint(array([1.]), 3.0), \
+           LinearConstraint(array([-1.]), -2.0)], \
+           None, mode)
+
+        cur_star.eat_star(new_star)
+
+        # should be 0.0 <= alpha <= 3.0
+        self.assertAlmostEqual(cur_star.constraint_list[0].value, 3.0)
+        self.assertAlmostEqual(cur_star.constraint_list[1].value, 0.0)
 
     def test_eat_star_bs2_1d(self):
         'test 1d eat-star derived from example-2 of the ball_string system'
@@ -709,36 +720,42 @@ class TestStar(unittest.TestCase):
         self.assertAlmostEqual(cur_star.constraint_list[0].value, 1.0)
         self.assertAlmostEqual(cur_star.constraint_list[1].value, -1.0)
 
-    def test_eat_star_bs1_1d(self):
-        'test 1d eat-star with example-1 derived from the ball_string system'
+    def test_eat_star_bs3_2d(self):
+        'test 2d eat-star derived from example 3 with the ball_string system'
 
-        settings = HylaaSettings(0.01, 2.0)
         array = np.array
-        ha = LinearHybridAutomaton('Test Automaton')
-        ha.variables = ["x"]
-        mode = ha.new_mode('test_mode')
+        mode = make_debug_mode()
+        settings = HylaaSettings(0.01, 2.0)
+        center = array([0., 0.])
 
-        center = array([0.])
+        bm = array([[1.0, 1.0], [0., 1.0]])
 
-        # x = 0.5 * alpha    (2x = alpha)
-
-        # 0 <= alpha <= 1.0   -> (0 <= x <= 0.5)
-        cur_star = Star(settings, center, array([[0.5]]), [ \
-           LinearConstraint(array([1.]), 1.0), \
-           LinearConstraint(array([-1.]), 0.0)], \
+        cur_star = Star(settings, center, bm, [\
+           LinearConstraint(array([-1., 0.]), 1.), \
+           LinearConstraint(array([1., 0.]), 0.),\
+           LinearConstraint(array([0., -1.]), 0.), \
+           LinearConstraint(array([0., 1.]), 1.), \
+           ], \
            None, mode)
 
-        # 2.0 <= alpha <= 3.0    -> (1.0 <= x <= 1.5)
-        new_star = Star(settings, center, array([[0.5]]), [ \
-           LinearConstraint(array([1.]), 3.0), \
-           LinearConstraint(array([-1.]), -2.0)], \
+        new_star = Star(settings, center, bm, [\
+           LinearConstraint(array([-1., 0.]), 1.), \
+           LinearConstraint(array([1., 0.]), 0.), \
+           LinearConstraint(array([0., -1]), -2.), \
+           LinearConstraint(array([0., 1.]), 3.), \
+           ], \
            None, mode)
 
         cur_star.eat_star(new_star)
 
-        # should be 0.0 <= alpha <= 3.0
-        self.assertAlmostEqual(cur_star.constraint_list[0].value, 3.0)
+        # check that constraint #4 was expanded correctly
+        self.assertAlmostEqual(cur_star.constraint_list[0].value, 1.0)
         self.assertAlmostEqual(cur_star.constraint_list[1].value, 0.0)
+        self.assertAlmostEqual(cur_star.constraint_list[2].value, 0.0)
+        self.assertAlmostEqual(cur_star.constraint_list[3].value, 3.0)
+
+        new_point = new_star.get_feasible_point()
+        self.assertTrue(cur_star.contains_point(new_point))
 
 if __name__ == '__main__':
     unittest.main()

@@ -389,80 +389,24 @@ class Star(Freezable):
 
         # possibly increase every constraint
         lc_vals = []
-        print "todo: remove constraint_index"
-        constraint_index = 0
 
         for lc in self.constraint_list:
             # maximize the basis constraint direction in other_star
-            basis_direction = lc.vector
-            standard_direction = np.dot(self.basis_matrix, basis_direction)
+            basis_len = np.linalg.norm(lc.vector)
+            norm_basis_direction = lc.vector / basis_len
 
-            print "\nconstraint_index: {}, basis_matrix = {}".format(constraint_index, self.basis_matrix)
-
-            print "basis constraint was {} * alpha <= {}".format(basis_direction, lc.value)
-            print "std constraint was {} * x <= {}".format(standard_direction, lc.value)
+            standard_direction = np.dot(self.basis_matrix, norm_basis_direction)
 
             # multiplying by -1 turns it into a maximization
             lpi.minimize(-1 * standard_direction, result, error_if_infeasible=True)
 
-            print "LP result = {}".format(result)
+            opt_pt = result[:self.num_dims]
 
-            for d in xrange(self.num_dims):
-                assert np.dot(other_star.basis_matrix[d, :], result[self.num_dims + d]) - result[d] < 1e-6
+            # This may be possible without inverting the basis matrix... but I couldn't figure it out
+            # may not matter; new intersection will probably need to use combined LP
+            basis_pt = self.vector_to_star_basis(opt_pt)
 
-            std_len = np.linalg.norm(standard_direction)
-
-            print "stdlen = {}".format(std_len)
-            opt_val = np.dot(result[:self.num_dims], standard_direction / std_len) / std_len
-            #result_std_constraint = np.dot(result[:self.num_dims], standard_direction)
-            #print "constraint corresponding to result is {} * x <= {}".format(standard_direction, result_std_constraint)
-
-            # project the maximum point onto standard_direction
-            
-            #opt_projected_point = (result_std_constraint / std_len) * (standard_direction / std_len)
-            #print "opt_projected_point = {}".format(opt_projected_point)
-
-            #debug_check = np.dot(opt_projected_point, standard_direction)
-            #assert abs(debug_check - result_std_constraint) < 1e-6, \
-            #    "projected point and optimal point have the same objective value"
-
-
-            # Q: What is the basis value at opt_projected_point?
-            # Further, what is this projected onto the constraint direction?
-            # How many times do I need to replicated basis_constraint until the
-            # corresponding std_constraint equals opt_projected_point
-            #opt_val = np.dot(standard_direction, opt_projected_point)
-
-            print "using opt_val as standard_direction dot opt_projected_pt = {}".format(opt_val)
-
-            if False:
-                # opt_projected_point is now some multiple of standard_direction
-                # Q: how to get this multiple? A: divide by ANY nonzero dimension
-                # for numerical stability, it's probably best to pick the dimension with the maximum magnitude
-                max_mag = 0
-                max_mag_dim = 0
-
-                for d in xrange(self.num_dims):
-                    mag = abs(standard_direction[d])
-
-                    if mag > max_mag:
-                        max_mag = mag
-                        max_mag_dim = d
-
-                multiple = opt_projected_point[max_mag_dim] / standard_direction[max_mag_dim]
-
-                print "multiple is {} / {} = {}".format(
-                    opt_projected_point[max_mag_dim], standard_direction[max_mag_dim], multiple)
-
-                assert abs(standard_direction[0] * multiple - opt_projected_point[0]) < 1e-6
-                print "optimal-proj-point equals {} (multiple) * {} (standard_direction)".format(
-                    multiple, standard_direction)
-
-                basis_dir_norm = np.linalg.norm(basis_direction)
-                print "norm of basis direction = {}".format(basis_dir_norm)
-                opt_val = multiple * basis_dir_norm
-
-            print "new_constraint is {} * alpha <= {} (previous was {})".format(basis_direction, opt_val, lc.value)
+            opt_val = np.dot(basis_pt, lc.vector)
 
             # offset the multiple to account for the stars' centers
             opt_val += np.dot(lc.vector, other_star.center)
@@ -470,14 +414,10 @@ class Star(Freezable):
 
             # and update if the new constraint is looser
             if opt_val > lc.value:
-                print "updating constraint!"
                 lc.value = opt_val
                 changed = True
-            else:
-                print "NOT updating constraint"
 
             lc_vals.append(lc.value)
-            constraint_index += 1
 
         # reset cached values if the star's constraints were changed
         if changed:
