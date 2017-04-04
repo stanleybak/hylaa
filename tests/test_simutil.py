@@ -352,5 +352,42 @@ class TestSimUtil(unittest.TestCase):
             self.assertTrue(vals.shape == (2, 2))
             self.assertTrue(center.shape == (2,))
 
+    def test_sim_ha_restart(self):
+        '''test simulating the harmonic oscillator, with a restart from step 0 half way'''
+
+        # x' = y,   y' = -x
+        a_matrix = [[0.0, 1.0], [-1.0, 0.0]]
+        b_vector = [0.0, 0.0]
+        step_time = 0.1
+        max_steps = 10
+
+        bundle = SimulationBundle(a_matrix, b_vector, make_settings(step_time))
+        vals = None
+
+        for _ in xrange(2):
+            for s in xrange(1, max_steps+1):
+
+                vals, center = bundle.get_vecs_origin_at_step(s, max_steps)
+
+                self.assertAlmostEquals(center[0], 0)
+                self.assertAlmostEquals(center[1], 0)
+
+                self.assertTrue(isinstance(vals, np.ndarray))
+
+                self.assertEquals(vals.shape[0], 2)
+                self.assertEquals(vals.shape[1], 2)
+
+                t = step_time * s
+
+                vec1 = np.array([math.cos(t), math.sin(t)], dtype=float)
+                vec2 = np.array([-math.sin(t), math.cos(t)], dtype=float)
+
+                # result should be transpose of basis vectors
+                self.assertAlmostEqual(vals[0][0], vec1[0])
+                self.assertAlmostEqual(vals[1][0], vec1[1])
+
+                self.assertAlmostEqual(vals[0][1], vec2[0])
+                self.assertAlmostEqual(vals[1][1], vec2[1])
+
 if __name__ == '__main__':
     unittest.main()

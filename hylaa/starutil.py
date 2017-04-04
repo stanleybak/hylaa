@@ -412,6 +412,37 @@ def array_str(nums):
 
     return '[{}]'.format(rv)
 
+def make_aggregated_star(star_list, hylaa_settings):
+    '''
+    Make an aggregated star from a star list.
+
+    This returns a type Star with parent of type AggregatedParent.
+    '''
+
+    first_star_parent = star_list[0].parent
+    hull_star = star_list[0].clone()
+
+    hull_star.parent = AggregationParent(star_list[0].mode, star_list)
+
+    # create the aggregation parent
+
+    if hylaa_settings.add_guard_during_aggregation:
+        for lc in first_star_parent.transition.condition_list:
+            hull_star.add_std_constraint_direction(lc.vector)
+            hull_star.add_std_constraint_direction(-1 * lc.vector)
+
+    if hylaa_settings.add_box_during_aggregation:
+        for dim in xrange(hull_star.num_dims):
+            vector = np.array([1.0 if d == dim else 0.0 for d in xrange(hull_star.num_dims)], dtype=float)
+            hull_star.add_std_constraint_direction(vector)
+            hull_star.add_std_constraint_direction(-1 * vector)
+
+    for star_index in xrange(1, len(star_list)):
+        star = star_list[star_index]
+        hull_star.eat_star(star)
+
+    return hull_star
+
 def export_counter_example(filename, mode, result, center, dims, step_size, total_steps, lc):
     'export a counter-example to a file which can be run using the HyLAA trace generator'
 

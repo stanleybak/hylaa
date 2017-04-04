@@ -335,7 +335,7 @@ class SimulationBundle(Freezable):
 
         Timers.tic("sim + overhead")
 
-        if step == 0 or self.step_offset is None:
+        if step <= 1 or self.step_offset is None:
             if self.step_offset != 0:
                 # reset origin sim and, if needed, vec_values
                 self.origin_sim = [np.zeros((self.num_dims,))] # index is step (may be offset)

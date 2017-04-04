@@ -10,7 +10,7 @@ import numpy as np
 from hylaa.plotutil import PlotManager
 from hylaa.star import Star
 from hylaa.star import init_hr_to_star, init_constraints_to_star
-from hylaa.starutil import InitParent, AggregationParent, ContinuousPostParent, DiscretePostParent
+from hylaa.starutil import InitParent, AggregationParent, ContinuousPostParent, DiscretePostParent, make_aggregated_star
 from hylaa.hybrid_automaton import LinearHybridAutomaton, LinearAutomatonMode, LinearConstraint, HyperRectangle
 from hylaa.timerutil import Timers
 from hylaa.containers import HylaaSettings, PlotSettings, HylaaResult
@@ -184,42 +184,12 @@ class HylaaEngine(object):
                 # this might be parent of parent
                 cur_star = discrete_post_star
             else:
-                cur_star = self.make_aggregated_star(mode, stars)
+                cur_star = make_aggregated_star(stars, self.settings)
 
             cur_star.mode = mode
             self.waiting_list.add_deaggregated(cur_star)
 
         Timers.toc('deaggregate star')
-
-    def make_aggregated_star(self, mode, star_list):
-        '''
-        make an aggregated star from a star list
-
-        This returns a typle Star with parent of type AggregatedParent
-        '''
-
-        first_star_parent = star_list[0].parent
-        hull_star = star_list[0].clone()
-
-        assert len(hull_star.temp_constraints) == 0
-
-        hull_star.parent = AggregationParent(mode, star_list)
-
-        if self.settings.add_guard_during_aggregation:
-            assert isinstance(first_star_parent, DiscretePostParent)
-            add_guard_to_star(hull_star, first_star_parent.transition.guard_list)
-
-        if self.settings.add_box_during_aggregation:
-            add_box_to_star(hull_star)
-
-        # there may be temp constraints from invariant trimming
-        hull_star.commit_temp_constraints()
-
-        for star_index in xrange(1, len(star_list)):
-            star = star_list[star_index]
-            hull_star.eat_star(star)
-
-        return hull_star
 
     def has_counterexample(self, star, basis_point, steps_in_cur_star):
         'check if the given basis point in the given star corresponds to a real trace'
@@ -318,8 +288,7 @@ class HylaaEngine(object):
 
             sim_step = self.cur_step_in_mode + 1 + state.fast_forward_steps
 
-            new_basis_matrix, new_center = sim_bundle.get_vecs_origin_at_step(
-                sim_step, self.max_steps_remaining)
+            new_basis_matrix, new_center = sim_bundle.get_vecs_origin_at_step(sim_step, self.max_steps_remaining)
 
             state.update_from_sim(new_basis_matrix, new_center)
 
@@ -495,8 +464,6 @@ class WaitingList(object):
 
         existing_state = self.aggregated_mode_to_state.get(mode_name)
 
-        print ".engine add_aggregated called in mode {}. existing_state = {}".format(mode_name, existing_state)
-
         if existing_state is None:
             self.aggregated_mode_to_state[mode_name] = new_star
         else:
@@ -509,33 +476,13 @@ class WaitingList(object):
             # otherwise, we need to add it to the list of parents
 
             if isinstance(cur_star.parent, AggregationParent):
-                print "parent is AggregationParent, calling eat_star"
-
-                # add it to the list of parents
+                # parent is already an aggregation. add it to the list of parents and eat it
                 cur_star.parent.stars.append(new_star)
-
                 cur_star.eat_star(new_star)
             else:
-                print "parent is NOT aggregationParent... creating hull_star"
                 # create the aggregation parent
-                hull_star = cur_star.clone()
-                hull_star.parent = AggregationParent(new_star.mode, [cur_star, new_star])
+                hull_star = make_aggregated_star([cur_star, new_star], hylaa_settings)
 
-                print "cur_star = {}".format(repr(cur_star))
-                print "new_star = {}".format(repr(new_star))
-
-                #if hylaa_settings.add_guard_during_aggregation:
-                #    for lc in cur_star.parent.transition.condition_list:
-                #        hull_star.add_constraint_direction(lc.vector)
-                #        hull_star.add_constraint_direction(-1 * lc.vector)
-
-                #if hylaa_settings.add_box_during_aggregation:
-                #    for dim in xrange(hull_star.num_dims):
-                #        vector = np.array([1.0 if d == dim else 0.0 for d in xrange(hull_star.num_dims)], dtype=float)
-                #        hull_star.add_constraint_direction(vector)
-                #        hull_star.add_constraint_direction(-1 * vector)
-
-                hull_star.eat_star(new_star)
                 self.aggregated_mode_to_state[mode_name] = hull_star
 
 class FoundErrorTrajectory(RuntimeError):

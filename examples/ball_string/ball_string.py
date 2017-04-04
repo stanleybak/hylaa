@@ -29,8 +29,8 @@ def define_ha():
     trans = ha.new_transition(extension, freefall)
     trans.condition_list.append(LinearConstraint([-0.0, -1.0], -0.0)) # v >= 0
     
-    trans = ha.new_transition(freefall, freefall)
-    trans.condition_list.append(LinearConstraint([-1.0, -0.0], -1.0)) # x >= 1
+    #trans = ha.new_transition(freefall, freefall)
+    #trans.condition_list.append(LinearConstraint([-1.0, -0.0], -1.0)) # x >= 1
 
     return ha
 
@@ -47,12 +47,11 @@ def define_init_states(ha):
 def define_settings():
     'get the hylaa settings object'
     plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_INTERACTIVE
+    plot_settings.plot_mode = PlotSettings.PLOT_FULL
     plot_settings.xdim = 0
     plot_settings.ydim = 1
-    #plot_settings.skip_frames = 147
-    plot_settings.skip_frames = 41
-    plot_settings.label.axes_limits = (0.9, 1.1, 2.0, 6.0)
+    #plot_settings.skip_frames = 47
+    #plot_settings.label.axes_limits = (0.9, 1.1, 2.0, 6.0)
 
     settings = HylaaSettings(step=0.01, max_time=2.0, plot_settings=plot_settings)
     #settings.aggregation = False

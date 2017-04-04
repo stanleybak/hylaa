@@ -25,7 +25,7 @@ def make_settings():
     settings = HylaaSettings(0.1, 1.0)
     settings.plot.xdim = 0
     settings.plot.ydim = 1
-    settings.plot.num_angles = 128
+    settings.plot.num_angles = 512
 
     return settings
 
@@ -474,7 +474,7 @@ class TestStar(unittest.TestCase):
         self.check_stars_equal(star, expected)
 
     def test_offset_dif_basis(self):
-        'test a tricky case an offset square eating another one, with non-standard basis'
+        'test a case an offset square eating another one, with non-standard basis'
 
         basis = [[0, 1], [1, 0]]
         a_mat = [[0, 1], [-1, 0], [1, 0], [0, -1]]
@@ -623,7 +623,7 @@ class TestStar(unittest.TestCase):
 
         cur_star.eat_star(new_star)
 
-        new_point = new_star.get_feasible_point()
+        new_point = new_star.get_feasible_point(standard_dir=[5, -1])
         self.assertTrue(cur_star.contains_point(new_point))
 
     def test_eat_star_bs2_2d(self):
@@ -755,6 +755,80 @@ class TestStar(unittest.TestCase):
         self.assertAlmostEqual(cur_star.constraint_list[3].value, 3.0)
 
         new_point = new_star.get_feasible_point()
+        self.assertTrue(cur_star.contains_point(new_point))
+
+    def test_eat_tricky2(self):
+        'test 2d eat-star derived from a tricky example with the ball_string system'
+
+        array = np.array
+        mode = make_debug_mode()
+        settings = HylaaSettings(0.01, 2.0)
+        center = array([0., 0.])
+
+        basis_matrix = array([[-1., -1.], [-0.01, -0.4]])
+
+        cur_star = Star(settings, center, basis_matrix, [\
+           LinearConstraint(array([-1., 0.]), 0.5), \
+           LinearConstraint(array([0., -1.]), -1.), \
+           LinearConstraint(array([14., 0.1]), -5.)], \
+           None, mode)
+
+        new_star = Star(settings, center, basis_matrix, [\
+           LinearConstraint(array([-1., 0.]), 0.5), \
+           LinearConstraint(array([0., -1.]), -1.), \
+           LinearConstraint(array([14.5, 0.15]), 0.),\
+           ], \
+           None, mode)
+
+        cur_star.eat_star(new_star)
+
+        new_point = new_star.get_feasible_point(standard_dir=[-1, 0])
+
+        # move towards inside a little
+        new_point -= 1e-6 * np.array([-1., 0.], dtype=float)
+
+        self.assertTrue(cur_star.contains_point(new_point))
+
+    def test_add_box_dir(self):
+        'test 2d eat-star with add box directions'
+
+        array = np.array
+        mode = make_debug_mode()
+
+        cur_star = Star(HylaaSettings(0.01, 2.0), array([0., 0.]), array([[-1.39364934, -6.33082449],\
+           [-0.01283523, -0.3807174]]), [LinearConstraint(array([1., 0.]), -0.65858417090053001), \
+           LinearConstraint(array([-1., 0.]), 0.7585841709005301), \
+           LinearConstraint(array([0., 1.]), 2.0388429332115034), \
+           LinearConstraint(array([0., -1.]), -1.8388429332115035), \
+           LinearConstraint(array([6.33082449, 0.3807174]), 1.9619999999999997), \
+           LinearConstraint(array([0.12748444, -0.06330825]), -0.19619999994184489), \
+           LinearConstraint(array([-0.12748444, 0.06330825]), 1.1961999999418449), \
+           LinearConstraint(array([1.39364934, 0.01283523]), -1.0000000000000002)], \
+           None, mode, extra_init=(array([[-1.39364934, -6.33082449],\
+           [-0.01283523, -0.3807174]]), 40, 0))
+
+        new_star = Star(HylaaSettings(0.01, 2.0), array([0., 0.]), array([[-1.45695758, -6.33082449],\
+           [-0.0166424, -0.3807174]]), [LinearConstraint(array([1., 0.]), -0.66180203160723172), \
+           LinearConstraint(array([-1., 0.]), 0.76180203160723181), \
+           LinearConstraint(array([0., 1.]), 2.3500231188180134), \
+           LinearConstraint(array([0., -1.]), -2.1500231188180132), \
+           LinearConstraint(array([6.33082449, 0.3807174]), 2.0600999999999994), \
+           LinearConstraint(array([0.12748444, -0.06330825]), -0.21631049992724288), \
+           LinearConstraint(array([-0.12748444, 0.06330825]), 1.2163104999272427), \
+           LinearConstraint(array([-1.39364934, -0.01283523]), 1.0004904999853983), \
+           LinearConstraint(array([1.45695758, 0.0166424]), -1.0000000000000002)], \
+           None, mode, extra_init=(array([[-1.45695758, -6.33082449],\
+           [-0.0166424, -0.3807174]]), 41, 0))
+
+        # add box constraints
+        for dim in xrange(cur_star.num_dims):
+            vector = np.array([1.0 if d == dim else 0.0 for d in xrange(cur_star.num_dims)], dtype=float)
+            cur_star.add_std_constraint_direction(vector)
+            cur_star.add_std_constraint_direction(-1 * vector)
+
+        cur_star.eat_star(new_star)
+
+        new_point = new_star.get_feasible_point(standard_dir=[5, -1])
         self.assertTrue(cur_star.contains_point(new_point))
 
 if __name__ == '__main__':

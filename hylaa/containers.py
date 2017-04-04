@@ -25,8 +25,8 @@ class HylaaSettings(Freezable):
         self.aggregation = True # perform sucessor aggregation
         self.deaggregation = True # perform trace-guided deaggregation
 
-        #self.add_guard_during_aggregation = True # add guard constraints during aggregation
-        #self.add_box_during_aggregation = True # add box constraints during aggregation
+        self.add_guard_during_aggregation = True # add guard constraints during aggregation
+        self.add_box_during_aggregation = True # add box constraints during aggregation
         #self.trim_redundant_inv_constraints = True # perform redundant invariant trimming
         self.process_urgent_guards = False # should urgent transition (where 0 time elapses in a mode) be allowed?
         self.stop_when_error_reachable = True # should we stop computing immediately when an error mode is reached?

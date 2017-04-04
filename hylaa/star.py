@@ -243,20 +243,23 @@ class Star(Freezable):
         inverse of basis_matrix, which can become ill-conditioned.
         '''
 
-        Timers.tic("vector_to_star_basis() [lstsq]")
-        rv = lstsq(self.basis_matrix.T, np.array(standard_vec, dtype=float))[0]
+        Timers.tic("vector_to_star_basis()")
+
+        rv = np.linalg.solve(self.basis_matrix.T, standard_vec)
+
+        #rv = lstsq(self.basis_matrix.T, np.array(standard_vec, dtype=float))[0]
 
         # double-check that we've found the solution within some tolerance
         if not np.allclose(np.dot(self.basis_matrix.T, rv), standard_vec):
             raise RuntimeError("basis matrix was ill-conditioned, vector_to_star_basis() failed")
 
-        Timers.toc("vector_to_star_basis() [lstsq]")
+        Timers.toc("vector_to_star_basis()")
 
         assert isinstance(rv, np.ndarray)
 
         return rv
 
-    def get_feasible_point(self):
+    def get_feasible_point(self, standard_dir=None):
         '''
         if it is feasible, this returns a point which is feasible, otherwise returns None
         '''
@@ -267,7 +270,7 @@ class Star(Freezable):
         num_inputs = self.mode.num_inputs
         input_dims = self.total_steps * num_inputs
         result = np.zeros(2 * dims + input_dims)
-        opt_direction = np.zeros(dims)
+        opt_direction = -1 * np.array(standard_dir, dtype=float) if standard_dir is not None else np.zeros(dims)
 
         if lpi.minimize(opt_direction, result, error_if_infeasible=False):
             rv = result[0:dims] + self.center
@@ -369,11 +372,42 @@ class Star(Freezable):
 
         return (still_feasible, inv_vio_star_list)
 
+    def add_std_constraint_direction(self, standard_direction):
+        '''
+        add a constraint direction, given in the standard basis to the star
+        '''
+
+        assert isinstance(standard_direction, np.ndarray)
+        assert standard_direction.shape == (self.num_dims,)
+
+        lpi = self.get_lpi()
+        basis_direction = np.dot(self.basis_matrix, standard_direction)
+
+        result = np.zeros((2 * self.num_dims))
+
+        # multiplying by -1 turns it into a maximization
+        lpi.minimize(-1 * standard_direction, result, error_if_infeasible=True)
+
+        opt_pt = result[:self.num_dims]
+        basis_pt = self.vector_to_star_basis(opt_pt)
+
+        opt_val = np.dot(basis_pt, basis_direction)
+
+        # offset the multiple to account for the stars' centers
+        opt_val -= np.dot(basis_direction, self.center)
+
+        lc = LinearConstraint(basis_direction, opt_val)
+
+        self.add_basis_constraint(lc)
+
     def eat_star(self, other_star):
         '''
         merge the other star into this star, changing this star's linear basis constraints values
         until all the points in both stars satisfy all the constraints
         '''
+
+        # This may be possible without inverting the basis matrix... but I couldn't figure it out
+        # may not matter; new intersection will probably need to use combined LP
 
         changed = False
 
@@ -392,18 +426,13 @@ class Star(Freezable):
 
         for lc in self.constraint_list:
             # maximize the basis constraint direction in other_star
-            basis_len = np.linalg.norm(lc.vector)
-            norm_basis_direction = lc.vector / basis_len
-
-            standard_direction = np.dot(self.basis_matrix, norm_basis_direction)
+            standard_direction = np.dot(np.linalg.inv(self.basis_matrix), lc.vector)
 
             # multiplying by -1 turns it into a maximization
             lpi.minimize(-1 * standard_direction, result, error_if_infeasible=True)
 
             opt_pt = result[:self.num_dims]
 
-            # This may be possible without inverting the basis matrix... but I couldn't figure it out
-            # may not matter; new intersection will probably need to use combined LP
             basis_pt = self.vector_to_star_basis(opt_pt)
 
             opt_val = np.dot(basis_pt, lc.vector)
