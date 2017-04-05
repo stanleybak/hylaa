@@ -87,9 +87,10 @@ class PlotSettings(Freezable):
         self.min_frame_time = 0.025 # max 40 fps. This allows multiple frames to be drawn at once if they're fast.
 
         self.extend_plot_range_ratio = 0.1 # extend plot axis range 10% at a time
-        self.anim_delay_interval = 0 # milliseconds, extra delay between frames (useful if plotting to a video)
+        self.anim_delay_interval = 0 # milliseconds, extra delay between frames
 
         self.filename = None # used with PLOT_VIDEO AND PLOT_IMAGE
+
         self.video = None # instance of VideoSettings
 
         self.grid = True
@@ -103,11 +104,14 @@ class PlotSettings(Freezable):
 
         self.freeze_attrs()
 
-    def make_video(self, filename, num_frames, anim_delay_ms):
+    def make_video(self, filename, frames=100, fps=20):
         'update the plot settings to produce a video'
 
         self.plot_mode = PlotSettings.PLOT_VIDEO
-        self.anim_delay_interval = anim_delay_ms
+
+        # turn off artificial delays
+        self.anim_delay_interval = 0 # no extra delay between frames
+        self.min_frame_time = 0 # draw every frame
 
         self.filename = filename
 
@@ -118,7 +122,8 @@ class PlotSettings(Freezable):
         self.extend_plot_range_ratio = 0.0
 
         video = VideoSettings()
-        video.frames = num_frames
+        video.frames = frames
+        video.fps = fps
 
         self.video = video
 
@@ -128,6 +133,7 @@ class VideoSettings(Freezable):
     def __init__(self):
         self.codec = 'libx264'
         self.frames = None # number of frames in the video, matplotlib maxes out at 100 frame if not set
+        self.fps = 20 # number of frames per second
 
         self.freeze_attrs()
 

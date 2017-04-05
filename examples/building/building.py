@@ -201,9 +201,13 @@ def define_init_states(ha):
 def define_settings():
     'get the hylaa settings object'
     plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
+    #plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
+    plot_settings.plot_mode = PlotSettings.PLOT_FULL
     plot_settings.xdim = 48
     plot_settings.ydim = 24
+    
+    # save a video file instead
+    # plot_settings.make_video("building.mp4", frames=220, fps=40)
     
     plot_settings.num_angles = 3
     plot_settings.max_shown_polys = 2048

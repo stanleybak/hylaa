@@ -147,9 +147,6 @@ class DrawnShapes(Freezable):
             _, edge_col = self.get_mode_colors(mode_name)
             edge_col = darker(edge_col)
 
-            print ".plotutil revert edgecolor to not be orange"
-            edge_col = 'orange'
-
             polys = collections.PolyCollection([], lw=4, animated=True,
                                                edgecolor=edge_col, facecolor='none')
             self.axes.add_collection(polys)
@@ -640,7 +637,6 @@ class PlotManager(object):
                     self.interactive.paused = True
 
                 if is_finished_func():
-                    #self.shapes.set_cur_state(None)
                     self.shapes.inv_vio_polys.set_visible(False)
 
                 Timers.toc("frame")
@@ -725,9 +721,9 @@ class PlotManager(object):
                 self.save_video(self._anim)
             elif self.settings.plot_mode == PlotSettings.PLOT_IMAGE:
                 self.save_image()
-            else:         
+            else:
                 plt.show()
-    
+
     def save_image(self):
         'save an image file'
 
@@ -738,23 +734,17 @@ class PlotManager(object):
         if filename is None:
             filename = "plot.png"
 
-        plt.savefig(filename, bbox_inches='tight') 
+        plt.savefig(filename, bbox_inches='tight')
 
     def save_video(self, func_anim_obj):
         'save a video file of the given FuncAnimation object'
-        
+
         filename = self.settings.filename
 
         if filename is None:
             filename = "video.avi" # mp4 is also possible
-        
-        fps = 40
 
-        if self.settings.anim_delay_interval > 0:
-            fps = 1000.0 / self.settings.anim_delay_interval
-        elif self.settings.min_frame_time > 0:
-            fps = 1.0 / self.settings.min_frame_time
-
+        fps = self.settings.video.fps
         codec = self.settings.video.codec
 
         print "Saving {} at {:.2f} fps using ffmpeg with codec '{}'.".format(

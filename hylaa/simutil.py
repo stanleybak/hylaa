@@ -6,7 +6,6 @@ Stanley Bak
 September 2016
 '''
 
-import os
 import time
 import multiprocessing
 from multiprocessing.pool import ThreadPool
@@ -204,10 +203,7 @@ class SimulationBundle(Freezable):
         elif settings.threads < 2:
             settings.threads = 1
 
-        if settings.sim_mode == SimulationSettings.SIMULATION:
-            # scipy.integrate.odeint is not reentrant, and therefore requires ProcessPool instead of ThreadPool
-            self.process_pool = multiprocessing.Pool(settings.threads) if settings.threads > 1 else None
-        else:
+        if settings.sim_mode != SimulationSettings.SIMULATION:
             self.thread_pool = ThreadPool(settings.threads) if settings.threads > 1 else None
 
         # initialize simulation result variables
@@ -261,10 +257,15 @@ class SimulationBundle(Freezable):
             print "Simulating {} steps (~{:.2f} GB in memory)...".format(
                 steps, steps * mb_per_step / 1024.0)
 
-        if self.process_pool is not None:
-            result = self.process_pool.map(parallel_sim_func, args)
+        pool = multiprocessing.Pool(self.settings.threads) if self.settings.threads > 1 else None
+
+        if pool is not None:
+            result = pool.map(parallel_sim_func, args)
         else:
             result = [parallel_sim_func(a) for a in args]
+
+        if pool is not None:
+            pool.close()
 
         if self.settings.stdout:
             print "Total Simulation Time: {:.2f} secs".format(time.time() - sim_start_time)
@@ -335,7 +336,7 @@ class SimulationBundle(Freezable):
 
         Timers.tic("sim + overhead")
 
-        if step <= 1 or self.step_offset is None:
+        if step == 0 or self.step_offset is None or step - self.step_offset < 0:
             if self.step_offset != 0:
                 # reset origin sim and, if needed, vec_values
                 self.origin_sim = [np.zeros((self.num_dims,))] # index is step (may be offset)
@@ -344,10 +345,9 @@ class SimulationBundle(Freezable):
 
         rel_step = step - self.step_offset
         assert rel_step >= 0, 'relative step < 0?'
-        assert rel_step <= len(self.origin_sim), 'steps must increase one by one'
 
         # if we need to compute more steps
-        if rel_step == len(self.origin_sim):
+        while rel_step >= len(self.origin_sim):
             self.step_offset += len(self.origin_sim)
             rel_step = step - self.step_offset
 
@@ -434,10 +434,15 @@ class SimulationBundle(Freezable):
             SHARED_NEXT_PRINT.value = sim_start_time + self.settings.print_interval_secs
             SHARED_COMPLETED_SIMS.value = 0
 
-        if self.process_pool is not None:
-            result = self.process_pool.map(parallel_sim_func, args)
+        pool = multiprocessing.Pool(self.settings.threads) if self.settings.threads > 1 else None
+
+        if pool is not None:
+            result = pool.map(parallel_sim_func, args)
         else:
             result = [parallel_sim_func(a) for a in args]
+
+        if pool is not None:
+            pool.close()
 
         if self.settings.stdout:
             print "Total Input Simulation Time: {:.2f} secs".format(time.time() - sim_start_time)

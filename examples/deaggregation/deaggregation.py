@@ -47,7 +47,7 @@ def define_ha():
     trans = ha.new_transition(loc1, loc2)
     trans.condition_list = [guard]
     
-    guard1 = LinearConstraint([0., 1.], -2.5) # y <= -2.5
+    guard1 = LinearConstraint([0., 1.], -0) # y <= -0
     guard2 = LinearConstraint([1., 0], 0.5) # x <= 0.5
     guard3 = LinearConstraint([-1., 0], 0.5) # x >= -0.5
     trans = ha.new_transition(loc2, loc3)
@@ -75,22 +75,16 @@ def main():
     init = define_init_states(ha)
                             
     plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_NONE
-    #plot_settings.plot_mode = PlotSettings.PLOT_VIDEO
-    #plot_settings.video_frames = 250
-    #plot_settings.video_filename = "hylaa_deaggregation.avi"
-    #plot_settings.video_codec = None
-    #plot_settings.skip_frames = 169
+
+    # save to a video file
+    plot_settings.make_video("deaggregation.mp4", frames=250, fps=40)
     
     plot_settings.xdim = 0
     plot_settings.ydim = 1
-    plot_settings.anim_delay_interval = 50
-    plot_settings.min_frame_time = 0.0
-    plot_settings.num_angles = 256
     plot_settings.extra_lines = [[(-0.5, -4), (-0.5, -2.5), (0.5, -2.5), (0.5, -4)], [(-2, -4), (2, -4)]] 
     
     settings = HylaaSettings(step=0.25, max_time=6.0, plot_settings=plot_settings)
-    settings.counter_example_filename = None
+    settings.process_urgent_guards = True
 
     engine = HylaaEngine(ha, settings)
     engine.run(init)
