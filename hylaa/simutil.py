@@ -399,9 +399,7 @@ class SimulationBundle(Freezable):
         # vec_values[-1] is the previous step's matrix
         cur_matrix = start_list
         
-        start = time.time()
         result = np.dot(cur_matrix, self.matrix_exp) # ensure you're using openblas for top performance of np.dot, see the readme
-        print "np.dot time: {:.1f}".format(time.time() - start)
 
         return [result]
 
