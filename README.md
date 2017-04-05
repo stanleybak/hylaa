@@ -34,6 +34,10 @@ There are lots of settings that can be adjusted. The are listed in hylaa/contain
 
 A number of unit and regressions tests are included in the "tests" folder. To run all of these, simply run "make" in a terminal after changing to the "tests" directory. HyLAA uses pyunit, and "make" actually just runs "python -m unittest discover". If you are debugging, you can run an individual test script directly using something line "python test_star.py", An individual test method within a test script can also be run using something line "python -m unittest test_star.TestStar.test_hr_to_star".
 
+### Optimized Matrix Operations with OpenBLAS ###
+
+If you're dealing with large systems, you can speed up matrix multiplication by using openblas instead of the standard implementation of numpy.dot for matrix multiplication. See the comments at the top of tests/np_dot_benchmark.py for how to check if your implementation is optimized and how to install openblas (on linux).
+
 ### Code Contributions ###
 
 We welcome external contributions to the code, although please submit high quality code with appropriate tests. Also ensure the code passes all the existing tests before submitting it. HyLAA uses the pylint static analysis tool to ensure reasonable code cleanliness, and generally try to eliminate every warning it raises. There is an included .pylintrc file with our pylint settings. Please ensure your code passes pylint's checks prior to submitting it. This is much easier if you integrate pylint into your development environment and correct the code as you are developing it.
