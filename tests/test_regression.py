@@ -52,48 +52,7 @@ class TestRegression(unittest.TestCase):
         engine = HylaaEngine(ha, settings)
         engine.run(init_list)
 
-        print "engine.plotman.drawn_limits.xmax = {}".format(engine.plotman.drawn_limits.xmax)
-
         self.assertTrue(engine.plotman.drawn_limits.xmax > 0)
-
-    def test_invisible_inv_violation(self):
-        '''invariant violation region is not being drawn after deaggregation'''
-
-        ha = ball_string.define_ha()
-        init_list = ball_string.define_init_states(ha)
-        settings = ball_string.define_settings()
-        plot_settings = settings.plot
-
-        settings.print_output = False
-        plot_settings.plot_mode = PlotSettings.PLOT_INTERACTIVE
-        plot_settings.skip_frames = 21
-        plot_settings.skip_show_gui = True
-
-        engine = HylaaEngine(ha, settings)
-        engine.run(init_list)
-
-        self.assertTrue(engine.plotman.shapes.inv_vio_star is not None)
-
-    def test_second_mode_reachset(self):
-        '''second mode reach set is wrong'''
-
-        ha = ball_string.define_ha()
-        init_list = ball_string.define_init_states(ha)
-        settings = ball_string.define_settings()
-        plot_settings = settings.plot
-
-        plot_settings.plot_mode = PlotSettings.PLOT_INTERACTIVE
-        settings.print_output = False
-        plot_settings.skip_frames = 35
-        plot_settings.skip_show_gui = True
-
-        engine = HylaaEngine(ha, settings)
-        engine.run(init_list)
-
-        # reachable state is in correct bounds
-        for x, y in engine.plotman.shapes.cur_poly.get_path().vertices:
-            self.assertTrue(y > 4 and y < 5)
-            self.assertTrue(x > 0.5 and x < 1.0)
 
     def test_drivetrain(self):
         'test running a single step on the drivetrain model (zonotope initialization)'

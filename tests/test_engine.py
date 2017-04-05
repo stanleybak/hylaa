@@ -51,8 +51,7 @@ class TestEngine(unittest.TestCase):
             engine.do_step()
 
             t = 0.1 * (i+1)
-            state = engine.cur_state
-            star = state.star
+            star = engine.cur_state
             point = [1 + t, 2 + 2 * t]
 
             self.assertTrue(star.contains_point(point))
@@ -90,8 +89,7 @@ class TestEngine(unittest.TestCase):
             engine.do_step()
 
             t = 0.1 * (i+1)
-            state = engine.cur_state
-            star = state.star
+            star = engine.cur_state
 
             self.assertTrue(star.contains_point([math.exp(t)]))
 
@@ -126,8 +124,7 @@ class TestEngine(unittest.TestCase):
             engine.do_step()
 
             t = 0.1 * (i+1)
-            state = engine.cur_state
-            star = state.star
+            star = engine.cur_state
 
             self.assertTrue(star.contains_point([2 * math.exp(t) - 1]))
 
