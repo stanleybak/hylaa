@@ -6,9 +6,9 @@ Stanley Bak
 September 2016
 '''
 
+import os
 import time
 import multiprocessing
-from multiprocessing.pool import ThreadPool
 
 from scipy.integrate import odeint
 from scipy.sparse import csr_matrix, csc_matrix
@@ -20,6 +20,7 @@ import numpy as np
 from hylaa.containers import SimulationSettings
 from hylaa.util import Freezable
 from hylaa.timerutil import Timers
+from hylaa.openblas import OpenBlasThreads
 
 class DyData(Freezable):
     'a container for dynamics-related data in a serializable (picklable) format'
@@ -203,9 +204,6 @@ class SimulationBundle(Freezable):
         elif settings.threads < 2:
             settings.threads = 1
 
-        if settings.sim_mode != SimulationSettings.SIMULATION:
-            self.thread_pool = ThreadPool(settings.threads) if settings.threads > 1 else None
-
         # initialize simulation result variables
         self.origin_sim = None
         self.vec_values = None
@@ -256,16 +254,8 @@ class SimulationBundle(Freezable):
             mb_per_step = np.dtype(float).itemsize * self.num_dims * self.num_dims / 1024.0 / 1024.0
             print "Simulating {} steps (~{:.2f} GB in memory)...".format(
                 steps, steps * mb_per_step / 1024.0)
-
-        pool = multiprocessing.Pool(self.settings.threads) if self.settings.threads > 1 else None
-
-        if pool is not None:
-            result = pool.map(parallel_sim_func, args)
-        else:
-            result = [parallel_sim_func(a) for a in args]
-
-        if pool is not None:
-            pool.close()
+                
+        result = self.parallel_sim(args)
 
         if self.settings.stdout:
             print "Total Simulation Time: {:.2f} secs".format(time.time() - sim_start_time)
@@ -290,6 +280,24 @@ class SimulationBundle(Freezable):
             print "Transpose time: {:.2f} secs".format(time.time() - transpose_start)
 
         return rv
+        
+    def parallel_sim(self, args_list):
+        '''actually call the parallel simulation function
+        
+        args_list is a list of tuples, each one is an arg to pool_sim_func
+        '''
+        
+        pool = multiprocessing.Pool(self.settings.threads) if self.settings.threads > 1 else None
+
+        if pool is not None:
+            result = pool.map(pool_sim_func, args_list)
+        else:
+            result = [pool_sim_func(a) for a in args_list]
+            
+        if pool is not None:
+            pool.close()
+            
+        return result
 
     def presimulate(self, desired_step):
         '''
@@ -390,23 +398,13 @@ class SimulationBundle(Freezable):
 
         # vec_values[-1] is the previous step's matrix
         cur_matrix = start_list
-        result = self.fast_dot(cur_matrix, self.matrix_exp)
+        
+        start = time.time()
+        result = np.dot(cur_matrix, self.matrix_exp) # ensure you're using openblas for top performance of np.dot, see the readme
+        print "np.dot time: {:.1f}".format(time.time() - start)
 
         return [result]
 
-    def fast_dot(self, a, b):
-        '''fast implementaiton (using multiprocessing) of dot product of two matrices.
-        uses parallelism if matrix is large'''
-
-        size = a.shape[1]
-
-        if self.thread_pool is None or size < 150:
-            # single-threaded is fast if dims < 150
-            rv = np.dot(a, b)
-        else:
-            rv = pdot(a, b, self.thread_pool)
-
-        return rv
 
     def compute_gbt(self, b_matrix):
         '''
@@ -434,15 +432,7 @@ class SimulationBundle(Freezable):
             SHARED_NEXT_PRINT.value = sim_start_time + self.settings.print_interval_secs
             SHARED_COMPLETED_SIMS.value = 0
 
-        pool = multiprocessing.Pool(self.settings.threads) if self.settings.threads > 1 else None
-
-        if pool is not None:
-            result = pool.map(parallel_sim_func, args)
-        else:
-            result = [parallel_sim_func(a) for a in args]
-
-        if pool is not None:
-            pool.close()
+        result = self.parallel_sim(args)
 
         if self.settings.stdout:
             print "Total Input Simulation Time: {:.2f} secs".format(time.time() - sim_start_time)
@@ -496,39 +486,15 @@ class SimulationBundle(Freezable):
 
         return rv
 
-def mult_func((a, b)):
-    'multiplication of matrices, for parallel map'
-
-    return np.dot(a, b)
-
-def pdot(a, b, pool):
-    'parallel dot product'
-
-    size = a.shape[1]
-    split = multiprocessing.cpu_count()
-    args = []
-
-    for i in xrange(split):
-        start_index = i * size / split
-        end_index = (i+1) * size / split
-
-        if start_index == end_index:
-            continue
-
-        tall_matrix = b[:, start_index:end_index]
-        args.append((a, tall_matrix))
-
-    result = pool.map(mult_func, args)
-
-    return np.concatenate(result, axis=1)
-
 # shared time variable used for occasional printing across processes
 SHARED_NEXT_PRINT = multiprocessing.Value('d')
 SHARED_COMPLETED_SIMS = multiprocessing.Value('i')
 
-def parallel_sim_func(args):
-    'perform a single simulation as part of parallel solving'
-
+def pool_sim_func(args):
+    'perform a single simulation possibly as part of parallel solving with multiprocessing.Pool'
+    
+    # turn off multithreaded np.dot
+    
     sim_start_time, start_point, steps, include_step_zero, dy_data, settings = args
     num_dims = start_point.shape[0]
 
@@ -551,7 +517,7 @@ def parallel_sim_func(args):
 
                 print "{}/{} simulations ({:.1f}%); {:.1f}s (elapsed) / {:.1f}s (estimate)".format(
                     SHARED_COMPLETED_SIMS.value, num_dims, percent, elapsed_time, total_time)
-
+    
     return rv
 
 def raw_sim_one(start, steps, dy_data, settings, include_step_zero=False):
@@ -569,8 +535,11 @@ def raw_sim_one(start, steps, dy_data, settings, include_step_zero=False):
     jac_func, max_upper, max_lower = dy_data.make_jac_func()
     sim_tol = settings.sim_tol
 
-    result = odeint(der_func, start, times, Dfun=jac_func, col_deriv=True, mxstep=int(1e8),
-                    mu=max_upper, ml=max_lower, atol=sim_tol, rtol=sim_tol)
+    # simulation works faster without parallel openblas matrix multiplcation
+    with OpenBlasThreads(1):
+        result = odeint(der_func, start, times, Dfun=jac_func, col_deriv=True, \
+                        mxstep=int(1e8), mu=max_upper, ml=max_lower, \
+                        atol=sim_tol, rtol=sim_tol)
 
     if not include_step_zero:
         result = result[1:]

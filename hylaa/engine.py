@@ -15,6 +15,7 @@ from hylaa.hybrid_automaton import LinearHybridAutomaton, LinearAutomatonMode, L
 from hylaa.timerutil import Timers
 from hylaa.containers import HylaaSettings, PlotSettings, HylaaResult
 from hylaa.glpk_interface import LpInstance
+from hylaa.openblas import has_openblas
 
 class HylaaEngine(object):
     'main computation object. initialize and call run()'
@@ -23,6 +24,10 @@ class HylaaEngine(object):
 
         assert isinstance(hylaa_settings, HylaaSettings)
         assert isinstance(ha, LinearHybridAutomaton)
+        
+        if not has_openblas():
+            print "Performance warning: OpenBLAS not detected. Matrix operations may be slower than necessary."
+            print "Is numpy linked with OpenBLAS? (hylaa.operblas.has_openblas() returned False)"
 
         self.hybrid_automaton = ha
         self.settings = hylaa_settings

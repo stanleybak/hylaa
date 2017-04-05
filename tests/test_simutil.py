@@ -11,6 +11,7 @@ from hylaa.containers import SimulationSettings
 
 from hylaa.timerutil import Timers
 from hylaa.simutil import SimulationBundle
+from hylaa.openblas import OpenBlasThreads
 
 def make_settings(step_time):
     'make simulation settings object for testing'
@@ -388,6 +389,24 @@ class TestSimUtil(unittest.TestCase):
 
                 self.assertAlmostEqual(vals[0][1], vec2[0])
                 self.assertAlmostEqual(vals[1][1], vec2[1])
+                
+    def test_openblas(self):
+        'test openblas context object'
+        
+        size = 100
+        a_mat = np.random.rand(size, size)
+        b_mat = np.random.rand(size, size)
+        
+        prod1 = np.dot(a_mat, b_mat)
 
+        with OpenBlasThreads(1):
+            
+            prod2 = np.dot(a_mat, b_mat)
+        
+        for y in xrange(size):
+            for x in xrange(size):
+                self.assertAlmostEquals(prod1[y,x], prod2[y,x])
+        
+        
 if __name__ == '__main__':
     unittest.main()
