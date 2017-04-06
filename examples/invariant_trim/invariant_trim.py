@@ -36,13 +36,11 @@ def define_init_states(ha):
 
     return rv
 
-def main():
-    'runs hylaa on the model'
-    ha = define_ha()
-    init = define_init_states(ha)
+def define_settings():
+    'get the hylaa settings object'
                             
     plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_INTERACTIVE
+    plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
     #plot_settings.plot_mode = PlotSettings.PLOT_VIDEO
     #plot_settings.video_frames = 220
     #plot_settings.video_filename = "out.wma"
@@ -53,9 +51,17 @@ def main():
     
     settings = HylaaSettings(step=0.1, max_time=10.0, plot_settings=plot_settings)
 
+    return settings
+    
+def run_hylaa(settings):
+    'Runs hylaa with the given settings, returning the HylaaResult object.'
+    ha = define_ha()
+    init = define_init_states(ha)
+
     engine = HylaaEngine(ha, settings)
     engine.run(init)
 
-if __name__ == '__main__':
-    main()
+    return engine.result
 
+if __name__ == '__main__':
+    run_hylaa(define_settings())

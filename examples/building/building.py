@@ -201,8 +201,8 @@ def define_init_states(ha):
 def define_settings():
     'get the hylaa settings object'
     plot_settings = PlotSettings()
-    #plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
-    plot_settings.plot_mode = PlotSettings.PLOT_FULL
+    plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
+    #plot_settings.plot_mode = PlotSettings.PLOT_FULL
     plot_settings.xdim = 48
     plot_settings.ydim = 24
     

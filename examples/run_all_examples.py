@@ -11,17 +11,23 @@ import os
 def main():
     'main code'
 
-    python_files = get_files('.', '.py')
+    script_dir = os.path.dirname(os.path.realpath(__file__))
+    python_files = get_files(script_dir, '.py')
 
     start = time.time()
 
     for filepath in python_files:
-        print "Running example: {}".format(filepath)
+
+        # this script itself will also be a member of the python_files list... skip it
+        if os.path.split(filepath)[-1] == __file__:
+            continue
+
+        print "\nRunning example: {}".format(filepath)
 
         run_example(filepath)
 
     diff = time.time() - start
-    print "Done! Ran all examples in {:.1f} seconds".format(diff)
+    print "\nDone! Ran all examples in {:.1f} seconds".format(diff)
 
 def get_files(filename, extension='.py'):
     '''recursively get all the files with the given extension in the passed-in directory'''
@@ -43,14 +49,23 @@ def get_files(filename, extension='.py'):
 def run_example(filepath):
     'run a hylaa example at the given path'
 
-    mod_name, _ = os.path.splitext(os.path.split(filepath)[-1])
+    path_parts = os.path.split(filepath)
+
+    mod_name, _ = os.path.splitext(path_parts[-1])
     loaded_module = imp.load_source(mod_name, filepath)
 
     run_hylaa_func = getattr(loaded_module, 'run_hylaa')
     define_settings_func = getattr(loaded_module, 'define_settings')
 
     settings = define_settings_func()
+
+    working_dir = os.getcwd()
+    mod_directory = "/".join(path_parts[:-1])
+    os.chdir(mod_directory)
+
     run_hylaa_func(settings)
+
+    os.chdir(working_dir)
 
 if __name__ == "__main__":
     main()

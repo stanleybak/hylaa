@@ -37,12 +37,6 @@ def define_ha():
     inv3 = LinearConstraint([0., -1.], 4.0) # y >= -4
     loc3.inv_list = [inv3]
     
-    loc4 = ha.new_mode('magenta')
-    loc4.a_matrix = nparray([[0, 0], [0, 0]])
-    loc4.c_vector = nparray([0, -2])
-    inv4 = LinearConstraint([0., -1.], 5.0) # y >= -5
-    loc4.inv_list = [inv4]
-    
     guard = LinearConstraint([0., -1.], 0.0) # y >= 0
     trans = ha.new_transition(loc1, loc2)
     trans.condition_list = [guard]
@@ -52,10 +46,6 @@ def define_ha():
     guard3 = LinearConstraint([-1., 0], 0.5) # x >= -0.5
     trans = ha.new_transition(loc2, loc3)
     trans.condition_list = [guard1, guard2, guard3]
-
-    guard = LinearConstraint([0., 1.], -4.0) # y <= -4
-    trans = ha.new_transition(loc3, loc4)
-    trans.condition_list = [guard]
 
     return ha
 
@@ -69,26 +59,35 @@ def define_init_states(ha):
 
     return rv
 
-def main():
-    'runs hylaa on the model'
-    ha = define_ha()
-    init = define_init_states(ha)
+def define_settings():
+    'get the hylaa settings object'
                             
     plot_settings = PlotSettings()
 
     # save to a video file
-    plot_settings.make_video("deaggregation.mp4", frames=250, fps=40)
+    plot_settings.make_video("deaggregation.mp4", frames=150, fps=5)
     
     plot_settings.xdim = 0
     plot_settings.ydim = 1
-    plot_settings.extra_lines = [[(-0.5, -4), (-0.5, -2.5), (0.5, -2.5), (0.5, -4)], [(-2, -4), (2, -4)]] 
+    plot_settings.extra_lines = [[(-0.5, -4), (-0.5, -0), (0.5, -0), (0.5, -4)]] 
     
     settings = HylaaSettings(step=0.25, max_time=6.0, plot_settings=plot_settings)
     settings.process_urgent_guards = True
+    
+    settings.simulation.threads=1
+
+    return settings
+    
+def run_hylaa(settings):
+    'Runs hylaa with the given settings, returning the HylaaResult object.'
+    ha = define_ha()
+    init = define_init_states(ha)
 
     engine = HylaaEngine(ha, settings)
     engine.run(init)
 
+    return engine.result
+
 if __name__ == '__main__':
-    main()
+    run_hylaa(define_settings())
 

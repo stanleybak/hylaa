@@ -6,7 +6,6 @@ Stanley Bak
 September 2016
 '''
 
-import os
 import time
 import multiprocessing
 
@@ -199,11 +198,6 @@ class SimulationBundle(Freezable):
 
         self.dy_data = DyData(csr_matrix(a_mat), csr_matrix(b_vec), settings.sparse)
 
-        if settings.threads is None:
-            settings.threads = multiprocessing.cpu_count()
-        elif settings.threads < 2:
-            settings.threads = 1
-
         # initialize simulation result variables
         self.origin_sim = None
         self.vec_values = None
@@ -254,7 +248,7 @@ class SimulationBundle(Freezable):
             mb_per_step = np.dtype(float).itemsize * self.num_dims * self.num_dims / 1024.0 / 1024.0
             print "Simulating {} steps (~{:.2f} GB in memory)...".format(
                 steps, steps * mb_per_step / 1024.0)
-                
+
         result = self.parallel_sim(args)
 
         if self.settings.stdout:
@@ -280,23 +274,26 @@ class SimulationBundle(Freezable):
             print "Transpose time: {:.2f} secs".format(time.time() - transpose_start)
 
         return rv
-        
+
     def parallel_sim(self, args_list):
         '''actually call the parallel simulation function
-        
+
         args_list is a list of tuples, each one is an arg to pool_sim_func
         '''
-        
-        pool = multiprocessing.Pool(self.settings.threads) if self.settings.threads > 1 else None
 
-        if pool is not None:
+        num_threads = self.settings.threads if self.settings.threads is not None else multiprocessing.cpu_count()
+
+        # unless threads is manually chosen, don't use pool for small dimensional systems
+        if self.settings.threads is None and self.num_dims < 5:
+            num_threads = 1
+
+        if num_threads > 1:
+            pool = multiprocessing.Pool(self.settings.threads)
             result = pool.map(pool_sim_func, args_list)
+            pool.close()
         else:
             result = [pool_sim_func(a) for a in args_list]
-            
-        if pool is not None:
-            pool.close()
-            
+
         return result
 
     def presimulate(self, desired_step):
