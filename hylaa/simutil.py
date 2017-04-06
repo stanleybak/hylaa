@@ -6,6 +6,7 @@ Stanley Bak
 September 2016
 '''
 
+import os
 import time
 import multiprocessing
 
@@ -19,7 +20,7 @@ import numpy as np
 from hylaa.containers import SimulationSettings
 from hylaa.util import Freezable
 from hylaa.timerutil import Timers
-from hylaa.openblas import OpenBlasThreads
+import hylaa.openblas as openblas
 
 class DyData(Freezable):
     'a container for dynamics-related data in a serializable (picklable) format'
@@ -235,6 +236,7 @@ class SimulationBundle(Freezable):
 
         # create the linear (nonaffine) dynamics
         linear_dy = DyData(self.dy_data.sparse_a_matrix, None, self.settings.sparse)
+
         sim_start_time = time.time()
         args = []
 
@@ -288,9 +290,17 @@ class SimulationBundle(Freezable):
             num_threads = 1
 
         if num_threads > 1:
+            os.environ['OMP_NUM_THREADS'] = '1'
+
+            # prevents using multiple threads within each thread
+            openblas.set_num_threads(1)
+
             pool = multiprocessing.Pool(self.settings.threads)
             result = pool.map(pool_sim_func, args_list)
             pool.close()
+
+            # restore state
+            openblas.set_num_threads(num_threads)
         else:
             result = [pool_sim_func(a) for a in args_list]
 
@@ -395,11 +405,11 @@ class SimulationBundle(Freezable):
 
         # vec_values[-1] is the previous step's matrix
         cur_matrix = start_list
-        
-        result = np.dot(cur_matrix, self.matrix_exp) # ensure you're using openblas for top performance of np.dot, see the readme
+
+        # ensure you're using openblas for top performance of np.dot, see the readme
+        result = np.dot(cur_matrix, self.matrix_exp)
 
         return [result]
-
 
     def compute_gbt(self, b_matrix):
         '''
@@ -487,9 +497,7 @@ SHARED_COMPLETED_SIMS = multiprocessing.Value('i')
 
 def pool_sim_func(args):
     'perform a single simulation possibly as part of parallel solving with multiprocessing.Pool'
-    
-    # turn off multithreaded np.dot
-    
+
     sim_start_time, start_point, steps, include_step_zero, dy_data, settings = args
     num_dims = start_point.shape[0]
 
@@ -512,7 +520,7 @@ def pool_sim_func(args):
 
                 print "{}/{} simulations ({:.1f}%); {:.1f}s (elapsed) / {:.1f}s (estimate)".format(
                     SHARED_COMPLETED_SIMS.value, num_dims, percent, elapsed_time, total_time)
-    
+
     return rv
 
 def raw_sim_one(start, steps, dy_data, settings, include_step_zero=False):
@@ -530,11 +538,9 @@ def raw_sim_one(start, steps, dy_data, settings, include_step_zero=False):
     jac_func, max_upper, max_lower = dy_data.make_jac_func()
     sim_tol = settings.sim_tol
 
-    # simulation works faster without parallel openblas matrix multiplcation
-    with OpenBlasThreads(1):
-        result = odeint(der_func, start, times, Dfun=jac_func, col_deriv=True, \
-                        mxstep=int(1e8), mu=max_upper, ml=max_lower, \
-                        atol=sim_tol, rtol=sim_tol)
+    result = odeint(der_func, start, times, Dfun=jac_func, col_deriv=True, \
+                    mxstep=int(1e8), mu=max_upper, ml=max_lower, \
+                    atol=sim_tol, rtol=sim_tol)
 
     if not include_step_zero:
         result = result[1:]

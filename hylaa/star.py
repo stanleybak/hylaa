@@ -31,6 +31,7 @@ class InputStar(Freezable):
     '''
 
     def __init__(self, mode, star_basis_matrix):
+        Timers.tic('InputStar constructor')
         input_a_matrix_t = mode.u_constraints_a_t
         input_b_vector = mode.u_constraints_b
 
@@ -42,8 +43,11 @@ class InputStar(Freezable):
         self.b_vector = input_b_vector
         gb_t = mode.get_gb_t()
 
+        Timers.tic('InputStar constructor (dot)')
         self.input_basis_matrix = np.dot(gb_t, star_basis_matrix)
+        Timers.toc('InputStar constructor (dot)')
         #print "input_basis_matrix = \n{}\n *\n {}\n = \n{}".format(gb_t, star_basis_matrix, self.input_basis_matrix)
+        Timers.toc('InputStar constructor')
 
         self.freeze_attrs()
 
@@ -168,6 +172,7 @@ class Star(Freezable):
         Timers.tic('star.update_from_sim')
         prev_basis_matrix = self.basis_matrix
 
+        Timers.tic('star.update_from_sim (make input star)')
         # add input star using the current basis matrix (before updating)
         input_star = None
         if self.mode.num_inputs > 0:
@@ -179,6 +184,9 @@ class Star(Freezable):
 
             if self._star_lpi is not None:
                 self._star_lpi.add_input_star(input_star.a_matrix_t, input_star.b_vector, input_star.input_basis_matrix)
+
+        Timers.toc('star.update_from_sim (make input star)')
+        Timers.tic('star.update_from_sim (update basis matrix)')
 
         # update the current step's basis matrix
         if self.start_basis_matrix is None:
@@ -192,6 +200,8 @@ class Star(Freezable):
             self._star_lpi.update_basis_matrix(self.basis_matrix)
 
         self._verts = None # cached vertices for plotting are no longer valid
+
+        Timers.toc('star.update_from_sim (update basis matrix)')
 
         Timers.toc('star.update_from_sim')
 

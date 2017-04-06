@@ -29,27 +29,22 @@ import multiprocessing
 import ctypes
 from ctypes.util import find_library
 
-# prioritize hand-compiled OpenBLAS library over default in /usr/lib
-paths = ['/opt/OpenBLAS/lib/libopenblas.so',
-         '/usr/lib/openblas-base/libblas.so.3',
-         '/lib/libopenblas.so',
-         '/usr/lib/libopenblas.so.0',
-         find_library('openblas')]
-
 openblas_lib = None
 
-for lib_path in paths:
-    try:
+try:
+    lib_path = find_library('openblas')
+
+    if lib_path is not None:
         openblas_lib = ctypes.cdll.LoadLibrary(lib_path)
 
-        #try:
-        #    openblas_lib.openblas_get_num_threads
-        #except AttributeError:
-        #    print "Version Warning: openblas_get_num_threads not found in library {}.".format(lib_path)
-
-        break
-    except OSError:
-        continue
+        try:
+            openblas_lib.openblas_get_num_threads
+        except AttributeError:
+            pass
+#           print "Performance Warning: openblas_get_num_threads not found in library {} (version issue?).".format(
+#               lib_path)
+except OSError:
+    pass
 
 def has_openblas():
     'was openblas sucessfully detected?'

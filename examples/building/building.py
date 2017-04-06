@@ -202,7 +202,6 @@ def define_settings():
     'get the hylaa settings object'
     plot_settings = PlotSettings()
     plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
-    #plot_settings.plot_mode = PlotSettings.PLOT_FULL
     plot_settings.xdim = 48
     plot_settings.ydim = 24
     
@@ -219,6 +218,8 @@ def define_settings():
     plot_settings.label.big(size=40)
 
     settings = HylaaSettings(step=0.005, max_time=1.0, plot_settings=plot_settings)
+    settings.simulation.threads = 1
+    settings.simulation.sim_mode = SimulationSettings.MATRIX_EXP
 
     return settings
 
