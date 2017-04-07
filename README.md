@@ -6,7 +6,7 @@ Hylaa computes *simulation-equivalent* reachability. That is, Hylaa computes the
 
 Some considerations: although we are confident in the underlying theoretical techniques Hylaa uses, we do not claim the implementation and its source code is fully correct and the tool may contain bugs (please report these to us!). The tool does not account for floating-point errors which may accumulate during the computation. Simulation-equivalent reachability only looks at the system state at specific time instances, and so may miss error states that occur between time-steps (traditional reachability analysis would catch these cases). Further, our notion of time-varying inputs only considers inputs which change at multiples of the time-step, not at any point in time. Despite these limitations, we believe and hope Hylaa can be used improve the confidence in a system's correctness.
 
-There are also expressiveness limitations with the current implementation. The current version of Hylaa can handle either time-varying inputs or hybrid dynamics, but not both at the same time. Resets in discrete transitions are not yet implemented. Also, discrete transitions with hybrid dynamics may not always work, depending on subtle properties of the system (the tool will output a basis matrix error message if these conditions fail). We plan to add these features over time.
+There are also expressiveness limitations with the current implementation. The current version of Hylaa can handle either time-varying inputs or hybrid dynamics, but not both at the same time (except when creating error modes for systems with inputs). Resets in discrete transitions are not yet implemented. Also, discrete transitions with hybrid dynamics may not always work, depending on subtle properties of the system (the tool will output a basis matrix error message if these conditions fail). We plan to add these features over time.
 
 The code was mostly written by Stanley Bak with input from Parasara Sridhar Duggirala. Hylaa is released under the GPL v3 license (see the LICENSE file). It has been approved for public release (DISTRIBUTION A: Approved for public release; distribution unlimited #88ABW-2016-5976, 22 NOV 2016).
 
@@ -14,11 +14,11 @@ The code was mostly written by Stanley Bak with input from Parasara Sridhar Dugg
 
 You can setup Hylaa with a few steps. These instructions are for Ubuntu Linux, although they may also help on other systems.
 
-1. This a custom C++ interface to GLPK for use in Hylaa that you need to compile. See "hylaa/glpk-interface/README" for details on how to do this. Essentially, you need to get glpk-4.60 (which may be newer than what comes with Ubuntu), and then run make (the Makefile is in that folder). This will produce "hylaa_glpk.so".
+1. This a custom C++ interface to GLPK for use in Hylaa that you need to compile. See `hylaa/glpk-interface/README` for details on how to do this. Essentially, you need to get glpk-4.60 (which may be newer than what comes with Ubuntu), and then run make (the Makefile is in that folder). This will produce `hylaa_glpk.so`.
 
 2. Hylaa is python based, and uses a few libraries which you may or may not have. Run the following to ensure you get the required packages: `sudo apt-get install python python-numpy python-scipy python-matplotlib`
 
-3. Setup the `PYTHONPATH` environment variable. A Hylaa model is just python code, which imports the hylaa files, creates a model definition and settings objects, and then calls a function with these objects. The "hylaa" folder contains the python package. You should add the parent folder of the `hylaa` folder to your `PYTHONPATH` environment variable. On Linux, this can be done by updating your `~/.profile` or `~/.bashrc` to include: `export PYTHONPATH="${PYTHONPATH}:/path/to/parent/of/hylaa/folder"`. After you do this, you may need to restart the terminal (for `~/.bashrc`) or log out and log back in (for `~/.profile`), or otherwise ensure the environment variable is updated (do `echo $PYTHONPATH` to see if it includes the correct folder). Once this is done, you should be able to run the example models.
+3. Setup the `PYTHONPATH` environment variable. A Hylaa model is just python code, which imports the hylaa files, creates a model definition and settings objects, and then calls a function with these objects. The `hylaa` folder contains the python package. You should add the parent folder of the `hylaa` folder to your `PYTHONPATH` environment variable. On Linux, this can be done by updating your `~/.profile` or `~/.bashrc` to include: `export PYTHONPATH="${PYTHONPATH}:/path/to/parent/of/hylaa/folder"`. After you do this, you may need to restart the terminal (for `~/.bashrc`) or log out and log back in (for `~/.profile`), or otherwise ensure the environment variable is updated (do `echo $PYTHONPATH` to see if it includes the correct folder). Once this is done, you should be able to run the example models.
 
 4. (Optional) For .mp4 video export, ffmpeg is used. Make sure you can run ffmeg from a terminal for this to work.
 
@@ -28,18 +28,18 @@ You can setup Hylaa with a few steps. These instructions are for Ubuntu Linux, a
 
 The easiest way to get started with Hylaa is to run some of the examples. Models in Hylaa are defined in python code (more on the input format in the next section), and the tool is executed using python as well.
 
-Go to `examples/damped_oscillator` and run damped_oscillator.py from the command line (`python damped_oscillator.py`). This should create `plot.png` in the same folder, with an output of the reachable set. Compare this to the SpaceEx output given in "spaceex_output.png". The dynamics for this system are x' = -0.1 * x + y and y' = -x - 0.1 * y, with the initial states x = [-6, -5] and y = [0, 1]. 
+Go to `examples/damped_oscillator` and run damped_oscillator.py from the command line (`python damped_oscillator.py`). This should create `plot.png` in the same folder, with an output of the reachable set. Compare this to the SpaceEx output given in `spaceex_output.png`. The dynamics for this system are x' = -0.1 * x + y and y' = -x - 0.1 * y, with the initial states x = [-6, -5] and y = [0, 1]. 
 
-The dynamics in Hylaa are given as x' = Ax + Bu + c, where x is a vector of variables, A is the dynamics matrix, B is optional and if given is a matrix of input effects, and c is a vector (the affine term of the dynamics), u are the input variables. Inputs, if used, are time-varying, with bounds given by A_constraints * u <= b_constraints, where A_constraints is a matrix, and b_constraints is a vector.
+The dynamics in Hylaa are given as x' = **A**x + **B**u + c, where x is a vector of variables, **A** is the dynamics matrix, **B** is optional and if given is a matrix of input effects, c is a vector (the affine term of the dynamics), and u is a vector of the input variables. Inputs, if used, are time-varying, with bounds given by linear constraints as **A_constraints** * u <= b_constraints, where **A_constraints** is a matrix, and b_constraints is a vector. Inputs and guards are given as conjunctions of linear constraints. The unsafe error state specification is created by marking certain modes of the hybrid automaton as error modes, and so, unsafe conditions have the same restrictions as guards (they are linear constraints).
 
-In the damped_oscillator example, there are no inputs. The line "a_matrix = np.array([[-0.1, 1], [-1, -0.1]])" defines the dynamics A matrix, and the line "c_vector = np.array([0, 0], dtype=float)" defines the c_vector affine term. Try changing these slightly and re-running the script to see the effect.
+In the damped_oscillator example, there are no inputs. The line `a_matrix = np.array([[-0.1, 1], [-1, -0.1]])` defines the dynamics **A** matrix, and the line `c_vector = np.array([0, 0], dtype=float)` defines the c_vector affine term. Try changing these slightly and re-running the script to see the effect.
 
-Computation settings are given in the define_settings function. To switch from plotting an image to a live-plot during the computation, for example, change plot_settings.plot_mode to be PlotSettings.PLOT_FULL. Lots of settings exist in Hylaa (plotting mode, verification options, ect.). All of them, as well as comments describing them can be found in "hylaa/containers.py". 
+Computation settings are given in the `define_settings` function. To switch from plotting a static image to a live plot during the computation, for example, change `plot_settings.plot_mode` to be `PlotSettings.PLOT_FULL`. Lots of settings exist in Hylaa (plotting mode, verification options, ect.). All of them, as well as comments describing them can be found in `hylaa/containers.py`.
 
 See some of the other examples to see how different features are implemented:
 
 examples/input_oscillator - time-varying inputs
-examples/building - time-varying inputs (50-dimensions)
+examples/building - time-varying inputs (50-dimensions) with unsafe error states
 examples/invariant_trim - mode invariants
 examples/ball_string - discrete transitions
 examples/deaggregation - discrete successor aggregation and deaggregation across multiple guards with .mp4 video output
@@ -48,7 +48,7 @@ examples/deaggregation - discrete successor aggregation and deaggregation across
 
 Hylaa takes input python objects describing the hybrid automaton. One way to make these files is manually. However, there is also a Hyst[1] printer available, which allows one to convert SpaceEx models to the Hylaa input format. You can then also use the hypy[2] library to script together multiple runs of Hyst+Hylaa.
 
-With this approach, you can create models in the SpaceEx[3] format using the SpaceEx model editor and convert the .xml and .cfg files SpaceEx would use into a runnable Hylaa .py file. Many of the examples included with Hylaa were initially created with this approach (some of the settings may have been adjusted after generating the model). An example SpaceEx file you can try converting is in the "examples/damped_oscillator" folder (osc_spaceex.xml and osc_spaceex.cfg).
+With this approach, you can create models in the SpaceEx[3] format using the SpaceEx model editor and convert the .xml and .cfg files SpaceEx would use into a runnable Hylaa .py file. Many of the examples included with Hylaa were initially created with this approach (some of the settings may have been adjusted after generating the model). An example SpaceEx file you can try converting is in the `examples/damped_oscillator` folder (osc_spaceex.xml and osc_spaceex.cfg).
 
 The Hylaa printer is included in version 1.4 of Hyst, which also includes hypy: https://github.com/stanleybak/hyst/releases/tag/v1.4
 
@@ -60,9 +60,9 @@ The Hylaa printer is included in version 1.4 of Hyst, which also includes hypy: 
 
 ### Code Tests ###
 
-A number of unit and regressions tests are included in the "tests" folder. Hylaa uses python's unit testing framework `pyunit`. To run all the tests, simply run "python -m unittest discover" in a terminal after changing to the `tests` directory. If you are debugging, you can run an individual test script directly using something line `python test_star.py`, An individual test method within a test script can also be run using something line `python -m unittest test_star.TestStar.test_hr_to_star`.
+A number of unit and regressions tests are included in the `tests` folder. Hylaa uses python's unit testing framework `pyunit`. To run all the tests, simply run `python -m unittest discover` in a terminal after changing to the `tests` folder. If you are debugging, you can run an individual test script directly using something line `python test_star.py`, An individual test method within a test script can also be run using something line `python -m unittest test_star.TestStar.test_hr_to_star`.
 
-### Publications ###
+### Hylaa Publications ###
 
 "HyLAA: A Tool for Computing Simulation-Equivalent Reachability for Linear Systems", S. Bak, P. Duggirala, 20th International Conference on Hybrid Systems: Computation and Control (HSCC 2017)
 
@@ -74,6 +74,6 @@ A number of unit and regressions tests are included in the "tests" folder. Hylaa
 
 We welcome external contributions to the code, although please submit high quality code with appropriate tests. You can contact us if you're planning to submit something and we can try to help. Also ensure the code passes all the existing tests before submitting it (and add your own tests for your new features). 
 
-Hylaa's python code uses the pylint static analysis tool to ensure reasonable code cleanliness. Please use this and generally try to eliminate every warning it raises. There is an included ".pylintrc" file with our pylint settings. Please ensure your code generally passes pylint's checks prior to submitting it. This is much easier if you integrate pylint into your development environment and correct the code as you are developing it. For the C++ code, a ".clang-format" file is in the "hylaa/glpk_interface" folder which specifies the code format that should be used with the clang static checker tool.
+Hylaa's python code uses the pylint static analysis tool to ensure reasonable code cleanliness. Please use this and generally try to eliminate every warning it raises. There is an included `.pylintrc` file with our pylint settings. Please ensure your code generally passes pylint's checks prior to submitting it. This is much easier if you integrate pylint into your development environment and correct the code as you are developing it. For the C++ code, a `.clang-format` file is in the `hylaa/glpk_interface` folder which specifies the code format that should be used with the clang static checker tool.
 
 Once your code is clean and passes all the tests, you can submit a pull request to our github repository: https://github.com/stanleybak/hylaa
