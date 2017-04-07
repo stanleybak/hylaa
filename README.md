@@ -1,5 +1,7 @@
 # Hylaa #
 
+![Hylaa Logo](https://stanleybak.com/hylaa/logo.png "Hylaa Logo")
+
 Hylaa (**HY**brid **L**inear **A**utomata **A**nalyzer) is a verification tool for system models with linear ODEs, time-varying inputs, and possibly hybrid dynamics. The latest version of Hylaa is always available on our github repository at https://github.com/stanleybak/hylaa . A website for Hylaa is maintained at http://stanleybak.com/hylaa .
 
 Hylaa computes *simulation-equivalent* reachability. That is, Hylaa computes the set of states that can be reached by any fixed-step simulation from any initial start state (given a bounded set of start states) under any possible input (given a bounded set of possible inputs). For systems with time-varying inputs, this corresponds to the case where inputs can change at each time step, but are fixed between steps. These restrictions allow Hylaa's analysis to be exact (subject to some restrictions discussed next), and allow Hylaa to be able to generate counter-example traces when an error is found.
@@ -42,7 +44,7 @@ In the damped_oscillator example, there are no inputs. The line `a_matrix = np.a
 
 Computation settings are given in the `define_settings` function. To switch from plotting a static image to a live plot during the computation, for example, change `plot_settings.plot_mode` to be `PlotSettings.PLOT_FULL`. Lots of settings exist in Hylaa (plotting mode, verification options, ect.). All of them, as well as comments describing them can be found in `hylaa/containers.py`.
 
-See some of the other examples to see how different features are implemented:
+Some of the other examples show how different features can be implemented:
 
 * `examples/input_oscillator` - time-varying inputs
 * `examples/building` - time-varying inputs (50-dimensions) with unsafe error states
@@ -52,9 +54,9 @@ See some of the other examples to see how different features are implemented:
 
 ### Input Format ###
 
-Hylaa takes input python objects describing the hybrid automaton. One way to make these files is manually. However, there is also a Hyst[1] printer available, which allows one to convert SpaceEx models to the Hylaa input format. You can then also use the hypy[2] library to script together multiple runs of Hyst+Hylaa.
+Hylaa takes input python objects describing the hybrid automaton. One way to make these files is manually. However, there is also a Hyst [1] printer available, which allows one to convert SpaceEx models to the Hylaa input format. You can then also use the hypy [2] library to script together multiple runs of Hyst+Hylaa.
 
-With this approach, you can create models in the SpaceEx[3] format using the SpaceEx model editor and convert the .xml and .cfg files SpaceEx would use into a runnable Hylaa .py file. Many of the examples included with Hylaa were initially created with this approach (some of the settings may have been adjusted after generating the model). An example SpaceEx file you can try converting is in the `examples/damped_oscillator` folder (osc_spaceex.xml and osc_spaceex.cfg).
+With this approach, you can create models in the SpaceEx [3] format using the SpaceEx model editor and convert the `.xml` and `.cfg` files SpaceEx would use into a runnable Hylaa python file. Many of the examples included with Hylaa were initially created with this approach, with some of the settings adjusted after generating the model. An example SpaceEx file you can try converting is in the `examples/damped_oscillator` folder (`osc_spaceex.xml` and `osc_spaceex.cfg`).
 
 The Hylaa printer is included in version 1.4 of Hyst, which also includes hypy: https://github.com/stanleybak/hyst/releases/tag/v1.4
 
