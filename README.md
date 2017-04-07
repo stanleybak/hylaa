@@ -1,12 +1,12 @@
 # Hylaa #
 
-Hylaa (HYbrid Linear Automata Analyzer) is a verification tool for system models with linear ODEs, time-varying inputs, and possibly hybrid dynamics. The latest version of Hylaa is always available on our github repository at https://github.com/stanleybak/hylaa . A website for hylaa is maintained at http://stanleybak.com/hylaa .
+Hylaa (HYbrid Linear Automata Analyzer) is a verification tool for system models with linear ODEs, time-varying inputs, and possibly hybrid dynamics. The latest version of Hylaa is always available on our github repository at https://github.com/stanleybak/hylaa . A website for Hylaa is maintained at http://stanleybak.com/hylaa .
 
 Hylaa computes *simulation-equivalent* reachability. That is, Hylaa computes the set of states that can be reached by any fixed-step simulation from any initial start state (given a bounded set of start states) under any possible input (given a bounded set of possible inputs). For systems with time-varying inputs, this corresponds to the case where inputs can change at each time step, but are fixed between steps. These restrictions allows Hylaa's analysis to be exact (subject to some restrictions discussed next), and allow Hylaa to be able to generate counter-example traces when an error is found.
 
-Some considerations: Although we are confident in the underlying theoretical techniques Hylaa uses, we do not claim the implementation and its source code is fully correct and the tool may contain bugs (please report these to us!). The tool does not account for floating-point errors which may accumulate during the computation. Simulation-equivalent reachability only looks at the system state at specific time instances, and so may miss error states that occur between time-steps (traditional reachability analysis would catch these cases). Further, our notion of time-varying inputs only considers inputs which change at multiples of the time-step, not at any point in time. Despite these limitations, we believe and hope Hylaa can be used improve the confidence in a system's correctness.
+Some considerations: although we are confident in the underlying theoretical techniques Hylaa uses, we do not claim the implementation and its source code is fully correct and the tool may contain bugs (please report these to us!). The tool does not account for floating-point errors which may accumulate during the computation. Simulation-equivalent reachability only looks at the system state at specific time instances, and so may miss error states that occur between time-steps (traditional reachability analysis would catch these cases). Further, our notion of time-varying inputs only considers inputs which change at multiples of the time-step, not at any point in time. Despite these limitations, we believe and hope Hylaa can be used improve the confidence in a system's correctness.
 
-There are also expresiveness limitations with the current implementation. The current version of Hylaa can handle either time-varying inputs, or hybrid dynamics, but not both at the same time. Resets in discrete transitions are not yet implemented. Also, discrete transitions with hybrid dynamics may not always work, depending on subtle properties of the system (the tool will output a basis matrix error message if these conditions fail). We plan to add these features over time.
+There are also expressiveness limitations with the current implementation. The current version of Hylaa can handle either time-varying inputs, or hybrid dynamics, but not both at the same time. Resets in discrete transitions are not yet implemented. Also, discrete transitions with hybrid dynamics may not always work, depending on subtle properties of the system (the tool will output a basis matrix error message if these conditions fail). We plan to add these features over time.
 
 The code was mostly written by Stanley Bak with input from Parasara Sridhar Duggirala. Hylaa is released under the GPL v3 license (see the LICENSE file). It has been approved for public release (DISTRIBUTION A: Approved for public release; distribution unlimited #88ABW-2016-5976, 22 NOV 2016).
 
@@ -20,7 +20,7 @@ You can setup Hylaa with a few steps. These instructions are for Ubuntu Linux, a
 
 `sudo apt-get install python python-numpy python-scipy python-matplotlib`
 
-3. Setup PYTHONPATH environment variables. A Hylaa model is just python code, which imports the hylaa files, creates a model definition and settings objects, and then calls a function with these objects. The "hylaa" folder contains the python package. You should add the parent folder of the hylaa folder to your PYTHONPATH environment variable. On Linux, this can be done by updating your `~/.profile` or `~/.bashrc` to include:
+3. Setup the `PYTHONPATH` environment variable. A Hylaa model is just python code, which imports the hylaa files, creates a model definition and settings objects, and then calls a function with these objects. The "hylaa" folder contains the python package. You should add the parent folder of the `hylaa` folder to your `PYTHONPATH` environment variable. On Linux, this can be done by updating your `~/.profile` or `~/.bashrc` to include:
 
 `export PYTHONPATH="${PYTHONPATH}:/path/to/parent/of/hylaa/folder"`
 
@@ -28,7 +28,7 @@ After you do this, you may need to restart the terminal (for `~/.bashrc`) or log
 
 4. (Optional) For .mp4 video export, ffmpeg is used. Make sure you can run ffmeg from a terminal for this to work.
 
-5. (Optional) If you're dealing with large systems, you can speed up matrix multiplication by using OpenBLAS instead of the standard implementation of numpy.dot for matrix multiplication. See the comments at the top of tests/np_dot_benchmark.py for how to check if your implementation is optimized and how to connect OpenBLAS with python (on linux). Hylaa will work without this, but performance may be degraded, especially for high-dimensional systems.
+5. (Optional) If you're dealing with large systems, you can speed up matrix multiplication by using OpenBLAS instead of the standard implementation of numpy.dot for matrix multiplication. See the comments at the top of tests/np_dot_benchmark.py for how to check if your implementation is optimized and how to connect OpenBLAS with python (on Linux). Hylaa will work without this, but performance may be degraded, especially for high-dimensional systems.
 
 ### Getting Started + Example ###
 
@@ -44,7 +44,7 @@ Computation settings are given in the define_settings function. To switch from p
 
 See some of the other examples to see how different features are implemented:
 
-examples/input_osciallator - time-varying inputs
+examples/input_oscillator - time-varying inputs
 examples/building - time-varying inputs (50-dimensions)
 examples/invariant_trim - mode invariants
 examples/ball_string - discrete transitions
@@ -66,7 +66,7 @@ The Hylaa printer is included in version 1.4 of Hyst, which also includes hypy: 
 
 ### Code Tests ###
 
-A number of unit and regressions tests are included in the "tests" folder. HyLAA uses pyunit. To run all of these, simply run "python -m unittest discover" in a terminal after changing to the "tests" directory. If you are debugging, you can run an individual test script directly using something line "python test_star.py", An individual test method within a test script can also be run using something line "python -m unittest test_star.TestStar.test_hr_to_star".
+A number of unit and regressions tests are included in the "tests" folder. Hylaa uses python's unit testing framework `pyunit`. To run all the tests, simply run "python -m unittest discover" in a terminal after changing to the `tests` directory. If you are debugging, you can run an individual test script directly using something line `python test_star.py`, An individual test method within a test script can also be run using something line `python -m unittest test_star.TestStar.test_hr_to_star`.
 
 ### Publications ###
 
@@ -80,6 +80,6 @@ A number of unit and regressions tests are included in the "tests" folder. HyLAA
 
 We welcome external contributions to the code, although please submit high quality code with appropriate tests. You can contact us if you're planning to submit something and we can try to help. Also ensure the code passes all the existing tests before submitting it (and add your own tests for your new features). 
 
-Hylaa's python code uses the pylint static analysis tool to ensure reasonable code cleanliness. Plese use this and generally try to eliminate every warning it raises. There is an included ".pylintrc" file with our pylint settings. Please ensure your code generally passes pylint's checks prior to submitting it. This is much easier if you integrate pylint into your development environment and correct the code as you are developing it. For the C++ code, a ".clang-format" file is in the "hylaa/glpk_interface" folder which specifies the code format that should be used with the clang static checker tool.
+Hylaa's python code uses the pylint static analysis tool to ensure reasonable code cleanliness. Please use this and generally try to eliminate every warning it raises. There is an included ".pylintrc" file with our pylint settings. Please ensure your code generally passes pylint's checks prior to submitting it. This is much easier if you integrate pylint into your development environment and correct the code as you are developing it. For the C++ code, a ".clang-format" file is in the "hylaa/glpk_interface" folder which specifies the code format that should be used with the clang static checker tool.
 
 Once your code is clean and passes all the tests, you can submit a pull request to our github repository: https://github.com/stanleybak/hylaa
