@@ -26,15 +26,15 @@ You can setup Hylaa with a few steps. These instructions are for Ubuntu Linux, a
    
    After you do this, you may need to restart the terminal (for `~/.bashrc`) or log out and log back in (for `~/.profile`), or otherwise ensure the environment variable is updated (do `echo $PYTHONPATH` to see if it includes the correct folder). Once this is done, you should be able to run the example models.
 
-4. (Optional) For .mp4 video export, ffmpeg is used. Make sure you can run ffmeg from a terminal for this to work.
+4. (Optional) For .mp4 video export, ffmpeg is used. Make sure you can run the command `ffmpeg` from a terminal for this to work.
 
-5. (Optional) If you're dealing with large systems, you can speed up matrix multiplication by using OpenBLAS instead of the standard implementation of numpy.dot for matrix multiplication. See the comments at the top of tests/np_dot_benchmark.py for how to check if your implementation is optimized and how to connect OpenBLAS with python (on Linux). Hylaa will work without this, but performance may be degraded, especially for high-dimensional systems.
+5. (Optional) If you're dealing with large systems, you can speed up matrix multiplication by using OpenBLAS instead of the standard implementation of `numpy.dot` for matrix multiplication. See the comments at the top of `tests/np_dot_benchmark.py` for how to check if your implementation is optimized and how to connect OpenBLAS with python (on Linux). Hylaa will work without this, but performance may be degraded, especially for high-dimensional systems.
 
 ### Getting Started + Example ###
 
 The easiest way to get started with Hylaa is to run some of the examples. Models in Hylaa are defined in python code (more on the input format in the next section), and the tool is executed using python as well.
 
-Go to `examples/damped_oscillator` and run damped_oscillator.py from the command line (`python damped_oscillator.py`). This should create `plot.png` in the same folder, with an output of the reachable set. Compare this to the SpaceEx output given in `spaceex_output.png`. The dynamics for this system are x' = -0.1 * x + y and y' = -x - 0.1 * y, with the initial states x = [-6, -5] and y = [0, 1]. 
+Go to `examples/damped_oscillator` and run `damped_oscillator.py` from the command line (`python damped_oscillator.py`). This should create `plot.png` in the same folder, which will be an 2-d plot of the reachable set. Compare this to the SpaceEx output given in `spaceex_output.png`. The dynamics for this system are `x' = -0.1 * x + y` and `y' = -x - 0.1 * y`, with the initial states `x = [-6, -5]` and `y = [0, 1]`. 
 
 The dynamics in Hylaa are given as x' = **A**x + **B**u + c, where x is a vector of variables, **A** is the dynamics matrix, **B** is optional and if given is a matrix of input effects, c is a vector (the affine term of the dynamics), and u is a vector of the input variables. Inputs, if used, are time-varying, with bounds given by linear constraints as **A_constraints** * u <= b_constraints, where **A_constraints** is a matrix, and b_constraints is a vector. Inputs and guards are given as conjunctions of linear constraints. The unsafe error state specification is created by marking certain modes of the hybrid automaton as error modes, and so, unsafe conditions have the same restrictions as guards (they are linear constraints).
 
