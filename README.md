@@ -1,7 +1,7 @@
 # Hylaa #
 
 <p align="center">
-  <img src="hylaa_logo.png" alt="Hylaa Logo"/>
+  <img src="hylaa_logo_small.png" alt="Hylaa Logo"/>
 </p>
 
 Hylaa (**HY**brid **L**inear **A**utomata **A**nalyzer) is a verification tool for system models with linear ODEs, time-varying inputs, and possibly hybrid dynamics. The latest version of Hylaa is always available on our github repository at https://github.com/stanleybak/hylaa . A website for Hylaa is maintained at http://stanleybak.com/hylaa .
