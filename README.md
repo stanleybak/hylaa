@@ -1,6 +1,6 @@
 # Hylaa #
 
-Hylaa (HYbrid Linear Automata Analyzer) is a verification tool for system models with linear ODEs, time-varying inputs, and possibly hybrid dynamics. The latest version of Hylaa is always available on our github repository at https://github.com/stanleybak/hylaa . A website for Hylaa is maintained at http://stanleybak.com/hylaa .
+Hylaa (**HY**brid **L**inear **A**utomata **A**nalyzer) is a verification tool for system models with linear ODEs, time-varying inputs, and possibly hybrid dynamics. The latest version of Hylaa is always available on our github repository at https://github.com/stanleybak/hylaa . A website for Hylaa is maintained at http://stanleybak.com/hylaa .
 
 Hylaa computes *simulation-equivalent* reachability. That is, Hylaa computes the set of states that can be reached by any fixed-step simulation from any initial start state (given a bounded set of start states) under any possible input (given a bounded set of possible inputs). For systems with time-varying inputs, this corresponds to the case where inputs can change at each time step, but are fixed between steps. These restrictions allows Hylaa's analysis to be exact (subject to some restrictions discussed next), and allow Hylaa to be able to generate counter-example traces when an error is found.
 
