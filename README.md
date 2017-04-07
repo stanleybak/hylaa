@@ -4,13 +4,15 @@
 
 Hylaa (**HY**brid **L**inear **A**utomata **A**nalyzer) is a verification tool for system models with linear ODEs, time-varying inputs, and possibly hybrid dynamics. The latest version of Hylaa is always available on our github repository at https://github.com/stanleybak/hylaa . A website for Hylaa is maintained at http://stanleybak.com/hylaa .
 
+The code was mostly written by Stanley Bak with input from Parasara Sridhar Duggirala. Hylaa is released under the GPL v3 license (see the LICENSE file). It has been approved for public release (DISTRIBUTION A: Approved for public release; distribution unlimited #88ABW-2016-5976, 22 NOV 2016).
+
+### Introduction ###
+
 Hylaa computes *simulation-equivalent* reachability. That is, Hylaa computes the set of states that can be reached by any fixed-step simulation from any initial start state (given a bounded set of start states) under any possible input (given a bounded set of possible inputs). For systems with time-varying inputs, this corresponds to the case where inputs can change at each time step, but are fixed between steps. These restrictions allow Hylaa's analysis to be exact (subject to some restrictions discussed next), and allow Hylaa to be able to generate counter-example traces when an error is found.
 
 Some considerations: although we are confident in the underlying theoretical techniques Hylaa uses, we do not claim the implementation and its source code is fully correct and the tool may contain bugs (please report these to us!). The tool does not account for floating-point errors which may accumulate during the computation. Simulation-equivalent reachability only looks at the system state at specific time instances, and so may miss error states that occur between time-steps (traditional reachability analysis would catch these cases). Further, our notion of time-varying inputs only considers inputs which change at multiples of the time-step, not at any point in time. Despite these limitations, we believe and hope Hylaa can be used improve the confidence in a system's correctness.
 
 There are also expressiveness limitations with the current implementation. The current version of Hylaa can handle either time-varying inputs or hybrid dynamics, but not both at the same time (except when creating error modes for systems with inputs). Resets in discrete transitions are not yet implemented. Also, discrete transitions with hybrid dynamics may not always work, depending on subtle properties of the system (the tool will output a basis matrix error message if these conditions fail). We plan to add these features over time.
-
-The code was mostly written by Stanley Bak with input from Parasara Sridhar Duggirala. Hylaa is released under the GPL v3 license (see the LICENSE file). It has been approved for public release (DISTRIBUTION A: Approved for public release; distribution unlimited #88ABW-2016-5976, 22 NOV 2016).
 
 ### Setup ###
 
@@ -84,4 +86,4 @@ We welcome external contributions to the code, although please submit high quali
 
 Hylaa's python code uses the pylint static analysis tool to ensure reasonable code cleanliness. Please use this and generally try to eliminate every warning it raises. There is an included `.pylintrc` file with our pylint settings. Please ensure your code generally passes pylint's checks prior to submitting it. This is much easier if you integrate pylint into your development environment and correct the code as you are developing it. For the C++ code, a `.clang-format` file is in the `hylaa/glpk_interface` folder which specifies the code format that should be used with the clang static checker tool.
 
-Once your code is clean and passes all the tests, you can submit a pull request to our github repository: https://github.com/stanleybak/hylaa
+Once your code is clean and passes all the tests, you can submit a pull request to our github repository: https://github.com/stanleybak/hylaa .
