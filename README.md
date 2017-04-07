@@ -2,11 +2,11 @@
 
 Hylaa (**HY**brid **L**inear **A**utomata **A**nalyzer) is a verification tool for system models with linear ODEs, time-varying inputs, and possibly hybrid dynamics. The latest version of Hylaa is always available on our github repository at https://github.com/stanleybak/hylaa . A website for Hylaa is maintained at http://stanleybak.com/hylaa .
 
-Hylaa computes *simulation-equivalent* reachability. That is, Hylaa computes the set of states that can be reached by any fixed-step simulation from any initial start state (given a bounded set of start states) under any possible input (given a bounded set of possible inputs). For systems with time-varying inputs, this corresponds to the case where inputs can change at each time step, but are fixed between steps. These restrictions allows Hylaa's analysis to be exact (subject to some restrictions discussed next), and allow Hylaa to be able to generate counter-example traces when an error is found.
+Hylaa computes *simulation-equivalent* reachability. That is, Hylaa computes the set of states that can be reached by any fixed-step simulation from any initial start state (given a bounded set of start states) under any possible input (given a bounded set of possible inputs). For systems with time-varying inputs, this corresponds to the case where inputs can change at each time step, but are fixed between steps. These restrictions allow Hylaa's analysis to be exact (subject to some restrictions discussed next), and allow Hylaa to be able to generate counter-example traces when an error is found.
 
 Some considerations: although we are confident in the underlying theoretical techniques Hylaa uses, we do not claim the implementation and its source code is fully correct and the tool may contain bugs (please report these to us!). The tool does not account for floating-point errors which may accumulate during the computation. Simulation-equivalent reachability only looks at the system state at specific time instances, and so may miss error states that occur between time-steps (traditional reachability analysis would catch these cases). Further, our notion of time-varying inputs only considers inputs which change at multiples of the time-step, not at any point in time. Despite these limitations, we believe and hope Hylaa can be used improve the confidence in a system's correctness.
 
-There are also expressiveness limitations with the current implementation. The current version of Hylaa can handle either time-varying inputs, or hybrid dynamics, but not both at the same time. Resets in discrete transitions are not yet implemented. Also, discrete transitions with hybrid dynamics may not always work, depending on subtle properties of the system (the tool will output a basis matrix error message if these conditions fail). We plan to add these features over time.
+There are also expressiveness limitations with the current implementation. The current version of Hylaa can handle either time-varying inputs or hybrid dynamics, but not both at the same time. Resets in discrete transitions are not yet implemented. Also, discrete transitions with hybrid dynamics may not always work, depending on subtle properties of the system (the tool will output a basis matrix error message if these conditions fail). We plan to add these features over time.
 
 The code was mostly written by Stanley Bak with input from Parasara Sridhar Duggirala. Hylaa is released under the GPL v3 license (see the LICENSE file). It has been approved for public release (DISTRIBUTION A: Approved for public release; distribution unlimited #88ABW-2016-5976, 22 NOV 2016).
 
@@ -16,15 +16,9 @@ You can setup Hylaa with a few steps. These instructions are for Ubuntu Linux, a
 
 1. This a custom C++ interface to GLPK for use in Hylaa that you need to compile. See "hylaa/glpk-interface/README" for details on how to do this. Essentially, you need to get glpk-4.60 (which may be newer than what comes with Ubuntu), and then run make (the Makefile is in that folder). This will produce "hylaa_glpk.so".
 
-2. Hylaa is python based, and uses a few libraries which you may or may not have. Run the following to ensure you get the required packages:
+2. Hylaa is python based, and uses a few libraries which you may or may not have. Run the following to ensure you get the required packages: `sudo apt-get install python python-numpy python-scipy python-matplotlib`
 
-`sudo apt-get install python python-numpy python-scipy python-matplotlib`
-
-3. Setup the `PYTHONPATH` environment variable. A Hylaa model is just python code, which imports the hylaa files, creates a model definition and settings objects, and then calls a function with these objects. The "hylaa" folder contains the python package. You should add the parent folder of the `hylaa` folder to your `PYTHONPATH` environment variable. On Linux, this can be done by updating your `~/.profile` or `~/.bashrc` to include:
-
-`export PYTHONPATH="${PYTHONPATH}:/path/to/parent/of/hylaa/folder"`
-
-After you do this, you may need to restart the terminal (for `~/.bashrc`) or log out and log back in (for `~/.profile`), or otherwise ensure the environment variable is updated (do `echo $PYTHONPATH` to see if it includes the correct folder). Once this is done, you should be able to run the example models.
+3. Setup the `PYTHONPATH` environment variable. A Hylaa model is just python code, which imports the hylaa files, creates a model definition and settings objects, and then calls a function with these objects. The "hylaa" folder contains the python package. You should add the parent folder of the `hylaa` folder to your `PYTHONPATH` environment variable. On Linux, this can be done by updating your `~/.profile` or `~/.bashrc` to include: `export PYTHONPATH="${PYTHONPATH}:/path/to/parent/of/hylaa/folder"`. After you do this, you may need to restart the terminal (for `~/.bashrc`) or log out and log back in (for `~/.profile`), or otherwise ensure the environment variable is updated (do `echo $PYTHONPATH` to see if it includes the correct folder). Once this is done, you should be able to run the example models.
 
 4. (Optional) For .mp4 video export, ffmpeg is used. Make sure you can run ffmeg from a terminal for this to work.
 
