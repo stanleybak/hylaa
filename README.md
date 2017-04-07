@@ -36,7 +36,7 @@ The easiest way to get started with Hylaa is to run some of the examples. Models
 
 Go to `examples/damped_oscillator` and run `damped_oscillator.py` from the command line (`python damped_oscillator.py`). This should create `plot.png` in the same folder, which will be an 2-d plot of the reachable set. Compare this to the SpaceEx output given in `spaceex_output.png`. The dynamics for this system are `x' = -0.1 * x + y` and `y' = -x - 0.1 * y`, with the initial states `x = [-6, -5]` and `y = [0, 1]`. 
 
-The dynamics in Hylaa are given as x' = **A**x + **B**u + c, where x is a vector of variables, **A** is the dynamics matrix, **B** is optional and if given is a matrix of input effects, c is a vector (the affine term of the dynamics), and u is a vector of the input variables. Inputs, if used, are time-varying, with bounds given by linear constraints as **A_constraints** * u <= b_constraints, where **A_constraints** is a matrix, and b_constraints is a vector. Inputs and guards are given as conjunctions of linear constraints. The unsafe error state specification is created by marking certain modes of the hybrid automaton as error modes, and so, unsafe conditions have the same restrictions as guards (they are linear constraints).
+The dynamics in Hylaa are given as x' = **A**x + **B**u + c, where x is a vector of variables, **A** is the dynamics matrix, **B** is optional and if given is a matrix of input effects, c is a vector (the affine term of the dynamics), and u is a vector of the input variables. Inputs, if used, are time-varying, with bounds given by linear constraints as **A_constraints** * u <= b_constraints, where **A_constraints** is a matrix, and b_constraints is a vector. Initial states, inputs, invariants and guards are given as conjunctions of linear constraints. The unsafe error state specification is created by marking certain modes of the hybrid automaton as error modes, and so, unsafe conditions have the same restrictions as guards (they are conjunctions of linear constraints).
 
 In the damped_oscillator example, there are no inputs. The line `a_matrix = np.array([[-0.1, 1], [-1, -0.1]])` defines the dynamics **A** matrix, and the line `c_vector = np.array([0, 0], dtype=float)` defines the c_vector affine term. Try changing these slightly and re-running the script to see the effect.
 
@@ -44,11 +44,11 @@ Computation settings are given in the `define_settings` function. To switch from
 
 See some of the other examples to see how different features are implemented:
 
-examples/input_oscillator - time-varying inputs
-examples/building - time-varying inputs (50-dimensions) with unsafe error states
-examples/invariant_trim - mode invariants
-examples/ball_string - discrete transitions
-examples/deaggregation - discrete successor aggregation and deaggregation across multiple guards with .mp4 video output
+* `examples/input_oscillator` - time-varying inputs
+* `examples/building` - time-varying inputs (50-dimensions) with unsafe error states
+* `examples/invariant_trim` - mode invariants
+* `examples/ball_string` - discrete transitions
+* `examples/deaggregation` - discrete successor aggregation and deaggregation across multiple guards with `.mp4` video output
 
 ### Input Format ###
 
