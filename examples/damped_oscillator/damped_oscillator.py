@@ -32,7 +32,6 @@ def define_init_states(ha):
     rv = []
 
     r = HyperRectangle([(-6, -5), (0, 1)])
-    #r = HyperRectangle([(1, 1), (0, 0)])
     rv.append((ha.modes['loc1'], r))
 
     return rv
@@ -45,8 +44,7 @@ def define_settings():
     plot_settings.xdim = 0
     plot_settings.ydim = 1
 
-    #return HylaaSettings(step=0.1, max_time=20.0, plot_settings=plot_settings)
-    s = HylaaSettings(step=math.pi/16, max_time=10*math.pi/2, plot_settings=plot_settings)
+    s = HylaaSettings(step=0.2, max_time=20.0, plot_settings=plot_settings)
     
     return s
 
