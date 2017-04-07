@@ -16,11 +16,15 @@ You can setup Hylaa with a few steps. These instructions are for Ubuntu Linux, a
 
 1. This a custom C++ interface to GLPK for use in Hylaa that you need to compile. See `hylaa/glpk-interface/README` for details on how to do this. Essentially, you need to get glpk-4.60 (which may be newer than what comes with Ubuntu), and then run `make` (the Makefile is in that folder). This will produce `hylaa_glpk.so`.
 
-2. Hylaa is python based, and uses a few libraries which you may or may not have. Run the following to ensure you get the required packages: `sudo apt-get install python python-numpy python-scipy python-matplotlib`
+2. Hylaa is python based, and uses a few libraries which you may or may not have. Run the following to ensure you get the required packages: 
+
+   `sudo apt-get install python python-numpy python-scipy python-matplotlib`
 
 3. Setup the `PYTHONPATH` environment variable. A Hylaa model is just python code, which imports the hylaa files, creates a model definition and settings objects, and then calls a function with these objects. The `hylaa` folder contains the python package. You should add the parent folder of the `hylaa` folder to your `PYTHONPATH` environment variable. On Linux, this can be done by updating your `~/.profile` or `~/.bashrc` to include: 
-`export PYTHONPATH="${PYTHONPATH}:/path/to/parent/of/hylaa/folder"`
-After you do this, you may need to restart the terminal (for `~/.bashrc`) or log out and log back in (for `~/.profile`), or otherwise ensure the environment variable is updated (do `echo $PYTHONPATH` to see if it includes the correct folder). Once this is done, you should be able to run the example models.
+
+   `export PYTHONPATH="${PYTHONPATH}:/path/to/parent/of/hylaa/folder"`
+   
+   After you do this, you may need to restart the terminal (for `~/.bashrc`) or log out and log back in (for `~/.profile`), or otherwise ensure the environment variable is updated (do `echo $PYTHONPATH` to see if it includes the correct folder). Once this is done, you should be able to run the example models.
 
 4. (Optional) For .mp4 video export, ffmpeg is used. Make sure you can run ffmeg from a terminal for this to work.
 
