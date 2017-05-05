@@ -76,7 +76,7 @@ class DrawnShapes(Freezable):
         if plotman.settings.extra_lines is not None:
             lines = plotman.settings.extra_lines
             self.extra_lines_col = collections.LineCollection(
-                lines, animated=True, colors=('gray'), linewidths=(2), linestyle='solid')
+                lines, animated=True, colors=('gray'), linewidths=(2), linestyle='dashed')
             axes.add_collection(self.extra_lines_col)
         else:
             self.extra_lines_col = None
