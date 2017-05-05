@@ -344,7 +344,7 @@ class DrawnShapes(Freezable):
                 if keep:
                     new_xdata.append(xdata[i])
                     new_ydata.append(ydata[i])
-                
+
                 keep = not keep
 
             line.set_xdata(new_xdata)
@@ -352,7 +352,7 @@ class DrawnShapes(Freezable):
 
     def add_reachable_poly(self, poly_verts, parent, mode_name):
         '''add a polygon which was reachable'''
-    
+
         assert isinstance(parent, ContinuousPostParent)
 
         if len(poly_verts) <= 2:
@@ -361,7 +361,7 @@ class DrawnShapes(Freezable):
             if markers is None:
                 face_col, edge_col = self.get_mode_colors(mode_name)
 
-                markers = Line2D([], [], animated=True, ls='None', alpha=0.5, marker='o', mew=2, ms=5, 
+                markers = Line2D([], [], animated=True, ls='None', alpha=0.5, marker='o', mew=2, ms=5,
                                  mec=edge_col, mfc=face_col)
                 self.axes.add_line(markers)
                 self.parent_to_markers[parent] = markers
@@ -377,7 +377,7 @@ class DrawnShapes(Freezable):
 
             if polys is None:
                 face_col, edge_col = self.get_mode_colors(mode_name)
-                polys = collections.PolyCollection([], lw=2, animated=True, alpha=0.5, 
+                polys = collections.PolyCollection([], lw=2, animated=True, alpha=0.5,
                                                    edgecolor=edge_col, facecolor=face_col)
                 self.axes.add_collection(polys)
                 self.parent_to_polys[parent] = polys
@@ -587,6 +587,10 @@ class PlotManager(object):
                 skipped_plot = False
 
                 verts = star.verts()
+
+                if self.settings.print_lp_at_each_step:
+                    star.print_lp()
+
                 self.shapes.set_cur_state(verts)
 
                 if self.settings.label.axes_limits is None:
