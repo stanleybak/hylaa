@@ -119,11 +119,11 @@ class DrawnShapes(Freezable):
 
         # create a blank invariant violation polys
         self.inv_vio_polys = collections.PolyCollection([], animated=True, alpha=0.7, edgecolor='red', facecolor='red')
-        axes.add_collection(self.inv_vio_polys)
+        self.axes.add_collection(self.inv_vio_polys)
 
         # create a blank currently-tracked set of states poly
         self.cur_state_line2d = Line2D([], [], animated=True, color='k', lw=2, mew=2, ms=5, fillstyle='none')
-        axes.add_line(self.cur_state_line2d)
+        self.axes.add_line(self.cur_state_line2d)
 
         self.parent_to_polys = OrderedDict()
         self.parent_to_markers = OrderedDict()
@@ -133,13 +133,13 @@ class DrawnShapes(Freezable):
 
         self.trace = collections.LineCollection(
             [[(0, 0)]], animated=True, colors=('k'), linewidths=(3), linestyle='dashed')
-        axes.add_collection(self.trace)
+        self.axes.add_collection(self.trace)
 
         if plotman.settings.extra_lines is not None:
             lines = plotman.settings.extra_lines
             self.extra_lines_col = collections.LineCollection(
                 lines, animated=True, colors=('gray'), linewidths=(2), linestyle='dashed')
-            axes.add_collection(self.extra_lines_col)
+            self.axes.add_collection(self.extra_lines_col)
         else:
             self.extra_lines_col = None
 
