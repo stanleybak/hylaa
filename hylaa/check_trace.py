@@ -199,6 +199,11 @@ def plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step):
             flat_times += [input_times[i], input_times[i+1]]
             flat_inputs += [inputs[i, :], inputs[i, :]]
 
+        # single step edge case
+        if len(flat_inputs) == 0:
+            flat_times += [input_times[0], input_times[0]]
+            flat_inputs += [inputs[0, :], inputs[0, :]]
+
         for row in xrange(len(flat_inputs[0])):
             ax[1].plot(flat_times, [single_input[row] for single_input in flat_inputs], label="$u_{}$".format(row+1))
 
