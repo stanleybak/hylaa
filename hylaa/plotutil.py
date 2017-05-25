@@ -20,6 +20,7 @@ from matplotlib.lines import Line2D
 
 import numpy as np
 
+from hylaa.file_io import write_matlab
 from hylaa.starutil import AggregationParent, ContinuousPostParent
 from hylaa.timerutil import Timers
 from hylaa.containers import PlotSettings
@@ -45,15 +46,76 @@ class AxisLimits(object):
         self.ymin = None
         self.ymax = None
 
-class DrawnShapes(Freezable):
-    'maintains shapes to be drawn'
+class ModeColors(Freezable):
+    'maps mode names -> colors'
 
-    def __init__(self, axes, plotman):
-        self.axes = axes
-        self.plotman = plotman
+    def __init__(self):
         self.init_colors()
 
         self.mode_to_color = {} # map mode name -> color string
+        self.freeze_attrs()
+
+    def init_colors(self):
+        'initialize all_colors'
+
+        self.all_colors = []
+
+        # remove any colors with 'white' or 'yellow in the name
+        skip_colors_substrings = ['white', 'yellow']
+        skip_colors_exact = ['black', 'red', 'blue']
+
+        for col in colors.cnames:
+            skip = False
+
+            for col_substring in skip_colors_substrings:
+                if col_substring in col:
+                    skip = True
+                    break
+
+            if not skip and not col in skip_colors_exact:
+                self.all_colors.append(col)
+
+        # we'll re-add these later; remove them before shuffling
+        first_colors = ['lime', 'cyan', 'orange', 'magenta', 'green']
+
+        for col in first_colors:
+            self.all_colors.remove(col)
+
+        # deterministic shuffle of all remaining colors
+        random.seed(0)
+        random.shuffle(self.all_colors)
+
+        # prepend first_colors so they get used first
+        self.all_colors = first_colors + self.all_colors
+
+    def get_edge_face_colors(self, mode_name):
+        '''
+        get the edge and face colors from a mode name
+
+        returns a tuple: (face_col, edge_col)
+        '''
+
+        col_name = self.mode_to_color.get(mode_name)
+
+        if col_name is None:
+            # pick the next color and save it
+            col_name = self.all_colors[len(self.mode_to_color) % len(self.all_colors)]
+            self.mode_to_color[mode_name] = col_name
+
+        edge_col = colors.colorConverter.to_rgb(col_name)
+
+        # make the faces a little lighter
+        face_col = lighter(edge_col)
+
+        return (face_col, edge_col)
+
+class DrawnShapes(Freezable):
+    'maintains shapes to be drawn'
+
+    def __init__(self, plotman):
+        self.plotman = plotman
+        self.axes = plotman.axes
+        self.mode_colors = plotman.mode_colors
 
         # create a blank invariant violation polys
         self.inv_vio_polys = collections.PolyCollection([], animated=True, alpha=0.7, edgecolor='red', facecolor='red')
@@ -144,7 +206,7 @@ class DrawnShapes(Freezable):
         polys = self.aggregation_mode_to_polys.get(mode_name)
 
         if polys is None:
-            _, edge_col = self.get_mode_colors(mode_name)
+            _, edge_col = self.mode_colors.get_edge_face_colors(mode_name)
             edge_col = darker(edge_col)
 
             polys = collections.PolyCollection([], lw=4, animated=True,
@@ -163,7 +225,7 @@ class DrawnShapes(Freezable):
         polys = self.waiting_list_mode_to_polys.get(mode_name)
 
         if polys is None:
-            face_col, edge_col = self.get_mode_colors(mode_name)
+            face_col, edge_col = self.mode_colors.get_edge_face_colors(mode_name)
 
             polys = collections.PolyCollection([], lw=2, animated=True, alpha=0.3,
                                                edgecolor=edge_col, facecolor=face_col)
@@ -183,60 +245,6 @@ class DrawnShapes(Freezable):
 
         for polys in self.aggregation_mode_to_polys.values():
             polys.get_paths()[:] = []
-
-    def init_colors(self):
-        'initialize all_colors'
-
-        self.all_colors = []
-
-        # remove any colors with 'white' or 'yellow in the name
-        skip_colors_substrings = ['white', 'yellow']
-        skip_colors_exact = ['black', 'red', 'blue']
-
-        for col in colors.cnames:
-            skip = False
-
-            for col_substring in skip_colors_substrings:
-                if col_substring in col:
-                    skip = True
-                    break
-
-            if not skip and not col in skip_colors_exact:
-                self.all_colors.append(col)
-
-        # we'll re-add these later; remove them before shuffling
-        first_colors = ['lime', 'cyan', 'orange', 'magenta', 'green']
-
-        for col in first_colors:
-            self.all_colors.remove(col)
-
-        # deterministic shuffle of all remaining colors
-        random.seed(0)
-        random.shuffle(self.all_colors)
-
-        # prepend first_colors so they get used first
-        self.all_colors = first_colors + self.all_colors
-
-    def get_mode_colors(self, mode_name):
-        '''
-        get the edge and face colors from a mode name
-
-        returns a tuple: (face_col, edge_col)
-        '''
-
-        col_name = self.mode_to_color.get(mode_name)
-
-        if col_name is None:
-            # pick the next color and save it
-            col_name = self.all_colors[len(self.mode_to_color) % len(self.all_colors)]
-            self.mode_to_color[mode_name] = col_name
-
-        edge_col = colors.colorConverter.to_rgb(col_name)
-
-        # make the faces a little lighter
-        face_col = lighter(edge_col)
-
-        return (face_col, edge_col)
 
     def add_trace(self, trace_pts):
         'add to the current frame counter-example trace'
@@ -359,7 +367,7 @@ class DrawnShapes(Freezable):
             markers = self.parent_to_markers.get(parent)
 
             if markers is None:
-                face_col, edge_col = self.get_mode_colors(mode_name)
+                face_col, edge_col = self.mode_colors.get_edge_face_colors(mode_name)
 
                 markers = Line2D([], [], animated=True, ls='None', alpha=0.5, marker='o', mew=2, ms=5,
                                  mec=edge_col, mfc=face_col)
@@ -376,7 +384,7 @@ class DrawnShapes(Freezable):
             polys = self.parent_to_polys.get(parent)
 
             if polys is None:
-                face_col, edge_col = self.get_mode_colors(mode_name)
+                face_col, edge_col = self.mode_colors.get_edge_face_colors(mode_name)
                 polys = collections.PolyCollection([], lw=2, animated=True, alpha=0.5,
                                                    edgecolor=edge_col, facecolor=face_col)
                 self.axes.add_collection(polys)
@@ -394,7 +402,7 @@ class InteractiveState(object):
         self.paused = False
         self.step = False
 
-class PlotManager(object):
+class PlotManager(Freezable):
     'manager object for plotting during or after computation'
 
     def __init__(self, hylaa_engine, plot_settings):
@@ -411,6 +419,7 @@ class PlotManager(object):
         self.actual_limits = None # AxisLimits object
         self.drawn_limits = None # AxisLimits object
 
+        self.mode_colors = ModeColors()
         self.shapes = None # instance of DrawnShapes
         self.interactive = InteractiveState()
 
@@ -425,10 +434,15 @@ class PlotManager(object):
         self.draw_stride = plot_settings.draw_stride # draw every 2nd poly, or every 4th, ect. (if over poly limit)
         self.draw_cur_step = 0 # the current poly in the step
 
+        if self.settings.plot_mode == PlotSettings.PLOT_MATLAB:
+            self.reach_poly_data = OrderedDict()
+
+        self.freeze_attrs()
+
     def plot_trace(self, num_steps, sim_bundle, start_basis_matrix, basis_point):
         'plot a trace to a basis_point in a symbolic state'
 
-        if self.settings.plot_mode != PlotSettings.PLOT_NONE and self.settings.plot_traces:
+        if self.shapes is not None and self.settings.plot_traces:
             pts = []
 
             for step in xrange(num_steps+1):
@@ -506,13 +520,13 @@ class PlotManager(object):
     def reset_temp_polys(self):
         'clear the invariant violation polygons (called once per iteration)'
 
-        if self.settings.plot_mode != PlotSettings.PLOT_NONE:
+        if self.shapes is not None:
             self.shapes.reset_temp_polys()
 
     def add_inv_violation_star(self, star):
         'add an invariant violation region'
 
-        if self.settings.plot_mode != PlotSettings.PLOT_NONE:
+        if self.shapes is not None:
             verts = star.verts()
 
             self.shapes.add_inv_vio_poly(verts)
@@ -523,7 +537,7 @@ class PlotManager(object):
     def create_plot(self):
         'create the plot'
 
-        if self.settings.plot_mode != PlotSettings.PLOT_NONE:
+        if self.settings.plot_mode != PlotSettings.PLOT_NONE and self.settings.plot_mode != PlotSettings.PLOT_MATLAB:
             self.fig, self.axes = plt.subplots(nrows=1, figsize=self.settings.plot_size)
             ha = self.engine.hybrid_automaton
 
@@ -556,12 +570,12 @@ class PlotManager(object):
             plt.tick_params(axis='both', which='major', labelsize=self.settings.label.tick_label_size)
             plt.tight_layout()
 
-            self.shapes = DrawnShapes(self.axes, self)
+            self.shapes = DrawnShapes(self)
 
     def del_parent_successors(self, parent):
         '''stop plotting a parent's's sucessors'''
 
-        if self.settings.plot_mode != PlotSettings.PLOT_NONE:
+        if self.shapes is not None:
             self.shapes.del_reachable_polys_from_parent(parent)
 
             # maybe we want to revert axis limits here?
@@ -570,6 +584,20 @@ class PlotManager(object):
         'called whenever a state is popped from the waiting list'
 
         self.draw_cur_step = 0 # reset the cur_step counter
+
+    def add_reachable_poly_data(self, verts, mode_name):
+        '''
+        Add raw reachable poly data for use with certain plotting modes (matlab).
+        '''
+
+        data = self.reach_poly_data
+        # values are a tuple (color, [poly1, poly2, ...])
+
+        if mode_name not in data:
+            ecol, fcol = self.mode_colors.get_edge_face_colors(mode_name)
+            data[mode_name] = (ecol, fcol, [])
+            
+        data[mode_name][2].append(verts)
 
     def plot_current_star(self, star):
         '''
@@ -580,7 +608,11 @@ class PlotManager(object):
 
         skipped_plot = True
 
-        if self.settings.plot_mode != PlotSettings.PLOT_NONE:
+        if self.settings.plot_mode == PlotSettings.PLOT_MATLAB:
+            verts = star.verts()
+
+            self.add_reachable_poly_data(verts, star.mode.name)
+        elif self.settings.plot_mode != PlotSettings.PLOT_NONE:
             Timers.tic("plot_current_star()")
 
             if self.draw_cur_step % self.draw_stride == 0:
@@ -606,6 +638,7 @@ class PlotManager(object):
                     self.draw_stride *= 2
 
                 self.cur_reachable_polys += 1
+
                 self.shapes.add_reachable_poly(verts, star.parent, star.mode.name)
 
             self.draw_cur_step += 1
@@ -727,6 +760,21 @@ class PlotManager(object):
                 self.save_image()
             else:
                 plt.show()
+
+    def save_matlab(self):
+        'save a matlab script'
+
+        self.engine.run_to_completion()
+
+        filename = self.settings.filename
+
+        if filename is None:
+            filename = "plot_reach.m"
+
+        if not filename.endswith('.m'):
+            filename = filename + '.m'
+
+        write_matlab(filename, self.reach_poly_data, self.settings, self.engine.hybrid_automaton)
 
     def save_image(self):
         'save an image file'

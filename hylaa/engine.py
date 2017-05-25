@@ -392,6 +392,10 @@ class HylaaEngine(object):
         if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE:
             # run without plotting
             self.run_to_completion()
+        elif self.settings.plot.plot_mode == PlotSettings.PLOT_MATLAB:
+            # matlab plot
+            self.run_to_completion()
+            self.plotman.save_matlab()
         else:
             # plot during computation
             self.plotman.compute_and_animate(self.do_step, self.is_finished)

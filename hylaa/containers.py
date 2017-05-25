@@ -71,6 +71,7 @@ class PlotSettings(Freezable):
     PLOT_INTERACTIVE = 2 # step-by-step live plotting with buttons
     PLOT_IMAGE = 3 # save the image plot to a file
     PLOT_VIDEO = 4 # save animation to a video file
+    PLOT_MATLAB = 5 # create a matlab script which visualizes the reachable region
 
     def __init__(self):
         self.plot_mode = PlotSettings.PLOT_FULL
