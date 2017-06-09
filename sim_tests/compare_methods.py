@@ -20,7 +20,7 @@ from sim_krylov import sim_krylov_sparse
 def load_model(model_name):
     'load a model from the corresponding .mat file in the current directory'
 
-    print "Loading {}...".format(model_name),
+    print("Loading {}...".format(model_name)),
     sys.stdout.flush()
     start = time.time()
 
@@ -37,7 +37,7 @@ def load_model(model_name):
         data = loadmat(filename)
         rv = data['A']
 
-    print "done ({:.2f} sec), Matrix Size = {:.3f}MB".format(time.time() - start, rv.data.nbytes / 1024.0 / 1024.0)
+    print("done ({:.2f} sec), Matrix Size = {:.3f}MB".format(time.time() - start, rv.data.nbytes / 1024.0 / 1024.0))
 
     return rv
 
@@ -75,7 +75,7 @@ def make_alternating_init_vector(num_dims):
 def make_random_init_vector(num_dims):
     'make a random initial vector'
 
-    rv = np.random.random((num_dims, ))
+    rv = np.random.random((num_dims,))
 
     return rv
 
@@ -83,7 +83,7 @@ def main():
     'compare simulation methods runtime and accuracy, printing to stdout'
 
     models = []
-    models += ['ha']
+    #models += ['ha']
     models += ['building']
     models += ['iss']
     models += ['fom']
@@ -92,6 +92,7 @@ def main():
     #for dims in [10000, 100000, 1000000]:
     #    model_name = "rand_{}_{}".format(dims, 10.0 / dims)
     #    models += [model_name]
+    #
 
     method_tuples = []
     method_tuples += [('Dense Expm', sim_dense_expm)]
@@ -104,7 +105,7 @@ def main():
     correct_result = None
 
     for model in models:
-        print "\n--- {} ---".format(model)
+        print("\n--- {} ---".format(model))
         sparse_a_matrix = load_model(model)
         num_dims = sparse_a_matrix.shape[0]
 
@@ -142,8 +143,8 @@ def main():
             else:
                 full_runtime = "{:.2f} hours".format(full_runtime_mins / 60.0)
 
-            print "{}: {:.1f}ms (full {} dims estimate is {}), rel_err={:.3g}, abs_err={:.3g}".format(
-                name, runtime * 1000.0, num_dims, full_runtime, rel_error, abs_error)
+            print("{}: {:.1f}ms (full {} dims estimate is {}), rel_err={:.3g}, abs_err={:.3g}".format(
+                name, runtime * 1000.0, num_dims, full_runtime, rel_error, abs_error))
 
 if __name__ == '__main__':
     main()
