@@ -10,3 +10,5 @@ The latest version of Hylaa is always available on our github repository at http
 
 The code was mostly written by Stanley Bak (http://stanleybak.com) with input from Parasara Sridhar Duggirala (http://engr.uconn.edu/~psd). Hylaa is released under the GPL v3 license (see the LICENSE file). It has been approved for public release (DISTRIBUTION A: Approved for public release; distribution unlimited #88ABW-2016-5976, 22 NOV 2016).
 
+
+Libraries: numpy, scipy, matplotlib, krypy (pip install krypy)

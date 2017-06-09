@@ -84,19 +84,19 @@ def main():
 
     models = []
     #models += ['ha']
-    models += ['building']
-    models += ['iss']
-    models += ['fom']
-    #models += ['MNA5']
+    #models += ['building']
+    #models += ['iss']
+    #models += ['fom']
+    models += ['MNA5']
 
-    #for dims in [10000, 100000, 1000000]:
-    #    model_name = "rand_{}_{}".format(dims, 10.0 / dims)
-    #    models += [model_name]
+    for dims in [10000, 100000, 1000000]:
+        model_name = "rand_{}_{}".format(dims, 10.0 / dims)
+        models += [model_name]
     #
 
     method_tuples = []
-    method_tuples += [('Dense Expm', sim_dense_expm)]
-    method_tuples += [('Sparse Expm', sim_sparse_expm)]
+    #method_tuples += [('Dense Expm', sim_dense_expm)]
+    #method_tuples += [('Sparse Expm', sim_sparse_expm)]
     method_tuples += [('Expm_mult', sim_expm_mult)]
     method_tuples += [('Sparse odeint', sim_odeint_sparse)]
     method_tuples += [('Krylov', sim_krylov_sparse)]

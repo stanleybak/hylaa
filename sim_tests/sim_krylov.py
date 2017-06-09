@@ -14,7 +14,7 @@ import scipy
 # kry_dim is krylov supspace dimension
 # returns a tuple, (runtime, result), where result is an np.array, and runtime is in seconds
 
-def sim_krylov_sparse(sparse_a_matrix, init_vec, step):
+def sim_krylov_sparse(sparse_a_matrix, init_vec, step, dim=8):
     'compute e^(A * step) * init'
 
     num_dims = sparse_a_matrix.shape[0]
@@ -27,8 +27,11 @@ def sim_krylov_sparse(sparse_a_matrix, init_vec, step):
     x0 = np.asmatrix(init_vec).transpose()
 
     
-    m = 20 # krylov supspace dimension
+    m = dim # krylov supspace dimension
+    arn_start = time.time()
     V, H = arnoldi(sparse_a_matrix,x0,m)
+    print "arnoldi time = {}ms".format(1000 * (time.time() - arn_start))
+    
     Vm = V[:,0:m]
     Hm = H[0:m,:]
     beta = np.linalg.norm(x0)
