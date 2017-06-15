@@ -13,15 +13,38 @@ The code was mostly written by Stanley Bak (http://stanleybak.com) with input fr
 
 Libraries: numpy, scipy, matplotlib, krypy (pip install krypy)
 
-----------------------
+### Installation on Amazon Ec2 GPU Instance with Ubuntu ###
 Installation libraries on amazon ec2 gpu instance (p2.xlarge) using image Ubuntu 16.04 LTS Server:
 
 sudo apt-get update
 
 sudo apt-get install make nvidia-cuda-toolkit python-numpy python-scipy
 
+(optional) sudo apt-get install emacs24
 
-you also may want:
+### Profiling Results ###
 
-sudo apt-get install emacs24
+## random million matrix (5 entires / col) ##
+
+matrix-vector multiplication: 4.1980 ms
+achieved megaflops = 2382.000000
+parallel multiplcation elapsed time 12.0ms
+sparse multiplcation elapsed time 29.3ms
+
+
+## random diagonal million matrix (5 entires / col) ##
+
+matrix-vector multiplication: 0.6640 ms
+achieved megaflops = 15060.000000
+parallel multiplcation elapsed time 13.2ms
+sparse multiplcation elapsed time 7.7ms
+
+
+## ISSS 4000 copies ##
+matrix-vector multiplication: 0.4420 ms
+achieved megaflops = 7330.000000
+parallel multiplcation elapsed time 14.3ms
+sparse multiplcation elapsed time 4.2ms
+
+
 

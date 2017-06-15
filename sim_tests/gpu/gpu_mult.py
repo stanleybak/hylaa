@@ -220,14 +220,15 @@ def test():
 
     start = time.time()
     res_gpu = GpuMult.multiply(vec)
-    print "\nparallel multiplcation elapsed time {:.1f}ms".format(1000 * (time.time() - start))
+    print "\nparallel multiplication elapsed time {:.1f}ms".format(1000 * (time.time() - start))
 
     start = time.time()
     res_sparse = a * vec
-    print "sparse multiplcation elapsed time {:.1f}ms".format(1000 * (time.time() - start))
+    print "sparse multiplication elapsed time {:.1f}ms".format(1000 * (time.time() - start))
 
     print "norm of difference: {}".format(np.linalg.norm(res_gpu - res_sparse))
 
 
 if __name__ == '__main__':
     test()
+
