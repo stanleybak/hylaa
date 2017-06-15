@@ -87,7 +87,7 @@ def main():
     #models += ['building']
     #models += ['iss']
     #models += ['fom']
-    models += ['MNA5']
+    #models += ['MNA5']
 
     for dims in [10000, 100000, 1000000]:
         model_name = "rand_{}_{}".format(dims, 10.0 / dims)

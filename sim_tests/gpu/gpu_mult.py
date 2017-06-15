@@ -23,10 +23,10 @@ class GpuMult(object):
 
     # static member (library)
     _lib = None
-    
+
     def __init__(self):
         raise RuntimeError('GpuMult is a static class and should not be instantiated')
-    
+
     @staticmethod
     def _init_static():
         'open the library (if not opened already) and initialize the static members'
@@ -35,7 +35,10 @@ class GpuMult(object):
             lib_path = os.path.join(_get_script_path(__file__), 'gpu_mult.so')
             GpuMult._lib = lib = ctypes.CDLL(lib_path)
 
-            # void loadMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries, int nonZeroCount)
+            GpuMult._has_gpu = lib.hasGpu
+            GpuMult._has_gpu.restype = ctypes.c_int
+            GpuMult._has_gpu.argtypes = None
+
             GpuMult._load_matrix = lib.loadMatrix
             GpuMult._load_matrix.restype = None
             GpuMult._load_matrix.argtypes = [ctypes.c_int, ctypes.c_int,
@@ -50,11 +53,14 @@ class GpuMult(object):
                                           ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
                                           ctypes.c_int]
 
+        if GpuMult._has_gpu() == 0:
+            raise RuntimeError("GPU not detected.")
+
     @staticmethod
     def load_matrix(sparse_matrix):
         'load a sparse matrix'
 
-        assert type(sparse_matrix) == csr_matrix
+        assert isinstance(sparse_matrix, csr_matrix)
         GpuMult._init_static()
 
         w, h = sparse_matrix.shape
@@ -70,10 +76,10 @@ class GpuMult(object):
     def multiply(vector):
         'multiply the matrix previously-loaded with load_matrix by a vector, and return the result'
 
-        assert type(vector) == np.ndarray
+        assert isinstance(vector, np.ndarray)
         GpuMult._init_static()
 
-        assert GpuMult._is_loaded == True
+        assert GpuMult._is_loaded
         assert vector.shape[0] == GpuMult._loaded_w
 
         result = np.zeros((GpuMult._loaded_h,))
@@ -81,7 +87,7 @@ class GpuMult(object):
         GpuMult._multiply(vector, result, GpuMult._loaded_h)
 
         return result
-        
+
 def make_iss_matrix(num_copies):
     'create a matrix from the international space station system model'
 
@@ -171,7 +177,7 @@ def make_iss_matrix(num_copies):
             vals.append(val)
 
     mat = coo_matrix((vals, (rows, cols)), shape=(total_dims, total_dims))
-            
+
     return csr_matrix(mat)
 
 def random_sparse_matrix(dims, entries_per_row, random_cols=True):
@@ -192,15 +198,16 @@ def random_sparse_matrix(dims, entries_per_row, random_cols=True):
                 cols.append(int(random.random() * num_cols))
             else:
                 cols.append(entry_index)
-                
+
             vals.append(random.random())
 
     mat = coo_matrix((vals, (rows, cols)), shape=(num_rows, num_cols))
-            
+
     return csr_matrix(mat)
 
-# just for testing
-if __name__ == '__main__':
+def test():
+    'test performance'
+
     print "making matrix..."
     start = time.time()
     a = random_sparse_matrix(1000000, entries_per_row=5, random_cols=True)
@@ -208,7 +215,7 @@ if __name__ == '__main__':
     print "made in {:.2f} seconds".format(time.time() - start)
 
     vec = np.random.random((a.shape[0],))
-    
+
     GpuMult.load_matrix(a)
 
     start = time.time()
@@ -220,3 +227,7 @@ if __name__ == '__main__':
     print "sparse multiplcation elapsed time {:.1f}ms".format(1000 * (time.time() - start))
 
     print "norm of difference: {}".format(np.linalg.norm(res_gpu - res_sparse))
+
+
+if __name__ == '__main__':
+    test()

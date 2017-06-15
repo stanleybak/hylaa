@@ -14,7 +14,7 @@ import scipy
 # kry_dim is krylov supspace dimension
 # returns a tuple, (runtime, result), where result is an np.array, and runtime is in seconds
 
-def sim_krylov_sparse(sparse_a_matrix, init_vec, step, dim=8):
+def sim_krylov_sparse(sparse_a_matrix, init_vec, step, dim=7):
     'compute e^(A * step) * init'
 
     num_dims = sparse_a_matrix.shape[0]

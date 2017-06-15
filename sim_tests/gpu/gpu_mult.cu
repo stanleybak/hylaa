@@ -135,8 +135,35 @@ void _multiply(double* vector, double* result, int size)
     toc("copying to np.ndarray");
 }
 
+int _hasGpu()
+{
+    int rv = 1;
+    
+    try
+    {
+        cusp::array1d<FLOAT_TYPE, cusp::host_memory> hostVec(10);
+    
+        for (int i = 0; i < 10; ++i)
+            hostVec[i] = 0;
+
+        cusp::array1d<FLOAT_TYPE,cusp::device_memory> deviceVec(hostVec);
+    }
+    catch(std::exception &e)
+    {
+        printf("hasGpu() Failed: %s\n", e.what());
+        rv = 0;
+    }
+    
+    return rv;
+}
+
 extern "C"
 {
+int hasGpu()
+{
+    return _hasGpu();
+}
+
 void loadMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries, int nonZeroCount)
 {
     _loadMatrix(w, h, nonZeroRows, nonZeroCols, nonZeroEntries, nonZeroCount);

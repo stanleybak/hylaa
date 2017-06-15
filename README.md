@@ -12,3 +12,16 @@ The code was mostly written by Stanley Bak (http://stanleybak.com) with input fr
 
 
 Libraries: numpy, scipy, matplotlib, krypy (pip install krypy)
+
+----------------------
+Installation libraries on amazon ec2 gpu instance (p2.xlarge) using image Ubuntu 16.04 LTS Server:
+
+sudo apt-get update
+
+sudo apt-get install make nvidia-cuda-toolkit python-numpy python-scipy
+
+
+you also may want:
+
+sudo apt-get install emacs24
+
