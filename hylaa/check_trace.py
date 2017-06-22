@@ -35,7 +35,7 @@ def make_der_func(a_matrix, b_matrix, c_vector, input_vec):
 
     return der_func
 
-def check(a_matrix, b_matrix, c_vector, step, max_time, start_point, inputs, hylaa_end_point, 
+def check(a_matrix, b_matrix, c_vector, step, max_time, start_point, inputs, hylaa_end_point,
           quick=False, stdout=True, approx_samples=2000):
     '''Run a simulation with the given dynamics and inputs to see how close it matches with HyLAA's prediction
 
@@ -83,7 +83,7 @@ def check(a_matrix, b_matrix, c_vector, step, max_time, start_point, inputs, hyl
     index = 0
 
     while index < total_steps and index < len(inputs):
-        num_steps = 1        
+        num_steps = 1
 
         # try doing multiple steps at a time (better performance)
         while index + num_steps < total_steps and index + num_steps < len(inputs):
@@ -161,8 +161,14 @@ def sim(start, der_func, time_amount, num_steps, quick):
 
     return (states, times)
 
-def plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step):
-    'plot the simulation trace in the normal direction'
+def plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step, xdim=None, ydim=None):
+    '''plot the simulation trace in the normal direction
+
+    if xdim and dim are not none, then a 2-d phase portrait plot will be given, otherwise a time-history plot
+    is provided
+    '''
+
+    do_2d = xdim is not None and ydim is not None
 
     total_steps = int(math.ceil(max_time / step))
     end_point = sim_states[-1]
@@ -176,17 +182,30 @@ def plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step):
     epsilon = step / 8.0 # to prevent round-off error on the end range
     input_times = np.arange(0.0, max_time + epsilon, step)
 
-    normal_trace = np.dot(sim_states, normal_vec)
-
     if inputs is not None:
-        _, ax = plt.subplots(2, sharex=True, figsize=(14, 8))
+        _, ax = plt.subplots(2, sharex=not do_2d, figsize=(14, 8))
     else:
         _, ax = plt.subplots(1, figsize=(14, 5))
         ax = [ax]
 
-    ax[0].plot(sim_times, normal_trace, 'k-', lw=2, label='Simulation')
-    ax[0].plot(sim_times[-1], normal_trace[-1], 'o', ms=10, mew=3, mec='red', mfc='none')
-    ax[0].plot([0, max_time], [normal_val, normal_val], '--', color='0.5', label='Violation Boundary')
+    if do_2d:
+        xs = [state[xdim] for state in sim_states]
+        ys = [state[ydim] for state in sim_states]
+
+        ax[0].plot(xs, ys, 'k-', lw=2, label='Simulation')
+
+        ax[0].plot(xs[-1], ys[-1], 'o', ms=10, mew=3, mec='red', mfc='none', label='End')
+        ax[0].plot(xs[0], ys[0], '*', ms=10, mew=3, mec='blue', mfc='none', label='Start')
+
+        ax[0].set_ylabel('Dim {}'.format(ydim), fontsize=22)
+        ax[0].set_xlabel('Dim {}'.format(xdim), fontsize=22)
+    else:
+        normal_trace = np.dot(sim_states, normal_vec)
+        ax[0].plot(sim_times, normal_trace, 'k-', lw=2, label='Simulation')
+        ax[0].plot(sim_times[-1], normal_trace[-1], 'o', ms=10, mew=3, mec='red', mfc='none')
+
+        ax[0].set_ylabel('State', fontsize=22)
+        ax[0].set_title('Counter-Example Trace', fontsize=28)
 
     if inputs is not None:
         inputs.append(inputs[-1]) # there is one less input than time instants
@@ -209,9 +228,8 @@ def plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step):
 
     ##################
     # visual
-    ax[0].set_ylabel('State', fontsize=22)
-    ax[0].set_title('Counter-Example Trace', fontsize=28)
 
+    ax[0].set_title('Simulation', fontsize=28)
     ax[0].tick_params(axis='both', which='major', labelsize=18)
 
     if inputs is not None:
@@ -222,7 +240,7 @@ def plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step):
     ##################
     # legend
     for i in xrange(2 if inputs is not None else 1):
-        legend = ax[i].legend(loc='best')
+        legend = ax[i].legend(loc='best', numpoints=1)
 
         # Set the fontsize
         for label in legend.get_texts():
@@ -234,6 +252,12 @@ def plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step):
     lim = ax[1 if inputs is not None else 0].get_ylim()
     dy = lim[1] - lim[0]
     plt.ylim(lim[0] - dy * .1, lim[1] + dy * .1)
-    plt.xlim(0, max_time * 1.02)
+
+    if not do_2d:
+        plt.xlim(0, max_time * 1.02)
+    else:
+        ax[1].set_xlim(0, max_time * 1.02)
+
     plt.tight_layout()
+
     plt.show()
