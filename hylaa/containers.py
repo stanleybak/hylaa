@@ -71,6 +71,7 @@ class PlotSettings(Freezable):
     PLOT_INTERACTIVE = 2 # step-by-step live plotting with buttons
     PLOT_IMAGE = 3 # save the image plot to a file
     PLOT_VIDEO = 4 # save animation to a video file
+    PLOT_MATLAB = 5 # create a matlab script which visualizes the reachable region
 
     def __init__(self):
         self.plot_mode = PlotSettings.PLOT_FULL
@@ -101,6 +102,7 @@ class PlotSettings(Freezable):
         # these are useful for testing / debugging
         self.skip_frames = 0 # number of frames to process before we start drawing
         self.skip_show_gui = False # should we skip showing the graphical interface
+        self.print_lp_at_each_step = False # should we print the LP being plotted at each step?
 
         self.freeze_attrs()
 

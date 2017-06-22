@@ -569,6 +569,12 @@ class Star(Freezable):
 
             Star.plot_vecs.append(vec)
 
+    def print_lp(self):
+        '''print the star's lp to stdout'''
+
+        lpi = self.get_lpi()
+        lpi.print_lp()
+
     def verts(self):
         'get the verticies of the polygon projection of the star used for plotting'
 
