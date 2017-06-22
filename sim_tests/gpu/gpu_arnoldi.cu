@@ -163,7 +163,7 @@ void _arnoldi(double* init_vector, double* result_V, double* result_H, int size,
     for(j = 0; j < maxiter; j++)
     {
 	cusp::multiply(*curMatrix, V_[j], V_[j + 1]);
-	cusp::print(V_[j]); 
+	//cusp::print(V_[j]); 
 
 	for(size_t i = 0; i <= j; i++)
 	{
@@ -194,7 +194,7 @@ void _arnoldi(double* init_vector, double* result_V, double* result_H, int size,
 
      for(size_t colV = 0; colV < maxiter; colV++)
      {	cusp::copy(V_[colV],x1);
-	cusp::print(x1);		
+	//cusp::print(x1);		
 	for(size_t rowV=0;rowV < N; rowV++)
 		V(rowV, colV) = x1[rowV];
      }

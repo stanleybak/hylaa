@@ -32,7 +32,7 @@ class GpuArnoldi(object):
         'open the library (if not opened already) and initialize the static members'
 
         if GpuArnoldi._lib is None:
-            lib_path = os.path.join(_get_script_path(__file__), 'gpu_mult.so')
+            lib_path = os.path.join(_get_script_path(__file__), 'gpu_arnoldi.so')
             GpuArnoldi._lib = lib = ctypes.CDLL(lib_path)
 
             GpuArnoldi._has_gpu = lib.hasGpu
@@ -51,7 +51,8 @@ class GpuArnoldi(object):
             GpuArnoldi._arnoldi.restype = None
             GpuArnoldi._arnoldi.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
                                           ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
-                                          ctypes.c_int]
+                                            ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                            ctypes.c_int, ctypes.c_int]
 
         if GpuArnoldi._has_gpu() == 0:
             raise RuntimeError("GPU not detected.")
@@ -82,8 +83,8 @@ class GpuArnoldi(object):
         assert GpuArnoldi._is_loaded
         assert init_vector.shape[0] == GpuArnoldi._loaded_w
 
-        result_V = np.zeros(GpuArnoldi._loaded_h,numIter)
-	result_H = np.zeros(numIter,numIter)
+        result_V = np.zeros((GpuArnoldi._loaded_h,numIter))
+	result_H = np.zeros((numIter,numIter))
 
         GpuArnoldi._arnoldi(init_vector, result_V, result_H, size, numIter)
 
@@ -212,8 +213,8 @@ def test():
 
     print "making matrix..."
     start = time.time()
-    a = random_sparse_matrix(1000000, entries_per_row=5, random_cols=True)
-    #a = make_iss_matrix(4000)
+    #a = random_sparse_matrix(1000000, entries_per_row=5, random_cols=True)
+    a = make_iss_matrix(1)
     print "made in {:.2f} seconds".format(time.time() - start)
 
     vec = np.random.random((a.shape[0],))
