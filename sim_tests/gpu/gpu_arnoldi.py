@@ -223,7 +223,7 @@ def test():
     GpuArnoldi.load_matrix(a)
 
     start = time.time()
-    res_gpu_arnoldi_V, res_gpu_arnoldi_H = GpuArnoldi.multiply(vec,a.shape[0],m)
+    res_gpu_arnoldi_V, res_gpu_arnoldi_H = GpuArnoldi.arnoldi(vec,a.shape[0],m)
     print "\n arnoldi algorithm using gpu elapsed time {:.1f}ms".format(1000 * (time.time() - start))
 
 
