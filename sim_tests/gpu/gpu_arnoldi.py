@@ -18,42 +18,42 @@ def _get_script_path(filename):
     '''get the path this script, pass in __file__ for the filename'''
     return os.path.dirname(os.path.realpath(filename))
 
-class GpuMult(object):
+class GpuArnoldi(object):
     'GPU-enhanced matrix-vector multiplication using the python/c interface'
 
     # static member (library)
     _lib = None
 
     def __init__(self):
-        raise RuntimeError('GpuMult is a static class and should not be instantiated')
+        raise RuntimeError('GpuArnoldi is a static class and should not be instantiated')
 
     @staticmethod
     def _init_static():
         'open the library (if not opened already) and initialize the static members'
 
-        if GpuMult._lib is None:
+        if GpuArnoldi._lib is None:
             lib_path = os.path.join(_get_script_path(__file__), 'gpu_mult.so')
-            GpuMult._lib = lib = ctypes.CDLL(lib_path)
+            GpuArnoldi._lib = lib = ctypes.CDLL(lib_path)
 
-            GpuMult._has_gpu = lib.hasGpu
-            GpuMult._has_gpu.restype = ctypes.c_int
-            GpuMult._has_gpu.argtypes = None
+            GpuArnoldi._has_gpu = lib.hasGpu
+            GpuArnoldi._has_gpu.restype = ctypes.c_int
+            GpuArnoldi._has_gpu.argtypes = None
 
-            GpuMult._load_matrix = lib.loadMatrix
-            GpuMult._load_matrix.restype = None
-            GpuMult._load_matrix.argtypes = [ctypes.c_int, ctypes.c_int,
+            GpuArnoldi._load_matrix = lib.loadMatrix
+            GpuArnoldi._load_matrix.restype = None
+            GpuArnoldi._load_matrix.argtypes = [ctypes.c_int, ctypes.c_int,
                                              ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
                                              ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
                                              ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
                                              ctypes.c_int]
 
-            GpuMult._multiply = lib.multiply
-            GpuMult._multiply.restype = None
-            GpuMult._multiply.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+            GpuArnoldi._arnoldi = lib.arnoldi
+            GpuArnoldi._arnoldi.restype = None
+            GpuArnoldi._arnoldi.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
                                           ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
                                           ctypes.c_int]
 
-        if GpuMult._has_gpu() == 0:
+        if GpuArnoldi._has_gpu() == 0:
             raise RuntimeError("GPU not detected.")
 
     @staticmethod
@@ -61,32 +61,33 @@ class GpuMult(object):
         'load a sparse matrix'
 
         assert isinstance(sparse_matrix, csr_matrix)
-        GpuMult._init_static()
+        GpuArnoldi._init_static()
 
         w, h = sparse_matrix.shape
         rows, cols = sparse_matrix.nonzero()
         entries = sparse_matrix[rows, cols].A1.copy()
 
-        GpuMult._load_matrix(w, h, rows, cols, entries, len(rows))
-        GpuMult._is_loaded = True
-        GpuMult._loaded_w = w
-        GpuMult._loaded_h = h
+        GpuArnoldi._load_matrix(w, h, rows, cols, entries, len(rows))
+        GpuArnoldi._is_loaded = True
+        GpuArnoldi._loaded_w = w
+        GpuArnoldi._loaded_h = h
 
     @staticmethod
-    def multiply(vector):
-        'multiply the matrix previously-loaded with load_matrix by a vector, and return the result'
+    def arnoldi(init_vector, size, numIter):
+        'implement the aroldi algorithm using Gpu and return the result'
 
-        assert isinstance(vector, np.ndarray)
-        GpuMult._init_static()
+        assert isinstance(init_vector, np.ndarray)
+        GpuArnoldi._init_static()
 
-        assert GpuMult._is_loaded
-        assert vector.shape[0] == GpuMult._loaded_w
+        assert GpuArnoldi._is_loaded
+        assert init_vector.shape[0] == GpuArnoldi._loaded_w
 
-        result = np.zeros((GpuMult._loaded_h,))
+        result_V = np.zeros(GpuArnoldi._loaded_h,numIter)
+	result_H = np.zeros(numIter,numIter)
 
-        GpuMult._multiply(vector, result, GpuMult._loaded_h)
+        GpuArnoldi._arnoldi(init_vector, result_V, result_H, size, numIter)
 
-        return result
+        return result_V, result_H
 
 def make_iss_matrix(num_copies):
     'create a matrix from the international space station system model'
@@ -217,17 +218,13 @@ def test():
 
     vec = np.random.random((a.shape[0],))
 
-    GpuMult.load_matrix(a)
+    m = 10
+
+    GpuArnoldi.load_matrix(a)
 
     start = time.time()
-    res_gpu = GpuMult.multiply(vec)
-    print "\nparallel multiplication elapsed time {:.1f}ms".format(1000 * (time.time() - start))
-
-    start = time.time()
-    res_sparse = a * vec
-    print "sparse multiplication elapsed time {:.1f}ms".format(1000 * (time.time() - start))
-
-    print "norm of difference: {}".format(np.linalg.norm(res_gpu - res_sparse))
+    res_gpu_arnoldi_V, res_gpu_arnoldi_H = GpuArnoldi.multiply(vec,a.shape[0],m)
+    print "\n arnoldi algorithm using gpu elapsed time {:.1f}ms".format(1000 * (time.time() - start))
 
 
 if __name__ == '__main__':
