@@ -88,8 +88,6 @@ class GpuArnoldi(object):
         result_V = np.zeros((GpuArnoldi._loaded_h*numIter))
 	result_H = np.zeros((numIter*numIter))
 
-        print "shape of result-V is {}".format(result_V.shape)
-
         GpuArnoldi._arnoldi(init_vector, result_V, result_H, size, numIter)
 
         result_V.shape = (GpuArnoldi._loaded_h, numIter)
@@ -220,20 +218,20 @@ def compare():
 
     print "making matrix..."
     start = time.time()
-    #a = random_sparse_matrix(1000000, entries_per_row=5, random_cols=True)
-    a = make_iss_matrix(1)
+    a = random_sparse_matrix(1000000, entries_per_row=5, random_cols=True)
+    #a = make_iss_matrix(1)
     print "made in {:.2f} seconds".format(time.time() - start)
 
     vec = np.random.random((a.shape[0],1))
 
-    m = 3
+    m = 10
 
     GpuArnoldi.load_matrix(a)
     
     'Arnoldi algorithm using gpu'
     start = time.time()
     res_gpu_arnoldi_V, res_gpu_arnoldi_H = GpuArnoldi.arnoldi(vec,a.shape[0],m)
-    print "\n arnoldi algorithm using gpu elapsed time {:.1f}ms".format(1000 * (time.time() - start))
+    print "\n Computation time of Arnoldi algorithm using gpu {:.1f}ms".format(1000 * (time.time() - start))
     
     
     'Arnoldi algorithm using cpu - krypy packet'
@@ -241,7 +239,7 @@ def compare():
     V, H = arnoldi(a,vec,m)
     Vm = V[:,0:m]
     Hm = H[0:m,:]
-    print "arnoldi time = {}ms".format(1000 * (time.time() - arn_start))
+    print "Computation time of Arnoldi Algorithm using cpu - krypy packet = {}ms".format(1000 * (time.time() - arn_start))
 
     'norm of two results'
     print "\n error between two V matrices of two approaches: norm (Vm - res_gpu_arnoldi_V) = {}".format(np.linalg.norm(Vm-res_gpu_arnoldi_V))

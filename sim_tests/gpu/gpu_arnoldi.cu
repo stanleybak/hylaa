@@ -162,8 +162,7 @@ void _arnoldi(double* init_vector, double* result_V, double* result_H, int size,
     for(j = 0; j < maxiter; j++)
     {
 	cusp::multiply(*curMatrix, V_[j], V_[j + 1]);
-	//cusp::print(V_[j]); 
-
+	
 	for(int i = 0; i <= j; i++)
 	{
 		H_(i,j) = cusp::blas::dot(V_[i], V_[j + 1]);
@@ -203,7 +202,6 @@ void _arnoldi(double* init_vector, double* result_V, double* result_H, int size,
      tic();
      cusp::array2d<FLOAT_TYPE, cusp::host_memory> result_V_Host(V);
      cusp::array2d<FLOAT_TYPE, cusp::host_memory> result_H_Host(H);
-     cusp::print(result_H_Host);
      toc("copying result to host memory");
 
      // copying to np.ndarray

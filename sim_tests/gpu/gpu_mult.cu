@@ -64,7 +64,7 @@ void _loadMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZe
     // initialize matrix entries on host
     int index = 0;
  
-    for (unsigned int i = 0; i < nonZeroCount; ++i)
+    for (int i = 0; i < nonZeroCount; ++i)
     {
         int row = nonZeroRows[i];
         int col = nonZeroCols[i];
