@@ -2,7 +2,7 @@
 
 CC=nvcc
 
-CFLAGS_SHARED = --compiler-options '-fPIC' -O2 -D_FORCE_INLINES -Icusplibrary-0.4.0 -shared
+CFLAGS_SHARED = --compiler-options '-fPIC -Wall -Werror' -O2 -D_FORCE_INLINES -Icusplibrary-0.4.0 -shared
 CFLAGS = -O2 -D_FORCE_INLINES -Icusplibrary-0.4.0
 
 all: gpu_mult.so gpu_arnoldi.so gpu_arnoldi_test

@@ -14,10 +14,10 @@
 #include <sys/time.h>
 
 typedef double FLOAT_TYPE;
-// shared matrix in device memory
-static cusp::hyb_matrix<int, FLOAT_TYPE, cusp::device_memory>* curMatrix = 0;
+typedef cusp::device_memory MEMORY_TYPE;
 
-static int nonZeros = 0;
+// shared matrix in device memory
+static cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE>* curMatrix = 0;
 
 // timing shared variable
 static long lastTicUs = 0;
@@ -65,7 +65,7 @@ void _loadMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZe
     // initialize matrix entries on host
     int index = 0;
  
-    for (unsigned int i = 0; i < nonZeroCount; ++i)
+    for (int i = 0; i < nonZeroCount; ++i)
     {
         int row = nonZeroRows[i];
         int col = nonZeroCols[i];
@@ -85,13 +85,12 @@ void _loadMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZe
         curMatrix = 0;
     }
     
-    curMatrix = new (std::nothrow) cusp::hyb_matrix<int, FLOAT_TYPE,cusp::device_memory>(hostMatrix);
+    curMatrix = new (std::nothrow) cusp::hyb_matrix<int, FLOAT_TYPE,MEMORY_TYPE>(hostMatrix);
         
     if (curMatrix == 0)
         error("allocation of heap-based csr matrix in device memory returned nullptr");
         
     toc("copying matrix to device memory");
-    nonZeros = nonZeroCount;
 }
 
 void _arnoldi(double* init_vector, double* result_V, double* result_H, int size, int numIter)
@@ -109,7 +108,7 @@ void _arnoldi(double* init_vector, double* result_V, double* result_H, int size,
     
     // copy initial vector to device memory
     tic();
-    cusp::array1d<FLOAT_TYPE,cusp::device_memory> deviceInitVec(hostInitVec);
+    cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> deviceInitVec(hostInitVec);
     toc("copying initial vector to device memory");
 
     // system dimension 
@@ -124,24 +123,24 @@ void _arnoldi(double* init_vector, double* result_V, double* result_H, int size,
 
     // create matrix H_ in device memory for iteration
     tic();	
-    cusp::array2d<FLOAT_TYPE,cusp::device_memory> H_(maxiter + 1, maxiter, 0);
+    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> H_(maxiter + 1, maxiter, 0);
     toc("create matrix H_ in device memory for iteration");
 
     // returned matrix H after iteration -- Hm in the algorithm -- (m x m) matrix 
     tic();
-    cusp::array2d<FLOAT_TYPE,cusp::device_memory> H(maxiter, maxiter); 
+    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> H(maxiter, maxiter); 
     toc("create returned matrix H after iteration -- Hm in the algorithm -- (m x m) matrix ");
 
     // create matrix V_ for iteration
     tic();
-    std::vector< cusp::array1d<FLOAT_TYPE,cusp::device_memory> > V_(maxiter + 1);
+    std::vector< cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> > V_(maxiter + 1);
     for (int i = 0; i < maxiter + 1; i++)
         V_[i].resize(N);
     toc("create matrix V_ for iteration");
 
     // returned matrix V after iteration -- Vm in the algorithm -- (N x m) matrix
     tic();
-    cusp::array2d<FLOAT_TYPE,cusp::device_memory> V(N,maxiter);
+    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> V(N,maxiter);
     toc("create returned matrix V after iteration -- Vm in the algorithm -- (N x m) matrix"); 
 
     // copy initial vector into V_[0]
@@ -187,14 +186,14 @@ void _arnoldi(double* init_vector, double* result_V, double* result_H, int size,
 	for(int colH = 0; colH <maxiter; colH++)
 		H(rowH,colH) = H_(rowH,colH);
      toc("get matrix H -- (m x m) dimension");
+     
 
      // get matrix V (N x m dimension) 
      tic();
-     cusp::array1d<FLOAT_TYPE,cusp::device_memory> x1(N);	
+     cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> x1(N);	
 
      for(int colV = 0; colV < maxiter; colV++)
      {	cusp::copy(V_[colV],x1);
-	//cusp::print(x1);		
 	for(int rowV=0;rowV < N; rowV++)
 		V(rowV, colV) = x1[rowV];
      }
@@ -204,18 +203,26 @@ void _arnoldi(double* init_vector, double* result_V, double* result_H, int size,
      tic();
      cusp::array2d<FLOAT_TYPE, cusp::host_memory> result_V_Host(V);
      cusp::array2d<FLOAT_TYPE, cusp::host_memory> result_H_Host(H);
+     cusp::print(result_H_Host);
      toc("copying result to host memory");
 
      // copying to np.ndarray
      tic();
      for (int i = 0; i < N; ++i)
         for (int k = 0; k < numIter; ++k)
-        	result_V[i,k] = result_V_Host(i,k);
+	{
+        	result_V[i*numIter + k] = result_V_Host(i,k);
+	}
     
      for (int i = 0; i < numIter; ++i )
 	for (int k = 0; k < numIter; ++k)
-		result_H[i,k] = result_H_Host(i,k);    
+	{
+		result_H[i*numIter + k] = result_H_Host(i,k);       
+	}
+
+
      toc("copying to np.ndarray");
+     
 
 
 }
@@ -231,7 +238,7 @@ int _hasGpu()
         for (int i = 0; i < 10; ++i)
             hostVec[i] = 0;
 
-        cusp::array1d<FLOAT_TYPE,cusp::device_memory> deviceVec(hostVec);
+        cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> deviceVec(hostVec);
     }
     catch(std::exception &e)
     {
