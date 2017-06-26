@@ -135,7 +135,7 @@ void _arnoldi(double* init_vector, double* result_V, double* result_H, int size,
     // create matrix V_ for iteration
     tic();
     std::vector< cusp::array1d<FLOAT_TYPE,cusp::device_memory> > V_(maxiter + 1);
-    for (size_t i = 0; i < maxiter + 1; i++)
+    for (int i = 0; i < maxiter + 1; i++)
         V_[i].resize(N);
     toc("create matrix V_ for iteration");
 
@@ -159,13 +159,13 @@ void _arnoldi(double* init_vector, double* result_V, double* result_H, int size,
 
     // iteration
     tic();
-    size_t j;
+    int j;
     for(j = 0; j < maxiter; j++)
     {
 	cusp::multiply(*curMatrix, V_[j], V_[j + 1]);
 	//cusp::print(V_[j]); 
 
-	for(size_t i = 0; i <= j; i++)
+	for(int i = 0; i <= j; i++)
 	{
 		H_(i,j) = cusp::blas::dot(V_[i], V_[j + 1]);
 
@@ -183,8 +183,8 @@ void _arnoldi(double* init_vector, double* result_V, double* result_H, int size,
 
      // get matrix H (m x m dimension)
      tic(); 
-     for(size_t rowH=0;rowH < maxiter; rowH++)
-	for(size_t colH = 0; colH <maxiter; colH++)
+     for(int rowH=0;rowH < maxiter; rowH++)
+	for(int colH = 0; colH <maxiter; colH++)
 		H(rowH,colH) = H_(rowH,colH);
      toc("get matrix H -- (m x m) dimension");
 
@@ -192,10 +192,10 @@ void _arnoldi(double* init_vector, double* result_V, double* result_H, int size,
      tic();
      cusp::array1d<FLOAT_TYPE,cusp::device_memory> x1(N);	
 
-     for(size_t colV = 0; colV < maxiter; colV++)
+     for(int colV = 0; colV < maxiter; colV++)
      {	cusp::copy(V_[colV],x1);
 	//cusp::print(x1);		
-	for(size_t rowV=0;rowV < N; rowV++)
+	for(int rowV=0;rowV < N; rowV++)
 		V(rowV, colV) = x1[rowV];
      }
      toc("get matrix V -- (N x m) dimension");

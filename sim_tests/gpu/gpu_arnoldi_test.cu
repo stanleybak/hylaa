@@ -33,9 +33,9 @@ int main(void)
 	cusp::print(x0);	
 
 	// krylov supspace dimension, number of iteration
-	size_t m = 2;  
-	size_t N = A.num_rows;  // system dimension 
-	size_t maxiter = std::min(N, m);   
+	int m = 2;  
+	int N = A.num_rows;  // system dimension 
+	int maxiter = std::min(N, m);   
 		
 	// create matrix H_ for iteration	
 	cusp::array2d<float,cusp::host_memory> H_(maxiter + 1, maxiter, 0);
@@ -45,7 +45,7 @@ int main(void)
 
         // create matrix V_ for iteration
         std::vector< cusp::array1d<float,cusp::host_memory> > V_(maxiter + 1);
-        for (size_t i = 0; i < maxiter + 1; i++)
+        for (int i = 0; i < maxiter + 1; i++)
            V_[i].resize(N);
 
 	// returned matrix V after iteration -- Vm in the algorithm -- (N x m) matrix
@@ -65,14 +65,14 @@ int main(void)
 	
 	// iteration
 	
-	size_t j;
+	int j;
 	for(j = 0; j < maxiter; j++)
 	{
 		cusp::multiply(A, V_[j], V_[j + 1]);
 
 		cusp::print(V_[j]); 
 
-		for(size_t i = 0; i <= j; i++)
+		for(int i = 0; i <= j; i++)
 		{
 			H_(i,j) = cusp::blas::dot(V_[i], V_[j + 1]);
 
@@ -87,8 +87,8 @@ int main(void)
 	}
 	
 	// get matrix H (m x m dimension) and print it
-	for(size_t rowH=0;rowH < maxiter; rowH++)
-		for(size_t colH = 0; colH <maxiter; colH++)
+	for(int rowH=0;rowH < maxiter; rowH++)
+		for(int colH = 0; colH <maxiter; colH++)
 			H(rowH,colH) = H_(rowH,colH);
 
 	cusp::print(H_);
@@ -99,10 +99,10 @@ int main(void)
 
 	cusp::array1d<float,cusp::host_memory> x1(N);	
 
-	for(size_t colV = 0; colV < maxiter; colV++)
+	for(int colV = 0; colV < maxiter; colV++)
 	{	cusp::copy(V_[colV],x1);
 		cusp::print(x1);		
-		for(size_t rowV=0;rowV < N; rowV++)
+		for(int rowV=0;rowV < N; rowV++)
 			V(rowV, colV) = x1[rowV];
 	}
 
@@ -111,12 +111,12 @@ int main(void)
         // compute Vb = beta*V -- (N x m) matrix
 	cusp::array2d<float,cusp::host_memory> Vb(N,maxiter);
 
-	for(size_t colV2 = 0; colV2 <j; colV2++)
+	for(int colV2 = 0; colV2 <j; colV2++)
 		cusp::blas::scal(V_[colV2], float(1) / cusp::blas::nrm2(V_[0]));
 	
 	
-	for(size_t rowV3=0;rowV3 < N; rowV3++)
-		for(size_t colV3 = 0; colV3 <j; colV3++)
+	for(int rowV3=0;rowV3 < N; rowV3++)
+		for(int colV3 = 0; colV3 <j; colV3++)
 			Vb(rowV3,colV3) = V_[colV3][rowV3];
 
 	cusp::print(Vb);

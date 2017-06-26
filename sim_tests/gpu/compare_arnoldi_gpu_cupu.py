@@ -211,7 +211,7 @@ def random_sparse_matrix(dims, entries_per_row, random_cols=True):
     return csr_matrix(mat)
 
 def compare():
-    'compare timing of Arnoldi algorithm using gpu and cpu-krypy
+    'compare timing of Arnoldi algorithm using gpu and cpu-krypy'
 
     print "making matrix..."
     start = time.time()
@@ -219,7 +219,7 @@ def compare():
     a = make_iss_matrix(1)
     print "made in {:.2f} seconds".format(time.time() - start)
 
-    vec = np.random.random((a.shape[0],))
+    vec = np.random.random((a.shape[0],1))
 
     m = 10
 
