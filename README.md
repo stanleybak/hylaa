@@ -74,6 +74,8 @@ A number of unit and regressions tests are included in the `tests` folder. Hylaa
 
 ### Hylaa Publications ###
 
+"Simulation-Equivalent Reachability of Large Linear Systems with Inputs", S. Bak, P. Duggirala, 29th International Conference on Computer-Aided Verification (CAV 2017)
+
 "HyLAA: A Tool for Computing Simulation-Equivalent Reachability for Linear Systems", S. Bak, P. Duggirala, 20th International Conference on Hybrid Systems: Computation and Control (HSCC 2017)
 
 "Rigorous Simulation-Based Analysis of Linear Hybrid Systems", S. Bak, P. Duggirala, 23rd International Conference on Tools and Algorithms for the Construction and Analysis of Systems (TACAS 2017)

@@ -8,7 +8,7 @@
 using namespace std;
 
 #ifndef HYLAA_GLPK_H_
-#define HYLAA_GPLK_H_
+#define HYLAA_GLPK_H_
 
 struct GlobalLpData
 {
