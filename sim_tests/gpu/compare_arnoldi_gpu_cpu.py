@@ -219,7 +219,7 @@ def compare():
     print "making matrix..."
     start = time.time()
     a = random_sparse_matrix(1000000, entries_per_row=5, random_cols=True)
-    #a = make_iss_matrix(1)
+    #a = make_iss_matrix(100)
     print "made in {:.2f} seconds".format(time.time() - start)
 
     vec = np.random.random((a.shape[0],1))

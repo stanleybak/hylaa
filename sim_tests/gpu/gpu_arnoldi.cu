@@ -189,13 +189,11 @@ void _arnoldi(double* init_vector, double* result_V, double* result_H, int size,
 
      // get matrix V (N x m dimension) 
      tic();
-     cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> x1(N);	
-
+     
      for(int colV = 0; colV < maxiter; colV++)
-     {	cusp::copy(V_[colV],x1);
-	for(int rowV=0;rowV < N; rowV++)
-		V(rowV, colV) = x1[rowV];
-     }
+     	for(int rowV=0;rowV < N; rowV++)
+		V(rowV, colV) = V_[colV][rowV];
+     
      toc("get matrix V -- (N x m) dimension");
 
      // copy result to host memory	
