@@ -1,5 +1,5 @@
-// Dunf Tran
-// GPU Arnoldi Algorithm interface using Cusp / Cuda
+// Dung Tran
+// Krylov subspace - based simulation using Gpu- Cusp / Cuda for sparse ode
 // June 2017
 
 #include <new>
@@ -10,15 +10,17 @@
 #include <cusp/hyb_matrix.h>
 #include <cusp/multiply.h>
 #include <cusp/print.h>
-
+#include <cusp/blas.h>
 #include <sys/time.h>
 
 typedef double FLOAT_TYPE;
+//typedef cusp::host_memory MEMORY_TYPE;
 typedef cusp::device_memory MEMORY_TYPE;
 
 // shared matrix in device memory
 static cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE>* curMatrix = 0;
-
+static std::vector< cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> > V_;
+static std::vector< cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> > device_sim_result;
 // timing shared variable
 static long lastTicUs = 0;
 
@@ -93,10 +95,10 @@ void _loadMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZe
     toc("copying matrix to device memory");
 }
 
-void _arnoldi(double* init_vector, double* result_V, double* result_H, int size, int numIter)
+void _arnoldi(double* init_vector, double* result_H, int size, int numIter)
 {
     if (curMatrix == 0)
-        error("loadMatrix must be called before multiply");
+        error("loadMatrix must be called before running arnoldi algorithm");
     
     // initialize input vector
     tic();
@@ -109,7 +111,7 @@ void _arnoldi(double* init_vector, double* result_V, double* result_H, int size,
     // copy initial vector to device memory
     tic();
     cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> deviceInitVec(hostInitVec);
-    toc("copying initial vector to device memory");
+    toc("copying initial vetocctor to device memory");
 
     // system dimension 
     tic();
@@ -133,15 +135,10 @@ void _arnoldi(double* init_vector, double* result_V, double* result_H, int size,
 
     // create matrix V_ for iteration
     tic();
-    std::vector< cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> > V_(maxiter + 1);
+    V_.resize(maxiter+1);
     for (int i = 0; i < maxiter + 1; i++)
         V_[i].resize(N);
     toc("create matrix V_ for iteration");
-
-    // returned matrix V after iteration -- Vm in the algorithm -- (N x m) matrix
-    tic();
-    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> V(N,maxiter);
-    toc("create returned matrix V after iteration -- Vm in the algorithm -- (N x m) matrix"); 
 
     // copy initial vector into V_[0]
     tic(); 
@@ -162,8 +159,7 @@ void _arnoldi(double* init_vector, double* result_V, double* result_H, int size,
     for(j = 0; j < maxiter; j++)
     {
 	cusp::multiply(*curMatrix, V_[j], V_[j + 1]);
-	//cusp::print(V_[j]); 
-
+	
 	for(int i = 0; i <= j; i++)
 	{
 		H_(i,j) = cusp::blas::dot(V_[i], V_[j + 1]);
@@ -178,7 +174,17 @@ void _arnoldi(double* init_vector, double* result_V, double* result_H, int size,
 		cusp::blas::scal(V_[j + 1], float(1) / H_(j+1,j));
 
      }
-     toc("iteration");	
+     toc("iteration");
+
+
+     // scale V_ with beta, i.e. beta*V_, used later for computing simulation trace
+     tic();
+     for(int j = 0; j < maxiter; j++)
+     {
+        cusp::blas::scal(V_[j],beta);
+     }
+     toc("scaling matrix V with beta");
+     
 
      // get matrix H (m x m dimension)
      tic(); 
@@ -186,45 +192,68 @@ void _arnoldi(double* init_vector, double* result_V, double* result_H, int size,
 	for(int colH = 0; colH <maxiter; colH++)
 		H(rowH,colH) = H_(rowH,colH);
      toc("get matrix H -- (m x m) dimension");
-     
 
-     // get matrix V (N x m dimension) 
+
+     // copying H matrix to np.ndarray
      tic();
-     cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> x1(N);	
-
-     for(int colV = 0; colV < maxiter; colV++)
-     {	cusp::copy(V_[colV],x1);
-	for(int rowV=0;rowV < N; rowV++)
-		V(rowV, colV) = x1[rowV];
-     }
-     toc("get matrix V -- (N x m) dimension");
-
-     // copy result to host memory	
-     tic();
-     cusp::array2d<FLOAT_TYPE, cusp::host_memory> result_V_Host(V);
-     cusp::array2d<FLOAT_TYPE, cusp::host_memory> result_H_Host(H);
-     cusp::print(result_H_Host);
-     toc("copying result to host memory");
-
-     // copying to np.ndarray
-     tic();
-     for (int i = 0; i < N; ++i)
-        for (int k = 0; k < numIter; ++k)
-	{
-        	result_V[i*numIter + k] = result_V_Host(i,k);
-	}
     
      for (int i = 0; i < numIter; ++i )
 	for (int k = 0; k < numIter; ++k)
-	{
-		result_H[i*numIter + k] = result_H_Host(i,k);       
-	}
-
-
-     toc("copying to np.ndarray");
+		result_H[i*numIter + k] = H_(i,k);       
+     toc("copying H to np.ndarray");
      
+}
 
+void _sim(double* matrix_Hf, double* sim_result, int size, int numIter, int numStep)
+{
+     	  
+    // copy matrix Hf to device memory
+    tic();
+    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> deviceMatrix_Hf(numIter,numStep);
+    for(int k=0; k< numStep ; k++)
+       for(int i = 0; i < numIter; i++)
+          deviceMatrix_Hf(i,k) = matrix_Hf[i*numStep+k];
+    toc("copying matrix Hf to device memory");
+    printf("device_matrix_Hf:\n");
+    cusp::print(deviceMatrix_Hf);
 
+    // compute simulation result 
+    tic();
+    device_sim_result.resize(numStep);
+    for (int i = 0; i < numStep; i++)
+        device_sim_result[i].resize(size);
+    toc("create simulation result matrix");
+
+    tic();
+    for (int i=0; i< numStep; i++)
+    {
+        for(int k=0; k < numIter; k++)
+        {
+	  cusp::blas::axpy(V_[k], device_sim_result[i], deviceMatrix_Hf(k,i));
+        }
+
+    }
+    toc("compute simulation result");
+   
+
+    // print simulation result 
+    tic();
+    for(int i=0;i<numStep;i++)
+    {
+       printf("simulation result at step %d",i);
+       cusp::print(device_sim_result[i]);
+    }
+    toc("print simulation result");
+
+    // copy simulation result to np.ndarray
+    tic();
+    for(int i = 0; i < numStep; i++)
+       for(int k = 0; k < size; k++)
+       {
+		sim_result[i*numStep + k] = device_sim_result[size][numStep];
+       }
+    toc("copy simulation result to np.ndarray");
+           
 }
 
 int _hasGpu()
@@ -261,10 +290,14 @@ void loadMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZer
     _loadMatrix(w, h, nonZeroRows, nonZeroCols, nonZeroEntries, nonZeroCount);
 }
 
-void arnoldi(double* init_vector, double* result_V, double* result_H, int size, int numIter)\
+void arnoldi(double* init_vector, double* result_H, int size, int numIter)
 {
-    _arnoldi(init_vector,  result_V,  result_H, size,
-    numIter);
+    _arnoldi(init_vector, result_H, size, numIter);
+}
+
+void sim(double* matrix_Hf, double* sim_result, int size, int numIter, int numStep)\
+{
+    _sim(matrix_Hf, sim_result,  size, numIter, numStep);
 }
 
 }
