@@ -134,45 +134,6 @@ class LpData
         }
     }
 
-    // returns 0 on success, 1 on error
-    int getRowStatuses(char* store, int storeLen)
-    {
-        int rows = glp_get_num_rows(lp);
-
-        if (storeLen != rows)
-        {
-            printf(
-                "Error: Vector dimensions mismatch in getRowStatuses: %d (storage length) != "
-                "%d (num rows)\n",
-                storeLen, rows);
-            return 1;
-        }
-
-        for (int row = 1; row <= rows; ++row)
-            store[row - 1] = glp_get_row_stat(lp, row);
-
-        return 0;
-    }
-
-    int getColStatuses(char* store, int storeLen)
-    {
-        int cols = glp_get_num_cols(lp);
-
-        if (storeLen != cols)
-        {
-            printf(
-                "Error: Vector dimensions mismatch in getColStatuses: %d (storage length) != "
-                "%d (num cols)\n",
-                storeLen, cols);
-            return 1;
-        }
-
-        for (int col = 1; col <= cols; ++col)
-            store[col - 1] = glp_get_col_stat(lp, col);
-
-        return 0;
-    }
-
     // returns 1 on error, 0 on success
     int updateTimeElapseMatrix(double* matrix, int w, int h)
     {

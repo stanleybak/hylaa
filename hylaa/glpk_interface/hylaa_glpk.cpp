@@ -11,9 +11,9 @@ GlobalLpData global;
 
 namespace hylaa
 {
-LpData* initLp(int numStandardVars, int numBasisVars)
+LpData* initLp(int numCurTimeVars, int numInitVars)
 {
-    LpData* data = new LpData(numStandardVars, numBasisVars);
+    LpData* data = new LpData(numCurTimeVars, numInitVars);
 
     if (data == nullptr)
     {
@@ -54,16 +54,6 @@ void printLp(LpData* lpd)
     lpd->printLp();
 }
 
-int getColStatuses(LpData* lpd, char* store, int storeLen)
-{
-    return lpd->getColStatuses(store, storeLen);
-}
-
-int getRowStatuses(LpData* lpd, char* store, int storeLen)
-{
-    return lpd->getRowStatuses(store, storeLen);
-}
-
 void test()
 {
     hylaa_glpk_unit_test();
@@ -76,9 +66,9 @@ void test()
 /////////////////////////
 extern "C" {
 // returns a LpData* instance
-void* initLp(int numStandardVars, int numBasisVars)
+void* initLp(int numCurTimeVars, int numInitVars)
 {
-    return (void*)hylaa::initLp(numStandardVars, numBasisVars);
+    return (void*)hylaa::initLp(numCurTimeVars, numInitVars);
 }
 
 // frees a LpData* instance
@@ -120,16 +110,6 @@ int totalOptimizations()
 void printLp(void* lpdata)
 {
     hylaa::printLp((LpData*)lpdata);
-}
-
-int getColStatuses(void* lpdata, char* store, int storeLen)
-{
-    return hylaa::getColStatuses((LpData*)lpdata, store, storeLen);
-}
-
-int getRowStatuses(void* lpdata, char* store, int storeLen)
-{
-    return hylaa::getRowStatuses((LpData*)lpdata, store, storeLen);
 }
 
 void test()

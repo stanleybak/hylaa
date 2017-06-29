@@ -215,13 +215,11 @@ class DrawnShapes(Freezable):
             line.set_xdata(new_xdata)
             line.set_ydata(new_ydata)
 
-    def add_reachable_poly(self, poly_verts, parent, mode_name):
+    def add_reachable_poly(self, poly_verts, mode_name):
         '''add a polygon which was reachable'''
 
-        assert isinstance(parent, ContinuousPostParent)
-
         if len(poly_verts) <= 2:
-            markers = self.parent_to_markers.get(parent)
+            markers = self.parent_to_markers.get(mode_name)
 
             if markers is None:
                 face_col, edge_col = self.mode_colors.get_edge_face_colors(mode_name)
@@ -229,7 +227,7 @@ class DrawnShapes(Freezable):
                 markers = Line2D([], [], animated=True, ls='None', alpha=0.5, marker='o', mew=2, ms=5,
                                  mec=edge_col, mfc=face_col)
                 self.axes.add_line(markers)
-                self.parent_to_markers[parent] = markers
+                self.parent_to_markers[mode_name] = markers
 
             xdata = markers.get_xdata()
             ydata = markers.get_ydata()
@@ -238,14 +236,14 @@ class DrawnShapes(Freezable):
             markers.set_xdata(xdata)
             markers.set_ydata(ydata)
         else:
-            polys = self.parent_to_polys.get(parent)
+            polys = self.parent_to_polys.get(mode_name)
 
             if polys is None:
                 face_col, edge_col = self.mode_colors.get_edge_face_colors(mode_name)
                 polys = collections.PolyCollection([], lw=2, animated=True, alpha=0.5,
                                                    edgecolor=edge_col, facecolor=face_col)
                 self.axes.add_collection(polys)
-                self.parent_to_polys[parent] = polys
+                self.parent_to_polys[mode_name] = polys
 
             paths = polys.get_paths()
 
@@ -442,7 +440,7 @@ class PlotManager(Freezable):
 
                 self.cur_reachable_polys += 1
 
-                self.shapes.add_reachable_poly(verts, star.parent, star.mode.name)
+                self.shapes.add_reachable_poly(verts, star.mode.name)
 
             self.draw_cur_step += 1
 
@@ -526,6 +524,10 @@ class PlotManager(Freezable):
                 iterator = self.settings.video.frames
 
         if self.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
+            # do one frame
+            self.interactive.paused = False
+            self.interactive.step = True
+
             # shrink plot, add buttons
             plt.subplots_adjust(bottom=0.12)
 

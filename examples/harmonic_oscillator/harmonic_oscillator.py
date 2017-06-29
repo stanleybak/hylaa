@@ -3,7 +3,7 @@ Harmonic Oscillator (with time) Example in Hylaa-Continuous
 '''
 
 import numpy as np
-from scipy.sparse import csr_matrix
+from scipy.sparse import csc_matrix
 
 from hylaa.hybrid_automaton import LinearHybridAutomaton, SparseLinearConstraint
 from hylaa.engine import HylaaSettings
@@ -17,7 +17,7 @@ def define_ha():
     # 4 variables: x, y, time, affine_term
     ha = LinearHybridAutomaton(4)
 
-    a_matrix = csr_matrix(np.array([[0, -1, 0, 0], [1, 0, 0, 0], [0, 0, 0, 1], [0, 0, 0, 0]], dtype=float))
+    a_matrix = csc_matrix(np.array([[0, -1, 0, 0], [1, 0, 0, 0], [0, 0, 0, 1], [0, 0, 0, 0]], dtype=float))
 
     mode = ha.new_mode('mode')
     mode.set_dynamics(a_matrix)
@@ -50,7 +50,7 @@ def define_init(ha, hylaa_settings):
 def define_settings():
     'get the hylaa settings object'
     plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_FULL
+    plot_settings.plot_mode = PlotSettings.PLOT_INTERACTIVE
     plot_settings.xdim_dir = [1, 0, 0, 0]
     plot_settings.ydim_dir = [0, 1, 0, 0]
 
@@ -62,12 +62,10 @@ def define_settings():
     plot_settings.label.y_label = 'y'
     plot_settings.label.x_label = 'x'
     plot_settings.label.title = ''
-    plot_settings.label.axes_limits = (0, 1, -0.007, 0.006)
-    plot_settings.plot_size = (12, 12)
-    plot_settings.label.big(size=40)
+    plot_settings.plot_size = (8, 8)
+    #plot_settings.label.big(size=40)
 
     settings = HylaaSettings(step=0.1, max_time=6.0, plot_settings=plot_settings)
-    settings.simulation.threads = 1
     settings.simulation.sim_mode = SimulationSettings.MATRIX_EXP
 
     return settings

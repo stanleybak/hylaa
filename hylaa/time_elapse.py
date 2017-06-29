@@ -5,7 +5,7 @@ l * e^{At} where l is some direction of interest, and t is a multiple of some ti
 
 import numpy as np
 
-from scipy.sparse import lil_matrix, csr_matrix
+from scipy.sparse import lil_matrix, csc_matrix
 from scipy.sparse.linalg import expm
 
 from hylaa.util import Freezable
@@ -25,8 +25,8 @@ class TimeElapser(Freezable):
         self.dims = self.a_matrix.shape[0]
 
         self.next_step = 0
-        self.key_dir_mat = None # csr_matrix
-        self.cur_key_dir_mat = None # assigned on update()
+        self.key_dir_mat = None # csc_matrix
+        self.cur_time_elapse_mat = None # assigned on update()
         self._extract_directions(mode)
 
         self.freeze_attrs()
@@ -45,8 +45,16 @@ class TimeElapser(Freezable):
         dir_index = 0
 
         if self.settings.plot.plot_mode != PlotSettings.PLOT_NONE:
-            lil_dir_mat[0, self.settings.plot.xdim] = 1.0
-            lil_dir_mat[1, self.settings.plot.ydim] = 1.0
+            if isinstance(self.settings.plot.xdim_dir, int):
+                lil_dir_mat[0, self.settings.plot.xdim_dir] = 1.0
+            else:
+                lil_dir_mat[0, :] = self.settings.plot.xdim_dir
+
+            if isinstance(self.settings.plot.ydim_dir, int):
+                lil_dir_mat[1, self.settings.plot.ydim_dir] = 1.0
+            else:
+                lil_dir_mat[1, :] = self.settings.plot.ydim_dir
+
             dir_index += 2
 
         for t in mode.transitions:
@@ -54,18 +62,21 @@ class TimeElapser(Freezable):
                 lil_dir_mat[dir_index, :] = lc.vector
                 dir_index += 1
 
-        # done constructing, convert to csr_matrix
-        self.key_dir_mat = csr_matrix(lil_dir_mat)
+        # done constructing, convert to csc_matrix
+        self.key_dir_mat = csc_matrix(lil_dir_mat)
 
     def step(self):
         'perform the computation to obtain the values of the key directions the current time'
 
-        Timers.tic('time_elapser.update')
+        Timers.tic('time_elapse.step')
 
         cur_time = self.settings.step * self.next_step
-        exp = expm(self.a_matrix * cur_time)
-        self.cur_key_dir_mat = np.dot(self.key_dir_mat, exp)
+
+        time_mat = self.a_matrix * cur_time
+        exp = expm(time_mat)
+
+        self.cur_time_elapse_mat = np.array((self.key_dir_mat * exp).todense(), dtype=float)
 
         self.next_step += 1
 
-        Timers.toc('time_elapser.update')
+        Timers.toc('time_elapse.step')

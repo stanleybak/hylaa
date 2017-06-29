@@ -8,13 +8,10 @@ import numpy as np
 
 from hylaa.plotutil import PlotManager
 from hylaa.star import Star
-from hylaa.star import init_hr_to_star, init_constraints_to_star
-from hylaa.hybrid_automaton import LinearHybridAutomaton, LinearAutomatonMode, LinearConstraint, HyperRectangle
+from hylaa.hybrid_automaton import LinearHybridAutomaton
 from hylaa.timerutil import Timers
 from hylaa.containers import HylaaSettings, PlotSettings, HylaaResult
 from hylaa.glpk_interface import LpInstance
-
-from hylaa.time_elapse import TimeElapser
 
 class HylaaEngine(object):
     'main computation object. initialize and call run()'
@@ -25,10 +22,9 @@ class HylaaEngine(object):
 
         self.hybrid_automaton = ha
         self.settings = hylaa_settings
-        self.num_vars = len(ha.dims)
 
         if self.settings.plot.plot_mode != PlotSettings.PLOT_NONE:
-            Star.init_plot_vecs(self.num_vars, self.settings.plot)
+            Star.init_plot_vecs(self.settings.plot)
 
         self.plotman = PlotManager(self, self.settings.plot)
 
@@ -121,20 +117,20 @@ class HylaaEngine(object):
                         self.cur_star = state = None
                         break
 
-    def do_step_continuous_post(self, output):
+    def do_step_continuous_post(self):
         '''do a step where it's part of a continuous post'''
 
         # advance time by one step
-        if self.cur_star.time_elapse.total_steps >= self.settings.num_steps:
+        if self.cur_star.time_elapse.next_step > self.settings.num_steps:
             self.cur_star = None
         else:
             if self.settings.print_output and not self.settings.skip_step_times:
-                step_num = self.cur_star.time_elapse.t
+                step_num = self.cur_star.time_elapse.next_step
                 print "Step: {} / {} ({})".format(step_num, self.settings.num_steps, self.settings.step * step_num)
 
-            self.cur_star.update(self.cur_step_in_mode)
+            self.cur_star.step()
 
-            self.check_guards()
+            #self.check_guards()
 
     def do_step(self):
         'do a single step of the computation'
@@ -142,10 +138,9 @@ class HylaaEngine(object):
         skipped_plot = False # if we skip the plot, do multiple steps
 
         while True:
-            output = self.settings.print_output
 
             try:
-                self.do_step_continuous_post(output)
+                self.do_step_continuous_post()
             except FoundErrorTrajectory: # this gets raised if an error mode is reachable and we should quit early
                 pass
 

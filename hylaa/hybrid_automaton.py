@@ -3,7 +3,7 @@ Hybrid Automaton generic definition for Hylaa
 Stanley Bak (Sept 2016)
 '''
 
-from scipy.sparse import csr_matrix
+from scipy.sparse import csc_matrix, csr_matrix
 
 from hylaa.util import Freezable
 
@@ -12,8 +12,9 @@ class SparseLinearConstraint(Freezable):
 
     def __init__(self, vector, value):
         self.vector = csr_matrix(vector, dtype=float)
-        self.value = float(value)
+        assert self.vector.shape[0] == 1
 
+        self.value = float(value)
         self.freeze_attrs()
 
     def almost_equals(self, other, tol):
@@ -41,7 +42,7 @@ class SparseLinearConstraint(Freezable):
         return SparseLinearConstraint(self.vector.copy(), self.value)
 
     def __str__(self):
-        return '[SparseLinearConstraint: {} * x <= {}]'.format(self.vector, self.value)
+        return '[SparseLinearConstraint: {} * x <= {}]'.format(repr(self.vector), self.value)
 
     def __repr__(self):
         return 'SparseLinearConstraint({}, {})'.format(repr(self.vector), repr(self.value))
@@ -135,7 +136,7 @@ class LinearAutomatonMode(Freezable):
     def set_dynamics(self, a_matrix):
         'sets the autonomous system dynamics'
 
-        assert isinstance(a_matrix, csr_matrix)
+        assert isinstance(a_matrix, csc_matrix)
         assert len(a_matrix.shape) == 2
 
         assert a_matrix.shape[0] == self.parent.dims and a_matrix.shape[1] == self.parent.dims, \

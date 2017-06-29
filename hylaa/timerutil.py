@@ -6,7 +6,7 @@ Stanley Bak
 September 2016
 '''
 
-import time 
+import time
 from collections import OrderedDict
 
 class TimerData(object):
@@ -53,7 +53,7 @@ class Timers(object):
     def reset():
         'reset all timers'
 
-        Timers.timers = {'total': TimerData('total')} 
+        Timers.timers = {'total': TimerData('total')}
 
     @staticmethod
     def tic(name):
@@ -86,7 +86,7 @@ class Timers(object):
             # print total time last
             if timer.name in skip_timers:
                 continue
-    
+
             print "{} Time ({} calls): {:.2f} sec ({:.1f}%)".format(
                 timer.name.capitalize(), timer.num_calls, timer.total_secs, 100 * timer.total_secs / total)
 

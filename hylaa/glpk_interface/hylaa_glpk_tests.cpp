@@ -38,21 +38,24 @@ void test1d()
     double b2 = -1;
     lpd->addInitConstraint(a2, 1, b2);
 
-    double basis[] = {1};
+    double basis[] = {0.1};
     lpd->updateTimeElapseMatrix(basis, 1, 1);
 
-    double result[1] = {0};
-    double direction[] = {-1};
+    double result[2] = {0, 0};
+    double direction[] = {1};
 
-    if (lpd->minimize(direction, 1, result, 1))
+    if (lpd->minimize(direction, 1, result, 2))
     {
         printf("call to minimize failed in 1-d self test\n");
         exit(1);
     }
 
-    if (fabs(result[0] - (2)) > 1e-6)
+    double expected[] = {1, 10};
+
+    if (fabs(result[0] - (expected[0])) > 1e-6 || fabs(result[1] - (expected[1])) > 1e-6)
     {
-        printf("lp self-test-1d failed result: %f; expected: 2\n", result[0]);
+        printf("lp self-test-1d failed result: (%f, %f); expected: (%f, %f)\n", result[0],
+               result[1], expected[0], expected[1]);
         exit(1);
     }
 
@@ -72,15 +75,15 @@ void test1d_constraint()
     double b2 = -1;
     lpd->addInitConstraint(a2, 1, b2);
 
-    double a3[] = {1};
-    double b3 = 1.5;
+    double a3[] = {-1};
+    double b3 = -1.5;
     lpd->addCurTimeConstraint(a3, 1, b3);
 
     double basis[] = {1};
     lpd->updateTimeElapseMatrix(basis, 1, 1);
 
     double result[1] = {0};
-    double direction[] = {-1};
+    double direction[] = {1};
 
     if (lpd->minimize(direction, 1, result, 1))
     {
