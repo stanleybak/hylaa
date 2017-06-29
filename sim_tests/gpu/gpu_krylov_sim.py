@@ -2,7 +2,7 @@
 Dung Tran
 June 2017
 
-Compare Timing of Arnoldi Algorithm using gpu and cpu-krypy packet 
+Simulation of linear system x' = Ax using krylov supspace method in CPU and GPU 
 
 '''
 
@@ -50,11 +50,18 @@ class GpuKrylovSim(object):
                                              ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
                                              ctypes.c_int]
 
-            GpuKrylovSim._arnoldi = lib.arnoldi
-            GpuKrylovSim._arnoldi.restype = None
-            GpuKrylovSim._arnoldi.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+            GpuKrylovSim._arnoldi_initVector = lib.arnoldi_initVector
+            GpuKrylovSim._arnoldi_initVector.restype = ctypes.c_int
+            GpuKrylovSim._arnoldi_initVector.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
                                             ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
                                             ctypes.c_int, ctypes.c_int]
+
+            GpuKrylovSim._arnoldi_initVectorPos = lib.arnoldi_initVectorPos
+            GpuKrylovSim._arnoldi_initVectorPos.restype = ctypes.c_int 
+            GpuKrylovSim._arnoldi_initVectorPos.argtypes = [ctypes.c_int,
+                                            ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                            ctypes.c_int, ctypes.c_int]
+
 
             GpuKrylovSim._sim = lib.sim
             GpuKrylovSim._sim.restype = None
@@ -81,7 +88,7 @@ class GpuKrylovSim(object):
         GpuKrylovSim._loaded_h = h
 
     @staticmethod
-    def arnoldi(init_vector, size, numIter):
+    def arnoldi_initVector(init_vector, size, numIter):
         'implement the aroldi algorithm using Gpu and return the matrix Hm, keep the matrix Vm in the device memory'
 
         assert isinstance(init_vector, np.ndarray)
@@ -90,13 +97,41 @@ class GpuKrylovSim(object):
         assert GpuKrylovSim._is_loaded
         assert init_vector.shape[0] == GpuKrylovSim._loaded_w
 
-	result_H = np.zeros((numIter*numIter))
+        result_H = np.zeros((numIter*numIter))
 
-        GpuKrylovSim._arnoldi(init_vector, result_H, size, numIter)
+        actual_numIter = GpuKrylovSim._arnoldi_initVector(init_vector, result_H, size, numIter)
 
         result_H.shape = (numIter, numIter)
 
-        return result_H
+        actual_result_H = np.zeros((actual_numIter,actual_numIter))
+        
+        for i in range(0,actual_numIter):
+            for j in range(0, actual_numIter):
+                actual_result_H[i,j] = result_H[i,j]
+
+        return actual_result_H, actual_numIter
+
+    @staticmethod
+    def arnoldi_initVectorPos(basic_initVector_pos, size, numIter):
+        'implement the aroldi algorithm using Gpu and return the matrix Hm, keep the matrix Vm in the device memory'
+
+        GpuKrylovSim._init_static()
+
+        assert GpuKrylovSim._is_loaded
+
+        result_H = np.zeros((numIter*numIter))
+
+        actual_numIter = GpuKrylovSim._arnoldi_initVectorPos(basic_initVector_pos, result_H, size, numIter)
+        
+        result_H.shape = (numIter, numIter)
+
+        actual_result_H = np.zeros((actual_numIter,actual_numIter))
+
+        for i in range(0,actual_numIter):
+            for j in range(0, actual_numIter):
+                actual_result_H[i,j] = result_H[i,j]
+
+        return actual_result_H, actual_numIter
 
     @staticmethod
     def sim(matrix_Hf,size,numIter,numStep):
@@ -105,11 +140,9 @@ class GpuKrylovSim(object):
         assert isinstance(matrix_Hf, np.ndarray)
         GpuKrylovSim._init_static()
 
-	sim_result = np.zeros((size*numStep))
+	sim_result = np.zeros((size,numStep))
 
         GpuKrylovSim._sim(matrix_Hf, sim_result, size, numIter, numStep)
-
-        sim_result.shape(size,numStep)
         
         return sim_result
 
@@ -240,59 +273,89 @@ def gpu_krylov_sim():
     a = make_iss_matrix(1)
     print "made in {:.2f} seconds".format(time.time() - start)
 
-    vec = np.random.random((a.shape[0],1))
-
     m = 5 # number of iteration of Arnoldi Algorithm
     timeStep = 0.01  # simulation time step
-    numStep = 2    # number of simulation step
+    numStep = 1    # number of simulation step
 
     
     # get matrix H from Arnoldi Algorithm
     GpuKrylovSim.load_matrix(a)
+
+    print"\n -------------------------------------------------"
+
+    print"\n Compare simulation using Krylov Subspace methods that are implemented using CPU-KRYPY and GPU-CUSPARSE..." 
+
+    # Compare CPU- and GPU- based methods
+    print"\n Compare CPU- and GPU- based methods..."
+
+    print"\n Create random initial vector..." 
+    #vec = np.random.random((a.shape[0],1)) # initial vector used for arnoldi_initVector() method
+    #initial vector used for arnoldi_initVectorPos() method
+    basic_initVector_pos = 1;
+    vec = np.zeros((a.shape[0],1))
+    vec[basic_initVector_pos] = 1 
     
-    'Arnoldi algorithm using gpu'
+    print"\n Selected number of iteration of Arnoldi argorithm m = {}".format(m)
+    print"\n Selected simulation time step, timStep = {}".format(timeStep)
+    print"\n Seclected number step of simulation, numStep = {}".format(numStep)
+
+    print"\n -------------------------------------------------"    
+
+    'Arnoldi algorithm using gpu, two methods can be used arnoldi_initVector() and arnoldi_initVectorPos()'
+    print"\n Execute Arnoldi algorithm using gpu, the packet used is cusparse ..."
     start = time.time()
-    res_gpu_arnoldi_H = GpuKrylovSim.arnoldi(vec,a.shape[0],m)
+    #res_gpu_arnoldi_H, actual_numIter = GpuKrylovSim.arnoldi_initVector(vec,a.shape[0],m) # using arnoldi_initVector() method
+    res_gpu_arnoldi_H, actual_numIter = GpuKrylovSim.arnoldi_initVectorPos(basic_initVector_pos,a.shape[0],m) # using arnoldi_initVectorPos() method
     print "\n Computation time of Arnoldi algorithm using gpu {:.1f}ms".format(1000 * (time.time() - start))
-    
+
+    print"\n Selected number of iteration of Arnoldi Algorithm m ={}".format(m)
+    print"\n Actual number of interation of Arnoldi Algorithm actual_numIter = {}".format(actual_numIter)
+
     
     'Arnoldi algorithm using cpu - krypy packet'
+    print"\n Execute Arnoldi algorithm using cpu, the packet used is krypy..."
     arn_start = time.time()
     V, H = arnoldi(a,vec,m)
     Vm = V[:,0:m]
     Hm = H[0:m,:]
-    print "Computation time of Arnoldi Algorithm using cpu - krypy packet = {}ms".format(1000 * (time.time() - arn_start))
+    print "\n Computation time of Arnoldi Algorithm using cpu - krypy packet = {}ms".format(1000 * (time.time() - arn_start))  
 
+    print "\n Error between two H matrices of two approaches: norm (Hm - res_gpu_arnoldi_H) = {}".format(np.linalg.norm(Hm-res_gpu_arnoldi_H))
 
-    print "\n error between two H matrices of two approaches: norm (Hm - res_gpu_arnoldi_H) = {}".format(np.linalg.norm(Hm-res_gpu_arnoldi_H))
-
+    
     # compute Hf = exp(i*timeStep*Hm)e1, i = 0 ... numStep
+    print"\n Compute matrix Hf = exp(i*timStep*Hm)*e1, (i = 0.. numStep), e1 is basic vector e1 = (1, 0,..,0)^T..."
     start = time.time()
-    Hf = np.zeros((m,numStep))
+    Hf = np.zeros((actual_numIter, numStep))
     for i in range(0, numStep):
 	Hs = expm((i+1)*timeStep*res_gpu_arnoldi_H)
         Hf[:,i] = Hs[:,1]
-    print "\n time for computing Hf = {}ms".format(1000 * (time.time() - start))
-    print(Hf)
+    print "\n Time for computing Hf = {}ms".format(1000 * (time.time() - start))
 
     # compute simulation result using cpu
+    print"\n Compute simulation result using cpu..."
     start = time.time()
-    cpu_sim_result = Vm.dot(Hf)
-    print"\n time of computing simulation result using cpu = {}ms".format(1000 * (time.time() - start))
-
+    beta  = np.linalg.norm(vec)
+    cpu_sim_result = np.dot(Vm,Hf)
+    cpu_sim_result = beta*cpu_sim_result
+    
+    print"\n Time for computing simulation result using cpu = {}ms".format(1000 * (time.time() - start))
+        
     # compute simulation result using gpu_krylov_sim
-    Hf.reshape(m*numStep)
+    print"\n Compute simulation result using gpu..."
+    Hf.reshape(actual_numIter*numStep)
     start = time.time()
-    gpu_sim_result = GpuKrylovSim.sim(Hf,a.shape[0],m,numStep)
-    print"\n time of computing simulation result using gpu = {}ms".format(1000 * (time.time() - start))
-
+    gpu_sim_result = GpuKrylovSim.sim(Hf,a.shape[0],actual_numIter,numStep)
+    print"\n Time for computing simulation result using gpu = {}ms".format(1000 * (time.time() - start))
+    
     # compute the error of two approaches
+    print"\n Compute the errors of simulation results of two approaches..."
     start = time.time()
     err_gpu_cpu = np.zeros((a.shape[0],numStep))
     err_gpu_cpu = gpu_sim_result - cpu_sim_result
     for i in range(0,numStep):
-        print"\n 2-norm of the simulation error of two approaches at step {%d} = {}".format(i+1,np.linalg.norm(err_gpu_cpu[:,i]))
-    print"\n time for computing the norm of the error = {}ms".format(1000*(time.time()-start))
+        print"\n 2-norm of the simulation error of two approaches at step {} = {}".format(i+1,np.linalg.norm(err_gpu_cpu[:,i]))
+    print"\n Time for computing the norm of the error = {}ms".format(1000*(time.time()-start))
 
     
 if __name__ == '__main__':
