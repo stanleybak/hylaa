@@ -4,3 +4,6 @@ TAGS
 *.png
 *.so
 *.mp4
+*Debug/
+\#*\#
+.\#*

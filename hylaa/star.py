@@ -13,151 +13,66 @@ from numpy.linalg import lstsq
 from numpy.testing import assert_array_almost_equal
 
 from hylaa.glpk_interface import LpInstance
-from hylaa.hybrid_automaton import HyperRectangle, LinearAutomatonTransition, LinearAutomatonMode, LinearConstraint
+from hylaa.hybrid_automaton import HyperRectangle, LinearAutomatonTransition
+from hylaa.hybrid_automaton import LinearAutomatonMode, SparseLinearConstraint
 from hylaa.timerutil import Timers as Timers
 from hylaa.util import Freezable
 from hylaa.starutil import GuardOptData, InitParent
 from hylaa.containers import PlotSettings, HylaaSettings
-
-class InputStar(Freezable):
-    '''
-    A sort of light-weight generalized star, used to represent the influence of inputs at a certain step.
-
-    This has linear constraints on the input variables: input_a_matrix * u <= input_b_vector,
-    it also has an input_basis_matrix, which is an n rows by m cols matrix, computed by taking the
-    parent star's basis matrix at a particular step, and multiplying by B (from x' = Ax + Bu + c).
-
-    B.T (m by n) * star_basis_matrix (n by n) = input_basis_matrix (m by n) [this is transposed]
-    '''
-
-    def __init__(self, mode, star_basis_matrix):
-        Timers.tic('InputStar constructor')
-        input_a_matrix_t = mode.u_constraints_a_t
-        input_b_vector = mode.u_constraints_b
-
-        assert isinstance(input_a_matrix_t, np.ndarray)
-        assert isinstance(input_b_vector, np.ndarray)
-        assert isinstance(star_basis_matrix, np.ndarray)
-
-        self.a_matrix_t = input_a_matrix_t
-        self.b_vector = input_b_vector
-        gb_t = mode.get_gb_t()
-
-        Timers.tic('InputStar constructor (dot)')
-        self.input_basis_matrix = np.dot(gb_t, star_basis_matrix)
-        Timers.toc('InputStar constructor (dot)')
-        #print "input_basis_matrix = \n{}\n *\n {}\n = \n{}".format(gb_t, star_basis_matrix, self.input_basis_matrix)
-        Timers.toc('InputStar constructor')
-
-        self.freeze_attrs()
+from hylaa.time_elapse import TimeElapser
 
 class Star(Freezable):
     '''
-    A generalized star where linear constraints specify the containment predicate.
-
-    A point alpha (expressed in the basis vectors) is in the star if each
-    LinearConstraint is satisfied.
-
-    The star's center is directly assigned from the origin simulation vector at each step.
-
-    The star's basis_matrix (collection of basis vectors, one for each row) is a product of:
-    - start_basis_matrix (if None then use identity matrix)
-    - sim_basis_matrix (not stored in the star)
-
-    During computation, center gets set from the origin vector simulation, and
-    basis_matrix gets updated from the orthonormal vector simulation, by assigning
-    basis_matrix := dot(sim_basis_matrix, start_basis_matrix). These updates occur in
-    star.update_from_sim().
-
-    For invariant trimming, constraints get added to the star's constraint list. This involves
-    computing the inverse of the basis matrix (may lead to numerical issues).
-
-    The other element, start_basis_matrix get assigned upon taking a transition.
-    The predecessor star's basis_matrix gets set to the new star's start_basis_matrix, and
-    the predecessor star's center gets taken into account by shifting each of the constraints in the new star.
-
-    A star also can contain an input_star list, each of which is a star. This corresponds to the sets which
-    get Minkowski added to the current star, when there are inputs to the system. Inputs and discrete
-    transitions are currently not compatible.
+    A representation of a set of continuous states. Contains logic for plotting that states if
+    requested in the settings.
     '''
 
-    def __init__(self, settings, center, basis_matrix, constraint_list, parent, mode, extra_init=None):
+    def __init__(self, hylaa_settings, constraint_list, mode):
 
-        assert isinstance(center, np.ndarray)
         assert len(constraint_list) > 0
-        assert isinstance(settings, HylaaSettings)
+        assert isinstance(hylaa_settings, HylaaSettings)
 
-        self.settings = settings
-        self.center = center
-        self.num_dims = len(center)
-
-        assert isinstance(basis_matrix, np.ndarray), "Expected basis matrix to be np.ndarray, got {}".format(
-            type(basis_matrix))
-        self.basis_matrix = basis_matrix # each row is a basis vector
-
-        self.start_basis_matrix = None
-
-        self.parent = parent # object of type StarParent
+        self.settings = hylaa_settings
 
         assert isinstance(mode, LinearAutomatonMode)
         self.mode = mode # the LinearAutomatonMode
+        self.dims = mode.parent.dims
+
+        self.time_elapse = TimeElapser(mode, hylaa_settings)
 
         for lc in constraint_list:
-            isinstance(lc, LinearConstraint), "constraint_list should be a list of LinearConstraint objects"
-            assert lc.vector.shape[0] == self.num_dims, "each star's constraint's size should match num_dims"
+            assert isinstance(lc, SparseLinearConstraint), "constraint_list should be a list SpraseLinearConstraints"
+            assert lc.vector.shape[0] == self.dims, "each star's constraint's size should match num_dims"
 
         self.constraint_list = [c.clone() for c in constraint_list] # copy constraints
 
         self.total_steps = 0
-        self.fast_forward_steps = 0
-
-        if settings.opt_decompose_lp and settings.opt_warm_start_lp and \
-                                         settings.plot.plot_mode == PlotSettings.PLOT_NONE:
-            self.input_stars = None
-        else:
-            self.input_stars = [] # list of InputStars
-
-        if extra_init is not None:
-            start_basis_matrix, total_steps, fast_forward_steps = extra_init
-            self.init_post_jump_data(start_basis_matrix, total_steps, fast_forward_steps)
 
         ###################################
         ## private member initialization ##
         ###################################
-        self._star_lpi = None # LpInstance for plotting and non-guard operations
+        self._plot_lpi = None # LpInstance for plotting
         self._guard_opt_data = GuardOptData(self) # contains LP instance(s) for guard checks
         self._verts = None # for plotting optimization, a cached copy of this star's projected polygon verts
 
         self.freeze_attrs()
 
-    def init_post_jump_data(self, start_basis_matrix, total_steps, fast_forward_steps):
-        '''initialize extra data after a discrete post occurs'''
+    def step(self):
+        'update the star to the given step number'
 
-        if start_basis_matrix is None:
-            self.start_basis_matrix = None
-        else:
-            assert isinstance(start_basis_matrix, np.ndarray)
-            self.start_basis_matrix = start_basis_matrix
+        self.time_elapse.step()
 
-        self.total_steps = total_steps # number of continuous post steps completed
-        self.fast_forward_steps = fast_forward_steps
-
-    def get_lpi(self):
-        'get (maybe create) the LpInstance object for this star + inputs, and return it'
+    def get_plot_lpi(self):
+        'get (maybe create) the LpInstance object for this star, and return it'
 
         rv = self._star_lpi
 
         if rv is None:
-            rv = LpInstance(self.num_dims, self.num_dims)
+            rv = LpInstance(2, self.num_dims)
             rv.update_basis_matrix(self.basis_matrix)
 
             for lc in self.constraint_list:
                 rv.add_basis_constraint(lc.vector, lc.value)
-
-            # add the influence of the inputs
-            if self.input_stars is not None:
-                for input_star in self.input_stars:
-                    rv.add_input_star(input_star.a_matrix_t, input_star.b_vector, input_star.input_basis_matrix)
 
             self._star_lpi = rv
 

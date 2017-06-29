@@ -117,23 +117,12 @@ class DrawnShapes(Freezable):
         self.axes = plotman.axes
         self.mode_colors = plotman.mode_colors
 
-        # create a blank invariant violation polys
-        self.inv_vio_polys = collections.PolyCollection([], animated=True, alpha=0.7, edgecolor='red', facecolor='red')
-        self.axes.add_collection(self.inv_vio_polys)
-
         # create a blank currently-tracked set of states poly
         self.cur_state_line2d = Line2D([], [], animated=True, color='k', lw=2, mew=2, ms=5, fillstyle='none')
         self.axes.add_line(self.cur_state_line2d)
 
         self.parent_to_polys = OrderedDict()
         self.parent_to_markers = OrderedDict()
-
-        self.waiting_list_mode_to_polys = OrderedDict()
-        self.aggregation_mode_to_polys = OrderedDict()
-
-        self.trace = collections.LineCollection(
-            [[(0, 0)]], animated=True, colors=('k'), linewidths=(3), linestyle='dashed')
-        self.axes.add_collection(self.trace)
 
         if plotman.settings.extra_lines is not None:
             lines = plotman.settings.extra_lines
@@ -145,7 +134,7 @@ class DrawnShapes(Freezable):
 
         self.freeze_attrs()
 
-    def get_artists(self, waiting_list):
+    def get_artists(self):
         'get the list of artists, to be returned by animate function'
 
         rv = []
@@ -156,121 +145,19 @@ class DrawnShapes(Freezable):
         for markers in self.parent_to_markers.values():
             rv.append(markers)
 
-        self.set_waiting_list_polys(waiting_list)
-
-        for polys in self.waiting_list_mode_to_polys.values():
-            rv.append(polys)
-
-        for polys in self.aggregation_mode_to_polys.values():
-            rv.append(polys)
-
-        rv.append(self.inv_vio_polys)
-
         if self.extra_lines_col:
             rv.append(self.extra_lines_col)
-
-        rv.append(self.trace)
 
         rv.append(self.cur_state_line2d)
 
         return rv
 
-    def set_waiting_list_polys(self, waiting_list):
-        'set the polys from the waiting list'
-
-        #print ".plotutil set_waiting_list_polys called... waitinglist ="
-        #waiting_list.print_stats()
-
-        self.clear_waiting_list_polys()
-
-        # add deaggregated
-        for star in waiting_list.deaggregated_list:
-            verts = star.verts()
-            self.add_waiting_list_poly(verts, star.mode.name)
-
-        # add aggregated
-        for star in waiting_list.aggregated_mode_to_state.values():
-            verts = star.verts()
-
-            self.add_aggregation_poly(verts, star.mode.name)
-
-            # also show the sub-stars
-            if isinstance(star.parent, AggregationParent):
-                for substar in star.parent.stars:
-                    verts = substar.verts()
-                    self.add_waiting_list_poly(verts, substar.mode.name)
-
-    def add_aggregation_poly(self, poly_verts, mode_name):
-        '''add a polygon that's an aggregation on the waiting list'''
-
-        polys = self.aggregation_mode_to_polys.get(mode_name)
-
-        if polys is None:
-            _, edge_col = self.mode_colors.get_edge_face_colors(mode_name)
-            edge_col = darker(edge_col)
-
-            polys = collections.PolyCollection([], lw=4, animated=True,
-                                               edgecolor=edge_col, facecolor='none')
-            self.axes.add_collection(polys)
-            self.aggregation_mode_to_polys[mode_name] = polys
-
-        paths = polys.get_paths()
-
-        codes = [Path.MOVETO] + [Path.LINETO] * (len(poly_verts) - 2) + [Path.CLOSEPOLY]
-        paths.append(Path(poly_verts, codes))
-
-    def add_waiting_list_poly(self, poly_verts, mode_name):
-        '''add a polygon on the waiting list'''
-
-        polys = self.waiting_list_mode_to_polys.get(mode_name)
-
-        if polys is None:
-            face_col, edge_col = self.mode_colors.get_edge_face_colors(mode_name)
-
-            polys = collections.PolyCollection([], lw=2, animated=True, alpha=0.3,
-                                               edgecolor=edge_col, facecolor=face_col)
-            self.axes.add_collection(polys)
-            self.waiting_list_mode_to_polys[mode_name] = polys
-
-        paths = polys.get_paths()
-
-        codes = [Path.MOVETO] + [Path.LINETO] * (len(poly_verts) - 2) + [Path.CLOSEPOLY]
-        paths.append(Path(poly_verts, codes))
-
-    def clear_waiting_list_polys(self):
-        'clears all the polygons drawn representing the waiting list'
-
-        for polys in self.waiting_list_mode_to_polys.values():
-            polys.get_paths()[:] = []
-
-        for polys in self.aggregation_mode_to_polys.values():
-            polys.get_paths()[:] = []
-
-    def add_trace(self, trace_pts):
-        'add to the current frame counter-example trace'
-
-        paths = self.trace.get_segments()
-
-        pts = np.array(trace_pts, dtype=float)
-
-        val = [pts] + paths
-        self.trace.set_segments(val)
-
-        segs = self.trace.get_segments()
-
-        # matplotlib does interpolation for larger lines, make sure it was disabled
-        assert len(segs[0]) == len(pts), "matplotlib interpolation was not disabled"
-
-    def reset_temp_polys(self):
+    def reset_cur_state(self):
         '''
-        clear cur_state and invariant violation polygons. call at each step.
+        clear cur_state. call at each step.
         '''
-
-        self.inv_vio_polys.get_paths()[:] = []
 
         self.set_cur_state(None)
-
-        self.trace.set_paths([])
 
     def set_cur_state(self, verts):
         'set the currently tracked set of states for one frame'
@@ -293,36 +180,6 @@ class DrawnShapes(Freezable):
             l.set_xdata(xdata)
             l.set_ydata(ydata)
 
-    def add_inv_vio_poly(self, poly_verts):
-        'add an invariant violation polygon'
-
-        paths = self.inv_vio_polys.get_paths()
-
-        codes = [Path.MOVETO] + [Path.LINETO] * (len(poly_verts) - 2) + [Path.CLOSEPOLY]
-        paths.append(Path(poly_verts, codes))
-
-    def del_reachable_polys_from_parent(self, parent):
-        '''
-        stop drawing all polygons which were reached from a star and previously-
-        added with add_reachable_poly_from_star
-        '''
-
-        assert isinstance(parent, ContinuousPostParent)
-
-        polys = self.parent_to_polys.pop(parent, None)
-
-        # polys may be none if it was an urgent transition
-        if polys is not None:
-            polys.remove() # reverses axes.add_collection
-            polys.get_paths()[:] = []
-
-        markers = self.parent_to_markers.pop(parent, None)
-
-        if markers is not None:
-            markers.remove()
-            markers.set_xdata([])
-            markers.set_ydata([])
-
     def thin_reachable_set(self):
         '''thin our the drawn reachable set to have less polygons (drawing optimization)'''
 
@@ -335,7 +192,7 @@ class DrawnShapes(Freezable):
             for p in paths:
                 if keep:
                     new_paths.append(p)
-    
+
                 keep = not keep
 
             paths[:] = new_paths
@@ -439,30 +296,6 @@ class PlotManager(Freezable):
 
         self.freeze_attrs()
 
-    def plot_trace(self, num_steps, sim_bundle, start_basis_matrix, basis_point):
-        'plot a trace to a basis_point in a symbolic state'
-
-        if self.shapes is not None and self.settings.plot_traces:
-            pts = []
-
-            for step in xrange(num_steps+1):
-                basis_vec_list, sim_center = sim_bundle.get_vecs_origin_at_step(step, num_steps)
-
-                if start_basis_matrix is None:
-                    basis_matrix = basis_vec_list
-                else:
-                    basis_matrix = np.dot(start_basis_matrix, basis_vec_list)
-
-                offset = np.dot(basis_matrix.T, basis_point)
-                point = np.add(sim_center, offset)
-
-                x = point[self.settings.xdim]
-                y = point[self.settings.ydim]
-
-                pts.append((x, y))
-
-            self.shapes.add_trace(pts)
-
     def update_axis_limits(self, points_list):
         'update the axes limits to include the passed-in point list'
 
@@ -517,23 +350,6 @@ class PlotManager(Freezable):
             else:
                 self.axes.set_ylim(drawn.ymin, drawn.ymax)
 
-    def reset_temp_polys(self):
-        'clear the invariant violation polygons (called once per iteration)'
-
-        if self.shapes is not None:
-            self.shapes.reset_temp_polys()
-
-    def add_inv_violation_star(self, star):
-        'add an invariant violation region'
-
-        if self.shapes is not None:
-            verts = star.verts()
-
-            self.shapes.add_inv_vio_poly(verts)
-
-            if self.settings.label.axes_limits is None:
-                self.update_axis_limits(verts)
-
     def create_plot(self):
         'create the plot'
 
@@ -572,19 +388,6 @@ class PlotManager(Freezable):
 
             self.shapes = DrawnShapes(self)
 
-    def del_parent_successors(self, parent):
-        '''stop plotting a parent's's sucessors'''
-
-        if self.shapes is not None:
-            self.shapes.del_reachable_polys_from_parent(parent)
-
-            # maybe we want to revert axis limits here?
-
-    def state_popped(self):
-        'called whenever a state is popped from the waiting list'
-
-        self.draw_cur_step = 0 # reset the cur_step counter
-
     def add_reachable_poly_data(self, verts, mode_name):
         '''
         Add raw reachable poly data for use with certain plotting modes (matlab).
@@ -596,7 +399,7 @@ class PlotManager(Freezable):
         if mode_name not in data:
             ecol, fcol = self.mode_colors.get_edge_face_colors(mode_name)
             data[mode_name] = (ecol, fcol, [])
-            
+
         data[mode_name][2].append(verts)
 
     def plot_current_star(self, star):
@@ -662,44 +465,32 @@ class PlotManager(Freezable):
 
                 start_time = time.time()
                 while not is_finished_func():
+                    self.shapes.reset_cur_state()
                     step_func()
 
                     # do several computation steps per frame if they're fast (optimization)
                     if force_single_frame or time.time() - start_time > self.settings.min_frame_time:
                         break
 
+                if self.engine.cur_star is not None:
+                    self.plot_current_star(self.engine.cur_star)
+
                 # if we just wanted a single step
                 if self.interactive.step:
                     self.interactive.step = False
                     self.interactive.paused = True
-
-                if is_finished_func():
-                    self.shapes.inv_vio_polys.set_visible(False)
 
                 Timers.toc("frame")
 
                 if self.interactive.paused and not force_single_frame:
                     print "Paused After Frame #{}".format(Timers.timers['frame'].num_calls)
 
-            rv = self.shapes.get_artists(self.engine.waiting_list)
-
-            rv += [self.axes.xaxis, self.axes.yaxis]
-
-            return rv
+            return self.shapes.get_artists() + [self.axes.xaxis, self.axes.yaxis]
 
         def init_func():
             'animation init function'
 
-            rv = self.shapes.get_artists(self.engine.waiting_list)
-
-            # it seems we only need to do this once...
-            #if not self.drew_first_frame:
-            #    self.drew_first_frame = True
-
-            #    print "drew first frame"
-            rv += [self.axes.xaxis, self.axes.yaxis]
-
-            return rv
+            return self.shapes.get_artists() + [self.axes.xaxis, self.axes.yaxis]
 
         def anim_iterator():
             'generator for the computation iterator'
