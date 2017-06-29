@@ -21,11 +21,8 @@ extern GlobalLpData global;
 class LpData
 {
    public:
-    LpData(int numStandardVars, int numBasisVars)
-        : numStandardVars(numStandardVars),
-          numBasisVars(numBasisVars),
-          basisConstraintCols(numBasisVars),
-          basisConstraintVals(numBasisVars)
+    LpData(int numCurTimeVars, int numInitVars)
+        : numCurTimeVars(numCurTimeVars), numInitVars(numInitVars)
     {
         // setup lp
         lp = glp_create_prob();
@@ -39,12 +36,14 @@ class LpData
         // params.presolve = GLP_ON;
         // params.meth = GLP_DUALP;
 
-        // the first n variables are the standard basis variables
-        // the second m variables are the star's basis variables
-        glp_add_cols(lp, numStandardVars + numBasisVars);
+        // the first n variables are the init variables
+        // the first m variables are the standard variables
+        glp_add_cols(lp, numCurTimeVars + numInitVars);
 
-        for (int i = 0; i < numStandardVars + numBasisVars; ++i)
+        for (int i = 0; i < numCurTimeVars + numInitVars; ++i)
             glp_set_col_bnds(lp, i + 1, GLP_FR, 0, 0);  // free variable (bounds -inf to inf)
+
+        // rows are added once time-elapse matrix is updated
     };
 
     ~LpData()
@@ -175,44 +174,46 @@ class LpData
     }
 
     // returns 1 on error, 0 on success
-    int updateBasisMatrix(double* matrix, int w, int h)
+    int updateTimeElapseMatrix(double* matrix, int w, int h)
     {
         // the transpose of the matrix goes into the LP
-        if (w != numStandardVars || h != numBasisVars)
+        if (w != numInitVars || h != numCurTimeVars)
         {
             printf(
-                "Fatal Error: Matrix dimensions mismatch in updateBasisMatrix: "
-                "w(%d) != numStandardVars(%d) || h(%d) != numBasisVars(%d)\n",
-                w, numStandardVars, h, numBasisVars);
+                "Fatal Error: Matrix dimensions mismatch in updateTimeElapseMatrix: "
+                "w(%d) != numInitVars(%d) || h(%d) != numCurTimeVars(%d)\n",
+                w, numInitVars, h, numCurTimeVars);
             return 1;
         }
 
+        if (numInitConstraints == 0)
+            printf("Fatal Error: Init Constraints should be set before updateTimeElapseMatrix.\n");
+
         int numRows = glp_get_num_rows(lp);
 
-        if (numRows == 0)
+        if (numRows == numInitConstraints + numCurTimeConstraints)
         {
             // new problem instance, create one constraint row for each equality constraint
-            glp_add_rows(lp, numStandardVars);
+            glp_add_rows(lp, numCurTimeVars);
 
-            for (int row = 0; row < numStandardVars; ++row)
+            // set bounds == 0
+
+            for (int r = 0; r < numCurTimeVars; ++r)
             {
-                glp_set_row_bnds(lp, row + 1, GLP_FX, 0, 0);
-
-                int inds[] = {0, row + 1};
-                double vals[] = {0, -1};
-
-                glp_set_mat_col(lp, row + 1, 1, inds, vals);
+                int row = numInitConstraints + numCurTimeConstraints + r + 1;
+                glp_set_row_bnds(lp, row, GLP_FX, 0, 0);
             }
         }
 
-        // replace each column in the lp with a row in the current basis matrix
-        // (this transposes the matrix)
         for (int row = 0; row < h; ++row)
         {
             int index = 1;
 
-            int inds[numStandardVars + basisConstraintCols[row].size() + 1];
-            double vals[numStandardVars + basisConstraintCols[row].size() + 1];
+            int inds[w + 2];  // +1 padding +1 for the (-1) entry
+            double vals[w + 2];
+
+            inds[index] = row + 1;
+            vals[index++] = -1;
 
             for (int col = 0; col < w; ++col)
             {
@@ -220,19 +221,13 @@ class LpData
 
                 if (val != 0)
                 {
-                    inds[index] = col + 1;
+                    inds[index] = numInitVars + col + 1;
                     vals[index++] = val;
                 }
             }
 
-            // also add all the basis constraint columns
-            for (unsigned int i = 0; i < basisConstraintCols[row].size(); ++i)
-            {
-                inds[index] = basisConstraintCols[row][i];
-                vals[index++] = basisConstraintVals[row][i];
-            }
-
-            glp_set_mat_col(lp, numStandardVars + row + 1, index - 1, inds, vals);
+            glp_set_mat_row(lp, numInitConstraints + numCurTimeConstraints + row + 1, index - 1,
+                            inds, vals);
         }
 
         return 0;
@@ -241,240 +236,94 @@ class LpData
     /**
      * Add a constraint in the basis matrix (a star constraint)
      */
-    void addBasisConstraint(double* aVec, int aVecLen, double bVal)
+    void addInitConstraint(double* aVec, int aVecLen, double bVal)
     {
-        if (aVecLen != numBasisVars)
+        if (aVecLen != numInitVars)
         {
-            printf("Fatal Error: aVecLen wrong in addBasisConstraint().\n");
+            printf("Fatal Error: aVecLen wrong in addInitConstraint().\n");
             exit(1);
         }
-        
+
+        int numRows = glp_get_num_rows(lp);
+
         // added this check
-        if (addedInput)
+        if (numRows != numInitConstraints)
         {
-            printf("Fatal Error: All basis constraints should be added before inputs.\n");
+            printf(
+                "Fatal Error: All basis constraints should be added first (row mismatch) "
+                "in addInitConstraint().\n");
+            exit(1);
+        }
+
+        ++numInitConstraints;
+
+        // create new row for the constraint
+        glp_add_rows(lp, 1);
+
+        glp_set_row_bnds(lp, numInitConstraints, GLP_UP, 0, bVal);
+
+        int inds[numInitVars + 1];
+        double vals[numInitVars + 1];
+
+        int index = 1;
+
+        for (int i = 0; i < numInitVars; ++i)
+        {
+            double val = aVec[i];
+
+            if (val != 0)
+            {
+                inds[index] = i + 1;  // constraint on init variable i
+                vals[index++] = val;
+            }
+        }
+
+        glp_set_mat_row(lp, numInitConstraints, index - 1, inds, vals);
+    }
+
+    void addCurTimeConstraint(double* aVec, int aVecLen, double bVal)
+    {
+        if (aVecLen != numCurTimeVars)
+        {
+            printf("Fatal Error: aVecLen length wrong in addCurTimeConstraint.\n");
+            exit(1);
+        }
+
+        int numRows = glp_get_num_rows(lp);
+
+        if (numRows != numInitConstraints + numCurTimeConstraints)
+        {
+            printf(
+                "Fatal Error: All cur-time constraints should be added before time-elapse matrix "
+                "is updated in addCurTimeConstraint().\n");
             exit(1);
         }
 
         // create new row for the constraint
         glp_add_rows(lp, 1);
 
-        int row = glp_get_num_rows(lp);
+        ++numCurTimeConstraints;
+        ++numRows;
 
-        glp_set_row_bnds(lp, row, GLP_UP, 0, bVal);
+        glp_set_row_bnds(lp, numRows, GLP_UP, 0, bVal);
 
-        int inds[numBasisVars + 1];
-        double vals[numBasisVars + 1];
+        int inds[numCurTimeVars + 1];
+        double vals[numCurTimeVars + 1];
 
         int index = 1;
 
-        for (int i = 0; i < numBasisVars; ++i)
+        for (int i = 0; i < numCurTimeVars; ++i)
         {
             double val = aVec[i];
 
             if (val != 0)
             {
-                inds[index] = numStandardVars + i + 1;  // constraint on basis variable i
-                vals[index++] = val;
-
-                basisConstraintCols[i].push_back(row);
-                basisConstraintVals[i].push_back(val);
-            }
-        }
-
-        glp_set_mat_row(lp, row, index - 1, inds, vals);
-        basisConstraintRows.push_back(row);
-    }
-
-    // this is used to offset by the center simulation in a combined_lpi with inputs
-    void setStandardConstraintValues(double* vals, int len)
-    {
-        if (len != (int)standardConstraintRows.size())
-        {
-            printf("Fatal Error: vals array length wrong in setStandardConstraintValues.\n");
-            exit(1);
-        }
-
-        for (int r = 0; r < len; ++r)
-        {
-            int row = (int)standardConstraintRows[r];
-            
-            glp_set_row_bnds(lp, row, GLP_UP, 0, vals[r]);
-        }
-    }
-    
-    // this is used in the eat_star operation, to relax a star's constraints
-    void setBasisConstraintValues(double* vals, int len)
-    {
-        if (len != (int)basisConstraintRows.size())
-        {
-            printf("Fatal Error: valls array length wrong in setBasisConstraintValues.\n");
-            exit(1);
-        }
-
-        for (int r = 0; r < len; ++r)
-        {
-            int row = basisConstraintRows[r];
-            
-            glp_set_row_bnds(lp, row, GLP_UP, 0, vals[r]);
-        }
-    }
-
-    void addStandardConstraint(double* aVec, int aVecLen, double bVal)
-    {
-        if (aVecLen != numStandardVars)
-        {
-            printf("Fatal Error: aVecLen length wrong in addStandardConstraint.\n");
-            exit(1);
-        }
-
-        if (addedInput)
-        {
-            printf("Fatal Error: All standard constraints should be added before inputs.\n");
-            exit(1);
-        }
-
-        // create new row for the constraint
-        glp_add_rows(lp, 1);
-
-        int row = glp_get_num_rows(lp);
-
-        glp_set_row_bnds(lp, row, GLP_UP, 0, bVal);
-
-        int inds[numStandardVars + 1];
-        double vals[numStandardVars + 1];
-
-        int index = 1;
-
-        for (int i = 0; i < numStandardVars; ++i)
-        {
-            double val = aVec[i];
-
-            if (val != 0)
-            {
-                inds[index] = i + 1;  // constraint on standard variable i
+                inds[index] = numInitVars + i + 1;  // constraint on standard variable i
                 vals[index++] = val;
             }
         }
 
-        glp_set_mat_row(lp, row, index - 1, inds, vals);
-        standardConstraintRows.push_back(row);
-
-        // printf("add_constraint (<= %f): ", b_val);
-        // print_inds_vals("set_mat_row", row, index - 1, inds, vals);
-    }
-
-    void addInputStar(double* aMatrixT, int aWidth, int aHeight, double* bVec, int bLen,
-                      double* basisMatrix, int bmWidth, int bmHeight)
-    {
-        if (bmWidth != numStandardVars || aHeight != bmHeight || aWidth != bLen)
-        {
-            printf("Fatal Error: Matrix size error in addInputStar. One of the following conditions failed: "
-                "bmWidth(%d)==numStandardVars(%d) aHeight(%d)==bmHeight(%d), aWidth(%d)==bLen(%d)\n", 
-                bmWidth, numStandardVars, aHeight, bmHeight, aWidth, bLen);
-            exit(1);
-        }
-
-        if (numInputs > 0 && numInputs != aHeight)
-        {
-            printf("Fatal Error: num inputs changed\n");
-            exit(1);
-        }
-
-        if (numInputConstraints > 0 && numInputConstraints != aWidth)
-        {
-            printf("Fatal Error: num input constraints changed\n");
-            exit(1);
-        }
-
-        int lpRows = glp_get_num_rows(lp);
-        int lpCols = glp_get_num_cols(lp);
-
-        addRows(lpRows, bLen, bVec);
-        addCols(lpCols, aHeight);
-
-        populateInputConstraints(lpRows, lpCols, aMatrixT, aWidth, aHeight, basisMatrix, bmWidth,
-                                 bmHeight);
-
-        // if it's not the first input, then copy the previous-inputs lp solution
-        if (!addedInput)
-        {
-            addedInput = true;
-            numInputs = aHeight;
-            numInputConstraints = aWidth;
-        }
-        else
-            copyLastInputSolution(lpRows, lpCols, aHeight, aWidth);
-    }
-
-    void setStandardBasisStatuses(char* rowStats, int rLen, char* colStats, int cLen)
-    {
-        if (cLen != numStandardVars + numBasisVars)
-        {
-            printf(
-                "Fatal Error: num col statuses (%d) in setStandardBasisStatuses was not equal to "
-                "numStandardVars + numBasisVars (%d)\n",
-                cLen, numStandardVars + numBasisVars);
-            exit(1);
-        }
-
-        if (rLen != numStandardVars + (int)basisConstraintRows.size())
-        {
-            printf(
-                "Fatal Error: num row statuses (%d) in setStandardBasisStatuses was not equal to "
-                "numStandardVars + basisConstraints.size() (%d)\n",
-                rLen, numStandardVars + (int)basisConstraintRows.size());
-            exit(1);
-        }
-
-        for (int c = 0; c < cLen; ++c)
-            glp_set_col_stat(lp, c + 1, colStats[c]);
-            
-        // rows are split between standard rows (first few rows) and basis statuses (use basisConstraintRows)
-        for (int r = 0; r < numStandardVars; ++r)
-            glp_set_row_stat(lp, r + 1, rowStats[r]);
-            
-        for (int r = numStandardVars; r < rLen; ++r)
-        {
-            int row = basisConstraintRows[r - numStandardVars];
-            glp_set_row_stat(lp, row, rowStats[r]);
-        }
-    }
-
-    void setLastInputStatuses(char* rowStats, int rLen, char* colStats, int cLen)
-    {
-        if (!addedInput)
-        {
-            printf("Fatal Error: setLastInputStatuses was called before input star was added.\n");
-            exit(1);
-        }
-
-        if (rLen != numInputConstraints)
-        {
-            printf(
-                "Fatal Error: num row statuses (%d) in setLastInputStatuses was not equal to "
-                "number of number of input constaints (%d)\n",
-                rLen, numInputConstraints);
-            exit(1);
-        }
-
-        if (cLen != numInputs)
-        {
-            printf(
-                "Fatal Error: num column statuses (%d) in setLastInputStatuses was not equal to "
-                "number of number of inputs (%d)\n",
-                cLen, numInputs);
-            exit(1);
-        }
-
-        int lpRows = glp_get_num_rows(lp);
-        int lpCols = glp_get_num_cols(lp);
-
-        for (int r = 0; r < rLen; ++r)
-            glp_set_row_stat(lp, lpRows - rLen + r + 1, rowStats[r]);
-
-        for (int c = 0; c < cLen; ++c)
-            glp_set_col_stat(lp, lpCols - cLen + c + 1, colStats[c]);
+        glp_set_mat_row(lp, numRows, index - 1, inds, vals);
     }
 
     // returns 0 on success
@@ -483,59 +332,46 @@ class LpData
     {
         ++global.optimizations;
 
-        if (dirLen != numStandardVars)
+        if (dirLen != numCurTimeVars)
         {
-            printf("Fatal Error: dirLen(%d) is not equal to numStandardVars(%d) in call to minimize()\n", dirLen, numStandardVars);
+            printf(
+                "Fatal Error: dirLen(%d) is not equal to numCurTimeVars(%d) in call to "
+                "minimize()\n",
+                dirLen, numCurTimeVars);
             exit(1);
         }
 
-        for (int i = 0; i < numStandardVars; ++i)
-            glp_set_obj_coef(lp, 1 + i, direction[i]);
-            
-        for (int i = 0; i < numBasisVars; ++i)
-            glp_set_obj_coef(lp, 1 + numStandardVars + i, 0);
+        for (int i = 0; i < numCurTimeVars; ++i)
+            glp_set_obj_coef(lp, 1 + numInitVars + i, direction[i]);
 
         int startIterations = glp_get_it_cnt(lp);
 
         int simplexRes = glp_simplex(lp, &params);
-        
+
         int newIterations = glp_get_it_cnt(lp) - startIterations;
         global.iterations += newIterations;
-        
+
         return processSimplexResult(simplexRes, result, resLen);
     }
-    
-/////////////////////////////////
-   private:
-    bool addedInput = false;  // have we added any input stars yet?
-    int numStandardVars = 0;  // number of standard variables
-    int numBasisVars = -1;    // number of basis variables
-    int numInputConstraints = -1;
 
-    int numInputs = 0;
+    /////////////////////////////////
+   private:
+    int numCurTimeVars = 0;  // number of standard variables
+    int numInitVars = 0;     // number of basis variables
+    int numInitConstraints = 0;
+    int numCurTimeConstraints = 0;
+
     glp_prob* lp = nullptr;
     glp_smcp params;
 
-    vector<vector<int>> basisConstraintCols;
-    vector<vector<double>> basisConstraintVals;
-    
-    vector<int> standardConstraintRows; //  use size() when numStandardConstraints is needed
-    vector<int> basisConstraintRows; //  use size() when numBasisConstraints is needed
-
-    void addRows(int numRows, int num, double* bound)
+    void addRows(int num, double* bound_vec)
     {
+        int curRows = glp_get_num_rows(lp);
+
         glp_add_rows(lp, num);
 
         for (int r = 0; r < num; ++r)
-            glp_set_row_bnds(lp, numRows + r + 1, GLP_UP, 0, bound[r]);  // row <= constraint_b
-    }
-
-    void addCols(int numCols, int num)
-    {
-        glp_add_cols(lp, num);
-
-        for (int c = 0; c < num; ++c)
-            glp_set_col_bnds(lp, numCols + c + 1, GLP_FR, 0, 0);  // free variable (-inf to inf)
+            glp_set_row_bnds(lp, curRows + r + 1, GLP_UP, 0, bound_vec[r]);  // row <= constraint_b
     }
 
     // a debug printing function
@@ -554,68 +390,11 @@ class LpData
         printf("})\n");
     }
 
-    // input basis matrix is pre-transposed:
-    // number of rows = # input variables, number cols = #standard variables
-    void populateInputConstraints(int lpRows, int lpCols, double* aMatrixT, int aWidth, int aHeight,
-                                  double* basisMatrix, int bmWidth, int bmHeight)
-    {
-        int inds[bmWidth + aHeight + 1];
-        double vals[bmWidth + aHeight + 1];
-
-        for (int r = 0; r < bmHeight; ++r)
-        {
-            int index = 1;
-
-            // first add a column of the input basis matrix
-            for (int c = 0; c < bmWidth; ++c)
-            {
-                double val = basisMatrix[r * bmWidth + c];
-
-                if (val != 0)
-                {
-                    inds[index] = c + 1;
-                    vals[index++] = val;
-                }
-            }
-
-            // next, add the column of the constraint matrix
-            for (int c = 0; c < aWidth; ++c)
-            {
-                double val = aMatrixT[r * aWidth + c];
-
-                if (val != 0)
-                {
-                    inds[index] = lpRows + c + 1;
-                    vals[index++] = val;
-                }
-            }
-
-            glp_set_mat_col(lp, lpCols + r + 1, index - 1, inds, vals);
-        }
-    }
-
-    void copyLastInputSolution(int lpRows, int lpCols, int aWidth, int aHeight)
-    {
-        // lpRows and lpCols are the counts BEFORE we added the input star
-
-        for (int r = 0; r < aHeight; ++r)
-        {
-            int status = glp_get_row_stat(lp, lpRows - aHeight + r + 1);
-            glp_set_row_stat(lp, lpRows + r + 1, status);
-        }
-
-        for (int c = 0; c < aWidth; ++c)
-        {
-            int status = glp_get_col_stat(lp, lpCols - aWidth + c + 1);
-            glp_set_col_stat(lp, lpCols + c + 1, status);
-        }
-    }
-    
     // internal function used for getting the result of simplex
     int processSimplexResult(int simplexRes, double* result, int resLen)
     {
         int rv = 0;
-        
+
         if (simplexRes == GLP_ENOPFS)  // no primal feasible w/ presolver
         {
             rv = 1;
@@ -688,7 +467,8 @@ class LpData
                 }
             }
 
-            printf("Fatal Error: glp_simplex returned nonzero status (%s) in minimize(): %d\n", msg, simplexRes);
+            printf("Fatal Error: glp_simplex returned nonzero status (%s) in minimize(): %d\n", msg,
+                   simplexRes);
             exit(1);
         }
         else
@@ -732,7 +512,8 @@ class LpData
                     }
                 }
 
-                printf("Fatal Error: LP Status after solving in minimize() was '%s': %d\n", message, status);
+                printf("Fatal Error: LP Status after solving in minimize() was '%s': %d\n", message,
+                       status);
                 exit(1);
             }
         }

@@ -1,8 +1,5 @@
 '''
-Created by Hyst v1.3
-Hybrid Automaton in Hylaa
-Converted from file: /home/stan/Desktop/repositories/hylaa/examples/building/Building.xml
-Command Line arguments: -tool hylaa "" -output /home/stan/Desktop/repositories/hylaa/examples/building/Building_converted.py -input /home/stan/Desktop/repositories/hylaa/examples/building/Building.xml /home/stan/Desktop/repositories/hylaa/examples/building/Building.cfg
+Building Earthquake Example in Hylaa-Continuous
 '''
 
 import numpy as np

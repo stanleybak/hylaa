@@ -29,25 +29,19 @@ void delLp(LpData* ptr)
     delete ptr;
 }
 
-int updateBasisMatrix(LpData* lpd, double* matrix, int w, int h)
+int updateTimeElapseMatrix(LpData* lpd, double* matrix, int w, int h)
 {
-    return lpd->updateBasisMatrix(matrix, w, h);
+    return lpd->updateTimeElapseMatrix(matrix, w, h);
 }
 
-void addInputStar(LpData* lpd, double* aMatrixT, int aWidth, int aHeight, double* bVec, int bLen,
-                  double* basisMatrix, int bmWidth, int bmHeight)
+void addInitConstraint(LpData* lpd, double* aVec, int aVecLen, double bVal)
 {
-    lpd->addInputStar(aMatrixT, aWidth, aHeight, bVec, bLen, basisMatrix, bmWidth, bmHeight);
+    lpd->addInitConstraint(aVec, aVecLen, bVal);
 }
 
-void addBasisConstraint(LpData* lpd, double* aVec, int aVecLen, double bVal)
+void addCurTimeConstraint(LpData* lpd, double* aVec, int aVecLen, double bVal)
 {
-    lpd->addBasisConstraint(aVec, aVecLen, bVal);
-}
-
-void addStandardConstraint(LpData* lpd, double* aVec, int aVecLen, double bVal)
-{
-    lpd->addStandardConstraint(aVec, aVecLen, bVal);
+    lpd->addCurTimeConstraint(aVec, aVecLen, bVal);
 }
 
 int minimize(LpData* lpd, double* direction, int dirLen, double* result, int resLen)
@@ -68,26 +62,6 @@ int getColStatuses(LpData* lpd, char* store, int storeLen)
 int getRowStatuses(LpData* lpd, char* store, int storeLen)
 {
     return lpd->getRowStatuses(store, storeLen);
-}
-
-void setLastInputStatuses(LpData* lpd, char* rowStats, int rLen, char* colStats, int cLen)
-{
-    lpd->setLastInputStatuses(rowStats, rLen, colStats, cLen);
-}
-
-void setStandardBasisStatuses(LpData* lpd, char* rowStats, int rLen, char* colStats, int cLen)
-{
-    lpd->setStandardBasisStatuses(rowStats, rLen, colStats, cLen);
-}
-
-void setStandardConstraintValues(LpData* lpd, double* vals, int len)
-{
-    lpd->setStandardConstraintValues(vals, len);
-}
-
-void setBasisConstraintValues(LpData* lpd, double* vals, int len)
-{
-    lpd->setBasisConstraintValues(vals, len);
 }
 
 void test()
@@ -113,26 +87,19 @@ void delLp(void* lpdata)
     hylaa::delLp((LpData*)lpdata);
 }
 
-int updateBasisMatrix(void* lpdata, double* matrix, int w, int h)
+int updateTimeElapseMatrix(void* lpdata, double* matrix, int w, int h)
 {
-    return hylaa::updateBasisMatrix((LpData*)lpdata, matrix, w, h);
+    return hylaa::updateTimeElapseMatrix((LpData*)lpdata, matrix, w, h);
 }
 
-void addInputStar(void* lpdata, double* aMatrixT, int aWidth, int aHeight, double* bVec, int bLen,
-                  double* basisMatrix, int bmWidth, int bmHeight)
+void addInitConstraint(void* lpdata, double* aVec, int aVecLen, double bVal)
 {
-    hylaa::addInputStar((LpData*)lpdata, aMatrixT, aWidth, aHeight, bVec, bLen, basisMatrix,
-                        bmWidth, bmHeight);
+    hylaa::addInitConstraint((LpData*)lpdata, aVec, aVecLen, bVal);
 }
 
-void addBasisConstraint(void* lpdata, double* aVec, int aVecLen, double bVal)
+void addCurTimeConstraint(void* lpdata, double* aVec, int aVecLen, double bVal)
 {
-    hylaa::addBasisConstraint((LpData*)lpdata, aVec, aVecLen, bVal);
-}
-
-void addStandardConstraint(void* lpdata, double* aVec, int aVecLen, double bVal)
-{
-    hylaa::addStandardConstraint((LpData*)lpdata, aVec, aVecLen, bVal);
+    hylaa::addCurTimeConstraint((LpData*)lpdata, aVec, aVecLen, bVal);
 }
 
 int minimize(void* lpdata, double* direction, int dirLen, double* result, int resLen)
@@ -165,35 +132,15 @@ int getRowStatuses(void* lpdata, char* store, int storeLen)
     return hylaa::getRowStatuses((LpData*)lpdata, store, storeLen);
 }
 
-void setLastInputStatuses(void* lpdata, char* rowStats, int rLen, char* colStats, int cLen)
-{
-    hylaa::setLastInputStatuses((LpData*)lpdata, rowStats, rLen, colStats, cLen);
-}
-
-void setStandardBasisStatuses(void* lpdata, char* rowStats, int rLen, char* colStats, int cLen)
-{
-    hylaa::setStandardBasisStatuses((LpData*)lpdata, rowStats, rLen, colStats, cLen);
-}
-
-void setStandardConstraintValues(void* lpdata, double* vals, int len)
-{
-    hylaa::setStandardConstraintValues((LpData*)lpdata, vals, len);
-}
-
-void setBasisConstraintValues(void* lpdata, double* vals, int len)
-{
-    hylaa::setBasisConstraintValues((LpData*)lpdata, vals, len);
-}
-
 void test()
 {
     hylaa::test();
 }
 }  // extern "C"
 
-/*int main()
+int main()
 {
     test();
 
     return 0;
-}*/
+}
