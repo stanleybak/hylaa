@@ -33,13 +33,14 @@ class HylaaSettings(Freezable):
 class SimulationSettings(Freezable):
     'simulation settings container'
 
-    MATRIX_EXP = 0
-    KRYPY = 1
-    GPU_KRYLOV = 2
+    MATRIX_EXP = 0 # matrix exp every step
+    EXP_MULT = 1 # first step matrix exp, remaining steps matrix-vector multiplication
+    KRYPY = 2
+    GPU_KRYLOV = 3
 
     def __init__(self, step):
         self.step = step
-        self.sim_mode = SimulationSettings.MATRIX_EXP # use matrix exp
+        self.sim_mode = SimulationSettings.EXP_MULT
 
         self.freeze_attrs()
 

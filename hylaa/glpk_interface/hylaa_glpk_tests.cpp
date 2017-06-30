@@ -50,7 +50,7 @@ void test1d()
         exit(1);
     }
 
-    double expected[] = {1, 10};
+    double expected[] = {1.0, 0.1};
 
     if (fabs(result[0] - (expected[0])) > 1e-6 || fabs(result[1] - (expected[1])) > 1e-6)
     {

@@ -137,7 +137,6 @@ class LpData
     // returns 1 on error, 0 on success
     int updateTimeElapseMatrix(double* matrix, int w, int h)
     {
-        // the transpose of the matrix goes into the LP
         if (w != numInitVars || h != numCurTimeVars)
         {
             printf(
@@ -173,7 +172,7 @@ class LpData
             int inds[w + 2];  // +1 padding +1 for the (-1) entry
             double vals[w + 2];
 
-            inds[index] = row + 1;
+            inds[index] = numInitVars + row + 1;
             vals[index++] = -1;
 
             for (int col = 0; col < w; ++col)
@@ -182,7 +181,7 @@ class LpData
 
                 if (val != 0)
                 {
-                    inds[index] = numInitVars + col + 1;
+                    inds[index] = col + 1;
                     vals[index++] = val;
                 }
             }

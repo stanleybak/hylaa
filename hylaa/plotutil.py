@@ -466,12 +466,12 @@ class PlotManager(Freezable):
                     self.shapes.reset_cur_state()
                     step_func()
 
+                    if self.engine.cur_star is not None:
+                        self.plot_current_star(self.engine.cur_star)
+
                     # do several computation steps per frame if they're fast (optimization)
                     if force_single_frame or time.time() - start_time > self.settings.min_frame_time:
                         break
-
-                if self.engine.cur_star is not None:
-                    self.plot_current_star(self.engine.cur_star)
 
                 # if we just wanted a single step
                 if self.interactive.step:

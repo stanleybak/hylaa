@@ -17,7 +17,7 @@ def define_ha():
     # 4 variables: x, y, time, affine_term
     ha = LinearHybridAutomaton(4)
 
-    a_matrix = csc_matrix(np.array([[0, 1, 0, 0], [-1, 0, 0, 0], [0, 0, 0, 1], [0, 0, 0, 0]], dtype=float))
+    a_matrix = csc_matrix(np.array([[-0.2, 1, 0, 0], [-1, -0.2, 0, 0], [0, 0, 0, 1], [0, 0, 0, 0]], dtype=float))
 
     mode = ha.new_mode('mode')
     mode.set_dynamics(a_matrix)

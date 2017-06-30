@@ -10,7 +10,7 @@ from scipy.sparse.linalg import expm
 
 from hylaa.util import Freezable
 from hylaa.hybrid_automaton import LinearAutomatonMode
-from hylaa.containers import HylaaSettings, PlotSettings
+from hylaa.containers import HylaaSettings, PlotSettings, SimulationSettings
 from hylaa.timerutil import Timers
 
 class TimeElapser(Freezable):
@@ -26,7 +26,8 @@ class TimeElapser(Freezable):
 
         self.next_step = 0
         self.key_dir_mat = None # csc_matrix
-        self.cur_time_elapse_mat = None # assigned on update()
+        self.cur_time_elapse_mat = None # assigned on step()
+        self.one_step_matrix_exp = None # one step matrix exponential, used for sim_mode == EXP_MULT
         self._extract_directions(mode)
 
         self.freeze_attrs()
@@ -65,18 +66,50 @@ class TimeElapser(Freezable):
         # done constructing, convert to csc_matrix
         self.key_dir_mat = csc_matrix(lil_dir_mat)
 
-    def step(self):
-        'perform the computation to obtain the values of the key directions the current time'
+    def step_exp_mult(self):
+        'first step matrix exp, other steps matrix multiplication'
 
-        Timers.tic('time_elapse.step')
+        if self.next_step == 0:
+            self.cur_time_elapse_mat = self.key_dir_mat * np.identity(self.dims)
+        elif self.one_step_matrix_exp is None:
+            assert self.next_step == 1
+
+            Timers.tic('time_elapse.step first')
+
+            self.one_step_matrix_exp = np.array(expm(self.a_matrix * self.settings.step).todense(), dtype=float)
+            self.cur_time_elapse_mat = self.key_dir_mat * self.one_step_matrix_exp
+
+            Timers.toc('time_elapse.step first')
+        else:
+            Timers.tic('time_elapse.step others')
+            self.cur_time_elapse_mat = np.dot(self.cur_time_elapse_mat, self.one_step_matrix_exp)
+            Timers.toc('time_elapse.step others')
+
+    def step_matrix_exp(self):
+        'matrix exp every step'
 
         cur_time = self.settings.step * self.next_step
-
         time_mat = self.a_matrix * cur_time
         exp = expm(time_mat)
 
         self.cur_time_elapse_mat = np.array((self.key_dir_mat * exp).todense(), dtype=float)
 
+
+    def step(self):
+        'perform the computation to obtain the values of the key directions the current time'
+
+        Timers.tic('time_elapse.step')
+
+        if self.settings.simulation.sim_mode == SimulationSettings.MATRIX_EXP:
+            self.step_matrix_exp()
+        elif self.settings.simulation.sim_mode == SimulationSettings.EXP_MULT:
+            self.step_exp_mult()
+        else:
+            raise RuntimeError('Unimplemented sim_mode {}'.format(self.settings.simulation.sim_mode))
+
         self.next_step += 1
 
         Timers.toc('time_elapse.step')
+        assert isinstance(self.cur_time_elapse_mat, np.ndarray), "cur_time_elapse_mat should be an np.array"
+        assert self.cur_time_elapse_mat.shape == self.key_dir_mat.shape, \
+            "cur_time_elapse mat shape({}) should be {}".format(self.cur_time_elapse_mat.shape, self.key_dir_mat.shape)
