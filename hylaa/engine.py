@@ -175,6 +175,8 @@ class HylaaEngine(object):
         run the computation
         '''
 
+        assert isinstance(init_star, Star), "initial states should be a Star object"
+
         self.result = HylaaResult()
         self.plotman.create_plot()
 

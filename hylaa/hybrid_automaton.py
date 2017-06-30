@@ -3,9 +3,36 @@ Hybrid Automaton generic definition for Hylaa
 Stanley Bak (Sept 2016)
 '''
 
-from scipy.sparse import csc_matrix, csr_matrix
+from scipy.sparse import csc_matrix, csr_matrix, lil_matrix
 
 from hylaa.util import Freezable
+
+def add_time_var(a_matrix):
+    '''
+    modify the matrix and init state to add a time variable (this adds two rows and cols)
+
+    returns a tuple (new_matrix, new_init)
+    '''
+
+    n = a_matrix.shape[0]
+    assert a_matrix.shape[1] == n
+
+    mat = lil_matrix((n + 2, n + 2), dtype=float)
+    mat[:n, :n] = a_matrix
+    mat[n, n + 1] = 1
+
+    return csc_matrix(mat)
+
+def add_zero_cols(mat, num_new_cols):
+    '''
+    modify the matrix by adding a certain number of nonzero columns
+    '''
+
+    rv = lil_matrix((mat.shape[0], mat.shape[1] + num_new_cols), dtype=float)
+
+    rv[:, :mat.shape[1]] = mat
+
+    return csc_matrix(rv)
 
 class SparseLinearConstraint(Freezable):
     'a single linear constraint: vector * x <= value'
@@ -139,8 +166,11 @@ class LinearAutomatonMode(Freezable):
         assert isinstance(a_matrix, csc_matrix)
         assert len(a_matrix.shape) == 2
 
+        if self.parent.dims is None:
+            self.parent.dims = a_matrix.shape[0]
+
         assert a_matrix.shape[0] == self.parent.dims and a_matrix.shape[1] == self.parent.dims, \
-            "Hybrid Automaton set to {} dimensions, but a_matrix.shape was {}".format(self.parent.dims, a_matrix.shape)
+            "Hybrid Automaton has {} dimensions, but a_matrix.shape was {}".format(self.parent.dims, a_matrix.shape)
 
         self.a_matrix = a_matrix
 
@@ -166,7 +196,7 @@ class LinearAutomatonTransition(Freezable):
 class LinearHybridAutomaton(Freezable):
     'The hybrid automaton'
 
-    def __init__(self, dims, name='HybridAutomaton'):
+    def __init__(self, dims=None, name='HybridAutomaton'):
         self.name = name
         self.modes = {}
         self.transitions = []
