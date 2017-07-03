@@ -17,7 +17,7 @@ def define_ha():
     ha = LinearHybridAutomaton()
 
     mode = ha.new_mode('mode')
-    dynamics = loadmat('MNA5.mat')
+    dynamics = loadmat('MNA_5.mat')
     a_matrix = add_time_var(dynamics['A'])
     mode.set_dynamics(a_matrix)
 
