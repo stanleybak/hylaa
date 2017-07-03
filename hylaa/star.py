@@ -154,6 +154,8 @@ class Star(Freezable):
 
             self._verts = verts
 
+            print "new verts = {}".format(verts)
+
         return self._verts
 
     def _binary_search_star_boundaries(self, start, end, start_point, end_point):
@@ -204,7 +206,7 @@ class Star(Freezable):
 
         assert len(direction_list) > 2
 
-        if not use_binary_search:
+        if not use_binary_search or len(direction_list) < 8:
             # straightforward approach: minimize in each direction
             last_point = None
 
@@ -213,7 +215,7 @@ class Star(Freezable):
 
                 if last_point is None or not np.array_equal(point, last_point):
                     last_point = point.copy()
-                    rv.append(point)
+                    rv.append(last_point)
         else:
             # optimized approach: do binary search to find changes
             star_lpi.minimize(direction_list[0], point, error_if_infeasible=True)

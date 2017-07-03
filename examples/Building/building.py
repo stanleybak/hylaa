@@ -67,21 +67,19 @@ def define_init_states(ha, settings):
 def define_settings():
     'get the hylaa settings object'
     plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_FULL
+    plot_settings.plot_mode = PlotSettings.PLOT_INTERACTIVE
     plot_settings.xdim_dir = 48
     plot_settings.ydim_dir = 24
 
     # save a video file instead
     # plot_settings.make_video("building.mp4", frames=220, fps=40)
 
-    Question: why does num_angles = 3 fail to plot past the first step???
-
-    plot_settings.num_angles = 8
+    plot_settings.num_angles = 4
     plot_settings.max_shown_polys = 2048
     plot_settings.label.y_label = '$x_{25}$'
     plot_settings.label.x_label = 'Time'
     plot_settings.label.title = ''
-    plot_settings.label.axes_limits = (0, 1, -0.007, 0.006)
+    #plot_settings.label.axes_limits = (0, 1, -0.007, 0.006)
     plot_settings.plot_size = (12, 12)
     plot_settings.label.big(size=40)
 
