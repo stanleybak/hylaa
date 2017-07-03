@@ -154,8 +154,6 @@ class Star(Freezable):
 
             self._verts = verts
 
-            print "new verts = {}".format(verts)
-
         return self._verts
 
     def _binary_search_star_boundaries(self, start, end, start_point, end_point):

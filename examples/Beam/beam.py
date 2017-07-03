@@ -1,5 +1,5 @@
 '''
-International Space Station Example in Hylaa-Continuous
+Beam Example in Hylaa-Continuous
 '''
 
 from scipy.io import loadmat
@@ -17,7 +17,7 @@ def define_ha():
     ha = LinearHybridAutomaton()
 
     mode = ha.new_mode('mode')
-    dynamics = loadmat('iss.mat')
+    dynamics = loadmat('beam.mat')
     a_matrix = add_time_var(dynamics['A'])
     mode.set_dynamics(a_matrix)
 
@@ -27,10 +27,7 @@ def define_ha():
     condition_mat = add_zero_cols(dynamics['C'], 2)
 
     trans1 = ha.new_transition(mode, error)
-    trans1.condition_list.append(SparseLinearConstraint(condition_mat[2], -0.0005)) # y3 <= -0.0005
-
-    trans2 = ha.new_transition(mode, error)
-    trans2.condition_list.append(SparseLinearConstraint(-condition_mat[2], -0.0005)) # y3 >= 0.0005
+    trans1.condition_list.append(SparseLinearConstraint(-condition_mat[0], -1000.0)) # y1 >= 1000
 
     return ha
 
@@ -47,9 +44,11 @@ def define_init_states(ha, settings):
     for dim in xrange(n):
         mat = lil_matrix((1, n), dtype=float)
 
-        if dim < time_var:
-            lb = -0.0001
-            ub = 0.0001
+        if dim < 300:
+            lb = ub = 0
+        elif dim < time_var:
+            lb = 0.0015
+            ub = 0.0020
         elif dim == time_var:
             lb = ub = 0 # time variable
         elif dim == affine_var:
@@ -68,7 +67,7 @@ def define_init_states(ha, settings):
 def define_settings(ha):
     'get the hylaa settings object'
     plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
+    plot_settings.plot_mode = PlotSettings.PLOT_FULL
 
     plot_settings.xdim_dir = (ha.dims - 2)
     plot_settings.ydim_dir = ha.transitions[0].condition_list[0].vector
@@ -78,7 +77,7 @@ def define_settings(ha):
 
     plot_settings.num_angles = 3
     plot_settings.max_shown_polys = 2048
-    plot_settings.label.y_label = '$y_{3}$'
+    plot_settings.label.y_label = '$y_{1}$'
     plot_settings.label.x_label = 'Time'
     plot_settings.label.title = ''
     #plot_settings.label.axes_limits = (0, 1, -0.007, 0.006)

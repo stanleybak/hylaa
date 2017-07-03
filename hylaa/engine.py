@@ -154,22 +154,6 @@ class HylaaEngine(object):
             else:
                 print "Result: Error modes are NOT reachable.\n"
 
-    def run_to_completion(self):
-        'run the computation until it finishes (without plotting)'
-
-        Timers.tic("total")
-
-        while not self.is_finished():
-            self.do_step()
-
-        Timers.toc("total")
-
-        if self.settings.print_output:
-            LpInstance.print_stats()
-            Timers.print_stats()
-
-        self.result.time = Timers.timers["total"].total_secs
-
     def run(self, init_star):
         '''
         run the computation
@@ -184,14 +168,21 @@ class HylaaEngine(object):
 
         if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE:
             # run without plotting
-            self.run_to_completion()
-        elif self.settings.plot.plot_mode == PlotSettings.PLOT_MATLAB:
-            # matlab plot
-            self.run_to_completion()
-            self.plotman.save_matlab()
+            Timers.tic("total")
+
+            while not self.is_finished():
+                self.do_step()
+
+            Timers.toc("total")
+
+            if self.settings.print_output:
+                LpInstance.print_stats()
+                Timers.print_stats()
         else:
-            # plot during computation
+            # use plot (will print states after completion (before gui closes)
             self.plotman.compute_and_animate(self.do_step, self.is_finished)
+
+        self.result.time = Timers.timers["total"].total_secs
 
 class FoundErrorTrajectory(RuntimeError):
     'gets thrown if a trajectory to the error states is found when settings.stop_when_error_reachable is True'

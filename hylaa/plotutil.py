@@ -503,8 +503,9 @@ class PlotManager(Freezable):
 
             Timers.toc("total")
 
-            LpInstance.print_stats()
-            Timers.print_stats()
+            if self.engine.settings.print_output:
+                LpInstance.print_stats()
+                Timers.print_stats()
 
         def next_pressed(_):
             'event function for next button press'
@@ -550,14 +551,26 @@ class PlotManager(Freezable):
             if self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
                 self.save_video(self._anim)
             elif self.settings.plot_mode == PlotSettings.PLOT_IMAGE:
+                self.run_to_completion(step_func, is_finished_func)
                 self.save_image()
+            elif self.settings.plot_mode == PlotSettings.PLOT_MATLAB:
+                self.run_to_completion(step_func, is_finished_func)
+                self.save_matlab()
             else:
                 plt.show()
 
+    def run_to_completion(self, step_func, is_finished_func):
+        'run to completion, creating the plot at each stpe'
+
+        while not is_finished_func():
+            self.shapes.reset_cur_state()
+            step_func()
+
+            if self.engine.cur_star is not None:
+                self.plot_current_star(self.engine.cur_star)
+
     def save_matlab(self):
         'save a matlab script'
-
-        self.engine.run_to_completion()
 
         filename = self.settings.filename
 
@@ -571,8 +584,6 @@ class PlotManager(Freezable):
 
     def save_image(self):
         'save an image file'
-
-        self.engine.run_to_completion()
 
         filename = self.settings.filename
 
