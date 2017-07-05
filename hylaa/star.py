@@ -12,9 +12,11 @@ from numpy import array_repr
 from numpy.linalg import lstsq
 from numpy.testing import assert_array_almost_equal
 
+from scipy.sparse import csr_matrix
+
 from hylaa.glpk_interface import LpInstance
 from hylaa.hybrid_automaton import HyperRectangle, LinearAutomatonTransition
-from hylaa.hybrid_automaton import LinearAutomatonMode, SparseLinearConstraint
+from hylaa.hybrid_automaton import LinearAutomatonMode
 from hylaa.timerutil import Timers as Timers
 from hylaa.util import Freezable
 from hylaa.starutil import GuardOptData, InitParent
@@ -23,29 +25,25 @@ from hylaa.time_elapse import TimeElapser
 
 class Star(Freezable):
     '''
-    A representation of a set of continuous states. Contains logic for plotting that states if
-    requested in the settings.
+    A representation of a set of continuous states. Contains logic
+    for plotting that states if requested in the settings.
     '''
 
-    def __init__(self, hylaa_settings, constraint_list, mode):
-
-        assert len(constraint_list) > 0
+    def __init__(self, hylaa_settings, constraint_mat, constraint_rhs, mode):
         assert isinstance(hylaa_settings, HylaaSettings)
 
         self.settings = hylaa_settings
 
         assert isinstance(mode, LinearAutomatonMode)
-        self.mode = mode # the LinearAutomatonMode
+        self.mode = mode
         self.dims = mode.parent.dims
-
         self.time_elapse = TimeElapser(mode, hylaa_settings)
 
-        for lc in constraint_list:
-            assert isinstance(lc, SparseLinearConstraint), "constraint_list should be a list SpraseLinearConstraints"
-            assert lc.vector.shape[1] == self.dims, \
-                "each star's constraint's size should match dims. {} length is not {}".format(lc, self.dims)
-
-        self.constraint_list = [c.clone() for c in constraint_list] # copy constraints
+        assert isinstance(constraint_mat, csr_matrix)
+        assert isinstance(constraint_rhs, np.ndarray)
+        assert constraint_rhs.shape == (constraint_mat.shape[0],)
+        self.constraint_matrix = constraint_mat
+        self.constraint_rhs = constraint_rhs
 
         self.total_steps = 0
 
@@ -53,10 +51,45 @@ class Star(Freezable):
         ## private member initialization ##
         ###################################
         self._plot_lpi = None # LpInstance for plotting
-        #self._guard_opt_data = GuardOptData(self) # contains LP instance(s) for guard checks
+        self._guard_lpis = [None] * len(mode.transitions) # LP instance(s) for guard checks
         self._verts = None # for plotting optimization, a cached copy of this star's projected polygon verts
 
         self.freeze_attrs()
+
+    def get_guard_intersection(self, transition_index):
+        '''update the LP for the given transition, solve, and return get the lp solution (if feasible)'''
+
+        transition = self.mode.transitions[transition_index]
+        num_constraints = transition.guard_matrix.shape[0]
+        key_dir_offset = 0 if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE else 2
+
+        for t_index in xrange(transition_index):
+            key_dir_offset += self.mode.transitions[t_index].guard_matrix.shape[0]
+
+        if self._guard_lpis[transition_index] is None:
+            # first time this was called... initialize the guard lpi
+            
+            lpi = LpInstance(num_constraints, self.dims)
+            lpi.set_init_constraints(self.constraint_matrix, self.constraint_rhs)
+
+            # use identity for cur_time_matrix
+            # this is because we're already multiplying each time step by transition.guard_matrix
+            # so the cur-time variables are the 'value' of state dot constraint-direction
+            cur_time_matrix = csr_matrix(np.identity(num_constraints, dtype=float), dtype=float)
+            lpi.set_cur_time_constraints(cur_time_matrix, transition.guard_rhs)
+            
+            self._guard_lpis[transition_index] = lpi
+
+        lpi = self._guard_lpis[transition_index]
+        cur_mat = self.time_elapse.cur_time_elapse_mat
+        lpi.update_time_elapse_matrix(cur_mat[key_dir_offset:key_dir_offset + num_constraints])
+
+        direction = np.zeros((num_constraints))
+        result = np.zeros((num_constraints + self.dims))
+
+        is_feasible = lpi.minimize(direction, result, error_if_infeasible=False)
+
+        return result if is_feasible else None
 
     def get_plot_lpi(self):
         'get (maybe create) the LpInstance object for this star, and return it'
@@ -67,10 +100,7 @@ class Star(Freezable):
 
         if rv is None:
             rv = LpInstance(2, self.dims)
-
-            for lc in self.constraint_list:
-                rv.add_init_constraint(lc.vector, lc.value)
-
+            rv.set_init_constraints(self.constraint_matrix, self.constraint_rhs)
             rv.update_time_elapse_matrix(self.time_elapse.cur_time_elapse_mat[:2])
 
             self._plot_lpi = rv

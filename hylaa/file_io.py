@@ -4,6 +4,9 @@ May 2017
 Stanley Bak
 '''
 
+import numpy as np
+from scipy.sparse import csc_matrix
+
 def write_matlab(filename, poly_data_dict, plot_settings, ha):
     'save the polygon data to a matlab script'
 
@@ -22,7 +25,8 @@ reachSet = [
         # data
         for name, data in poly_data_dict.iteritems():
             fcol, ecol, polys = data
-            f.write("    {{'{}', [{} {} {}], [{} {} {}], 0, {{\n".format(name, fcol[0], fcol[1], fcol[2], ecol[0], ecol[1], ecol[2]))
+            f.write("    {{'{}', [{} {} {}], [{} {} {}], 0, {{\n".format(name, fcol[0], fcol[1], fcol[2],
+                                                                         ecol[0], ecol[1], ecol[2]))
 
             #[-3, 0; -3, 1; -4, 1; -3.5 0.5;-4, 0]
             for poly in polys:
@@ -30,11 +34,11 @@ reachSet = [
 
                 for pt in poly:
                     f.write("{}, {};".format(pt[0], pt[1]))
-                
+
                 f.write("]\n")
-            
+
             f.write("    }}\n")
-            
+
         f.write('''];
 
 % plot all
@@ -64,9 +68,64 @@ end
         x_label = l.x_label if l.x_label is not None else ha.variables[plot_settings.xdim].capitalize()
         y_label = l.y_label if l.y_label is not None else ha.variables[plot_settings.ydim].capitalize()
         title = l.title if l.title is not None else ha.name
-        
-        f.write("xlabel('{}', 'FontSize', {}, 'FontName', 'Serif', 'Interpreter','LaTex');\n".format(x_label, l.label_size))
-        f.write("ylabel('{}', 'FontSize', {}, 'FontName', 'Serif', 'Interpreter','LaTex');\n".format(y_label, l.label_size))
-        f.write("title('{}', 'FontSize', {}, 'FontName', 'Serif', 'Interpreter','LaTex');\n".format(title, l.title_size))
+
+        f.write("xlabel('{}', 'FontSize', {}, 'FontName', 'Serif', 'Interpreter','LaTex');\n".format(
+            x_label, l.label_size))
+        f.write("ylabel('{}', 'FontSize', {}, 'FontName', 'Serif', 'Interpreter','LaTex');\n".format(
+            y_label, l.label_size))
+        f.write("title('{}', 'FontSize', {}, 'FontName', 'Serif', 'Interpreter','LaTex');\n".format(
+            title, l.title_size))
 
         f.write("hold off;\n")
+
+def write_counter_example(filename, mode, step_size, total_steps, start_pt, normal_vec, normal_val, end_val):
+    'write a counter-example to a file which can be run using the HyLAA trace generator'
+
+    assert isinstance(mode.a_matrix, csc_matrix)
+    assert isinstance(normal_vec, np.ndarray)
+
+    with open(filename, 'w') as f:
+
+        f.write('''"Counter-example trace generated using HyLAA"
+
+import sys
+from numpy import array, int32
+from scipy.sparse import csc_matrix
+from hylaa.check_trace import check, plot
+
+def check_instance():
+    'define parameters for one instance and call checking function'
+
+''')
+
+        dims = mode.a_matrix.shape[0]
+
+        f.write('    data = {}\n'.format(repr(mode.a_matrix.data)))
+        f.write('    indices = {}\n'.format(repr(mode.a_matrix.indices)))
+        f.write('    indptr = {}\n'.format(repr(mode.a_matrix.indptr)))
+        f.write('    a_matrix = csc_matrix((data, indices, indptr), dtype=float, shape=({}, {}))\n'.format(dims, dims))
+
+        ###
+
+        f.write('    b_matrix = None\n')
+        f.write('    inputs = None\n\n')
+
+        ###
+        f.write('    step = {}\n'.format(step_size))
+        f.write('    max_time = {}\n\n'.format(step_size * total_steps))
+
+        ###
+
+        f.write('    start_point = {}\n'.format(repr(start_pt)))
+        f.write('    normal_vec = {}\n'.format(repr(normal_vec)))
+        f.write('    normal_val = {}\n\n'.format(normal_val))
+        f.write('    end_val = {}\n'.format(end_val))
+
+        #####################
+        f.write('    sim_states, sim_times = check(a_matrix, b_matrix, step, max_time, start_point, ' + \
+            'inputs, normal_vec, end_val)\n\n')
+        f.write('    if len(sys.argv) < 2 or sys.argv[1] != "noplot":\n')
+        f.write('        plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step)\n\n')
+
+        f.write('if __name__ == "__main__":\n')
+        f.write('    check_instance()\n')

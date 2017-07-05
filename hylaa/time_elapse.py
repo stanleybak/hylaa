@@ -5,7 +5,7 @@ l * e^{At} where l is some direction of interest, and t is a multiple of some ti
 
 import numpy as np
 
-from scipy.sparse import lil_matrix, csc_matrix
+from scipy.sparse import lil_matrix, csr_matrix
 from scipy.sparse.linalg import expm
 
 from hylaa.util import Freezable
@@ -25,20 +25,20 @@ class TimeElapser(Freezable):
         self.dims = self.a_matrix.shape[0]
 
         self.next_step = 0
-        self.key_dir_mat = None # csc_matrix
+        self.key_dir_mat = None # csr_matrix
         self.cur_time_elapse_mat = None # assigned on step()
         self.one_step_matrix_exp = None # one step matrix exponential, used for sim_mode == EXP_MULT
-        self._extract_directions(mode)
+        self._extract_key_directions(mode)
 
         self.freeze_attrs()
 
-    def _extract_directions(self, mode):
-        'extract the directions which are of interest'
+    def _extract_key_directions(self, mode):
+        'extract the key directions for lp solving'
 
         num_directions = 0 if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE else 2
 
         for t in mode.transitions:
-            num_directions += len(t.condition_list)
+            num_directions += t.guard_matrix.shape[0]
 
         lil_dir_mat = lil_matrix((num_directions, self.dims), dtype=float)
 
@@ -59,12 +59,12 @@ class TimeElapser(Freezable):
             dir_index += 2
 
         for t in mode.transitions:
-            for lc in t.condition_list:
-                lil_dir_mat[dir_index, :] = lc.vector
+            for row in t.guard_matrix:
+                lil_dir_mat[dir_index, :] = row
                 dir_index += 1
 
         # done constructing, convert to csc_matrix
-        self.key_dir_mat = csc_matrix(lil_dir_mat)
+        self.key_dir_mat = csr_matrix(lil_dir_mat)
 
     def step_exp_mult(self):
         'first step matrix exp, other steps matrix multiplication'
@@ -73,11 +73,11 @@ class TimeElapser(Freezable):
             self.cur_time_elapse_mat = self.key_dir_mat * np.identity(self.dims)
         elif self.one_step_matrix_exp is None:
             assert self.next_step == 1
-
+            assert isinstance(self.key_dir_mat, csr_matrix)
             Timers.tic('time_elapse.step first')
 
             self.one_step_matrix_exp = np.array(expm(self.a_matrix * self.settings.step).todense(), dtype=float)
-            self.cur_time_elapse_mat = self.key_dir_mat * self.one_step_matrix_exp
+            self.cur_time_elapse_mat = np.array((self.key_dir_mat * self.one_step_matrix_exp).todense(), dtype=float)
 
             Timers.toc('time_elapse.step first')
         else:
@@ -93,7 +93,6 @@ class TimeElapser(Freezable):
         exp = expm(time_mat)
 
         self.cur_time_elapse_mat = np.array((self.key_dir_mat * exp).todense(), dtype=float)
-
 
     def step(self):
         'perform the computation to obtain the values of the key directions the current time'

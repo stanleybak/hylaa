@@ -3,7 +3,7 @@ Building Earthquake Example in Hylaa-Continuous
 '''
 
 from scipy.io import loadmat
-from scipy.sparse import lil_matrix
+from scipy.sparse import csr_matrix
 
 from hylaa.hybrid_automaton import LinearHybridAutomaton, SparseLinearConstraint, add_time_var, add_zero_cols
 from hylaa.engine import HylaaSettings
@@ -39,8 +39,6 @@ def define_init_states(ha, settings):
     n = ha.dims
 
     for dim in xrange(n):
-        mat = lil_matrix((1, n), dtype=float)
-
         if dim < 10:
             lb = 0.0002
             ub = 0.00025
@@ -55,12 +53,12 @@ def define_init_states(ha, settings):
             lb = ub = 1 # affine variable
 
         # upper bound
-        mat[0, dim] = 1
-        constraints.append(SparseLinearConstraint(mat[0], ub))
+        mat = csr_matrix(([1], [dim], [0, 1]), shape=(1, n))
+        constraints.append(SparseLinearConstraint(mat, ub))
 
         # lower bound
-        mat[0, dim] = -1
-        constraints.append(SparseLinearConstraint(mat[0], -lb))
+        mat = csr_matrix(([-1], [dim], [0, 1]), shape=(1, n))
+        constraints.append(SparseLinearConstraint(mat, -lb))
 
     return Star(settings, constraints, ha.modes['mode'])
 

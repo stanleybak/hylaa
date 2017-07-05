@@ -2,10 +2,11 @@
 MNA5 Example in Hylaa-Continuous
 '''
 
+import numpy as np
 from scipy.io import loadmat
-from scipy.sparse import lil_matrix
+from scipy.sparse import csr_matrix
 
-from hylaa.hybrid_automaton import LinearHybridAutomaton, SparseLinearConstraint, add_time_var, add_zero_cols
+from hylaa.hybrid_automaton import LinearHybridAutomaton, add_time_var
 from hylaa.engine import HylaaSettings
 from hylaa.engine import HylaaEngine
 from hylaa.containers import PlotSettings, SimulationSettings
@@ -18,26 +19,35 @@ def define_ha():
 
     mode = ha.new_mode('mode')
     dynamics = loadmat('MNA_5.mat')
+
     a_matrix = add_time_var(dynamics['A'])
     mode.set_dynamics(a_matrix)
 
     error = ha.new_mode('error')
 
-    # add two more variables due to the time term
-    condition_mat = add_zero_cols(dynamics['C'], 2)
+    dims = a_matrix.shape[0]
 
+    # x1 >= 0.2
+    mat = csr_matrix(([-1], [0], [0, 1]), dtype=float, shape=(1, dims))
+    rhs = np.array([-0.2], dtype=float)
     trans1 = ha.new_transition(mode, error)
-    trans1.condition_list.append(SparseLinearConstraint(-condition_mat[0], -0.2)) # y1 >= 0.2
+    trans1.set_guard(mat, rhs)
 
+    # x2 >= 0.15
+    mat = csr_matrix(([-1], [1], [0, 1]), dtype=float, shape=(1, dims))
+    rhs = np.array([-0.15], dtype=float)
     trans2 = ha.new_transition(mode, error)
-    trans2.condition_list.append(SparseLinearConstraint(-condition_mat[1], -0.15)) # y2 >= 0.15
+    trans2.set_guard(mat, rhs)
 
     return ha
 
-def define_init_states(ha, settings):
+def define_init_states(ha, hylaa_settings):
     '''returns a Star'''
 
-    constraints = []
+    values = []
+    indices = []
+    indptr = []
+    constraint_rhs = []
 
     n = ha.dims
 
@@ -45,8 +55,6 @@ def define_init_states(ha, settings):
     affine_var = n - 1
 
     for dim in xrange(n):
-        mat = lil_matrix((1, n), dtype=float)
-
         if dim < 10:
             lb = 0.0002
             ub = 0.00025
@@ -58,14 +66,22 @@ def define_init_states(ha, settings):
             lb = ub = 1 # affine variable
 
         # upper bound
-        mat[0, dim] = 1
-        constraints.append(SparseLinearConstraint(mat[0], ub))
+        values.append(1)
+        indices.append(dim)
+        indptr.append(2*dim)
+        constraint_rhs.append(ub)
 
         # lower bound
-        mat[0, dim] = -1
-        constraints.append(SparseLinearConstraint(mat[0], -lb))
+        values.append(-1)
+        indices.append(dim)
+        indptr.append(2*dim+1)
+        constraint_rhs.append(-lb)
 
-    return Star(settings, constraints, ha.modes['mode'])
+    indptr.append(len(values))
+    constraint_matrix = csr_matrix((values, indices, indptr), shape=(2*ha.dims, ha.dims), dtype=float)
+    constraint_rhs = np.array(constraint_rhs, dtype=float)
+
+    return Star(hylaa_settings, constraint_matrix, constraint_rhs, ha.modes['mode'])
 
 def define_settings(ha):
     'get the hylaa settings object'
@@ -73,7 +89,7 @@ def define_settings(ha):
     plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
 
     plot_settings.xdim_dir = (ha.dims - 2)
-    plot_settings.ydim_dir = ha.transitions[0].condition_list[0].vector
+    plot_settings.ydim_dir = ha.transitions[0].guard_matrix[0]
 
     # save a video file instead
     # plot_settings.make_video("vid.mp4", frames=220, fps=40)
@@ -94,6 +110,7 @@ def define_settings(ha):
 
 def run_hylaa():
     'Runs hylaa with the given settings, returning the HylaaResult object.'
+
     ha = define_ha()
     settings = define_settings(ha)
     init = define_init_states(ha, settings)

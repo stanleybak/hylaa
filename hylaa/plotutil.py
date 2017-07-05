@@ -18,10 +18,7 @@ from matplotlib import colors
 from matplotlib.widgets import Button
 from matplotlib.lines import Line2D
 
-import numpy as np
-
 from hylaa.file_io import write_matlab
-from hylaa.starutil import AggregationParent, ContinuousPostParent
 from hylaa.timerutil import Timers
 from hylaa.containers import PlotSettings
 from hylaa.util import Freezable
@@ -559,15 +556,25 @@ class PlotManager(Freezable):
             else:
                 plt.show()
 
-    def run_to_completion(self, step_func, is_finished_func):
-        'run to completion, creating the plot at each stpe'
+    def run_to_completion(self, step_func, is_finished_func, compute_plot=True):
+        'run to completion, creating the plot at each step'
+
+        Timers.tic("total")
 
         while not is_finished_func():
-            self.shapes.reset_cur_state()
+            if compute_plot:
+                self.shapes.reset_cur_state()
+
             step_func()
 
-            if self.engine.cur_star is not None:
+            if compute_plot and self.engine.cur_star is not None:
                 self.plot_current_star(self.engine.cur_star)
+
+        Timers.toc("total")
+
+        if self.engine.settings.print_output:
+            LpInstance.print_stats()
+            Timers.print_stats()
 
     def save_matlab(self):
         'save a matlab script'
@@ -665,6 +672,3 @@ def _blit_draw(_self, artists, bg_cache):
         ax.figure.canvas.blit(ax.figure.bbox)
 
 animation.Animation._blit_draw = _blit_draw
-
-
-

@@ -25,7 +25,7 @@ class HylaaSettings(Freezable):
         self.print_output = True # print status and waiting list information to stdout
         self.skip_step_times = False # print the times at each step
 
-        self.counter_example_filename = None # the counter-example filename to create on errors: "counterexample.py"
+        self.counter_example_filename = 'counterexample.py' # the counter-example filename to create on errors
         self.simulation = SimulationSettings(step)
 
         self.freeze_attrs()

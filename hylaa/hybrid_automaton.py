@@ -3,7 +3,8 @@ Hybrid Automaton generic definition for Hylaa
 Stanley Bak (Sept 2016)
 '''
 
-from scipy.sparse import csc_matrix, csr_matrix, lil_matrix
+import numpy as np
+from scipy.sparse import csc_matrix, csr_matrix
 
 from hylaa.util import Freezable
 
@@ -16,63 +17,29 @@ def add_time_var(a_matrix):
 
     n = a_matrix.shape[0]
     assert a_matrix.shape[1] == n
+    nnz = len(a_matrix.data)
 
-    mat = lil_matrix((n + 2, n + 2), dtype=float)
-    mat[:n, :n] = a_matrix
-    mat[n, n + 1] = 1
+    data = np.concatenate((a_matrix.data, [1]))
+    indptr = np.concatenate((a_matrix.indptr, [nnz, nnz + 1]))
 
-    return csc_matrix(mat)
+    indices = np.concatenate((a_matrix.indices, [n]))
+
+    return csc_matrix((data, indices, indptr), shape=(n + 2, n + 2))
 
 def add_zero_cols(mat, num_new_cols):
     '''
-    modify the matrix by adding a certain number of nonzero columns
+    modify the csc_matrix by adding a certain number of nonzero columns
     '''
 
-    rv = lil_matrix((mat.shape[0], mat.shape[1] + num_new_cols), dtype=float)
+    mat = csc_matrix(mat)
+    nnz = len(mat.data)
 
-    rv[:, :mat.shape[1]] = mat
+    rows = mat.shape[0]
+    cols = mat.shape[1]
 
-    return csc_matrix(rv)
+    indptr = np.concatenate((mat.indptr, [nnz, nnz]))
 
-class SparseLinearConstraint(Freezable):
-    'a single linear constraint: vector * x <= value'
-
-    def __init__(self, vector, value):
-        self.vector = csr_matrix(vector, dtype=float)
-        assert self.vector.shape[0] == 1
-
-        self.value = float(value)
-        self.freeze_attrs()
-
-    def almost_equals(self, other, tol):
-        'equality up to a tolerance'
-        assert isinstance(other, SparseLinearConstraint)
-
-        rv = True
-
-        if abs(self.value - other.value) > tol:
-            rv = False
-        else:
-            for i in xrange(self.vector.shape[0]):
-                a = self.vector[i]
-                b = other.vector[i]
-
-                if abs(a - b) > tol:
-                    rv = False
-                    break
-
-        return rv
-
-    def clone(self):
-        'create a deep copy of this LinearConstraints object'
-
-        return SparseLinearConstraint(self.vector.copy(), self.value)
-
-    def __str__(self):
-        return '[SparseLinearConstraint: {} * x <= {}]'.format(repr(self.vector), self.value)
-
-    def __repr__(self):
-        return 'SparseLinearConstraint({}, {})'.format(repr(self.vector), repr(self.value))
+    return csc_matrix((mat.data, mat.indices, indptr), shape=(rows, cols + num_new_cols))
 
 class HyperRectangle(object):
     'An n-dimensional box'
@@ -185,10 +152,27 @@ class LinearAutomatonTransition(Freezable):
         self.from_mode = from_mode
         self.to_mode = to_mode
 
-        self.condition_list = [] # a list of LinearConstraint, if all are true then the guard is enabled
-        from_mode.transitions.append(self)
+        # mat * vars <= rhs
+        self.guard_matrix = None
+        self.guard_rhs = None
 
         self.freeze_attrs()
+
+        from_mode.transitions.append(self)
+
+    def set_guard(self, matrix, rhs):
+        '''set the guard matrix and right-hand side. The transition is enabled if
+        matrix * var_list <= rhs
+        '''
+
+        assert isinstance(matrix, csr_matrix)
+        assert isinstance(rhs, np.ndarray)
+
+        assert rhs.shape == (matrix.shape[0],)
+        assert matrix.shape[1] == self.parent.dims
+
+        self.guard_matrix = matrix
+        self.guard_rhs = rhs
 
     def __str__(self):
         return self.from_mode.name + " -> " + self.to_mode.name
