@@ -8,13 +8,10 @@ import numpy as np
 
 from hylaa.plotutil import PlotManager
 from hylaa.star import Star
-from hylaa.star import init_hr_to_star, init_constraints_to_star
-from hylaa.hybrid_automaton import LinearHybridAutomaton, LinearAutomatonMode, LinearConstraint, HyperRectangle
+from hylaa.hybrid_automaton import LinearHybridAutomaton
 from hylaa.timerutil import Timers
 from hylaa.containers import HylaaSettings, PlotSettings, HylaaResult
-from hylaa.glpk_interface import LpInstance
-
-from hylaa.time_elapse import TimeElapser
+from hylaa.file_io import write_counter_example
 
 class HylaaEngine(object):
     'main computation object. initialize and call run()'
@@ -25,10 +22,9 @@ class HylaaEngine(object):
 
         self.hybrid_automaton = ha
         self.settings = hylaa_settings
-        self.num_vars = len(ha.dims)
 
         if self.settings.plot.plot_mode != PlotSettings.PLOT_NONE:
-            Star.init_plot_vecs(self.num_vars, self.settings.plot)
+            Star.init_plot_vecs(self.settings.plot)
 
         self.plotman = PlotManager(self, self.settings.plot)
 
@@ -46,94 +42,48 @@ class HylaaEngine(object):
 
         return self.cur_star is None or self.reached_error
 
-    def check_guards(self, state):
-        'check for discrete successors with the guards'
+    def check_guards(self):
+        '''check for discrete successors with the guards'''
 
-        assert state is not None
-
-        for i in xrange(len(state.mode.transitions)):
-            lp_solution = state.get_guard_intersection(i)
+        for i in xrange(len(self.cur_star.mode.transitions)):
+            lp_solution = self.cur_star.get_guard_intersection(i)
 
             if lp_solution is not None:
-                transition = state.mode.transitions[i]
-                successor_mode = transition.to_mode
+                if self.settings.counter_example_filename is not None:
+                    # print out the counter-example trace
 
-                if successor_mode.is_error:
-                    self.reached_error = True
+                    filename = self.settings.counter_example_filename
+                    mode = self.cur_star.mode
+                    step_size = self.settings.step
+                    total_steps = self.cur_star.time_elapse.next_step - 1
+                    start_pt = lp_solution[:self.cur_star.dims]
+                    norm_vec_sparse = self.cur_star.mode.transitions[i].guard_matrix[0]
+                    normal_vec = np.array(norm_vec_sparse.toarray(), dtype=float)
+                    normal_vec.shape = shape=(self.cur_star.dims,)
+                    normal_val = self.cur_star.mode.transitions[i].guard_rhs[0]
+                    end_val = lp_solution[self.cur_star.dims]
 
-                    if self.settings.stop_when_error_reachable:
-                        raise FoundErrorTrajectory("Found error trajectory")
+                    if self.settings.print_output:
+                        print 'Writing counter-example trace file: "{}"'.format(filename)
 
-                # copy the current star to be the frozen pre-state of the discrete post operation
-                discrete_prestate_star = state.clone()
-                discrete_prestate_star.parent = ContinuousPostParent(state.mode, state.parent.star)
+                    write_counter_example(filename, mode, step_size, total_steps, start_pt,
+                                          normal_vec, normal_val, end_val)
 
-                discrete_poststate_star = state.clone()
-                basis_center = state.vector_to_star_basis(state.center)
+                self.reached_error = True
+                break # no need to keep checking
 
-                discrete_poststate_star.parent = DiscretePostParent(state.mode, discrete_prestate_star,
-                                                                    basis_center, transition)
-
-                # add each of the guard conditions to discrete_poststate_star
-                for lin_con in transition.condition_list:
-
-                    # first, convert the condition to the star's basis
-
-                    # basis vectors (non-transpose) * standard_condition
-                    basis_influence = np.dot(state.basis_matrix, lin_con.vector)
-                    center_value = np.dot(state.center, lin_con.vector)
-                    remaining_value = lin_con.value - center_value
-
-                    basis_lc = LinearConstraint(basis_influence, remaining_value)
-                    discrete_poststate_star.add_basis_constraint(basis_lc)
-
-                if transition.reset_matrix is not None:
-                    raise RuntimeError("only empty resets are currently supported")
-
-                # there may be minor errors when converting the guard to the star's basis, so
-                # re-check for feasibility
-
-                if discrete_poststate_star.is_feasible():
-                    violation_basis_vec = lp_solution[state.num_dims:]
-
-                    if not self.settings.aggregation or not self.settings.deaggregation or \
-                       self.has_counterexample(state, violation_basis_vec, state.total_steps):
-
-                        # convert origin offset to star basis and add to basis_center
-                        successor = discrete_poststate_star
-                        #successor.start_center = successor.center
-
-                        successor.center_into_constraints(basis_center)
-
-                        #self.plotman.cache_star_verts(successor) # do this before committing temp constriants
-
-                        successor.start_basis_matrix = state.basis_matrix
-                        #successor.basis_matrix = None # gets assigned from sim_bundle on pop
-
-                        successor.mode = transition.to_mode
-
-                        if self.settings.aggregation:
-                            self.waiting_list.add_aggregated(successor, self.settings)
-                        else:
-                            self.waiting_list.add_deaggregated(successor)
-                    else:
-                        # a refinement occurred, stop processing guards
-                        self.cur_star = state = None
-                        break
-
-    def do_step_continuous_post(self, output):
+    def do_step_continuous_post(self):
         '''do a step where it's part of a continuous post'''
 
         # advance time by one step
-        if self.cur_star.time_elapse.total_steps >= self.settings.num_steps:
+        if self.cur_star.time_elapse.next_step > self.settings.num_steps:
             self.cur_star = None
         else:
             if self.settings.print_output and not self.settings.skip_step_times:
-                step_num = self.cur_star.time_elapse.t
+                step_num = self.cur_star.time_elapse.next_step
                 print "Step: {} / {} ({})".format(step_num, self.settings.num_steps, self.settings.step * step_num)
 
-            self.cur_star.update(self.cur_step_in_mode)
-
+            self.cur_star.step()
             self.check_guards()
 
     def do_step(self):
@@ -142,12 +92,7 @@ class HylaaEngine(object):
         skipped_plot = False # if we skip the plot, do multiple steps
 
         while True:
-            output = self.settings.print_output
-
-            try:
-                self.do_step_continuous_post(output)
-            except FoundErrorTrajectory: # this gets raised if an error mode is reachable and we should quit early
-                pass
+            self.do_step_continuous_post()
 
             if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE or \
                                     not skipped_plot or self.is_finished():
@@ -159,26 +104,14 @@ class HylaaEngine(object):
             else:
                 print "Result: Error modes are NOT reachable.\n"
 
-    def run_to_completion(self):
-        'run the computation until it finishes (without plotting)'
-
-        Timers.tic("total")
-
-        while not self.is_finished():
-            self.do_step()
-
-        Timers.toc("total")
-
-        if self.settings.print_output:
-            LpInstance.print_stats()
-            Timers.print_stats()
-
-        self.result.time = Timers.timers["total"].total_secs
-
     def run(self, init_star):
         '''
         run the computation
         '''
+
+        assert isinstance(init_star, Star), "initial states should be a Star object"
+
+        print "Run called..."
 
         self.result = HylaaResult()
         self.plotman.create_plot()
@@ -186,15 +119,8 @@ class HylaaEngine(object):
         self.cur_star = init_star
 
         if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE:
-            # run without plotting
-            self.run_to_completion()
-        elif self.settings.plot.plot_mode == PlotSettings.PLOT_MATLAB:
-            # matlab plot
-            self.run_to_completion()
-            self.plotman.save_matlab()
+            self.plotman.run_to_completion(self.do_step, self.is_finished, compute_plot=False)
         else:
-            # plot during computation
             self.plotman.compute_and_animate(self.do_step, self.is_finished)
 
-class FoundErrorTrajectory(RuntimeError):
-    'gets thrown if a trajectory to the error states is found when settings.stop_when_error_reachable is True'
+        self.result.time = Timers.timers["total"].total_secs

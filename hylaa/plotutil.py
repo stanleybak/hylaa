@@ -18,10 +18,7 @@ from matplotlib import colors
 from matplotlib.widgets import Button
 from matplotlib.lines import Line2D
 
-import numpy as np
-
 from hylaa.file_io import write_matlab
-from hylaa.starutil import AggregationParent, ContinuousPostParent
 from hylaa.timerutil import Timers
 from hylaa.containers import PlotSettings
 from hylaa.util import Freezable
@@ -215,13 +212,11 @@ class DrawnShapes(Freezable):
             line.set_xdata(new_xdata)
             line.set_ydata(new_ydata)
 
-    def add_reachable_poly(self, poly_verts, parent, mode_name):
+    def add_reachable_poly(self, poly_verts, mode_name):
         '''add a polygon which was reachable'''
 
-        assert isinstance(parent, ContinuousPostParent)
-
         if len(poly_verts) <= 2:
-            markers = self.parent_to_markers.get(parent)
+            markers = self.parent_to_markers.get(mode_name)
 
             if markers is None:
                 face_col, edge_col = self.mode_colors.get_edge_face_colors(mode_name)
@@ -229,7 +224,7 @@ class DrawnShapes(Freezable):
                 markers = Line2D([], [], animated=True, ls='None', alpha=0.5, marker='o', mew=2, ms=5,
                                  mec=edge_col, mfc=face_col)
                 self.axes.add_line(markers)
-                self.parent_to_markers[parent] = markers
+                self.parent_to_markers[mode_name] = markers
 
             xdata = markers.get_xdata()
             ydata = markers.get_ydata()
@@ -238,14 +233,14 @@ class DrawnShapes(Freezable):
             markers.set_xdata(xdata)
             markers.set_ydata(ydata)
         else:
-            polys = self.parent_to_polys.get(parent)
+            polys = self.parent_to_polys.get(mode_name)
 
             if polys is None:
                 face_col, edge_col = self.mode_colors.get_edge_face_colors(mode_name)
                 polys = collections.PolyCollection([], lw=2, animated=True, alpha=0.5,
                                                    edgecolor=edge_col, facecolor=face_col)
                 self.axes.add_collection(polys)
-                self.parent_to_polys[parent] = polys
+                self.parent_to_polys[mode_name] = polys
 
             paths = polys.get_paths()
 
@@ -442,7 +437,7 @@ class PlotManager(Freezable):
 
                 self.cur_reachable_polys += 1
 
-                self.shapes.add_reachable_poly(verts, star.parent, star.mode.name)
+                self.shapes.add_reachable_poly(verts, star.mode.name)
 
             self.draw_cur_step += 1
 
@@ -468,12 +463,12 @@ class PlotManager(Freezable):
                     self.shapes.reset_cur_state()
                     step_func()
 
+                    if self.engine.cur_star is not None:
+                        self.plot_current_star(self.engine.cur_star)
+
                     # do several computation steps per frame if they're fast (optimization)
                     if force_single_frame or time.time() - start_time > self.settings.min_frame_time:
                         break
-
-                if self.engine.cur_star is not None:
-                    self.plot_current_star(self.engine.cur_star)
 
                 # if we just wanted a single step
                 if self.interactive.step:
@@ -505,8 +500,9 @@ class PlotManager(Freezable):
 
             Timers.toc("total")
 
-            LpInstance.print_stats()
-            Timers.print_stats()
+            if self.engine.settings.print_output:
+                LpInstance.print_stats()
+                Timers.print_stats()
 
         def next_pressed(_):
             'event function for next button press'
@@ -526,6 +522,10 @@ class PlotManager(Freezable):
                 iterator = self.settings.video.frames
 
         if self.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
+            # do one frame
+            self.interactive.paused = False
+            self.interactive.step = True
+
             # shrink plot, add buttons
             plt.subplots_adjust(bottom=0.12)
 
@@ -548,14 +548,36 @@ class PlotManager(Freezable):
             if self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
                 self.save_video(self._anim)
             elif self.settings.plot_mode == PlotSettings.PLOT_IMAGE:
+                self.run_to_completion(step_func, is_finished_func)
                 self.save_image()
+            elif self.settings.plot_mode == PlotSettings.PLOT_MATLAB:
+                self.run_to_completion(step_func, is_finished_func)
+                self.save_matlab()
             else:
                 plt.show()
 
+    def run_to_completion(self, step_func, is_finished_func, compute_plot=True):
+        'run to completion, creating the plot at each step'
+
+        Timers.tic("total")
+
+        while not is_finished_func():
+            if compute_plot:
+                self.shapes.reset_cur_state()
+
+            step_func()
+
+            if compute_plot and self.engine.cur_star is not None:
+                self.plot_current_star(self.engine.cur_star)
+
+        Timers.toc("total")
+
+        if self.engine.settings.print_output:
+            LpInstance.print_stats()
+            Timers.print_stats()
+
     def save_matlab(self):
         'save a matlab script'
-
-        self.engine.run_to_completion()
 
         filename = self.settings.filename
 
@@ -569,8 +591,6 @@ class PlotManager(Freezable):
 
     def save_image(self):
         'save an image file'
-
-        self.engine.run_to_completion()
 
         filename = self.settings.filename
 
@@ -652,6 +672,3 @@ def _blit_draw(_self, artists, bg_cache):
         ax.figure.canvas.blit(ax.figure.bbox)
 
 animation.Animation._blit_draw = _blit_draw
-
-
-

@@ -134,49 +134,9 @@ class LpData
         }
     }
 
-    // returns 0 on success, 1 on error
-    int getRowStatuses(char* store, int storeLen)
-    {
-        int rows = glp_get_num_rows(lp);
-
-        if (storeLen != rows)
-        {
-            printf(
-                "Error: Vector dimensions mismatch in getRowStatuses: %d (storage length) != "
-                "%d (num rows)\n",
-                storeLen, rows);
-            return 1;
-        }
-
-        for (int row = 1; row <= rows; ++row)
-            store[row - 1] = glp_get_row_stat(lp, row);
-
-        return 0;
-    }
-
-    int getColStatuses(char* store, int storeLen)
-    {
-        int cols = glp_get_num_cols(lp);
-
-        if (storeLen != cols)
-        {
-            printf(
-                "Error: Vector dimensions mismatch in getColStatuses: %d (storage length) != "
-                "%d (num cols)\n",
-                storeLen, cols);
-            return 1;
-        }
-
-        for (int col = 1; col <= cols; ++col)
-            store[col - 1] = glp_get_col_stat(lp, col);
-
-        return 0;
-    }
-
     // returns 1 on error, 0 on success
     int updateTimeElapseMatrix(double* matrix, int w, int h)
     {
-        // the transpose of the matrix goes into the LP
         if (w != numInitVars || h != numCurTimeVars)
         {
             printf(
@@ -212,19 +172,19 @@ class LpData
             int inds[w + 2];  // +1 padding +1 for the (-1) entry
             double vals[w + 2];
 
-            inds[index] = row + 1;
-            vals[index++] = -1;
-
             for (int col = 0; col < w; ++col)
             {
                 double val = matrix[row * w + col];
 
                 if (val != 0)
                 {
-                    inds[index] = numInitVars + col + 1;
+                    inds[index] = col + 1;
                     vals[index++] = val;
                 }
             }
+
+            inds[index] = w + row + 1;
+            vals[index++] = -1;
 
             glp_set_mat_row(lp, numInitConstraints + numCurTimeConstraints + row + 1, index - 1,
                             inds, vals);
@@ -234,96 +194,149 @@ class LpData
     }
 
     /**
-     * Add a constraint in the basis matrix (a star constraint)
+     * Set the constraints on the initial states. A CSR sparse matrix is passed in, along with
+     * a right-hand side vector
      */
-    void addInitConstraint(double* aVec, int aVecLen, double bVal)
+    void setInitConstraints(double* data, int dataLen, int* indices, int indicesLen, int* indptr,
+                            int indptrLen, double* rhs, int rhsLen)
     {
-        if (aVecLen != numInitVars)
+        if (numInitConstraints != 0)
         {
-            printf("Fatal Error: aVecLen wrong in addInitConstraint().\n");
+            printf("Fatal Error: setInitConstraints() called twice.\n");
             exit(1);
         }
 
-        int numRows = glp_get_num_rows(lp);
+        numInitConstraints = rhsLen;
 
-        // added this check
-        if (numRows != numInitConstraints)
+        if (dataLen != indicesLen)
         {
             printf(
-                "Fatal Error: All basis constraints should be added first (row mismatch) "
-                "in addInitConstraint().\n");
+                "Fatal Error: setInitConstraints() expected CSR matrix with dataLen == "
+                "indicesLen.\n");
             exit(1);
         }
 
-        ++numInitConstraints;
-
-        // create new row for the constraint
-        glp_add_rows(lp, 1);
-
-        glp_set_row_bnds(lp, numInitConstraints, GLP_UP, 0, bVal);
-
-        int inds[numInitVars + 1];
-        double vals[numInitVars + 1];
-
-        int index = 1;
-
-        for (int i = 0; i < numInitVars; ++i)
+        if (indptrLen != rhsLen + 1)
         {
-            double val = aVec[i];
-
-            if (val != 0)
-            {
-                inds[index] = i + 1;  // constraint on init variable i
-                vals[index++] = val;
-            }
+            printf(
+                "Fatal Error: setInitConstraints() CSR matrix should have indptrLen (%d) == "
+                "rhsLen(%d) + 1.\n",
+                indptrLen, rhsLen);
+            exit(1);
         }
 
-        glp_set_mat_row(lp, numInitConstraints, index - 1, inds, vals);
+        if (indptr[indptrLen - 1] != dataLen)
+        {
+            printf(
+                "Fatal Error: setInitConstraints() CSR matrix should have indptr[-1] == "
+                "dataLen.\n");
+            exit(1);
+        }
+
+        if (glp_get_num_rows(lp) != 0)
+        {
+            printf("setInitConstraints() should be called with 0 rows in the lp\n");
+            exit(1);
+        }
+
+        // create new row for each constraint
+        glp_add_rows(lp, rhsLen);
+
+        for (int i = 0; i < rhsLen; ++i)
+            glp_set_row_bnds(lp, i + 1, GLP_UP, 0, rhs[i]);
+
+        // worst case entries in one row is dataLen
+        int rowIndices[dataLen + 1];
+        double rowData[dataLen + 1];
+
+        for (int row = 0; row < rhsLen; ++row)
+        {
+            int rowIndex = 1;
+
+            for (int i = indptr[row]; i < indptr[row + 1]; ++i)
+            {
+                rowIndices[rowIndex] = indices[i] + 1;
+                rowData[rowIndex++] = data[i];
+            }
+
+            glp_set_mat_row(lp, row + 1, rowIndex - 1, rowIndices, rowData);
+        }
     }
 
-    void addCurTimeConstraint(double* aVec, int aVecLen, double bVal)
+    void setCurTimeConstraints(double* data, int dataLen, int* indices, int indicesLen, int* indptr,
+                               int indptrLen, double* rhs, int rhsLen)
     {
-        if (aVecLen != numCurTimeVars)
+        if (numInitConstraints == 0)
         {
-            printf("Fatal Error: aVecLen length wrong in addCurTimeConstraint.\n");
+            printf(
+                "Fatal Error: setInitConstraints() should be called before "
+                "setCurTimeConstraints().\n");
             exit(1);
         }
 
-        int numRows = glp_get_num_rows(lp);
+        if (numCurTimeConstraints != 0)
+        {
+            printf("Fatal Error: setCurTimeConstraints() called twice.\n");
+            exit(1);
+        }
 
-        if (numRows != numInitConstraints + numCurTimeConstraints)
+        numCurTimeConstraints = rhsLen;
+
+        if (dataLen != indicesLen)
         {
             printf(
-                "Fatal Error: All cur-time constraints should be added before time-elapse matrix "
-                "is updated in addCurTimeConstraint().\n");
+                "Fatal Error: setInitConstraints() expected CSR matrix with dataLen == "
+                "indicesLen.\n");
+            exit(1);
+        }
+
+        if (indptrLen != rhsLen + 1)
+        {
+            printf(
+                "Fatal Error: setInitConstraints() CSR matrix should have indptrLen (%d) == "
+                "rhsLen(%d) + 1.\n",
+                indptrLen, rhsLen);
+            exit(1);
+        }
+
+        if (indptr[indptrLen - 1] != dataLen)
+        {
+            printf(
+                "Fatal Error: setInitConstraints() CSR matrix should have indptr[-1] == "
+                "dataLen.\n");
+            exit(1);
+        }
+
+        if (glp_get_num_rows(lp) != numInitConstraints)
+        {
+            printf(
+                "Fatal Error: Cur-time constraints should be set before time-elapse matrix "
+                "is updated in setCurTimeConstraints().\n");
             exit(1);
         }
 
         // create new row for the constraint
-        glp_add_rows(lp, 1);
+        glp_add_rows(lp, rhsLen);
 
-        ++numCurTimeConstraints;
-        ++numRows;
+        for (int r = 0; r < rhsLen; ++r)
+            glp_set_row_bnds(lp, numInitConstraints + r + 1, GLP_UP, 0, rhs[r]);
 
-        glp_set_row_bnds(lp, numRows, GLP_UP, 0, bVal);
+        // worst case entries in one row is dataLen
+        int rowIndices[dataLen + 1];
+        double rowData[dataLen + 1];
 
-        int inds[numCurTimeVars + 1];
-        double vals[numCurTimeVars + 1];
-
-        int index = 1;
-
-        for (int i = 0; i < numCurTimeVars; ++i)
+        for (int row = 0; row < rhsLen; ++row)
         {
-            double val = aVec[i];
+            int rowIndex = 1;
 
-            if (val != 0)
+            for (int i = indptr[row]; i < indptr[row + 1]; ++i)
             {
-                inds[index] = numInitVars + i + 1;  // constraint on standard variable i
-                vals[index++] = val;
+                rowIndices[rowIndex] = numInitVars + indices[i] + 1;
+                rowData[rowIndex++] = data[i];
             }
-        }
 
-        glp_set_mat_row(lp, numRows, index - 1, inds, vals);
+            glp_set_mat_row(lp, numInitConstraints + row + 1, rowIndex - 1, rowIndices, rowData);
+        }
     }
 
     // returns 0 on success

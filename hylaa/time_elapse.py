@@ -10,7 +10,7 @@ from scipy.sparse.linalg import expm
 
 from hylaa.util import Freezable
 from hylaa.hybrid_automaton import LinearAutomatonMode
-from hylaa.containers import HylaaSettings, PlotSettings
+from hylaa.containers import HylaaSettings, PlotSettings, SimulationSettings
 from hylaa.timerutil import Timers
 
 class TimeElapser(Freezable):
@@ -26,18 +26,19 @@ class TimeElapser(Freezable):
 
         self.next_step = 0
         self.key_dir_mat = None # csr_matrix
-        self.cur_key_dir_mat = None # assigned on update()
-        self._extract_directions(mode)
+        self.cur_time_elapse_mat = None # assigned on step()
+        self.one_step_matrix_exp = None # one step matrix exponential, used for sim_mode == EXP_MULT
+        self._extract_key_directions(mode)
 
         self.freeze_attrs()
 
-    def _extract_directions(self, mode):
-        'extract the directions which are of interest'
+    def _extract_key_directions(self, mode):
+        'extract the key directions for lp solving'
 
         num_directions = 0 if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE else 2
 
         for t in mode.transitions:
-            num_directions += len(t.condition_list)
+            num_directions += t.guard_matrix.shape[0]
 
         lil_dir_mat = lil_matrix((num_directions, self.dims), dtype=float)
 
@@ -45,27 +46,69 @@ class TimeElapser(Freezable):
         dir_index = 0
 
         if self.settings.plot.plot_mode != PlotSettings.PLOT_NONE:
-            lil_dir_mat[0, self.settings.plot.xdim] = 1.0
-            lil_dir_mat[1, self.settings.plot.ydim] = 1.0
+            if isinstance(self.settings.plot.xdim_dir, int):
+                lil_dir_mat[0, self.settings.plot.xdim_dir] = 1.0
+            else:
+                lil_dir_mat[0, :] = self.settings.plot.xdim_dir
+
+            if isinstance(self.settings.plot.ydim_dir, int):
+                lil_dir_mat[1, self.settings.plot.ydim_dir] = 1.0
+            else:
+                lil_dir_mat[1, :] = self.settings.plot.ydim_dir
+
             dir_index += 2
 
         for t in mode.transitions:
-            for lc in t.condition_list:
-                lil_dir_mat[dir_index, :] = lc.vector
+            for row in t.guard_matrix:
+                lil_dir_mat[dir_index, :] = row
                 dir_index += 1
 
-        # done constructing, convert to csr_matrix
+        # done constructing, convert to csc_matrix
         self.key_dir_mat = csr_matrix(lil_dir_mat)
+
+    def step_exp_mult(self):
+        'first step matrix exp, other steps matrix multiplication'
+
+        if self.next_step == 0:
+            self.cur_time_elapse_mat = self.key_dir_mat * np.identity(self.dims)
+        elif self.one_step_matrix_exp is None:
+            assert self.next_step == 1
+            assert isinstance(self.key_dir_mat, csr_matrix)
+            Timers.tic('time_elapse.step first')
+
+            self.one_step_matrix_exp = np.array(expm(self.a_matrix * self.settings.step).todense(), dtype=float)
+            self.cur_time_elapse_mat = np.array((self.key_dir_mat * self.one_step_matrix_exp).todense(), dtype=float)
+
+            Timers.toc('time_elapse.step first')
+        else:
+            Timers.tic('time_elapse.step others')
+            self.cur_time_elapse_mat = np.dot(self.cur_time_elapse_mat, self.one_step_matrix_exp)
+            Timers.toc('time_elapse.step others')
+
+    def step_matrix_exp(self):
+        'matrix exp every step'
+
+        cur_time = self.settings.step * self.next_step
+        time_mat = self.a_matrix * cur_time
+        exp = expm(time_mat)
+
+        self.cur_time_elapse_mat = np.array((self.key_dir_mat * exp).todense(), dtype=float)
 
     def step(self):
         'perform the computation to obtain the values of the key directions the current time'
 
-        Timers.tic('time_elapser.update')
+        Timers.tic('time_elapse.step')
 
-        cur_time = self.settings.step * self.next_step
-        exp = expm(self.a_matrix * cur_time)
-        self.cur_key_dir_mat = np.dot(self.key_dir_mat, exp)
+        if self.settings.simulation.sim_mode == SimulationSettings.MATRIX_EXP:
+            self.step_matrix_exp()
+        elif self.settings.simulation.sim_mode == SimulationSettings.EXP_MULT:
+            self.step_exp_mult()
+        else:
+            raise RuntimeError('Unimplemented sim_mode {}'.format(self.settings.simulation.sim_mode))
 
         self.next_step += 1
 
-        Timers.toc('time_elapser.update')
+        Timers.toc('time_elapse.step')
+        assert isinstance(self.cur_time_elapse_mat, np.ndarray), "cur_time_elapse_mat should be an np.array"
+        assert self.cur_time_elapse_mat.shape == self.key_dir_mat.shape, \
+            "cur_time_elapse mat shape({}) should be {}".format(self.cur_time_elapse_mat.shape, self.key_dir_mat.shape)

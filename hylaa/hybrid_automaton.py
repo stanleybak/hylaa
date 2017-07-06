@@ -3,48 +3,43 @@ Hybrid Automaton generic definition for Hylaa
 Stanley Bak (Sept 2016)
 '''
 
-from scipy.sparse import csr_matrix
+import numpy as np
+from scipy.sparse import csc_matrix, csr_matrix
 
 from hylaa.util import Freezable
 
-class SparseLinearConstraint(Freezable):
-    'a single linear constraint: vector * x <= value'
+def add_time_var(a_matrix):
+    '''
+    modify the matrix and init state to add a time variable (this adds two rows and cols)
 
-    def __init__(self, vector, value):
-        self.vector = csr_matrix(vector, dtype=float)
-        self.value = float(value)
+    returns a tuple (new_matrix, new_init)
+    '''
 
-        self.freeze_attrs()
+    n = a_matrix.shape[0]
+    assert a_matrix.shape[1] == n
+    nnz = len(a_matrix.data)
 
-    def almost_equals(self, other, tol):
-        'equality up to a tolerance'
-        assert isinstance(other, SparseLinearConstraint)
+    data = np.concatenate((a_matrix.data, [1]))
+    indptr = np.concatenate((a_matrix.indptr, [nnz, nnz + 1]))
 
-        rv = True
+    indices = np.concatenate((a_matrix.indices, [n]))
 
-        if abs(self.value - other.value) > tol:
-            rv = False
-        else:
-            for i in xrange(self.vector.shape[0]):
-                a = self.vector[i]
-                b = other.vector[i]
+    return csc_matrix((data, indices, indptr), shape=(n + 2, n + 2))
 
-                if abs(a - b) > tol:
-                    rv = False
-                    break
+def add_zero_cols(mat, num_new_cols):
+    '''
+    modify the csc_matrix by adding a certain number of nonzero columns
+    '''
 
-        return rv
+    mat = csc_matrix(mat)
+    nnz = len(mat.data)
 
-    def clone(self):
-        'create a deep copy of this LinearConstraints object'
+    rows = mat.shape[0]
+    cols = mat.shape[1]
 
-        return SparseLinearConstraint(self.vector.copy(), self.value)
+    indptr = np.concatenate((mat.indptr, [nnz, nnz]))
 
-    def __str__(self):
-        return '[SparseLinearConstraint: {} * x <= {}]'.format(self.vector, self.value)
-
-    def __repr__(self):
-        return 'SparseLinearConstraint({}, {})'.format(repr(self.vector), repr(self.value))
+    return csc_matrix((mat.data, mat.indices, indptr), shape=(rows, cols + num_new_cols))
 
 class HyperRectangle(object):
     'An n-dimensional box'
@@ -135,11 +130,14 @@ class LinearAutomatonMode(Freezable):
     def set_dynamics(self, a_matrix):
         'sets the autonomous system dynamics'
 
-        assert isinstance(a_matrix, csr_matrix)
+        assert isinstance(a_matrix, csc_matrix)
         assert len(a_matrix.shape) == 2
 
+        if self.parent.dims is None:
+            self.parent.dims = a_matrix.shape[0]
+
         assert a_matrix.shape[0] == self.parent.dims and a_matrix.shape[1] == self.parent.dims, \
-            "Hybrid Automaton set to {} dimensions, but a_matrix.shape was {}".format(self.parent.dims, a_matrix.shape)
+            "Hybrid Automaton has {} dimensions, but a_matrix.shape was {}".format(self.parent.dims, a_matrix.shape)
 
         self.a_matrix = a_matrix
 
@@ -154,10 +152,27 @@ class LinearAutomatonTransition(Freezable):
         self.from_mode = from_mode
         self.to_mode = to_mode
 
-        self.condition_list = [] # a list of LinearConstraint, if all are true then the guard is enabled
-        from_mode.transitions.append(self)
+        # mat * vars <= rhs
+        self.guard_matrix = None
+        self.guard_rhs = None
 
         self.freeze_attrs()
+
+        from_mode.transitions.append(self)
+
+    def set_guard(self, matrix, rhs):
+        '''set the guard matrix and right-hand side. The transition is enabled if
+        matrix * var_list <= rhs
+        '''
+
+        assert isinstance(matrix, csr_matrix)
+        assert isinstance(rhs, np.ndarray)
+
+        assert rhs.shape == (matrix.shape[0],)
+        assert matrix.shape[1] == self.parent.dims
+
+        self.guard_matrix = matrix
+        self.guard_rhs = rhs
 
     def __str__(self):
         return self.from_mode.name + " -> " + self.to_mode.name
@@ -165,7 +180,7 @@ class LinearAutomatonTransition(Freezable):
 class LinearHybridAutomaton(Freezable):
     'The hybrid automaton'
 
-    def __init__(self, dims, name='HybridAutomaton'):
+    def __init__(self, dims=None, name='HybridAutomaton'):
         self.name = name
         self.modes = {}
         self.transitions = []

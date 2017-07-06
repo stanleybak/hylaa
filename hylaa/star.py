@@ -12,9 +12,11 @@ from numpy import array_repr
 from numpy.linalg import lstsq
 from numpy.testing import assert_array_almost_equal
 
+from scipy.sparse import csr_matrix
+
 from hylaa.glpk_interface import LpInstance
 from hylaa.hybrid_automaton import HyperRectangle, LinearAutomatonTransition
-from hylaa.hybrid_automaton import LinearAutomatonMode, SparseLinearConstraint
+from hylaa.hybrid_automaton import LinearAutomatonMode
 from hylaa.timerutil import Timers as Timers
 from hylaa.util import Freezable
 from hylaa.starutil import GuardOptData, InitParent
@@ -23,28 +25,25 @@ from hylaa.time_elapse import TimeElapser
 
 class Star(Freezable):
     '''
-    A representation of a set of continuous states. Contains logic for plotting that states if
-    requested in the settings.
+    A representation of a set of continuous states. Contains logic
+    for plotting that states if requested in the settings.
     '''
 
-    def __init__(self, hylaa_settings, constraint_list, mode):
-
-        assert len(constraint_list) > 0
+    def __init__(self, hylaa_settings, constraint_mat, constraint_rhs, mode):
         assert isinstance(hylaa_settings, HylaaSettings)
 
         self.settings = hylaa_settings
 
         assert isinstance(mode, LinearAutomatonMode)
-        self.mode = mode # the LinearAutomatonMode
+        self.mode = mode
         self.dims = mode.parent.dims
-
         self.time_elapse = TimeElapser(mode, hylaa_settings)
 
-        for lc in constraint_list:
-            assert isinstance(lc, SparseLinearConstraint), "constraint_list should be a list SpraseLinearConstraints"
-            assert lc.vector.shape[0] == self.dims, "each star's constraint's size should match num_dims"
-
-        self.constraint_list = [c.clone() for c in constraint_list] # copy constraints
+        assert isinstance(constraint_mat, csr_matrix)
+        assert isinstance(constraint_rhs, np.ndarray)
+        assert constraint_rhs.shape == (constraint_mat.shape[0],)
+        self.constraint_matrix = constraint_mat
+        self.constraint_rhs = constraint_rhs
 
         self.total_steps = 0
 
@@ -52,398 +51,79 @@ class Star(Freezable):
         ## private member initialization ##
         ###################################
         self._plot_lpi = None # LpInstance for plotting
-        self._guard_opt_data = GuardOptData(self) # contains LP instance(s) for guard checks
+        self._guard_lpis = [None] * len(mode.transitions) # LP instance(s) for guard checks
         self._verts = None # for plotting optimization, a cached copy of this star's projected polygon verts
 
         self.freeze_attrs()
 
-    def step(self):
-        'update the star to the given step number'
+    def get_guard_intersection(self, transition_index):
+        '''update the LP for the given transition, solve, and return get the lp solution (if feasible)'''
 
-        self.time_elapse.step()
+        transition = self.mode.transitions[transition_index]
+        num_constraints = transition.guard_matrix.shape[0]
+        key_dir_offset = 0 if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE else 2
+
+        for t_index in xrange(transition_index):
+            key_dir_offset += self.mode.transitions[t_index].guard_matrix.shape[0]
+
+        if self._guard_lpis[transition_index] is None:
+            # first time this was called... initialize the guard lpi
+            
+            lpi = LpInstance(num_constraints, self.dims)
+            lpi.set_init_constraints(self.constraint_matrix, self.constraint_rhs)
+
+            # use identity for cur_time_matrix
+            # this is because we're already multiplying each time step by transition.guard_matrix
+            # so the cur-time variables are the 'value' of state dot constraint-direction
+            cur_time_matrix = csr_matrix(np.identity(num_constraints, dtype=float), dtype=float)
+            lpi.set_cur_time_constraints(cur_time_matrix, transition.guard_rhs)
+            
+            self._guard_lpis[transition_index] = lpi
+
+        lpi = self._guard_lpis[transition_index]
+        cur_mat = self.time_elapse.cur_time_elapse_mat
+        lpi.update_time_elapse_matrix(cur_mat[key_dir_offset:key_dir_offset + num_constraints])
+
+        direction = np.zeros((num_constraints))
+        result = np.zeros((num_constraints + self.dims))
+
+        is_feasible = lpi.minimize(direction, result, error_if_infeasible=False)
+
+        return result if is_feasible else None
 
     def get_plot_lpi(self):
         'get (maybe create) the LpInstance object for this star, and return it'
 
-        rv = self._star_lpi
+        assert self.time_elapse.cur_time_elapse_mat is not None
+
+        rv = self._plot_lpi
 
         if rv is None:
-            rv = LpInstance(2, self.num_dims)
-            rv.update_basis_matrix(self.basis_matrix)
+            rv = LpInstance(2, self.dims)
+            rv.set_init_constraints(self.constraint_matrix, self.constraint_rhs)
+            rv.update_time_elapse_matrix(self.time_elapse.cur_time_elapse_mat[:2])
 
-            for lc in self.constraint_list:
-                rv.add_basis_constraint(lc.vector, lc.value)
-
-            self._star_lpi = rv
+            self._plot_lpi = rv
 
         return rv
 
-    def update_from_sim(self, new_basis_matrix, new_center):
+    def step(self):
         'update the star based on values from a new simulation time instant'
 
-        assert isinstance(new_basis_matrix, np.ndarray)
-        assert isinstance(new_center, np.ndarray)
+        self.time_elapse.step()
 
-        Timers.tic('star.update_from_sim')
-        prev_basis_matrix = self.basis_matrix
+        Timers.tic('star.step-update-lp')
 
-        Timers.tic('star.update_from_sim (make input star)')
-        # add input star using the current basis matrix (before updating)
-        input_star = None
-        if self.mode.num_inputs > 0:
-            mode = self.mode
-            input_star = InputStar(mode, prev_basis_matrix)
-
-            if self.input_stars is not None:
-                self.input_stars.append(input_star)
-
-            if self._star_lpi is not None:
-                self._star_lpi.add_input_star(input_star.a_matrix_t, input_star.b_vector, input_star.input_basis_matrix)
-
-        Timers.toc('star.update_from_sim (make input star)')
-        Timers.tic('star.update_from_sim (update basis matrix)')
-
-        # update the current step's basis matrix
-        if self.start_basis_matrix is None:
-            self.basis_matrix = new_basis_matrix
-        else:
-            self.basis_matrix = np.dot(self.start_basis_matrix, new_basis_matrix)
-
-        self.center = new_center
-
-        if self._star_lpi is not None:
-            self._star_lpi.update_basis_matrix(self.basis_matrix)
+        if self._plot_lpi is not None:
+            self._plot_lpi.update_time_elapse_matrix(self.time_elapse.cur_time_elapse_mat[:2])
 
         self._verts = None # cached vertices for plotting are no longer valid
 
-        Timers.toc('star.update_from_sim (update basis matrix)')
-
-        Timers.toc('star.update_from_sim')
-
-        Timers.tic('guard_opt_data.update_from_sim')
-        self._guard_opt_data.update_from_sim(input_star)
-        Timers.toc('guard_opt_data.update_from_sim')
-
-    def center_into_constraints(self, basis_center):
-        '''
-        convert the current sim_center into the star's constraints. This
-        creates a new copy of the constraint matrix
-
-        basis center is just: self.vector_to_star_basis(self.center), but it
-        should be cached in the DiscreteSucessorParent, so there's not sense in
-        computing it twice.
-        '''
-
-        new_vals = []
-
-        for lc in self.constraint_list:
-            offset = np.dot(lc.vector, basis_center)
-            lc.value += offset
-
-            new_vals.append(lc.value)
-
-        new_vals = np.array(new_vals, dtype=float)
-
-        # reset center_sim to 0
-        self.center = np.zeros((self.num_dims), dtype=float)
-
-        if self._star_lpi is not None:
-            self._star_lpi.set_basis_constraint_values(new_vals)
-
-        if self._guard_opt_data is not None:
-            self._guard_opt_data.set_basis_constraint_values(new_vals)
-
-    def point_to_star_basis(self, standard_pt):
-        '''convert a point in the standard basis to the star's basis'''
-
-        vec = standard_pt - self.center
-
-        return self.vector_to_star_basis(vec)
-
-    def vector_to_star_basis(self, standard_vec):
-        '''
-        convert a vector in the standard basis to a point in the star's basis.
-
-        This solves basis_matrix * rv = input, which is essentially computing the
-        inverse of basis_matrix, which can become ill-conditioned.
-        '''
-
-        Timers.tic("vector_to_star_basis()")
-
-        rv = np.linalg.solve(self.basis_matrix.T, standard_vec)
-
-        #rv = lstsq(self.basis_matrix.T, np.array(standard_vec, dtype=float))[0]
-
-        # double-check that we've found the solution within some tolerance
-        if not np.allclose(np.dot(self.basis_matrix.T, rv), standard_vec):
-            raise RuntimeError("basis matrix was ill-conditioned, vector_to_star_basis() failed")
-
-        Timers.toc("vector_to_star_basis()")
-
-        assert isinstance(rv, np.ndarray)
-
-        return rv
-
-    def get_feasible_point(self, standard_dir=None):
-        '''
-        if it is feasible, this returns a point which is feasible, otherwise returns None
-        '''
-
-        lpi = self.get_lpi()
-
-        dims = self.num_dims
-        num_inputs = self.mode.num_inputs
-        input_dims = self.total_steps * num_inputs
-        result = np.zeros(2 * dims + input_dims)
-        opt_direction = -1 * np.array(standard_dir, dtype=float) if standard_dir is not None else np.zeros(dims)
-
-        if lpi.minimize(opt_direction, result, error_if_infeasible=False):
-            rv = result[0:dims] + self.center
-        else:
-            rv = None
-
-        return rv
-
-    def get_guard_intersection(self, index):
-        '''
-        get the intersection (if it exists) with the guard with the given index
-
-        returns the optimal lp solution vector, or None if the intersection doesn't exist
-        '''
-
-        is_error_intersection = self.mode.transitions[index].to_mode.is_error
-
-        return self._guard_opt_data.get_guard_intersection(index, is_error_intersection)
-
-    def is_feasible(self):
-        'check if a star is feasible (not empty set)'
-
-        return self.get_feasible_point() is not None
-
-    def add_basis_constraint(self, lc):
-        '''add a linear constraint, in the star's basis, to the star's predicate'''
-
-        assert self.mode.num_inputs == 0, "add_basis_constraint() w/ time-varying inputs not yet supported"
-
-        # add to predicate list
-        self.constraint_list.append(lc)
-
-        # add to guard opt data
-        self._guard_opt_data.add_basis_constraint(lc)
-
-        if self._star_lpi is not None:
-            self._star_lpi.add_basis_constraint(lc.vector, lc.value)
-
-        if self._verts is not None:
-            self._verts = None
-
-    def trim_to_invariant(self):
-        '''
-        trim the star to the mode's invariant.
-
-        returns (is_still_feasible, inv_vio_star_list)
-        '''
-
-        still_feasible = True
-        inv_vio_star_list = []
-
-        if len(self.mode.inv_list) > 0:
-            assert self.mode.num_inputs == 0, "mode invariants + dynamics with time-varying inputs not yet supported"
-
-            # check each invariant condition to see if it is violated
-            lpi = self.get_lpi()
-
-            for lin_con in self.mode.inv_list:
-                objective = np.array([-ele for ele in lin_con.vector], dtype=float)
-                result = np.zeros(2 * self.num_dims)
-
-                lpi.minimize(objective, result, error_if_infeasible=True)
-
-                offset = result[0:self.num_dims]
-                point = self.center + offset
-
-                val = np.dot(point, lin_con.vector)
-
-                if val > lin_con.value:
-                    # add the constraint to the star's constraints
-                    # first, convert the condition to the star's basis
-
-                    # basis vectors (non-transpose) * standard_condition
-                    basis_condition = np.dot(self.basis_matrix, lin_con.vector)
-                    center_value = np.dot(self.center, lin_con.vector)
-                    remaining_value = lin_con.value - center_value
-
-                    basis_lc = LinearConstraint(basis_condition, remaining_value)
-
-                    if self.settings.plot.plot_mode != PlotSettings.PLOT_NONE:
-                        # use the inverse of the invariant constraint for plotting
-
-                        inv_lc = LinearConstraint([-1 * ele for ele in basis_lc.vector], -basis_lc.value)
-
-                        inv_vio_star = self.clone()
-                        inv_vio_star.add_basis_constraint(inv_lc)
-
-                        # re-check for feasibility after adding the constraint
-                        if inv_vio_star.is_feasible():
-                            inv_vio_star_list.append(inv_vio_star)
-
-                    # add the constraint AFTER making the plot violation star
-                    self.add_basis_constraint(basis_lc)
-
-                # we added a new constraint to the star, check if it's still feasible
-                if not self.is_feasible():
-                    still_feasible = False
-                    break # don't check the remaining invariant linear conditions
-
-        return (still_feasible, inv_vio_star_list)
-
-    def add_std_constraint_direction(self, standard_direction):
-        '''
-        add a constraint direction, given in the standard basis to the star
-        '''
-
-        assert isinstance(standard_direction, np.ndarray)
-        assert standard_direction.shape == (self.num_dims,)
-
-        lpi = self.get_lpi()
-        basis_direction = np.dot(self.basis_matrix, standard_direction)
-
-        result = np.zeros((2 * self.num_dims))
-
-        # multiplying by -1 turns it into a maximization
-        lpi.minimize(-1 * standard_direction, result, error_if_infeasible=True)
-
-        opt_pt = result[:self.num_dims]
-        basis_pt = self.vector_to_star_basis(opt_pt)
-
-        opt_val = np.dot(basis_pt, basis_direction)
-
-        # offset the multiple to account for the stars' centers
-        opt_val -= np.dot(basis_direction, self.center)
-
-        lc = LinearConstraint(basis_direction, opt_val)
-
-        self.add_basis_constraint(lc)
-
-    def eat_star(self, other_star):
-        '''
-        merge the other star into this star, changing this star's linear basis constraints values
-        until all the points in both stars satisfy all the constraints
-        '''
-
-        # This may be possible without inverting the basis matrix... but I couldn't figure it out
-        # may not matter; new intersection will probably need to use combined LP
-
-        changed = False
-
-        # first update total_steps to be the minimum
-        self.total_steps = min(self.total_steps, other_star.total_steps)
-
-        assert self.input_stars is None or len(self.input_stars) == 0
-        assert isinstance(other_star, Star)
-        assert self.num_dims == other_star.num_dims
-
-        lpi = other_star.get_lpi()
-        result = np.zeros((2 * self.num_dims))
-
-        # possibly increase every constraint
-        lc_vals = []
-
-        for lc in self.constraint_list:
-            # maximize the basis constraint direction in other_star
-            standard_direction = np.dot(np.linalg.inv(self.basis_matrix), lc.vector)
-
-            # multiplying by -1 turns it into a maximization
-            lpi.minimize(-1 * standard_direction, result, error_if_infeasible=True)
-
-            opt_pt = result[:self.num_dims]
-
-            basis_pt = self.vector_to_star_basis(opt_pt)
-
-            opt_val = np.dot(basis_pt, lc.vector)
-
-            # offset the multiple to account for the stars' centers
-            opt_val += np.dot(lc.vector, other_star.center)
-            opt_val -= np.dot(lc.vector, self.center)
-
-            # and update if the new constraint is looser
-            if opt_val > lc.value:
-                lc.value = opt_val
-                changed = True
-
-            lc_vals.append(lc.value)
-
-        # reset cached values if the star's constraints were changed
-        if changed:
-            self._verts = None
-
-            lc_vals = np.array(lc_vals, dtype=float)
-
-            if self._star_lpi is not None:
-                self._star_lpi.set_basis_constraint_values(lc_vals)
-
-            if self._guard_opt_data is not None:
-                self._guard_opt_data.set_basis_constraint_values(lc_vals)
-
-    def clone(self):
-        'return a copy of the star'
-
-        assert self.input_stars is None or len(self.input_stars) == 0, "clone() not supported with input stars"
-
-        rv = Star(self.settings, self.center, self.basis_matrix, self.constraint_list, self.parent, self.mode)
-
-        rv.init_post_jump_data(self.start_basis_matrix, self.total_steps, self.fast_forward_steps)
-
-        return rv
-
-    def __repr__(self):
-        '''
-        this does not print parent. mode is printed as ha.modes['name']
-        '''
-
-        return "Star(HylaaSettings({}, {}), {}, {}, {}, None, ha.modes['{}'], extra_init=({}, {}, {}))".format(
-            self.settings.step,
-            self.settings.step * self.settings.num_steps,
-            array_repr(self.center),
-            array_repr(self.basis_matrix),
-            self.constraint_list,
-            self.mode.name,
-            array_repr(self.start_basis_matrix) if self.start_basis_matrix is not None else None,
-            self.total_steps,
-            self.fast_forward_steps
-            )
-
-    def contains_basis(self, basis_vals, atol=0):
-        ''''
-        is the passed-in point (already offset by the star's center and
-        expressed as basis vectors) contained in the set?
-        '''
-
-        a_mat = np.zeros((len(self.constraint_list), self.num_dims))
-
-        for i in xrange(len(self.constraint_list)):
-            a_mat[i, :] = self.constraint_list[i].vector
-
-        result = np.dot(a_mat, basis_vals)
-        rv = True
-
-        for i in xrange(len(result)):
-            if result[i] > atol + self.constraint_list[i].value:
-                rv = False
-                break
-
-        return rv
-
-    def contains_point(self, standard_point, atol=0):
-        'is the passed-in point (in the standard basis) contained in the set?'
-
-        basis_vecs = self.point_to_star_basis(standard_point)
-
-        return self.contains_basis(basis_vecs, atol=atol)
-
-    def __str__(self):
-        return "[Star: dims={}, center={}, basis_matrix=\n{}\n, constraint_list=\n{}\n, total_steps={}]".format(
-            self.num_dims, self.center, self.basis_matrix, self.constraint_list, self.total_steps)
+        #Timers.tic('guard_opt_data.update_from_sim')
+        #self._guard_opt_data.update_from_sim(input_star)
+        #Timers.toc('guard_opt_data.update_from_sim')
+
+        Timers.toc('star.step-update-lp')
 
     ######### star plotting methods below ############
 
@@ -453,22 +133,11 @@ class Star(Freezable):
     high_vert_mode = False # reduce plotting directions if the set has lots of verticies (drawing optimization)
 
     @staticmethod
-    def init_plot_vecs(num_dims, plot_settings):
+    def init_plot_vecs(plot_settings):
         'initialize plot_vecs'
 
-        assert num_dims >= 1
         Star.plot_settings = plot_settings
-
-        xdim = plot_settings.xdim
-        ydim = plot_settings.ydim
-
         Star.plot_vecs = []
-
-        if xdim < 0 or xdim >= num_dims:
-            raise RuntimeError('plot x dim out of bounds: {} not in [0, {}]'.format(xdim, num_dims-1))
-
-        if ydim < 0 or ydim >= num_dims:
-            raise RuntimeError('plot y dim out of bounds: {} not in [0, {}]'.format(ydim, num_dims-1))
 
         assert plot_settings.num_angles >= 3, "needed at least 3 directions in plot_settings.num_angles"
 
@@ -478,17 +147,9 @@ class Star(Freezable):
             x = math.cos(theta)
             y = math.sin(theta)
 
-            vec = np.array([0.0] * num_dims, dtype=float)
-            vec[xdim] = x
-            vec[ydim] = y
+            vec = np.array([x, y], dtype=float)
 
             Star.plot_vecs.append(vec)
-
-    def print_lp(self):
-        '''print the star's lp to stdout'''
-
-        lpi = self.get_lpi()
-        lpi.print_lp()
 
     def verts(self):
         'get the verticies of the polygon projection of the star used for plotting'
@@ -496,8 +157,6 @@ class Star(Freezable):
         assert Star.plot_settings is not None, "init_plot_vecs() should be called before verts()"
 
         if self._verts is None:
-            xdim = self.settings.plot.xdim
-            ydim = self.settings.plot.ydim
             use_binary_search = True
 
             if Star.high_vert_mode:
@@ -518,7 +177,7 @@ class Star(Freezable):
 
                     Star.plot_vecs = new_vecs
 
-            verts = [[pt[xdim], pt[ydim]] for pt in pts]
+            verts = [[pt[0], pt[1]] for pt in pts]
 
             # wrap polygon back to first point
             verts.append(verts[0])
@@ -535,14 +194,14 @@ class Star(Freezable):
         points which match start_point or end_point are not returned
         '''
 
-        star_lpi = self.get_lpi()
+        star_lpi = self.get_plot_lpi()
 
         dirs = Star.plot_vecs
         rv = []
 
         if start + 1 < end:
             mid = (start + end) / 2
-            mid_point = np.zeros(self.num_dims)
+            mid_point = np.zeros(2)
 
             star_lpi.minimize(dirs[mid], mid_point, error_if_infeasible=True)
 
@@ -567,16 +226,15 @@ class Star(Freezable):
         of the passed-in directions
         '''
 
-        star_lpi = self.get_lpi()
+        star_lpi = self.get_plot_lpi()
 
-        standard_center = self.center
-        point = np.zeros(self.num_dims)
+        point = np.zeros(2)
         direction_list = Star.plot_vecs
         rv = []
 
         assert len(direction_list) > 2
 
-        if not use_binary_search:
+        if not use_binary_search or len(direction_list) < 8:
             # straightforward approach: minimize in each direction
             last_point = None
 
@@ -585,7 +243,7 @@ class Star(Freezable):
 
                 if last_point is None or not np.array_equal(point, last_point):
                     last_point = point.copy()
-                    rv.append(standard_center + point)
+                    rv.append(last_point)
         else:
             # optimized approach: do binary search to find changes
             star_lpi.minimize(direction_list[0], point, error_if_infeasible=True)
@@ -615,57 +273,8 @@ class Star(Freezable):
                 rv += self._binary_search_star_boundaries(2*third, len(direction_list) - 1, rv[-1], point)
                 rv.append(point.copy())
 
-            # finally offset all the points by standard_center
-            rv = [standard_center + pt for pt in rv]
-
         # pop last point if it's the same as the first point
         if len(rv) > 1 and np.array_equal(rv[0], rv[-1]):
             rv.pop()
 
         return rv
-
-def init_point_to_star(settings, pt, mode):
-    'convert an n-d point to a LinearConstraintStar'
-
-    dims = [(val, val) for val in pt]
-
-    return init_hr_to_star(settings, HyperRectangle(dims), mode)
-
-def init_hr_to_star(settings, hr, mode):
-    'convert a HyperRectangle to a Star'
-
-    assert isinstance(mode, LinearAutomatonMode)
-
-    num_dims = len(hr.dims)
-
-    constraint_list = []
-
-    for i in xrange(num_dims):
-        (low, high) = hr.dims[i]
-
-        vector = np.array([1 if d == i else 0 for d in xrange(num_dims)], dtype=float)
-        value = high
-        constraint_list.append(LinearConstraint(vector, value))
-
-        vector = np.array([-1 if d == i else 0 for d in xrange(num_dims)], dtype=float)
-        value = -low
-        constraint_list.append(LinearConstraint(vector, value))
-
-    parent = InitParent(mode)
-    basis_matrix = np.identity(num_dims, dtype=float)
-
-    center = np.array([0.0] * num_dims, dtype=float)
-    return Star(settings, center, basis_matrix, constraint_list, parent, mode)
-
-def init_constraints_to_star(settings, constraint_list, mode):
-    'convert a list of constraints to a Star'
-
-    assert len(constraint_list) > 0
-
-    num_dims = len(mode.parent.variables)
-    parent = InitParent(mode)
-
-    basis_matrix = np.identity(num_dims, dtype=float)
-    center = np.array([0.0] * num_dims, dtype=float)
-
-    return Star(settings, center, basis_matrix, constraint_list, parent, mode)

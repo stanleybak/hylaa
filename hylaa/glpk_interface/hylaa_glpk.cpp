@@ -11,9 +11,9 @@ GlobalLpData global;
 
 namespace hylaa
 {
-LpData* initLp(int numStandardVars, int numBasisVars)
+LpData* initLp(int numCurTimeVars, int numInitVars)
 {
-    LpData* data = new LpData(numStandardVars, numBasisVars);
+    LpData* data = new (std::nothrow) LpData(numCurTimeVars, numInitVars);
 
     if (data == nullptr)
     {
@@ -34,14 +34,16 @@ int updateTimeElapseMatrix(LpData* lpd, double* matrix, int w, int h)
     return lpd->updateTimeElapseMatrix(matrix, w, h);
 }
 
-void addInitConstraint(LpData* lpd, double* aVec, int aVecLen, double bVal)
+void setInitConstraints(LpData* lpd, double* data, int dataLen, int* indices, int indicesLen,
+                        int* indptr, int indptrLen, double* rhs, int rhsLen)
 {
-    lpd->addInitConstraint(aVec, aVecLen, bVal);
+    lpd->setInitConstraints(data, dataLen, indices, indicesLen, indptr, indptrLen, rhs, rhsLen);
 }
 
-void addCurTimeConstraint(LpData* lpd, double* aVec, int aVecLen, double bVal)
+void setCurTimeConstraints(LpData* lpd, double* data, int dataLen, int* indices, int indicesLen,
+                           int* indptr, int indptrLen, double* rhs, int rhsLen)
 {
-    lpd->addCurTimeConstraint(aVec, aVecLen, bVal);
+    lpd->setCurTimeConstraints(data, dataLen, indices, indicesLen, indptr, indptrLen, rhs, rhsLen);
 }
 
 int minimize(LpData* lpd, double* direction, int dirLen, double* result, int resLen)
@@ -52,16 +54,6 @@ int minimize(LpData* lpd, double* direction, int dirLen, double* result, int res
 void printLp(LpData* lpd)
 {
     lpd->printLp();
-}
-
-int getColStatuses(LpData* lpd, char* store, int storeLen)
-{
-    return lpd->getColStatuses(store, storeLen);
-}
-
-int getRowStatuses(LpData* lpd, char* store, int storeLen)
-{
-    return lpd->getRowStatuses(store, storeLen);
 }
 
 void test()
@@ -76,9 +68,9 @@ void test()
 /////////////////////////
 extern "C" {
 // returns a LpData* instance
-void* initLp(int numStandardVars, int numBasisVars)
+void* initLp(int numCurTimeVars, int numInitVars)
 {
-    return (void*)hylaa::initLp(numStandardVars, numBasisVars);
+    return (void*)hylaa::initLp(numCurTimeVars, numInitVars);
 }
 
 // frees a LpData* instance
@@ -92,14 +84,18 @@ int updateTimeElapseMatrix(void* lpdata, double* matrix, int w, int h)
     return hylaa::updateTimeElapseMatrix((LpData*)lpdata, matrix, w, h);
 }
 
-void addInitConstraint(void* lpdata, double* aVec, int aVecLen, double bVal)
+void setInitConstraints(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,
+                        int* indptr, int indptrLen, double* rhs, int rhsLen)
 {
-    hylaa::addInitConstraint((LpData*)lpdata, aVec, aVecLen, bVal);
+    hylaa::setInitConstraints((LpData*)lpdata, data, dataLen, indices, indicesLen, indptr,
+                              indptrLen, rhs, rhsLen);
 }
 
-void addCurTimeConstraint(void* lpdata, double* aVec, int aVecLen, double bVal)
+void setCurTimeConstraints(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,
+                           int* indptr, int indptrLen, double* rhs, int rhsLen)
 {
-    hylaa::addCurTimeConstraint((LpData*)lpdata, aVec, aVecLen, bVal);
+    hylaa::setCurTimeConstraints((LpData*)lpdata, data, dataLen, indices, indicesLen, indptr,
+                                 indptrLen, rhs, rhsLen);
 }
 
 int minimize(void* lpdata, double* direction, int dirLen, double* result, int resLen)
@@ -122,16 +118,6 @@ void printLp(void* lpdata)
     hylaa::printLp((LpData*)lpdata);
 }
 
-int getColStatuses(void* lpdata, char* store, int storeLen)
-{
-    return hylaa::getColStatuses((LpData*)lpdata, store, storeLen);
-}
-
-int getRowStatuses(void* lpdata, char* store, int storeLen)
-{
-    return hylaa::getRowStatuses((LpData*)lpdata, store, storeLen);
-}
-
 void test()
 {
     hylaa::test();
@@ -141,6 +127,7 @@ void test()
 int main()
 {
     test();
+    printf("Tests Passed!\n");
 
     return 0;
 }
