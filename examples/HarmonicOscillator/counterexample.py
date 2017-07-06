@@ -15,14 +15,14 @@ def check_instance():
     b_matrix = None
     inputs = None
 
-    step = 0.1
-    max_time = 2.4
+    step = 0.785398163397
+    max_time = 3.14159265359
 
     start_point = array([-6.,  1.,  0.,  1.])
     normal_vec = array([-1.,  0.,  0.,  0.])
     normal_val = -5.0
 
-    end_val = -5.0998254738
+    end_val = -6.0
     sim_states, sim_times = check(a_matrix, b_matrix, step, max_time, start_point, inputs, normal_vec, end_val)
 
     if len(sys.argv) < 2 or sys.argv[1] != "noplot":

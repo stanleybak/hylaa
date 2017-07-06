@@ -10,7 +10,7 @@ import os
 import numpy as np
 from numpy.ctypeslib import ndpointer
 
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, csc_matrix
 
 from hylaa.timerutil import Timers
 from hylaa.util import Freezable, get_script_path
@@ -32,7 +32,7 @@ class LpInstance(Freezable):
             # void* initLp(int numStandardVars, int numBasisVars)
             LpInstance._init_lp = lib.initLp
             LpInstance._init_lp.restype = ctypes.c_void_p
-            LpInstance._init_lp.argtypes = [ctypes.c_int, ctypes.c_int]
+            LpInstance._init_lp.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int]
 
             # void delLp(void* lpdata)
             LpInstance._del_lp = lib.delLp
@@ -41,16 +41,34 @@ class LpInstance(Freezable):
 
             # void updateTimeElapseMatrix(void* lpdata, double* matrix, int w, int h)
             LpInstance._update_time_elapse_matrix = lib.updateTimeElapseMatrix
-            LpInstance._update_time_elapse_matrix.restype = ctypes.c_int
+            LpInstance._update_time_elapse_matrix.restype = None
             LpInstance._update_time_elapse_matrix.argtypes = \
                 [ctypes.c_void_p, ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, ctypes.c_int]
 
-            # void setInitConstraints(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,
+            # void addInputEffectsMatrix(void* lpdata, double* matrix, int w, int h)
+            LpInstance._add_input_effects_matrix = lib.addInputEffectsMatrix
+            LpInstance._add_input_effects_matrix.restype = None
+            LpInstance._add_input_effects_matrix.argtypes = \
+                [ctypes.c_void_p, ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, ctypes.c_int]
+
+            # void setInitConstraintsCsr(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,
             #                         int* indptr, int indptrLen, double* rhs, int rhsLen)
 
-            LpInstance._set_init_constraints = lib.setInitConstraints
-            LpInstance._set_init_constraints.restype = None
-            LpInstance._set_init_constraints.argtypes = \
+            LpInstance._set_init_constraints_csr = lib.setInitConstraintsCsr
+            LpInstance._set_init_constraints_csr.restype = None
+            LpInstance._set_init_constraints_csr.argtypes = \
+                [ctypes.c_void_p, \
+                 ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, \
+                 ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, \
+                 ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, \
+                 ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int]
+
+            # void setInputConstraintsCsc(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,
+            #                         int* indptr, int indptrLen, double* rhs, int rhsLen)
+
+            LpInstance._set_input_constraints_csc = lib.setInputConstraintsCsc
+            LpInstance._set_input_constraints_csc.restype = None
+            LpInstance._set_input_constraints_csc.argtypes = \
                 [ctypes.c_void_p, \
                  ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, \
                  ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, \
@@ -94,10 +112,10 @@ class LpInstance(Freezable):
             LpInstance._test.restype = None
             LpInstance._test.argtypes = []
 
-    def __init__(self, num_cur_time_vars, num_init_vars):
+    def __init__(self, num_cur_time_vars, num_init_vars, num_inputs):
         LpInstance._init_static()
 
-        self.lp_data = LpInstance._init_lp(num_cur_time_vars, num_init_vars)
+        self.lp_data = LpInstance._init_lp(num_cur_time_vars, num_init_vars, num_inputs)
 
         # put a copy of del_lp into the object for use in the destructor
         self.del_lp = LpInstance._del_lp
@@ -105,6 +123,7 @@ class LpInstance(Freezable):
         # for error-checking
         self.num_cur_time_vars = num_cur_time_vars
         self.num_init_vars = num_init_vars
+        self.num_inputs = num_inputs
 
         self.added_init_constraints = False
         self.added_cur_time_constraints = False
@@ -115,6 +134,20 @@ class LpInstance(Freezable):
     def __del__(self):
         self.del_lp(self.lp_data)
         self.lp_data = None
+
+    def add_input_effects_matrix(self, matrix):
+        'update the time elapse matrix in an lp'
+
+        assert self.added_time_elapse_matrix
+        assert isinstance(matrix, np.ndarray)
+        assert len(matrix.shape) == 2, "expected 2d matrix"
+
+        assert matrix.shape[0] == self.num_cur_time_vars, "input-effects matrix wrong height"
+        assert matrix.shape[1] == self.num_inputs, "input-effects matrix wrong width"
+
+        Timers.tic("lp add_input_effects_matrix")
+        LpInstance._add_input_effects_matrix(self.lp_data, matrix, matrix.shape[1], matrix.shape[0])
+        Timers.toc("lp add_input_effects_matrix")
 
     def update_time_elapse_matrix(self, matrix):
         'update the time elapse matrix in an lp'
@@ -127,15 +160,12 @@ class LpInstance(Freezable):
         assert matrix.shape[1] == self.num_init_vars, "time-elapse matrix wrong width"
 
         Timers.tic("lp update_time_elapse_matrix")
-        rv = LpInstance._update_time_elapse_matrix(self.lp_data, matrix, matrix.shape[1], matrix.shape[0])
+        LpInstance._update_time_elapse_matrix(self.lp_data, matrix, matrix.shape[1], matrix.shape[0])
         Timers.toc("lp update_time_elapse_matrix")
 
         self.added_time_elapse_matrix = True
 
-        if rv != 0:
-            raise RuntimeError("update_basis_matrix failed")
-
-    def set_init_constraints(self, constraint_mat, rhs):
+    def set_init_constraints_csr(self, constraint_mat, rhs):
         '''set the initial state constraints'''
 
         assert not self.added_init_constraints
@@ -145,17 +175,34 @@ class LpInstance(Freezable):
         assert isinstance(rhs, np.ndarray)
         assert rhs.shape == (constraint_mat.shape[0],)
 
-        Timers.tic("lp set_init_constraints")
+        Timers.tic("lp set_init_constraints_csr")
         data = constraint_mat.data
         indices = constraint_mat.indices
         indptr = constraint_mat.indptr
 
-        LpInstance._set_init_constraints(self.lp_data, data, data.shape[0], indices, indices.shape[0],
-                                         indptr, indptr.shape[0], rhs, rhs.shape[0])
+        LpInstance._set_init_constraints_csr(self.lp_data, data, data.shape[0], indices, indices.shape[0],
+                                             indptr, indptr.shape[0], rhs, rhs.shape[0])
 
-        Timers.toc("lp set_init_constraints")
+        Timers.toc("lp set_init_constraints_csr")
 
         self.added_init_constraints = True
+
+    def set_input_constraints_csc(self, constraint_mat, rhs):
+        '''set the input constraints'''
+
+        assert isinstance(constraint_mat, csc_matrix)
+        assert isinstance(rhs, np.ndarray)
+        assert rhs.shape == (constraint_mat.shape[0],)
+
+        Timers.tic("lp set_input_constraints_csc")
+        data = constraint_mat.data
+        indices = constraint_mat.indices
+        indptr = constraint_mat.indptr
+
+        LpInstance._set_input_constraints_csc(self.lp_data, data, data.shape[0], indices, indices.shape[0],
+                                              indptr, indptr.shape[0], rhs, rhs.shape[0])
+
+        Timers.toc("lp set_input_constraints_csc")
 
     def set_cur_time_constraints(self, constraint_mat, rhs):
         '''set the constraints to be checked at each time step'''

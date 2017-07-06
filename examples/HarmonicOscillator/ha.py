@@ -2,6 +2,8 @@
 Harmonic Oscillator (with time) Example in Hylaa-Continuous
 '''
 
+import math
+
 import numpy as np
 from scipy.sparse import csc_matrix, csr_matrix
 
@@ -18,10 +20,17 @@ def define_ha():
 
     a_matrix = np.array([[0, 1], [-1, 0]], dtype=float)
     a_matrix = csc_matrix(a_matrix, dtype=float)
+
+    b_matrix = np.array([[1, 0], [0, 1]], dtype=float)
+    b_matrix = csc_matrix(b_matrix, dtype=float)
+
+    a_matrix, b_matrix = add_time_var(a_matrix, b_matrix)
+
     a_matrix = add_time_var(a_matrix)
 
     mode = ha.new_mode('mode')
-    mode.set_dynamics(a_matrix)
+
+    mode.set_dynamics(a_matrix, b_matrix)
 
     # error if x >= 5
     error = ha.new_mode('error')
@@ -31,8 +40,8 @@ def define_ha():
 
     return ha
 
-def define_init(ha, hylaa_settings):
-    '''returns a star'''
+def make_init_constraints(ha):
+    '''return (init_mat, init_rhs)'''
 
     values = []
     indices = []
@@ -72,15 +81,62 @@ def define_init(ha, hylaa_settings):
         constraint_rhs.append(-lb)
 
     indptr.append(len(values))
-    constraint_matrix = csr_matrix((values, indices, indptr), shape=(2*ha.dims, ha.dims), dtype=float)
-    constraint_rhs = np.array(constraint_rhs, dtype=float)
 
-    return Star(hylaa_settings, constraint_matrix, constraint_rhs, ha.modes['mode'])
+    init_mat = csr_matrix((values, indices, indptr), shape=(2*ha.dims, ha.dims), dtype=float)
+    init_rhs = np.array(constraint_rhs, dtype=float)
+
+    return (init_mat, init_rhs)
+
+def make_input_constraints(ha):
+    '''return (input_mat, input_rhs)'''
+
+    values = []
+    indices = []
+    indptr = []
+
+    constraint_rhs = []
+
+    for i in xrange(ha.inputs):
+        if i == 0:
+            lb = -0.5
+            ub = 0.5
+        elif i == 1:
+            lb = -0.5
+            ub = 0.5
+        else:
+            raise RuntimeError('Unknown input: {}'.format(i))
+
+        # upper bound
+        values.append(1)
+        indices.append(i)
+        indptr.append(2*i)
+        constraint_rhs.append(ub)
+
+        # lower bound
+        values.append(-1)
+        indices.append(i)
+        indptr.append(2*i+1)
+        constraint_rhs.append(-lb)
+
+    indptr.append(len(values))
+
+    input_mat = csr_matrix((values, indices, indptr), shape=(2*ha.dims, ha.dims), dtype=float)
+    input_rhs = np.array(constraint_rhs, dtype=float)
+
+    return (input_mat, input_rhs)
+
+def make_init_star(ha, hylaa_settings):
+    '''returns a star'''
+
+    init_mat, init_rhs = make_init_constraints(ha)
+    input_mat, input_rhs = make_input_constraints(ha)
+
+    return Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs, input_mat, input_rhs)
 
 def define_settings():
     'get the hylaa settings object'
     plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_NONE
+    plot_settings.plot_mode = PlotSettings.PLOT_INTERACTIVE
     plot_settings.xdim_dir = 0
     plot_settings.ydim_dir = 1
 
@@ -95,8 +151,9 @@ def define_settings():
     plot_settings.plot_size = (8, 8)
     #plot_settings.label.big(size=40)
 
-    settings = HylaaSettings(step=0.1, max_time=6.0, plot_settings=plot_settings)
-    settings.simulation.sim_mode = SimulationSettings.MATRIX_EXP
+    settings = HylaaSettings(step=math.pi/4, max_time=math.pi, plot_settings=plot_settings)
+    settings.simulation.sim_mode = SimulationSettings.EXP_MULT
+    #settings.simulation.sim_mode = SimulationSettings.MATRIX_EXP
 
     return settings
 

@@ -21,8 +21,8 @@ extern GlobalLpData global;
 class LpData
 {
    public:
-    LpData(int numCurTimeVars, int numInitVars)
-        : numCurTimeVars(numCurTimeVars), numInitVars(numInitVars)
+    LpData(int numCurTimeVars, int numInitVars, int numInputs)
+        : numCurTimeVars(numCurTimeVars), numInitVars(numInitVars), numInputs(numInputs)
     {
         // setup lp
         lp = glp_create_prob();
@@ -134,8 +134,73 @@ class LpData
         }
     }
 
-    // returns 1 on error, 0 on success
-    int updateTimeElapseMatrix(double* matrix, int w, int h)
+    void addInputEffectsMatrix(double* matrix, int w, int h)
+    {
+        if (w != numInputs || h != numCurTimeVars)
+        {
+            printf(
+                "Fatal Error: Matrix dimensions mismatch in addInputEffectsMatrix: "
+                "w(%d) != numInputs(%d) || h(%d) != numCurTimeVars(%d)\n",
+                w, numInputs, h, numCurTimeVars);
+            exit(1);
+        }
+
+        if (inputRhs.size() == 0)
+        {
+            printf("input constraints should be set before calling addInputEffectsMatrix()\n");
+            exit(1);
+        }
+
+        int prerows = glp_get_num_rows(lp);
+        int precols = glp_get_num_cols(lp);
+
+        if (prerows <= numInitConstraints + numCurTimeConstraints)
+        {
+            printf(
+                "Fatal Error: Time elapse matrix should be set before calling "
+                "addInputEffectsMatrix()\n");
+            exit(1);
+        }
+
+        // add new columns (for input variables)
+        glp_add_cols(lp, numInputs);
+
+        for (int i = 0; i < numInputs; ++i)
+            glp_set_col_bnds(lp, precols + i + 1, GLP_FR, 0,
+                             0);  // free variable (bounds -inf to inf)
+
+        // add new rows (for input constraints)
+        int numInputConstraints = (int)inputRhs.size();
+
+        glp_add_rows(lp, numInputConstraints);
+
+        for (int i = 0; i < numInputConstraints; ++i)
+            glp_set_row_bnds(lp, prerows + i + 1, GLP_UP, 0, inputRhs[i]);
+
+        // worst case entries in one row is dataLen
+        int rowIndices[inputMatData.size() + 1];
+        double rowData[inputMatData.size() + 1];
+
+        for (int row = 0; row < numInputConstraints; ++row)
+        {
+            int rowIndex = 1;
+
+            for (int i = inputMatIndptr[row]; i < inputMatIndptr[row + 1]; ++i)
+            {
+                rowIndices[rowIndex] = precols + inputMatIndices[i] + 1;
+                rowData[rowIndex++] = inputMatData[i];
+            }
+
+            glp_set_mat_row(lp, prerows + row + 1, rowIndex - 1, rowIndices, rowData);
+        }
+
+        // finally, set the values for the input effects matrix that was passed in
+        // this will be in row (numInitConstraints + row#), and column (precols + col#)
+
+        HMMMMMMM we need to set this column by column, since otherwise
+    }
+
+    void updateTimeElapseMatrix(double* matrix, int w, int h)
     {
         if (w != numInitVars || h != numCurTimeVars)
         {
@@ -143,11 +208,14 @@ class LpData
                 "Fatal Error: Matrix dimensions mismatch in updateTimeElapseMatrix: "
                 "w(%d) != numInitVars(%d) || h(%d) != numCurTimeVars(%d)\n",
                 w, numInitVars, h, numCurTimeVars);
-            return 1;
+            exit(1);
         }
 
         if (numInitConstraints == 0)
+        {
             printf("Fatal Error: Init Constraints should be set before updateTimeElapseMatrix.\n");
+            exit(1);
+        }
 
         int numRows = glp_get_num_rows(lp);
 
@@ -189,20 +257,65 @@ class LpData
             glp_set_mat_row(lp, numInitConstraints + numCurTimeConstraints + row + 1, index - 1,
                             inds, vals);
         }
+    }
 
-        return 0;
+    // Set the input constraints (Csc matrix)
+    void setInputConstraintsCsc(double* data, int dataLen, int* indices, int indicesLen,
+                                int* indptr, int indptrLen, double* rhs, int rhsLen)
+    {
+        if (dataLen != indicesLen)
+        {
+            printf(
+                "Fatal Error: setInputConstraintsCsc() expected sparse matrix with dataLen == "
+                "indicesLen.\n");
+            exit(1);
+        }
+
+        if (indptrLen != numInputs + 1)
+        {
+            printf(
+                "Fatal Error: setInputConstraintsCsc() matrix should have indptrLen (%d) == "
+                "numInputs(%d) + 1.\n",
+                indptrLen, numInputs);
+            exit(1);
+        }
+
+        if (indptr[indptrLen - 1] != dataLen)
+        {
+            printf(
+                "Fatal Error: setInputConstraintsCsc() sparse matrix should have indptr[-1] == "
+                "dataLen.\n");
+            exit(1);
+        }
+
+        inputMatData.resize(dataLen);
+        inputMatIndices.resize(indicesLen);
+        inputMatIndptr.resize(indptrLen);
+        inputRhs.resize(rhsLen);
+
+        for (int i = 0; i < dataLen; ++i)
+            inputMatData[i] = data[i];
+
+        for (int i = 0; i < indicesLen; ++i)
+            inputMatIndices[i] = indices[i];
+
+        for (int i = 0; i < indptrLen; ++i)
+            inputMatIndptr[i] = indptr[i];
+
+        for (int i = 0; i < rhsLen; ++i)
+            inputRhs[i] = rhs[i];
     }
 
     /**
      * Set the constraints on the initial states. A CSR sparse matrix is passed in, along with
      * a right-hand side vector
      */
-    void setInitConstraints(double* data, int dataLen, int* indices, int indicesLen, int* indptr,
-                            int indptrLen, double* rhs, int rhsLen)
+    void setInitConstraintsCsr(double* data, int dataLen, int* indices, int indicesLen, int* indptr,
+                               int indptrLen, double* rhs, int rhsLen)
     {
         if (numInitConstraints != 0)
         {
-            printf("Fatal Error: setInitConstraints() called twice.\n");
+            printf("Fatal Error: setInitConstraintsCsr() called twice.\n");
             exit(1);
         }
 
@@ -211,7 +324,7 @@ class LpData
         if (dataLen != indicesLen)
         {
             printf(
-                "Fatal Error: setInitConstraints() expected CSR matrix with dataLen == "
+                "Fatal Error: setInitConstraintsCsr() expected CSR matrix with dataLen == "
                 "indicesLen.\n");
             exit(1);
         }
@@ -219,7 +332,7 @@ class LpData
         if (indptrLen != rhsLen + 1)
         {
             printf(
-                "Fatal Error: setInitConstraints() CSR matrix should have indptrLen (%d) == "
+                "Fatal Error: setInitConstraintsCsr() CSR matrix should have indptrLen (%d) == "
                 "rhsLen(%d) + 1.\n",
                 indptrLen, rhsLen);
             exit(1);
@@ -228,14 +341,14 @@ class LpData
         if (indptr[indptrLen - 1] != dataLen)
         {
             printf(
-                "Fatal Error: setInitConstraints() CSR matrix should have indptr[-1] == "
+                "Fatal Error: setInitConstraintsCsr() CSR matrix should have indptr[-1] == "
                 "dataLen.\n");
             exit(1);
         }
 
         if (glp_get_num_rows(lp) != 0)
         {
-            printf("setInitConstraints() should be called with 0 rows in the lp\n");
+            printf("setInitConstraintsCsr() should be called with 0 rows in the lp\n");
             exit(1);
         }
 
@@ -371,8 +484,16 @@ class LpData
    private:
     int numCurTimeVars = 0;  // number of standard variables
     int numInitVars = 0;     // number of basis variables
+    int numInputs = 0;
+
     int numInitConstraints = 0;
     int numCurTimeConstraints = 0;
+
+    // input constraints
+    vector<double> inputMatData;
+    vector<int> inputMatIndices;
+    vector<int> inputMatIndptr;
+    vector<double> inputRhs;
 
     glp_prob* lp = nullptr;
     glp_smcp params;

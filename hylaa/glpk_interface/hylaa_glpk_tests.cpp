@@ -8,9 +8,9 @@
 
 namespace hylaa_glpk_tests
 {
-LpData* initLp(int numCurTimeVars, int numInitVars)
+LpData* initLp(int numCurTimeVars, int numInitVars, int numInputs)
 {
-    LpData* data = new (std::nothrow) LpData(numCurTimeVars, numInitVars);
+    LpData* data = new (std::nothrow) LpData(numCurTimeVars, numInitVars, numInputs);
 
     if (data == nullptr)
     {
@@ -28,14 +28,14 @@ void delLp(LpData* ptr)
 
 void test1d()
 {
-    LpData* lpd = initLp(1, 1);
+    LpData* lpd = initLp(1, 1, 0);
 
     double data[] = {1, -1};
     int indices[] = {0, 0};
     int indptr[] = {0, 1, 2};
     double rhs[] = {2, -1};
 
-    lpd->setInitConstraints(data, 2, indices, 2, indptr, 3, rhs, 2);
+    lpd->setInitConstraintsCsr(data, 2, indices, 2, indptr, 3, rhs, 2);
 
     double basis[] = {0.1};
     lpd->updateTimeElapseMatrix(basis, 1, 1);
@@ -83,14 +83,14 @@ void test1d()
 // 1-d example with a cur-time constraint
 void test1d_constraint()
 {
-    LpData* lpd = initLp(1, 1);
+    LpData* lpd = initLp(1, 1, 0);
 
     double initData[] = {1, -1};
     int initIndices[] = {0, 0};
     int initIndPtr[] = {0, 1, 2};
     double initRhs[] = {2, -1};
 
-    lpd->setInitConstraints(initData, 2, initIndices, 2, initIndPtr, 3, initRhs, 2);
+    lpd->setInitConstraintsCsr(initData, 2, initIndices, 2, initIndPtr, 3, initRhs, 2);
 
     double curTimeData[] = {-1};
     int curTimeIndices[] = {0};

@@ -8,23 +8,37 @@ from scipy.sparse import csc_matrix, csr_matrix
 
 from hylaa.util import Freezable
 
-def add_time_var(a_matrix):
+def add_time_var(a_matrix, b_matrix=None):
     '''
     modify the matrix and init state to add a time variable (this adds two rows and cols)
 
-    returns a tuple (new_matrix, new_init)
+    if both a_matrix and b_matrix are passed in, this returns a tuple (a_matrix, b_matrix)
+    else, if only a_matrix is passed in, this simply returns a_matrix
     '''
 
+    rv = None
     n = a_matrix.shape[0]
     assert a_matrix.shape[1] == n
-    nnz = len(a_matrix.data)
+    assert isinstance(a_matrix, csc_matrix)
 
+    nnz = len(a_matrix.data)
     data = np.concatenate((a_matrix.data, [1]))
     indptr = np.concatenate((a_matrix.indptr, [nnz, nnz + 1]))
-
     indices = np.concatenate((a_matrix.indices, [n]))
+    a_matrix = csc_matrix((data, indices, indptr), shape=(n + 2, n + 2))
 
-    return csc_matrix((data, indices, indptr), shape=(n + 2, n + 2))
+    if b_matrix is None:
+        rv = a_matrix
+    else:
+        assert b_matrix.shape[0] == n
+        assert isinstance(b_matrix, csc_matrix)
+
+        # add two rows of zeros to b_matrix
+        b_matrix = csc_matrix((b_matrix.data, b_matrix.indices, b_matrix.indptr), shape=(n+2, b_matrix.shape[1]))
+
+        rv = (a_matrix, b_matrix)
+
+    return rv
 
 def add_zero_cols(mat, num_new_cols):
     '''
@@ -120,26 +134,42 @@ class LinearAutomatonMode(Freezable):
     def __init__(self, parent, name):
         self.name = name
 
-        self.a_matrix = None # dynamics are x' = Ax
+        # dynamics are x' = Ax + Bu
+        self.a_matrix = None
+        self.b_matrix = None
 
         self.parent = parent
         self.transitions = [] # outgoing transitions
 
         self.freeze_attrs()
 
-    def set_dynamics(self, a_matrix):
+    def set_dynamics(self, a_matrix, b_matrix=None):
         'sets the autonomous system dynamics'
 
         assert isinstance(a_matrix, csc_matrix)
         assert len(a_matrix.shape) == 2
+        assert a_matrix.shape[0] == a_matrix.shape[1]
+
+        if b_matrix is not None:
+            assert isinstance(b_matrix, csc_matrix)
+            assert b_matrix.shape[0] == a_matrix.shape[0]
 
         if self.parent.dims is None:
             self.parent.dims = a_matrix.shape[0]
 
-        assert a_matrix.shape[0] == self.parent.dims and a_matrix.shape[1] == self.parent.dims, \
+        if self.parent.inputs is None:
+            self.parent.inputs = 0 if b_matrix is None else b_matrix.shape[1]
+
+        if self.parent.inputs == 0:
+            assert b_matrix is None
+        else:
+            assert b_matrix.shape[1] == self.parent.inputs
+
+        assert a_matrix.shape[0] == self.parent.dims, \
             "Hybrid Automaton has {} dimensions, but a_matrix.shape was {}".format(self.parent.dims, a_matrix.shape)
 
         self.a_matrix = a_matrix
+        self.b_matrix = b_matrix
 
     def __str__(self):
         return '[LinearAutomatonMode: {}]'.format(self.name)
@@ -180,11 +210,12 @@ class LinearAutomatonTransition(Freezable):
 class LinearHybridAutomaton(Freezable):
     'The hybrid automaton'
 
-    def __init__(self, dims=None, name='HybridAutomaton'):
+    def __init__(self, name='HybridAutomaton', dims=None, inputs=None):
         self.name = name
         self.modes = {}
         self.transitions = []
         self.dims = dims
+        self.inputs = inputs
 
         self.freeze_attrs()
 

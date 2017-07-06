@@ -11,9 +11,9 @@ GlobalLpData global;
 
 namespace hylaa
 {
-LpData* initLp(int numCurTimeVars, int numInitVars)
+LpData* initLp(int numCurTimeVars, int numInitVars, int numInputs)
 {
-    LpData* data = new (std::nothrow) LpData(numCurTimeVars, numInitVars);
+    LpData* data = new (std::nothrow) LpData(numCurTimeVars, numInitVars, numInputs);
 
     if (data == nullptr)
     {
@@ -29,15 +29,26 @@ void delLp(LpData* ptr)
     delete ptr;
 }
 
-int updateTimeElapseMatrix(LpData* lpd, double* matrix, int w, int h)
+void updateTimeElapseMatrix(LpData* lpd, double* matrix, int w, int h)
 {
     return lpd->updateTimeElapseMatrix(matrix, w, h);
 }
 
-void setInitConstraints(LpData* lpd, double* data, int dataLen, int* indices, int indicesLen,
-                        int* indptr, int indptrLen, double* rhs, int rhsLen)
+void addInputEffectsMatrix(LpData* lpd, double* matrix, int w, int h)
 {
-    lpd->setInitConstraints(data, dataLen, indices, indicesLen, indptr, indptrLen, rhs, rhsLen);
+    return lpd->addInputEffectsMatrix(matrix, w, h);
+}
+
+void setInitConstraintsCsr(LpData* lpd, double* data, int dataLen, int* indices, int indicesLen,
+                           int* indptr, int indptrLen, double* rhs, int rhsLen)
+{
+    lpd->setInitConstraintsCsr(data, dataLen, indices, indicesLen, indptr, indptrLen, rhs, rhsLen);
+}
+
+void setInputConstraintsCsc(LpData* lpd, double* data, int dataLen, int* indices, int indicesLen,
+                            int* indptr, int indptrLen, double* rhs, int rhsLen)
+{
+    lpd->setInputConstraintsCsc(data, dataLen, indices, indicesLen, indptr, indptrLen, rhs, rhsLen);
 }
 
 void setCurTimeConstraints(LpData* lpd, double* data, int dataLen, int* indices, int indicesLen,
@@ -68,9 +79,9 @@ void test()
 /////////////////////////
 extern "C" {
 // returns a LpData* instance
-void* initLp(int numCurTimeVars, int numInitVars)
+void* initLp(int numCurTimeVars, int numInitVars, int numInputs)
 {
-    return (void*)hylaa::initLp(numCurTimeVars, numInitVars);
+    return (void*)hylaa::initLp(numCurTimeVars, numInitVars, numInputs);
 }
 
 // frees a LpData* instance
@@ -79,16 +90,28 @@ void delLp(void* lpdata)
     hylaa::delLp((LpData*)lpdata);
 }
 
-int updateTimeElapseMatrix(void* lpdata, double* matrix, int w, int h)
+void updateTimeElapseMatrix(void* lpdata, double* matrix, int w, int h)
 {
     return hylaa::updateTimeElapseMatrix((LpData*)lpdata, matrix, w, h);
 }
 
-void setInitConstraints(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,
-                        int* indptr, int indptrLen, double* rhs, int rhsLen)
+void addInputEffectsMatrix(void* lpdata, double* matrix, int w, int h)
 {
-    hylaa::setInitConstraints((LpData*)lpdata, data, dataLen, indices, indicesLen, indptr,
-                              indptrLen, rhs, rhsLen);
+    return hylaa::addInputEffectsMatrix((LpData*)lpdata, matrix, w, h);
+}
+
+void setInitConstraintsCsr(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,
+                           int* indptr, int indptrLen, double* rhs, int rhsLen)
+{
+    hylaa::setInitConstraintsCsr((LpData*)lpdata, data, dataLen, indices, indicesLen, indptr,
+                                 indptrLen, rhs, rhsLen);
+}
+
+void setInputConstraintsCsc(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,
+                            int* indptr, int indptrLen, double* rhs, int rhsLen)
+{
+    hylaa::setInputConstraintsCsc((LpData*)lpdata, data, dataLen, indices, indicesLen, indptr,
+                                  indptrLen, rhs, rhsLen);
 }
 
 void setCurTimeConstraints(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,

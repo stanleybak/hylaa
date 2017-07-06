@@ -29,7 +29,7 @@ class Star(Freezable):
     for plotting that states if requested in the settings.
     '''
 
-    def __init__(self, hylaa_settings, constraint_mat, constraint_rhs, mode):
+    def __init__(self, hylaa_settings, mode, init_mat, init_rhs, input_mat=None, input_rhs=None):
         assert isinstance(hylaa_settings, HylaaSettings)
 
         self.settings = hylaa_settings
@@ -37,15 +37,28 @@ class Star(Freezable):
         assert isinstance(mode, LinearAutomatonMode)
         self.mode = mode
         self.dims = mode.parent.dims
+        self.inputs = mode.parent.inputs
         self.time_elapse = TimeElapser(mode, hylaa_settings)
 
-        assert isinstance(constraint_mat, csr_matrix)
-        assert isinstance(constraint_rhs, np.ndarray)
-        assert constraint_rhs.shape == (constraint_mat.shape[0],)
-        self.constraint_matrix = constraint_mat
-        self.constraint_rhs = constraint_rhs
+        assert isinstance(init_mat, csr_matrix)
+        assert isinstance(init_rhs, np.ndarray)
+        assert init_rhs.shape == (init_mat.shape[0],)
+        self.init_mat = init_mat
+        self.init_rhs = init_rhs
 
         self.total_steps = 0
+
+        if self.inputs == 0:
+            assert input_mat is None and input_rhs is None
+        else:
+            assert input_mat is not None and input_rhs is not None
+            assert input_rhs.shape == (input_mat.shape[0],) 
+            assert input_mat.shape[1] == self.inputs
+            assert isinstance(input_mat, csr_matrix)
+            assert isinstance(input_rhs, np.ndarray)
+
+        self.input_mat = input_mat
+        self.input_rhs = input_rhs
 
         ###################################
         ## private member initialization ##
@@ -70,7 +83,7 @@ class Star(Freezable):
             # first time this was called... initialize the guard lpi
             
             lpi = LpInstance(num_constraints, self.dims)
-            lpi.set_init_constraints(self.constraint_matrix, self.constraint_rhs)
+            lpi.set_init_constraints(self.init_mat, self.init_rhs)
 
             # use identity for cur_time_matrix
             # this is because we're already multiplying each time step by transition.guard_matrix
@@ -100,8 +113,11 @@ class Star(Freezable):
 
         if rv is None:
             rv = LpInstance(2, self.dims)
-            rv.set_init_constraints(self.constraint_matrix, self.constraint_rhs)
+            rv.set_init_constraints(self.init_mat, self.init_rhs)
             rv.update_time_elapse_matrix(self.time_elapse.cur_time_elapse_mat[:2])
+
+            if self.inputs > 0:
+                rv.set_input_constraints(self.input_mat, self.input_rhs)
 
             self._plot_lpi = rv
 
@@ -116,6 +132,9 @@ class Star(Freezable):
 
         if self._plot_lpi is not None:
             self._plot_lpi.update_time_elapse_matrix(self.time_elapse.cur_time_elapse_mat[:2])
+
+            if self.inputs > 0:
+                self._plot_lpi.add_input_effects(self.time_elapse.cur_input_effects_matrix[:2])
 
         self._verts = None # cached vertices for plotting are no longer valid
 
