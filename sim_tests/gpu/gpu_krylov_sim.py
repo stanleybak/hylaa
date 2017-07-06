@@ -14,7 +14,7 @@ from krypy.utils import arnoldi
 
 import numpy as np
 from numpy.ctypeslib import ndpointer
-from scipy.sparse import csr_matrix, coo_matrix
+from scipy.sparse import csr_matrix, coo_matrix, rand
 from scipy.linalg import expm
 
 def _get_script_path(filename):
@@ -50,6 +50,16 @@ class GpuKrylovSim(object):
                                              ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
                                              ctypes.c_int]
 
+            GpuKrylovSim._load_keyMatrix = lib.loadKeyDirMatrix
+            GpuKrylovSim._load_keyMatrix.restype = None
+            GpuKrylovSim._load_keyMatrix.argtypes = [ctypes.c_int, ctypes.c_int,
+                                             ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
+                                             ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
+                                             ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                             ctypes.c_int]
+
+
+                                             
             GpuKrylovSim._arnoldi_initVector = lib.arnoldi_initVector
             GpuKrylovSim._arnoldi_initVector.restype = ctypes.c_int
             GpuKrylovSim._arnoldi_initVector.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
@@ -68,6 +78,22 @@ class GpuKrylovSim(object):
             GpuKrylovSim._sim.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
                                             ctypes.c_int, ctypes.c_int, ctypes.c_int]
 
+            GpuKrylovSim._sim2 = lib.sim2
+            GpuKrylovSim._sim2.restype = None
+            GpuKrylovSim._sim2.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                            ctypes.c_int, ctypes.c_int, ctypes.c_int]
+
+            
+            GpuKrylovSim._getKeySimResult_Dense = lib.getKeySimResult_Dense
+            GpuKrylovSim._getKeySimResult_Dense.restype = None
+            GpuKrylovSim._getKeySimResult_Dense.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                            ctypes.c_int, ctypes.c_int, ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
+
+            GpuKrylovSim._getKeySimResult_Sparse = lib.getKeySimResult_Sparse
+            GpuKrylovSim._getKeySimResult_Sparse.restype = None
+            GpuKrylovSim._getKeySimResult_Sparse.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
+
+            
         if GpuKrylovSim._has_gpu() == 0:
             raise RuntimeError("GPU not detected.")
 
@@ -86,6 +112,22 @@ class GpuKrylovSim(object):
         GpuKrylovSim._is_loaded = True
         GpuKrylovSim._loaded_w = w
         GpuKrylovSim._loaded_h = h
+
+    @staticmethod
+    def load_keyDirSparseMatrix(keyDirSparseMatrix):
+        'load key sparse matrix'
+
+        assert isinstance(keyDirSparseMatrix, csr_matrix)
+        GpuKrylovSim._init_static()
+
+        w, h = keyDirSparseMatrix.shape
+        rows, cols = keyDirSparseMatrix.nonzero()
+        entries = keyDirSparseMatrix[rows, cols].A1.copy()
+
+        GpuKrylovSim._load_keyMatrix(w, h, rows, cols, entries, len(rows))
+        GpuKrylovSim._is_keyLoaded = True
+        GpuKrylovSim._keyLoaded_w = w
+        GpuKrylovSim._keyLoaded_h = h
 
     @staticmethod
     def arnoldi_initVector(init_vector, size, numIter):
@@ -135,17 +177,47 @@ class GpuKrylovSim(object):
 
     @staticmethod
     def sim(matrix_Hf,size,numIter,numStep):
-        'compute the simulation result from the matrix Hf = exp(i*timeStep*Hm)e1'
+        'compute the simulation result from the matrix Hf = exp(i*timeStep*Hm)e1 and copy the result back to cpu'
 
         assert isinstance(matrix_Hf, np.ndarray)
         GpuKrylovSim._init_static()
-
-	sim_result = np.zeros((size,numStep))
-
+        matrix_Hf.reshape(numIter*numStep)
+        sim_result = np.zeros((size,numStep))
         GpuKrylovSim._sim(matrix_Hf, sim_result, size, numIter, numStep)
         
         return sim_result
 
+    
+    @staticmethod
+    def sim2(matrix_Hf,size,numIter,numStep):
+        'compute the simulation result from the matrix Hf = exp(i*timeStep*Hm)e1 and do not copy the result back to cpu'
+
+        assert isinstance(matrix_Hf, np.ndarray)
+        GpuKrylovSim._init_static()
+        matrix_Hf.reshape(numIter*numStep)
+        GpuKrylovSim._sim2(matrix_Hf, size, numIter, numStep)
+
+    @staticmethod
+    def getKeySimResult_Dense(keyDirMatrix_Dense,numStep):
+        'get Simulation Result in a specific direction defined by a dense matrix'
+
+        assert isinstance(keyDirMatrix_Dense, np.ndarray)
+        GpuKrylovSim._init_static()
+        numRows, numCols = keyDirMatrix_Dense.shape
+        keyDirMatrix_Dense.reshape(numRows*numCols)
+        keySimResult = np.zeros((numRows,numStep))
+        GpuKrylovSim._getKeySimResult_Dense(keyDirMatrix_Dense, numRows, numCols, keySimResult)
+        
+        return  keySimResult
+
+    @staticmethod
+    def getKeySimResult_Sparse(DirMatrix_numRows,numSimStep):
+        'get Simulation Result in a specific direction defined by a sparse matrix'
+        keySimResult = np.zeros((DirMatrix_numRows,numSimStep))
+        GpuKrylovSim._getKeySimResult_Sparse(keySimResult)
+        
+        return  keySimResult
+        
 def make_iss_matrix(num_copies):
     'create a matrix from the international space station system model'
 
@@ -264,7 +336,7 @@ def random_sparse_matrix(dims, entries_per_row, random_cols=True):
 
     return csr_matrix(mat)
 
-def gpu_krylov_sim():
+def test_gpu_krylov_sim():
     'compare timing of Arnoldi algorithm using gpu and cpu-krypy'
 
     print "making matrix..."
@@ -291,7 +363,7 @@ def gpu_krylov_sim():
     print"\n Create random initial vector..." 
     #vec = np.random.random((a.shape[0],1)) # initial vector used for arnoldi_initVector() method
     #initial vector used for arnoldi_initVectorPos() method
-    basic_initVector_pos = 1;
+    basic_initVector_pos = 1
     vec = np.zeros((a.shape[0],1))
     vec[basic_initVector_pos] = 1 
     
@@ -301,7 +373,7 @@ def gpu_krylov_sim():
 
     print"\n -------------------------------------------------"    
 
-    'Arnoldi algorithm using gpu, two methods can be used arnoldi_initVector() and arnoldi_initVectorPos()'
+    #'Arnoldi algorithm using gpu, two methods can be used arnoldi_initVector() and arnoldi_initVectorPos()'
     print"\n Execute Arnoldi algorithm using gpu, the packet used is cusparse ..."
     start = time.time()
     #res_gpu_arnoldi_H, actual_numIter = GpuKrylovSim.arnoldi_initVector(vec,a.shape[0],m) # using arnoldi_initVector() method
@@ -312,7 +384,7 @@ def gpu_krylov_sim():
     print"\n Actual number of interation of Arnoldi Algorithm actual_numIter = {}".format(actual_numIter)
 
     
-    'Arnoldi algorithm using cpu - krypy packet'
+    #'Arnoldi algorithm using cpu - krypy packet'
     print"\n Execute Arnoldi algorithm using cpu, the packet used is krypy..."
     arn_start = time.time()
     V, H = arnoldi(a,vec,m)
@@ -328,7 +400,7 @@ def gpu_krylov_sim():
     start = time.time()
     Hf = np.zeros((actual_numIter, numStep))
     for i in range(0, numStep):
-	Hs = expm((i+1)*timeStep*res_gpu_arnoldi_H)
+        Hs = expm((i+1)*timeStep*res_gpu_arnoldi_H)
         Hf[:,i] = Hs[:,1]
     print "\n Time for computing Hf = {}ms".format(1000 * (time.time() - start))
 
@@ -343,7 +415,7 @@ def gpu_krylov_sim():
         
     # compute simulation result using gpu_krylov_sim
     print"\n Compute simulation result using gpu..."
-    Hf.reshape(actual_numIter*numStep)
+   
     start = time.time()
     gpu_sim_result = GpuKrylovSim.sim(Hf,a.shape[0],actual_numIter,numStep)
     print"\n Time for computing simulation result using gpu = {}ms".format(1000 * (time.time() - start))
@@ -355,9 +427,83 @@ def gpu_krylov_sim():
     err_gpu_cpu = gpu_sim_result - cpu_sim_result
     for i in range(0,numStep):
         print"\n 2-norm of the simulation error of two approaches at step {} = {}".format(i+1,np.linalg.norm(err_gpu_cpu[:,i]))
-    print"\n Time for computing the norm of the error = {}ms".format(1000*(time.time()-start))
+    print"\n Time for computing the norm of the error = {}ms".format(1000*(time.time()-start))  
+
+
+    # Test get simulation result in some specific direction declared by a dense matrix
+
+def test_getKeySimResult():
+    
+    print "making matrix..."
+    start = time.time()
+    #a = random_sparse_matrix(1000000, entries_per_row=5, random_cols=True)
+    a = make_iss_matrix(1)
+    print "made in {:.2f} seconds".format(time.time() - start)
+
+    m = 5 # number of iteration of Arnoldi Algorithm
+    timeStep = 0.01  # simulation time step
+    numStep = 1    # number of simulation step
+
+    systemSize = a.shape[0]
+    
+    basic_initVector_pos = 1
+    vec = np.zeros((systemSize,1))
+    vec[basic_initVector_pos] = 1
+
+    GpuKrylovSim.load_matrix(a);
+    
+    print"\n Selected number of iteration of Arnoldi argorithm m = {}".format(m)
+    print"\n Selected simulation time step, timStep = {}".format(timeStep)
+    print"\n Seclected number step of simulation, numStep = {}".format(numStep)
+
+    print"\n -------------------------------------------------"    
+    
+    #'Arnoldi algorithm using gpu, two methods can be used arnoldi_initVector() and arnoldi_initVectorPos()'
+    print"\n Execute Arnoldi algorithm using gpu, the packet used is cusparse ..."
+    start = time.time()
+    #res_gpu_arnoldi_H, actual_numIter = GpuKrylovSim.arnoldi_initVector(vec,a.shape[0],m) # using arnoldi_initVector() method
+    res_gpu_arnoldi_H, actual_numIter = GpuKrylovSim.arnoldi_initVectorPos(basic_initVector_pos,a.shape[0],m) # using arnoldi_initVectorPos() method
+    print "\n Computation time of Arnoldi algorithm using gpu {:.1f}ms".format(1000 * (time.time() - start))
+
+    print"\n Selected number of iteration of Arnoldi Algorithm m ={}".format(m)
+    print"\n Actual number of interation of Arnoldi Algorithm actual_numIter = {}".format(actual_numIter)
 
     
-if __name__ == '__main__':
-    gpu_krylov_sim()
+    # compute Hf = exp(i*timeStep*Hm)e1, i = 0 ... numStep
+    print"\n Compute matrix Hf = exp(i*timStep*Hm)*e1, (i = 0.. numStep), e1 is basic vector e1 = (1, 0,..,0)^T..."
+    start = time.time()
+    Hf = np.zeros((actual_numIter, numStep))
+    for i in range(0, numStep):
+        Hs = expm((i+1)*timeStep*res_gpu_arnoldi_H)
+        Hf[:,i] = Hs[:,1]
+    print "\n Time for computing Hf = {}ms".format(1000 * (time.time() - start))
 
+         
+    # compute simulation result using gpu_krylov_sim, the result is saved in device memory, not coppied back to CPU
+    print"\n Compute simulation result using gpu..."
+    start = time.time()
+    GpuKrylovSim.sim2(Hf,a.shape[0],actual_numIter,numStep)
+    print"\n Time for computing simulation result using gpu = {}ms".format(1000 * (time.time() - start))
+
+    # compute the key simulation result corresponding to specific direction defined by direction matrix
+    print"\n Compute the key simulation result corresponding to a specific direction defined by a dense matrix ..."
+    # specify direction dense matrix
+    keyDirMatrix_Dense = np.zeros((2,systemSize))
+    keyDirMatrix_Dense[:,0] = 1
+    keyDirMatrix_Dense[:,1] = -1
+    keySimResult_Dense = GpuKrylovSim.getKeySimResult_Dense(keyDirMatrix_Dense,numStep)
+    print(keySimResult_Dense)
+
+    # generate random sparse direction matrix
+    print"\n Compute the key simulation result corresponding to a specific direction defined by a sparse matrix..."
+    print"\n Generate random sparse direction matrix"
+    keyDirMatrix_Sparse = rand(2,systemSize,density = 0.01, format = 'csr',dtype = None, random_state = None)
+    GpuKrylovSim.load_keyDirSparseMatrix(keyDirMatrix_Sparse)
+    keySimResult_Sparse = GpuKrylovSim.getKeySimResult_Sparse(2,numStep)
+    print(keySimResult_Sparse)
+
+    
+    
+if __name__ == '__main__':
+   # test_gpu_krylov_sim()
+    test_getKeySimResult()
