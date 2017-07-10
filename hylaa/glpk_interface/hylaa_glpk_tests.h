@@ -4,6 +4,6 @@
 #ifndef HYLAA_GLPK_TESTS_H_
 #define HYLAA_GPLK_TESTS_H_
 
-void hylaa_glpk_unit_test();
+void run_hylaa_glpk_tests();
 
 #endif

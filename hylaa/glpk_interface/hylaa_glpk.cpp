@@ -9,7 +9,7 @@
 
 GlobalLpData global;
 
-namespace hylaa
+namespace hylaa_glpk
 {
 LpData* initLp(int numCurTimeVars, int numInitVars, int numInputs)
 {
@@ -45,16 +45,15 @@ void setInitConstraintsCsr(LpData* lpd, double* data, int dataLen, int* indices,
     lpd->setInitConstraintsCsr(data, dataLen, indices, indicesLen, indptr, indptrLen, rhs, rhsLen);
 }
 
-void setInputConstraintsCsc(LpData* lpd, double* data, int dataLen, int* indices, int indicesLen,
+void setInputConstraintsCsr(LpData* lpd, double* data, int dataLen, int* indices, int indicesLen,
                             int* indptr, int indptrLen, double* rhs, int rhsLen)
 {
-    lpd->setInputConstraintsCsc(data, dataLen, indices, indicesLen, indptr, indptrLen, rhs, rhsLen);
+    lpd->setInputConstraintsCsr(data, dataLen, indices, indicesLen, indptr, indptrLen, rhs, rhsLen);
 }
 
-void setCurTimeConstraints(LpData* lpd, double* data, int dataLen, int* indices, int indicesLen,
-                           int* indptr, int indptrLen, double* rhs, int rhsLen)
+void setCurTimeConstraintBounds(LpData* lpd, double* rhs, int rhsLen)
 {
-    lpd->setCurTimeConstraints(data, dataLen, indices, indicesLen, indptr, indptrLen, rhs, rhsLen);
+    lpd->setCurTimeConstraintBounds(rhs, rhsLen);
 }
 
 int minimize(LpData* lpd, double* direction, int dirLen, double* result, int resLen)
@@ -69,7 +68,7 @@ void printLp(LpData* lpd)
 
 void test()
 {
-    hylaa_glpk_unit_test();
+    run_hylaa_glpk_tests();
 }
 
 }  // namespace "hylaa"
@@ -81,49 +80,47 @@ extern "C" {
 // returns a LpData* instance
 void* initLp(int numCurTimeVars, int numInitVars, int numInputs)
 {
-    return (void*)hylaa::initLp(numCurTimeVars, numInitVars, numInputs);
+    return (void*)hylaa_glpk::initLp(numCurTimeVars, numInitVars, numInputs);
 }
 
 // frees a LpData* instance
 void delLp(void* lpdata)
 {
-    hylaa::delLp((LpData*)lpdata);
+    hylaa_glpk::delLp((LpData*)lpdata);
 }
 
 void updateTimeElapseMatrix(void* lpdata, double* matrix, int w, int h)
 {
-    return hylaa::updateTimeElapseMatrix((LpData*)lpdata, matrix, w, h);
+    hylaa_glpk::updateTimeElapseMatrix((LpData*)lpdata, matrix, w, h);
 }
 
 void addInputEffectsMatrix(void* lpdata, double* matrix, int w, int h)
 {
-    return hylaa::addInputEffectsMatrix((LpData*)lpdata, matrix, w, h);
+    hylaa_glpk::addInputEffectsMatrix((LpData*)lpdata, matrix, w, h);
 }
 
 void setInitConstraintsCsr(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,
                            int* indptr, int indptrLen, double* rhs, int rhsLen)
 {
-    hylaa::setInitConstraintsCsr((LpData*)lpdata, data, dataLen, indices, indicesLen, indptr,
-                                 indptrLen, rhs, rhsLen);
+    hylaa_glpk::setInitConstraintsCsr((LpData*)lpdata, data, dataLen, indices, indicesLen, indptr,
+                                      indptrLen, rhs, rhsLen);
 }
 
-void setInputConstraintsCsc(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,
+void setInputConstraintsCsr(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,
                             int* indptr, int indptrLen, double* rhs, int rhsLen)
 {
-    hylaa::setInputConstraintsCsc((LpData*)lpdata, data, dataLen, indices, indicesLen, indptr,
-                                  indptrLen, rhs, rhsLen);
+    hylaa_glpk::setInputConstraintsCsr((LpData*)lpdata, data, dataLen, indices, indicesLen, indptr,
+                                       indptrLen, rhs, rhsLen);
 }
 
-void setCurTimeConstraints(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,
-                           int* indptr, int indptrLen, double* rhs, int rhsLen)
+void setCurTimeConstraintBounds(void* lpdata, double* rhs, int rhsLen)
 {
-    hylaa::setCurTimeConstraints((LpData*)lpdata, data, dataLen, indices, indicesLen, indptr,
-                                 indptrLen, rhs, rhsLen);
+    hylaa_glpk::setCurTimeConstraintBounds((LpData*)lpdata, rhs, rhsLen);
 }
 
 int minimize(void* lpdata, double* direction, int dirLen, double* result, int resLen)
 {
-    return hylaa::minimize((LpData*)lpdata, direction, dirLen, result, resLen);
+    return hylaa_glpk::minimize((LpData*)lpdata, direction, dirLen, result, resLen);
 }
 
 int totalIterations()
@@ -138,19 +135,19 @@ int totalOptimizations()
 
 void printLp(void* lpdata)
 {
-    hylaa::printLp((LpData*)lpdata);
+    hylaa_glpk::printLp((LpData*)lpdata);
 }
 
 void test()
 {
-    hylaa::test();
+    hylaa_glpk::test();
 }
 }  // extern "C"
 
 int main()
 {
     test();
-    printf("Tests Passed!\n");
+    printf("hylaa_glpk Tests Passed!\n");
 
     return 0;
 }
