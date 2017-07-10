@@ -44,7 +44,7 @@ def add_time_var(a_matrix, b_matrix=None):
 
 def add_zero_cols(mat, num_new_cols):
     '''
-    modify the csc_matrix by adding a certain number of nonzero columns
+    return a modified csc_matrix by adding a certain number of nonzero columns
     '''
 
     mat = csc_matrix(mat)

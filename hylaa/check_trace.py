@@ -166,9 +166,10 @@ def plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step, 
     total_steps = int(math.ceil(max_time / step))
     end_point = sim_states[-1]
     end_val = np.dot(end_point, normal_vec)
+    tol = 1e-6
 
-    if end_val <= normal_val:
-        print "End Point is a violation: {} <= {}".format(end_val, normal_val)
+    if end_val - tol <= normal_val:
+        print "End Point is (close to) a violation: {} - {} <= {}".format(end_val, tol, normal_val)
     else:
         print "End point is NOT a violation: {} > {}".format(end_val, normal_val)
 
