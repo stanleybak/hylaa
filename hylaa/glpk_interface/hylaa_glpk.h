@@ -102,7 +102,9 @@ class LpData
     {
         if (!committed)
         {
-            printf("printLp() called but matrix was not committed with commitCurTimeRows()\n");
+            printf(
+                "Fatal Error: printLp() called but matrix was not committed with "
+                "commitCurTimeRows()\n");
             exit(1);
         }
 
@@ -185,7 +187,9 @@ class LpData
 
         if (inputRhs.size() == 0)
         {
-            printf("input constraints should be set before calling addInputEffectsMatrix()\n");
+            printf(
+                "Fatal Error: input constraints should be set before calling "
+                "addInputEffectsMatrix()\n");
             exit(1);
         }
 
@@ -271,14 +275,6 @@ class LpData
             printf(
                 "Fatal Error: updateTimeElapseMatrix() should be called before "
                 "commitCurTimeRows().\n");
-            exit(1);
-        }
-
-        if (numInputs > 0 && (int)curTimeData[0].size() <= numInitVars + 2)
-        {
-            printf(
-                "Fatal Error: in commitCurTimeRows(), numInputs > 0, but inputs weren't set with "
-                "addInputEffectsMatrix()\n");
             exit(1);
         }
 
@@ -442,7 +438,7 @@ class LpData
 
         if (glp_get_num_rows(lp) != 0)
         {
-            printf("setInitConstraintsCsr() should be called with 0 rows in the lp\n");
+            printf("Fatal Error: setInitConstraintsCsr() should be called with 0 rows in the lp\n");
             exit(1);
         }
 
@@ -686,13 +682,6 @@ class LpData
 
                 for (int col = 0; col < resLen && col < numCols; ++col)
                     result[col] = glp_get_col_prim(lp, col + 1);
-
-                // print result
-                /*printf("lp result = ");
-                for (int col = 0; col < glp_get_num_cols(lp); ++col)
-                    printf("%f ", glp_get_col_prim(lp, col + 1));
-
-                printf("\n");*/
             }
             else if (status == GLP_NOFEAS)
             {

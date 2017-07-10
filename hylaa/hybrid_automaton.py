@@ -38,6 +38,8 @@ def add_time_var(a_matrix, b_matrix=None):
 
         rv = (a_matrix, b_matrix)
 
+    print "returning b_matrix w/ shape {}".format(rv[1].shape)
+
     return rv
 
 def add_zero_cols(mat, num_new_cols):
@@ -152,13 +154,18 @@ class LinearAutomatonMode(Freezable):
 
         if b_matrix is not None:
             assert isinstance(b_matrix, csc_matrix)
-            assert b_matrix.shape[0] == a_matrix.shape[0]
+            assert b_matrix.shape[0] == a_matrix.shape[0], "B-mat shape {} incompatible with A-mat shape {}".format(
+                b_matrix.shape, a_matrix.shape)
 
         if self.parent.dims is None:
             self.parent.dims = a_matrix.shape[0]
+        else:
+            assert self.parent.dims == a_matrix.shape[0]
 
         if self.parent.inputs is None:
             self.parent.inputs = 0 if b_matrix is None else b_matrix.shape[1]
+        else:
+            assert self.parent.inputs == b_matrix.shape[1]
 
         if self.parent.inputs == 0:
             assert b_matrix is None
@@ -199,7 +206,8 @@ class LinearAutomatonTransition(Freezable):
         assert isinstance(rhs, np.ndarray)
 
         assert rhs.shape == (matrix.shape[0],)
-        assert matrix.shape[1] == self.parent.dims
+        assert matrix.shape[1] == self.parent.dims, "guard constraint len({}) does not equal matrix dims ({})".format(
+            matrix.shape[1], self.parent.dims)
 
         self.guard_matrix = matrix
         self.guard_rhs = rhs

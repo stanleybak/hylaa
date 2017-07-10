@@ -50,7 +50,7 @@ class HylaaEngine(object):
 
             if lp_solution is not None:
                 if self.settings.counter_example_filename is not None:
-                    # print out the counter-example trace
+                    # print out the counter-example trace to a counter-example file
 
                     filename = self.settings.counter_example_filename
                     mode = self.cur_star.mode
@@ -59,14 +59,24 @@ class HylaaEngine(object):
                     start_pt = lp_solution[:self.cur_star.dims]
                     norm_vec_sparse = self.cur_star.mode.transitions[i].guard_matrix[0]
                     normal_vec = np.array(norm_vec_sparse.toarray(), dtype=float)
-                    normal_vec.shape = shape=(self.cur_star.dims,)
+                    normal_vec.shape = (self.cur_star.dims,)
                     normal_val = self.cur_star.mode.transitions[i].guard_rhs[0]
                     end_val = lp_solution[self.cur_star.dims]
+
+                    num_constraints = len(self.cur_star.mode.transitions[i].guard_rhs)
+                    input_vals = lp_solution[self.cur_star.dims + num_constraints:]
 
                     if self.settings.print_output:
                         print 'Writing counter-example trace file: "{}"'.format(filename)
 
-                    write_counter_example(filename, mode, step_size, total_steps, start_pt,
+                    # construct inputs, which are in backwards order
+                    inputs = []
+
+                    for step in xrange(total_steps):
+                        offset = len(input_vals) - (self.cur_star.inputs * (1 + step))
+                        inputs.append(input_vals[offset:offset+self.cur_star.inputs])
+
+                    write_counter_example(filename, mode, step_size, total_steps, start_pt, inputs,
                                           normal_vec, normal_val, end_val)
 
                 self.reached_error = True

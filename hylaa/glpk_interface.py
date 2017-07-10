@@ -10,7 +10,7 @@ import os
 import numpy as np
 from numpy.ctypeslib import ndpointer
 
-from scipy.sparse import csr_matrix, csc_matrix
+from scipy.sparse import csr_matrix
 
 from hylaa.timerutil import Timers
 from hylaa.util import Freezable, get_script_path
@@ -250,36 +250,39 @@ class LpInstance(Freezable):
         minimize a constraint using the cur-time variables. this returns True of False, depending on
         whether the LP was feasible. If it was feasible, the passed-in 'result' vector is assigned.
 
-        The result vector can be either of size num_cur_time_vars or (self.num_cur_time_vars + self.num_init_vars).
-        If it's the smaller one, only the result for the current-time variables is used.
+        If the result vector is of size num_cur_time_vars, then only the cur_time_vars
+        which minimize the objective will be set, otherwise, the complete LP result will be copied, for
+        as many entries as exist in the passed-in result np.ndarray
         '''
 
         assert self.committed, "commit_cur_time_rows() should be called before minimize()"
         assert self.added_time_elapse_matrix
 
         dir_len, = direction.shape
-        res_len, = result.shape
-        total_vars = (self.num_cur_time_vars + self.num_init_vars)
 
         assert dir_len == self.num_cur_time_vars, \
             "minimize objective length({}) should match number of cur-time variables({})".format(
                 dir_len, self.num_cur_time_vars)
 
-        assert res_len == self.num_cur_time_vars or res_len == total_vars, \
-            ("result length({}) should match either number of cur-time variables({}) " + \
-                "or total num variables({})").format(res_len, self.num_cur_time_vars, total_vars)
+        # result must be a 1-d np.array
+        assert isinstance(result, np.ndarray)
+        assert len(result.shape) == 1
 
         Timers.tic("lp minimize")
-        minimize_result = np.zeros(total_vars)
-        res = LpInstance._minimize(self.lp_data, direction, dir_len, minimize_result, total_vars)
-        Timers.toc("lp minimize")
 
-        if res_len == self.num_cur_time_vars:
-            result[:] = minimize_result[self.num_init_vars:]
+        if result.shape[0] == self.num_cur_time_vars:
+            # the result should be just the cur_time_vars
+            size = self.num_init_vars + self.num_cur_time_vars
+            temp_result = np.zeros((size,))
+
+            is_feasible = LpInstance._minimize(self.lp_data, direction, dir_len, temp_result, size) == 0
+
+            if is_feasible:
+                result[:] = temp_result[self.num_init_vars:]
         else:
-            result[:] = minimize_result[:]
+            is_feasible = LpInstance._minimize(self.lp_data, direction, dir_len, result, result.shape[0]) == 0
 
-        is_feasible = (res == 0)
+        Timers.toc("lp minimize")
 
         if not is_feasible and error_if_infeasible:
             raise RuntimeError('minimize LP was infeasible when error_if_infeasible=True')

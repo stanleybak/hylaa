@@ -29,7 +29,7 @@ class Star(Freezable):
     for plotting that states if requested in the settings.
     '''
 
-    def __init__(self, hylaa_settings, mode, init_mat, init_rhs, input_mat=None, input_rhs=None):
+    def __init__(self, hylaa_settings, mode, init_mat_csr, init_rhs, input_mat_csr=None, input_rhs=None):
         assert isinstance(hylaa_settings, HylaaSettings)
 
         self.settings = hylaa_settings
@@ -40,24 +40,22 @@ class Star(Freezable):
         self.inputs = mode.parent.inputs
         self.time_elapse = TimeElapser(mode, hylaa_settings)
 
-        assert isinstance(init_mat, csr_matrix)
+        assert isinstance(init_mat_csr, csr_matrix)
         assert isinstance(init_rhs, np.ndarray)
-        assert init_rhs.shape == (init_mat.shape[0],)
-        self.init_mat = init_mat
+        assert init_rhs.shape == (init_mat_csr.shape[0],)
+        self.init_mat_csr = init_mat_csr
         self.init_rhs = init_rhs
 
-        self.total_steps = 0
-
         if self.inputs == 0:
-            assert input_mat is None and input_rhs is None
+            assert input_mat_csr is None and input_rhs is None
         else:
-            assert input_mat is not None and input_rhs is not None
-            assert input_rhs.shape == (input_mat.shape[0],) 
-            assert input_mat.shape[1] == self.inputs
-            assert isinstance(input_mat, csr_matrix)
+            assert input_mat_csr is not None and input_rhs is not None
+            assert input_rhs.shape == (input_mat_csr.shape[0],)
+            assert input_mat_csr.shape[1] == self.inputs
+            assert isinstance(input_mat_csr, csr_matrix)
             assert isinstance(input_rhs, np.ndarray)
 
-        self.input_mat = input_mat
+        self.input_mat_csr = input_mat_csr
         self.input_rhs = input_rhs
 
         ###################################
@@ -81,24 +79,36 @@ class Star(Freezable):
 
         if self._guard_lpis[transition_index] is None:
             # first time this was called... initialize the guard lpi
-            
-            lpi = LpInstance(num_constraints, self.dims)
-            lpi.set_init_constraints(self.init_mat, self.init_rhs)
 
-            # use identity for cur_time_matrix
-            # this is because we're already multiplying each time step by transition.guard_matrix
-            # so the cur-time variables are the 'value' of state dot constraint-direction
-            cur_time_matrix = csr_matrix(np.identity(num_constraints, dtype=float), dtype=float)
-            lpi.set_cur_time_constraints(cur_time_matrix, transition.guard_rhs)
-            
+            lpi = LpInstance(num_constraints, self.dims, self.inputs)
+            lpi.set_init_constraints_csr(self.init_mat_csr, self.init_rhs)
+            lpi.set_cur_time_constraint_bounds(transition.guard_rhs)
+
+            if self.inputs > 0:
+                lpi.set_input_constraints_csr(self.input_mat_csr, self.input_rhs)
+
             self._guard_lpis[transition_index] = lpi
 
         lpi = self._guard_lpis[transition_index]
-        cur_mat = self.time_elapse.cur_time_elapse_mat
-        lpi.update_time_elapse_matrix(cur_mat[key_dir_offset:key_dir_offset + num_constraints])
+        cur_time_mat = self.time_elapse.cur_time_elapse_mat
+        lpi.update_time_elapse_matrix(cur_time_mat[key_dir_offset:key_dir_offset + num_constraints])
 
-        direction = np.zeros((num_constraints))
-        result = np.zeros((num_constraints + self.dims))
+        # add input effects for the current step (if it exists)
+        if self.time_elapse.cur_input_effects_matrix is not None:
+            input_effects_mat = self.time_elapse.cur_input_effects_matrix
+            lpi.add_input_effects_matrix(input_effects_mat[key_dir_offset:key_dir_offset + num_constraints])
+
+        lpi.commit_cur_time_rows()
+
+        result_len = num_constraints + self.dims
+
+        if self.inputs > 0:
+            num_steps = self.time_elapse.next_step - 1
+            result_len += self.inputs * num_steps
+
+        result = np.zeros((result_len), dtype=float)
+
+        direction = np.zeros((num_constraints,), dtype=float)
 
         is_feasible = lpi.minimize(direction, result, error_if_infeasible=False)
 
@@ -112,12 +122,12 @@ class Star(Freezable):
         rv = self._plot_lpi
 
         if rv is None:
-            rv = LpInstance(2, self.dims)
-            rv.set_init_constraints(self.init_mat, self.init_rhs)
+            rv = LpInstance(2, self.dims, self.inputs)
+            rv.set_init_constraints_csr(self.init_mat_csr, self.init_rhs)
             rv.update_time_elapse_matrix(self.time_elapse.cur_time_elapse_mat[:2])
 
             if self.inputs > 0:
-                rv.set_input_constraints(self.input_mat, self.input_rhs)
+                rv.set_input_constraints_csr(self.input_mat_csr, self.input_rhs)
 
             self._plot_lpi = rv
 
@@ -133,8 +143,8 @@ class Star(Freezable):
         if self._plot_lpi is not None:
             self._plot_lpi.update_time_elapse_matrix(self.time_elapse.cur_time_elapse_mat[:2])
 
-            if self.inputs > 0:
-                self._plot_lpi.add_input_effects(self.time_elapse.cur_input_effects_matrix[:2])
+            if self.time_elapse.cur_input_effects_matrix is not None:
+                self._plot_lpi.add_input_effects_matrix(self.time_elapse.cur_input_effects_matrix[:2])
 
         self._verts = None # cached vertices for plotting are no longer valid
 
@@ -176,6 +186,8 @@ class Star(Freezable):
         assert Star.plot_settings is not None, "init_plot_vecs() should be called before verts()"
 
         if self._verts is None:
+            self.get_plot_lpi().commit_cur_time_rows()
+
             use_binary_search = True
 
             if Star.high_vert_mode:

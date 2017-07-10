@@ -26,17 +26,15 @@ def define_ha():
 
     a_matrix, b_matrix = add_time_var(a_matrix, b_matrix)
 
-    a_matrix = add_time_var(a_matrix)
-
     mode = ha.new_mode('mode')
 
     mode.set_dynamics(a_matrix, b_matrix)
 
-    # error if x >= 5
+    # error if x >= 7.5
     error = ha.new_mode('error')
     trans = ha.new_transition(mode, error)
     guard_matrix = np.array([-1, 0, 0, 0], dtype=float)
-    trans.set_guard(csr_matrix(guard_matrix, dtype=float), np.array([-5], dtype=float))
+    trans.set_guard(csr_matrix(guard_matrix, dtype=float), np.array([-7.5], dtype=float))
 
     return ha
 
@@ -120,7 +118,7 @@ def make_input_constraints(ha):
 
     indptr.append(len(values))
 
-    input_mat = csr_matrix((values, indices, indptr), shape=(2*ha.dims, ha.dims), dtype=float)
+    input_mat = csr_matrix((values, indices, indptr), shape=(2*ha.inputs, ha.inputs), dtype=float)
     input_rhs = np.array(constraint_rhs, dtype=float)
 
     return (input_mat, input_rhs)
@@ -132,11 +130,12 @@ def make_init_star(ha, hylaa_settings):
     input_mat, input_rhs = make_input_constraints(ha)
 
     return Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs, input_mat, input_rhs)
+    #return Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs)
 
 def define_settings():
     'get the hylaa settings object'
     plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_INTERACTIVE
+    plot_settings.plot_mode = PlotSettings.PLOT_FULL
     plot_settings.xdim_dir = 0
     plot_settings.ydim_dir = 1
 
@@ -160,7 +159,7 @@ def define_settings():
 def run_hylaa(hylaa_settings):
     'Runs hylaa with the given settings, returning the HylaaResult object.'
     ha = define_ha()
-    init = define_init(ha, hylaa_settings)
+    init = make_init_star(ha, hylaa_settings)
 
     engine = HylaaEngine(ha, hylaa_settings)
     engine.run(init)

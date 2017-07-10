@@ -78,7 +78,7 @@ end
 
         f.write("hold off;\n")
 
-def write_counter_example(filename, mode, step_size, total_steps, start_pt, normal_vec, normal_val, end_val):
+def write_counter_example(filename, mode, step_size, total_steps, start_pt, inputs, normal_vec, normal_val, end_val):
     'write a counter-example to a file which can be run using the HyLAA trace generator'
 
     assert isinstance(mode.a_matrix, csc_matrix)
@@ -107,8 +107,23 @@ def check_instance():
 
         ###
 
-        f.write('    b_matrix = None\n')
-        f.write('    inputs = None\n\n')
+        if mode.b_matrix is None:
+            f.write('    b_matrix = None\n')
+            f.write('    inputs = None\n\n')
+        else:
+            f.write('    data = {}\n'.format(repr(mode.b_matrix.data)))
+            f.write('    indices = {}\n'.format(repr(mode.b_matrix.indices)))
+            f.write('    indptr = {}\n'.format(repr(mode.b_matrix.indptr)))
+            f.write('    b_matrix = csc_matrix((data, indices, indptr), dtype=float, shape=({}, {}))\n'.format(
+                mode.b_matrix.shape[0], mode.b_matrix.shape[1]))
+
+            # write inputs to use at each step
+            f.write('    inputs = [\n')
+
+            for i in inputs:
+                f.write('        {},\n'.format(repr(i)))
+
+            f.write('       ]\n\n')
 
         ###
         f.write('    step = {}\n'.format(step_size))
