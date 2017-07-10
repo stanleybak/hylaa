@@ -56,6 +56,11 @@ void setCurTimeConstraintBounds(LpData* lpd, double* rhs, int rhsLen)
     lpd->setCurTimeConstraintBounds(rhs, rhsLen);
 }
 
+void commitCurTimeRows(LpData* lpd)
+{
+    lpd->commitCurTimeRows();
+}
+
 int minimize(LpData* lpd, double* direction, int dirLen, double* result, int resLen)
 {
     return lpd->minimize(direction, dirLen, result, resLen);
@@ -116,6 +121,11 @@ void setInputConstraintsCsr(void* lpdata, double* data, int dataLen, int* indice
 void setCurTimeConstraintBounds(void* lpdata, double* rhs, int rhsLen)
 {
     hylaa_glpk::setCurTimeConstraintBounds((LpData*)lpdata, rhs, rhsLen);
+}
+
+void commitCurTimeRows(void* lpdata)
+{
+    hylaa_glpk::commitCurTimeRows((LpData*)lpdata);
 }
 
 int minimize(void* lpdata, double* direction, int dirLen, double* result, int resLen)

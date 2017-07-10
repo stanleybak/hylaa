@@ -53,7 +53,6 @@ class LpInstance(Freezable):
 
             # void setInitConstraintsCsr(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,
             #                         int* indptr, int indptrLen, double* rhs, int rhsLen)
-
             LpInstance._set_init_constraints_csr = lib.setInitConstraintsCsr
             LpInstance._set_init_constraints_csr.restype = None
             LpInstance._set_init_constraints_csr.argtypes = \
@@ -63,28 +62,27 @@ class LpInstance(Freezable):
                  ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, \
                  ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int]
 
-            # void setInputConstraintsCsc(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,
+            # void setInputConstraintsCsr(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,
             #                         int* indptr, int indptrLen, double* rhs, int rhsLen)
-
-            LpInstance._set_input_constraints_csc = lib.setInputConstraintsCsc
-            LpInstance._set_input_constraints_csc.restype = None
-            LpInstance._set_input_constraints_csc.argtypes = \
+            LpInstance._set_input_constraints_csr = lib.setInputConstraintsCsr
+            LpInstance._set_input_constraints_csr.restype = None
+            LpInstance._set_input_constraints_csr.argtypes = \
                 [ctypes.c_void_p, \
                  ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, \
                  ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, \
                  ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, \
                  ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int]
 
-            # void setCurTimeConstraints(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,
-            #                            int* indptr, int indptrLen, double* rhs, int rhsLen)
-            LpInstance._set_cur_time_constraints = lib.setCurTimeConstraints
-            LpInstance._set_cur_time_constraints.restype = None
-            LpInstance._set_cur_time_constraints.argtypes = \
-                [ctypes.c_void_p, \
-                 ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, \
-                 ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, \
-                 ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, \
-                 ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int]
+            # void setCurTimeConstraintBounds(void* lpdata, double* rhs, int rhsLen)
+            LpInstance._set_cur_time_constraint_bounds = lib.setCurTimeConstraintBounds
+            LpInstance._set_cur_time_constraint_bounds.restype = None
+            LpInstance._set_cur_time_constraint_bounds.argtypes = \
+                [ctypes.c_void_p, ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int]
+
+            # void commitCurTimeRows(void* lpdata)
+            LpInstance._commit_cur_time_rows = lib.commitCurTimeRows
+            LpInstance._commit_cur_time_rows.restype = None
+            LpInstance._commit_cur_time_rows.argtypes = [ctypes.c_void_p]
 
             # int minimize(void* lpdata, double* direction, int dirLen, double* result, int resLen)
             LpInstance._minimize = lib.minimize
@@ -128,6 +126,7 @@ class LpInstance(Freezable):
         self.added_init_constraints = False
         self.added_cur_time_constraints = False
         self.added_time_elapse_matrix = False
+        self.committed = False
 
         self.freeze_attrs()
 
@@ -149,6 +148,21 @@ class LpInstance(Freezable):
         LpInstance._add_input_effects_matrix(self.lp_data, matrix, matrix.shape[1], matrix.shape[0])
         Timers.toc("lp add_input_effects_matrix")
 
+        self.committed = False
+
+    def commit_cur_time_rows(self):
+        '''commit the cur_time rows to the lp instance. necessary before solving or printing an lp after
+        we have updated the curTime matix or adding input effects
+        '''
+
+        assert not self.committed, "commit_cur_time_rows() called twice without updating curTime or inputEffects matrix"
+
+        Timers.tic("lp commit_cur_time_rows")
+        LpInstance._commit_cur_time_rows(self.lp_data)
+        Timers.toc("lp commit_cur_time_rows")
+
+        self.committed = True
+
     def update_time_elapse_matrix(self, matrix):
         'update the time elapse matrix in an lp'
 
@@ -164,6 +178,7 @@ class LpInstance(Freezable):
         Timers.toc("lp update_time_elapse_matrix")
 
         self.added_time_elapse_matrix = True
+        self.committed = False
 
     def set_init_constraints_csr(self, constraint_mat, rhs):
         '''set the initial state constraints'''
@@ -187,47 +202,46 @@ class LpInstance(Freezable):
 
         self.added_init_constraints = True
 
-    def set_input_constraints_csc(self, constraint_mat, rhs):
+    def set_input_constraints_csr(self, constraint_mat, rhs):
         '''set the input constraints'''
-
-        assert isinstance(constraint_mat, csc_matrix)
-        assert isinstance(rhs, np.ndarray)
-        assert rhs.shape == (constraint_mat.shape[0],)
-
-        Timers.tic("lp set_input_constraints_csc")
-        data = constraint_mat.data
-        indices = constraint_mat.indices
-        indptr = constraint_mat.indptr
-
-        LpInstance._set_input_constraints_csc(self.lp_data, data, data.shape[0], indices, indices.shape[0],
-                                              indptr, indptr.shape[0], rhs, rhs.shape[0])
-
-        Timers.toc("lp set_input_constraints_csc")
-
-    def set_cur_time_constraints(self, constraint_mat, rhs):
-        '''set the constraints to be checked at each time step'''
-
-        assert self.added_init_constraints
-        assert not self.added_cur_time_constraints
-        assert not self.added_time_elapse_matrix
 
         assert isinstance(constraint_mat, csr_matrix)
         assert isinstance(rhs, np.ndarray)
         assert rhs.shape == (constraint_mat.shape[0],)
 
-        Timers.tic("lp set_cur_time_constraints")
+        Timers.tic("lp set_input_constraints_csr")
         data = constraint_mat.data
         indices = constraint_mat.indices
         indptr = constraint_mat.indptr
 
-        LpInstance._set_cur_time_constraints(self.lp_data, data, data.shape[0], indices, indices.shape[0],
-                                             indptr, indptr.shape[0], rhs, rhs.shape[0])
-        Timers.toc("lp set_cur_time_constraints")
+        LpInstance._set_input_constraints_csr(self.lp_data, data, data.shape[0], indices, indices.shape[0],
+                                              indptr, indptr.shape[0], rhs, rhs.shape[0])
+
+        Timers.toc("lp set_input_constraints_csr")
+
+    def set_cur_time_constraint_bounds(self, rhs):
+        '''
+        set the constraint-bounds to be checked at each time step. The cur-time variables are projected
+        onto the constraints... so we only need to set the right-hand-side values of the constraints.
+        '''
+
+        assert self.added_init_constraints
+        assert not self.added_cur_time_constraints
+        assert not self.added_time_elapse_matrix
+
+        assert isinstance(rhs, np.ndarray)
+        assert rhs.shape == (self.num_cur_time_vars,), "expected one constraint value for each cur-time variable"
+
+        Timers.tic("lp set_cur_time_constraint_bounds")
+        LpInstance._set_cur_time_constraint_bounds(self.lp_data, rhs, rhs.shape[0])
+        Timers.toc("lp set_cur_time_constraint_bounds")
 
         self.added_cur_time_constraints = True
 
     def print_lp(self):
         '''print the lp constraint matrix to stdout (a debugging function)'''
+
+        assert self.committed, "commit_cur_time_rows() should be called before print_lp"
 
         LpInstance._print_lp(self.lp_data)
 
@@ -240,6 +254,7 @@ class LpInstance(Freezable):
         If it's the smaller one, only the result for the current-time variables is used.
         '''
 
+        assert self.committed, "commit_cur_time_rows() should be called before minimize()"
         assert self.added_time_elapse_matrix
 
         dir_len, = direction.shape
