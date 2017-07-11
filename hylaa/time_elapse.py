@@ -6,7 +6,7 @@ l * e^{At} where l is some direction of interest, and t is a multiple of some ti
 import numpy as np
 
 from scipy.sparse import lil_matrix, csr_matrix, csc_matrix
-from scipy.sparse.linalg import expm
+from scipy.sparse.linalg import expm, expm_multiply
 
 from hylaa.util import Freezable
 from hylaa.hybrid_automaton import LinearAutomatonMode
@@ -104,10 +104,15 @@ class TimeElapser(Freezable):
                     aug_a_matrix = csc_matrix((data, indices, indptr), shape=(self.dims + 1, self.dims + 1))
 
                     print "doing input {}/{} expm...".format(c + 1, self.inputs)
-                    matrix_exp = np.array(expm(aug_a_matrix * self.settings.step).todense(), dtype=float)
+                    mat = aug_a_matrix * self.settings.step
 
                     # the last column of matrix_exp is the same as multiplying it by the initial state [0, 0, ..., 1]
-                    col = matrix_exp[:, -1]
+                    init_state = np.zeros(self.dims + 1, dtype=float)
+                    init_state[self.dims] = 1.0
+                    col = expm_multiply(mat, init_state)
+
+                    #matrix_exp = np.array(expm(mat).todense(), dtype=float)
+                    #col = matrix_exp[:, -1]
 
                     self.one_step_input_effects_matrix[:, c] = col[:self.dims]
 

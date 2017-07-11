@@ -199,8 +199,10 @@ def plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step, 
         ax[0].plot(sim_times[-1], normal_trace[-1], 'o', ms=10, mew=3, mec='red', mfc='none')
         ax[0].plot([sim_times[0], sim_times[-1]], [normal_val, normal_val], 'k--', lw=2, label='Violation')
 
+        if inputs is None:
+            ax[0].set_xlabel('Time', fontsize=22)
+
         ax[0].set_ylabel('Projected State', fontsize=22)
-        ax[0].set_xlabel('Time', fontsize=22)
         ax[0].set_title('Counter-Example Trace', fontsize=28)
 
     if inputs is not None:

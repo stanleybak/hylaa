@@ -32,7 +32,8 @@ def define_ha():
 
     # x1 >= 0.2
     mat = csr_matrix(([-1], [0], [0, 1]), dtype=float, shape=(1, dims))
-    rhs = np.array([-0.2], dtype=float)
+    rhs = np.array([-0.2], dtype=float) # safe
+    #rhs = np.array([-0.1], dtype=float) # unsafe
     trans1 = ha.new_transition(mode, error)
     trans1.set_guard(mat, rhs)
 
@@ -151,7 +152,7 @@ def define_settings(ha):
     plot_settings.plot_size = (12, 10)
     plot_settings.label.big(size=40)
 
-    settings = HylaaSettings(step=0.05, max_time=20.0, plot_settings=plot_settings)
+    settings = HylaaSettings(step=0.005, max_time=20.0, plot_settings=plot_settings)
     settings.simulation.sim_mode = SimulationSettings.EXP_MULT
 
     return settings

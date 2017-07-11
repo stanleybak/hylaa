@@ -16,9 +16,11 @@ def check_instance():
     indices = array([0, 1], dtype=int32)
     indptr = array([0, 1, 2], dtype=int32)
     b_matrix = csc_matrix((data, indices, indptr), dtype=float, shape=(4, 2))
+
     inputs = []
     inputs += [[-0.5, 0.5]] * 2
     inputs += [[0.5, 0.5]] * 2
+
     step = 0.785398163397
     max_time = 3.14159265359
 
