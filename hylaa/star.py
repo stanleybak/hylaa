@@ -96,8 +96,6 @@ class Star(Freezable):
 
         self.time_elapse.step()
 
-        Timers.tic('star.step-update-lp')
-
         if self._plot_lpi is not None:
             self._plot_lpi.update_time_elapse_matrix(self.time_elapse.cur_time_elapse_mat[:2])
 
@@ -105,12 +103,6 @@ class Star(Freezable):
                 self._plot_lpi.add_input_effects_matrix(self.time_elapse.cur_input_effects_matrix[:2])
 
         self._verts = None # cached vertices for plotting are no longer valid
-
-        #Timers.tic('guard_opt_data.update_from_sim')
-        #self._guard_opt_data.update_from_sim(input_star)
-        #Timers.toc('guard_opt_data.update_from_sim')
-
-        Timers.toc('star.step-update-lp')
 
     ######### star plotting methods below ############
 

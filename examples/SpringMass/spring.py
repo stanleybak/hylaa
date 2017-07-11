@@ -27,7 +27,7 @@ def define_ha():
     # each mass will add 2 dimensions to the system
     num_masses = 5000 # 10 thousand dims
     #num_masses = 50000 # 100 thousand dims -> memory error
-    # num_mases = 500000 # one million dims
+    #num_mases = 500000 # one million dims
     a_matrix = make_a_matrix(num_masses)
     mode.set_dynamics(a_matrix)
 
@@ -138,7 +138,7 @@ def define_settings(_):
     plot_settings.plot_size = (12, 10)
     plot_settings.label.big(size=32)
 
-    settings = HylaaSettings(step=0.1, max_time=1.0, plot_settings=plot_settings)
+    settings = HylaaSettings(step=0.1, max_time=2.0, plot_settings=plot_settings)
     settings.simulation.sim_mode = SimulationSettings.EXP_MULT
     settings.simulation.guard_mode = SimulationSettings.GUARD_DECOMPOSED
 

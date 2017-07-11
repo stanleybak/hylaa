@@ -20,7 +20,7 @@ class TimerData(object):
 
     def tic(self):
         'start the timer'
-        
+
         if self.last_start_time is not None:
             raise RuntimeError("Timer started twice: {}".format(self.name))
 
@@ -79,7 +79,12 @@ class Timers(object):
 
         skip_timers = ['total', 'frame']
 
-        for timer in Timers.timers.values():
+        timer_names = Timers.timers.keys()
+        timer_names.sort()
+
+        for timer_name in timer_names:
+            timer = Timers.timers[timer_name]
+
             if timer.last_start_time is not None:
                 raise RuntimeError("timer was never stopped: {}".format(timer.name))
 

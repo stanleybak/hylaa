@@ -149,9 +149,9 @@ class LpInstance(Freezable):
         assert matrix.shape[0] == self.num_cur_time_vars, "input-effects matrix wrong height"
         assert matrix.shape[1] == self.num_inputs, "input-effects matrix wrong width"
 
-        Timers.tic("lp add_input_effects_matrix")
+        Timers.tic("lp overlead")
         LpInstance._add_input_effects_matrix(self.lp_data, matrix, matrix.shape[1], matrix.shape[0])
-        Timers.toc("lp add_input_effects_matrix")
+        Timers.toc("lp overhead")
 
         self.committed = False
 
@@ -162,9 +162,9 @@ class LpInstance(Freezable):
 
         assert not self.committed, "commit_cur_time_rows() called twice without updating curTime or inputEffects matrix"
 
-        Timers.tic("lp commit_cur_time_rows")
+        Timers.tic("lp overhead")
         LpInstance._commit_cur_time_rows(self.lp_data)
-        Timers.toc("lp commit_cur_time_rows")
+        Timers.toc("lp overhead")
 
         self.committed = True
 
@@ -178,9 +178,9 @@ class LpInstance(Freezable):
         assert matrix.shape[0] == self.num_cur_time_vars, "time-elapse matrix wrong height"
         assert matrix.shape[1] == self.num_init_vars, "time-elapse matrix wrong width"
 
-        Timers.tic("lp update_time_elapse_matrix")
+        Timers.tic("lp overhead")
         LpInstance._update_time_elapse_matrix(self.lp_data, matrix, matrix.shape[1], matrix.shape[0])
-        Timers.toc("lp update_time_elapse_matrix")
+        Timers.toc("lp overhead")
 
         self.added_time_elapse_matrix = True
         self.committed = False
@@ -195,7 +195,7 @@ class LpInstance(Freezable):
         assert isinstance(rhs, np.ndarray)
         assert rhs.shape == (constraint_mat.shape[0],)
 
-        Timers.tic("lp set_init_constraints_csr")
+        Timers.tic("lp overhead")
         data = constraint_mat.data
         indices = constraint_mat.indices
         indptr = constraint_mat.indptr
@@ -203,7 +203,7 @@ class LpInstance(Freezable):
         LpInstance._set_init_constraints_csr(self.lp_data, data, data.shape[0], indices, indices.shape[0],
                                              indptr, indptr.shape[0], rhs, rhs.shape[0])
 
-        Timers.toc("lp set_init_constraints_csr")
+        Timers.toc("lp overhead")
 
         self.added_init_constraints = True
 
@@ -214,7 +214,7 @@ class LpInstance(Freezable):
         assert isinstance(rhs, np.ndarray)
         assert rhs.shape == (constraint_mat.shape[0],)
 
-        Timers.tic("lp set_input_constraints_csr")
+        Timers.tic("lp overhead")
         data = constraint_mat.data
         indices = constraint_mat.indices
         indptr = constraint_mat.indptr
@@ -222,7 +222,7 @@ class LpInstance(Freezable):
         LpInstance._set_input_constraints_csr(self.lp_data, data, data.shape[0], indices, indices.shape[0],
                                               indptr, indptr.shape[0], rhs, rhs.shape[0])
 
-        Timers.toc("lp set_input_constraints_csr")
+        Timers.toc("lp overhead")
 
     def set_cur_time_constraint_bounds(self, rhs):
         '''
@@ -237,9 +237,9 @@ class LpInstance(Freezable):
         assert isinstance(rhs, np.ndarray)
         assert rhs.shape == (self.num_cur_time_vars,), "expected one constraint value for each cur-time variable"
 
-        Timers.tic("lp set_cur_time_constraint_bounds")
+        Timers.tic("lp overhead")
         LpInstance._set_cur_time_constraint_bounds(self.lp_data, rhs, rhs.shape[0])
-        Timers.toc("lp set_cur_time_constraint_bounds")
+        Timers.toc("lp overhead")
 
         self.added_cur_time_constraints = True
 

@@ -89,7 +89,6 @@ class PlotSettings(Freezable):
         # these are useful for testing / debugging
         self.skip_frames = 0 # number of frames to process before we start drawing
         self.skip_show_gui = False # should we skip showing the graphical interface
-        self.print_lp_at_each_step = False # should we print the LP being plotted at each step?
 
         self.freeze_attrs()
 

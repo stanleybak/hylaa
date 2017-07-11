@@ -3,6 +3,7 @@ Time Elapse Computation. This module is primarily responsive for computing
 l * e^{At} where l is some direction of interest, and t is a multiple of some time step
 '''
 
+import sys
 import numpy as np
 
 from scipy.sparse import lil_matrix, csr_matrix, csc_matrix
@@ -81,10 +82,21 @@ class TimeElapser(Freezable):
         elif self.one_step_matrix_exp is None:
             assert self.next_step == 1
             assert isinstance(self.key_dir_mat, csr_matrix)
-            Timers.tic('time_elapse.step first')
+            Timers.tic('time_elapse.step first step')
 
-            print "doing no_input expm..."
+            print_status = self.a_matrix.shape[0] > 100
+
+            if print_status:
+                print "Computing the one-step matrix exponential for the {}-dimensional system...".format(
+                    self.a_matrix.shape[0]),
+                sys.stdout.flush()
+
             self.one_step_matrix_exp = np.array(expm(self.a_matrix * self.settings.step).todense(), dtype=float)
+
+            if print_status:
+                print "done"
+
+
             self.cur_time_elapse_mat = self.key_dir_mat * self.one_step_matrix_exp
 
             if self.inputs > 0:
@@ -103,7 +115,6 @@ class TimeElapser(Freezable):
 
                     aug_a_matrix = csc_matrix((data, indices, indptr), shape=(self.dims + 1, self.dims + 1))
 
-                    print "doing input {}/{} expm...".format(c + 1, self.inputs)
                     mat = aug_a_matrix * self.settings.step
 
                     # the last column of matrix_exp is the same as multiplying it by the initial state [0, 0, ..., 1]
@@ -120,9 +131,9 @@ class TimeElapser(Freezable):
                 self.cur_input_effects_matrix = np.dot(self.cur_input_projection_matrix,
                                                        self.one_step_input_effects_matrix)
 
-            Timers.toc('time_elapse.step first')
+            Timers.toc('time_elapse.step first step')
         else:
-            Timers.tic('time_elapse.step others')
+            Timers.tic('time_elapse.step other steps')
 
             self.cur_time_elapse_mat = np.dot(self.cur_time_elapse_mat, self.one_step_matrix_exp)
 
@@ -133,7 +144,7 @@ class TimeElapser(Freezable):
                 self.cur_input_effects_matrix = np.dot(self.cur_input_projection_matrix,
                                                        self.one_step_input_effects_matrix)
 
-            Timers.toc('time_elapse.step others')
+            Timers.toc('time_elapse.step other steps')
 
     def step_matrix_exp(self):
         'matrix exp every step'
@@ -174,7 +185,7 @@ class TimeElapser(Freezable):
     def step(self):
         'perform the computation to obtain the values of the key directions the current time'
 
-        Timers.tic('time_elapse.step')
+        Timers.tic('time_elapse.step Total')
 
         if self.settings.simulation.sim_mode == SimulationSettings.MATRIX_EXP:
             self.step_matrix_exp()
@@ -185,7 +196,7 @@ class TimeElapser(Freezable):
 
         self.next_step += 1
 
-        Timers.toc('time_elapse.step')
+        Timers.toc('time_elapse.step Total')
 
         # post-conditions check
         assert isinstance(self.cur_time_elapse_mat, np.ndarray), "cur_time_elapse_mat should be an np.array"
