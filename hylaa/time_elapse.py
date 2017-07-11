@@ -77,7 +77,7 @@ class TimeElapser(Freezable):
         'first step matrix exp, other steps matrix multiplication'
 
         if self.next_step == 0:
-            self.cur_time_elapse_mat = self.key_dir_mat * np.identity(self.dims)
+            self.cur_time_elapse_mat = np.array(self.key_dir_mat.todense(), dtype=float)
         elif self.one_step_matrix_exp is None:
             assert self.next_step == 1
             assert isinstance(self.key_dir_mat, csr_matrix)

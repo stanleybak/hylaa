@@ -89,7 +89,6 @@ def write_counter_example(filename, mode, step_size, total_steps, start_pt, inpu
         f.write('''"Counter-example trace generated using HyLAA"
 
 import sys
-from numpy import array, int32
 from scipy.sparse import csc_matrix
 from hylaa.check_trace import check, plot
 
@@ -100,9 +99,9 @@ def check_instance():
 
         dims = mode.a_matrix.shape[0]
 
-        f.write('    data = {}\n'.format(repr(mode.a_matrix.data)))
-        f.write('    indices = {}\n'.format(repr(mode.a_matrix.indices)))
-        f.write('    indptr = {}\n'.format(repr(mode.a_matrix.indptr)))
+        f.write('    data = {}\n'.format([n for n in mode.a_matrix.data]))
+        f.write('    indices = {}\n'.format([n for n in mode.a_matrix.indices]))
+        f.write('    indptr = {}\n'.format([n for n in mode.a_matrix.indptr]))
         f.write('    a_matrix = csc_matrix((data, indices, indptr), dtype=float, shape=({}, {}))\n'.format(dims, dims))
 
         ###
@@ -111,9 +110,9 @@ def check_instance():
             f.write('    b_matrix = None\n')
             f.write('    inputs = None\n\n')
         else:
-            f.write('    data = {}\n'.format(repr(mode.b_matrix.data)))
-            f.write('    indices = {}\n'.format(repr(mode.b_matrix.indices)))
-            f.write('    indptr = {}\n'.format(repr(mode.b_matrix.indptr)))
+            f.write('    data = {}\n'.format([n for n in mode.b_matrix.data]))
+            f.write('    indices = {}\n'.format([n for n in mode.b_matrix.indices]))
+            f.write('    indptr = {}\n'.format([n for n in mode.b_matrix.indptr]))
             f.write('    b_matrix = csc_matrix((data, indices, indptr), dtype=float, shape=({}, {}))\n\n'.format(
                 mode.b_matrix.shape[0], mode.b_matrix.shape[1]))
 
@@ -140,8 +139,8 @@ def check_instance():
 
         ###
 
-        f.write('    start_point = {}\n'.format(repr(start_pt)))
-        f.write('    normal_vec = {}\n'.format(repr(normal_vec)))
+        f.write('    start_point = {}\n'.format([n for n in start_pt]))
+        f.write('    normal_vec = {}\n'.format([n for n in normal_vec]))
         f.write('    normal_val = {}\n\n'.format(normal_val))
         f.write('    end_val = {}\n'.format(end_val))
 

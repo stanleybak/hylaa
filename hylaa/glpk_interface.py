@@ -112,6 +112,10 @@ class LpInstance(Freezable):
 
     def __init__(self, num_cur_time_vars, num_init_vars, num_inputs):
         LpInstance._init_static()
+        self.lp_data = None
+
+        assert num_cur_time_vars > 0
+        assert num_init_vars > 0
 
         self.lp_data = LpInstance._init_lp(num_cur_time_vars, num_init_vars, num_inputs)
 
@@ -131,8 +135,9 @@ class LpInstance(Freezable):
         self.freeze_attrs()
 
     def __del__(self):
-        self.del_lp(self.lp_data)
-        self.lp_data = None
+        if self.lp_data is not None:
+            self.del_lp(self.lp_data)
+            self.lp_data = None
 
     def add_input_effects_matrix(self, matrix):
         'update the time elapse matrix in an lp'

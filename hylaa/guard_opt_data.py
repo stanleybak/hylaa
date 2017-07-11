@@ -45,8 +45,9 @@ class GuardOptData(Freezable):
             self.noinput_lpi = LpInstance(self.num_constraints, self.dims, 0)
             self.noinput_lpi.set_init_constraints_csr(star.init_mat_csr, star.init_rhs)
 
-            self.input_lpi = LpInstance(self.num_constraints, self.inputs, 0)
-            self.input_lpi.set_init_constraints_csr(star.input_mat_csr, star.input_rhs)
+            if self.inputs > 0:
+                self.input_lpi = LpInstance(self.num_constraints, self.inputs, 0)
+                self.input_lpi.set_init_constraints_csr(star.input_mat_csr, star.input_rhs)
 
             self.input_history = [] # inputs to apply at each step
             self.input_effects_sum = 0.0
