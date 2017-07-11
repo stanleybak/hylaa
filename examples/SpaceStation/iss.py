@@ -122,7 +122,6 @@ def make_input_constraints(ha):
 
     return (input_mat, input_rhs)
 
-
 def make_init_star(ha, hylaa_settings):
     '''returns a star'''
 

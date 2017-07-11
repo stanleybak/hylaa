@@ -83,6 +83,7 @@ class TimeElapser(Freezable):
             assert isinstance(self.key_dir_mat, csr_matrix)
             Timers.tic('time_elapse.step first')
 
+            print "doing no_input expm..."
             self.one_step_matrix_exp = np.array(expm(self.a_matrix * self.settings.step).todense(), dtype=float)
             self.cur_time_elapse_mat = self.key_dir_mat * self.one_step_matrix_exp
 
@@ -102,6 +103,7 @@ class TimeElapser(Freezable):
 
                     aug_a_matrix = csc_matrix((data, indices, indptr), shape=(self.dims + 1, self.dims + 1))
 
+                    print "doing input {}/{} expm...".format(c + 1, self.inputs)
                     matrix_exp = np.array(expm(aug_a_matrix * self.settings.step).todense(), dtype=float)
 
                     # the last column of matrix_exp is the same as multiplying it by the initial state [0, 0, ..., 1]

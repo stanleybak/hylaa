@@ -20,8 +20,11 @@ def define_ha():
     mode = ha.new_mode('mode')
     dynamics = loadmat('MNA_5.mat')
 
-    a_matrix = add_time_var(dynamics['A'])
-    mode.set_dynamics(a_matrix)
+    a_matrix = dynamics['A']
+    b_matrix = dynamics['B']
+
+    a_matrix, b_matrix = add_time_var(a_matrix, b_matrix)
+    mode.set_dynamics(a_matrix, b_matrix)
 
     error = ha.new_mode('error')
 
@@ -41,7 +44,7 @@ def define_ha():
 
     return ha
 
-def define_init_states(ha, hylaa_settings):
+def make_init_constraints(ha):
     '''returns a Star'''
 
     values = []
@@ -78,15 +81,60 @@ def define_init_states(ha, hylaa_settings):
         constraint_rhs.append(-lb)
 
     indptr.append(len(values))
-    constraint_matrix = csr_matrix((values, indices, indptr), shape=(2*ha.dims, ha.dims), dtype=float)
-    constraint_rhs = np.array(constraint_rhs, dtype=float)
 
-    return Star(hylaa_settings, constraint_matrix, constraint_rhs, ha.modes['mode'])
+    init_mat = csr_matrix((values, indices, indptr), shape=(2*ha.dims, ha.dims), dtype=float)
+    init_rhs = np.array(constraint_rhs, dtype=float)
+
+    return (init_mat, init_rhs)
+
+def make_input_constraints(ha):
+    '''return (input_mat, input_rhs)'''
+
+    values = []
+    indices = []
+    indptr = []
+
+    constraint_rhs = []
+
+    for i in xrange(ha.inputs):
+        if i < 5:
+            ub = lb = 0.1
+        elif i < 9:
+            ub = lb = 0.2
+        else:
+            raise RuntimeError('Unknown input: {}'.format(i))
+
+        # upper bound
+        values.append(1)
+        indices.append(i)
+        indptr.append(2*i)
+        constraint_rhs.append(ub)
+
+        # lower bound
+        values.append(-1)
+        indices.append(i)
+        indptr.append(2*i+1)
+        constraint_rhs.append(-lb)
+
+    indptr.append(len(values))
+
+    input_mat = csr_matrix((values, indices, indptr), shape=(2*ha.inputs, ha.inputs), dtype=float)
+    input_rhs = np.array(constraint_rhs, dtype=float)
+
+    return (input_mat, input_rhs)
+
+def make_init_star(ha, hylaa_settings):
+    '''returns a star'''
+
+    init_mat, init_rhs = make_init_constraints(ha)
+    input_mat, input_rhs = make_input_constraints(ha)
+
+    return Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs, input_mat, input_rhs)
 
 def define_settings(ha):
     'get the hylaa settings object'
     plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
+    plot_settings.plot_mode = PlotSettings.PLOT_NONE
 
     plot_settings.xdim_dir = (ha.dims - 2)
     plot_settings.ydim_dir = ha.transitions[0].guard_matrix[0]
@@ -113,7 +161,7 @@ def run_hylaa():
 
     ha = define_ha()
     settings = define_settings(ha)
-    init = define_init_states(ha, settings)
+    init = make_init_star(ha, settings)
 
     engine = HylaaEngine(ha, settings)
     engine.run(init)

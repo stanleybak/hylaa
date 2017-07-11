@@ -38,8 +38,6 @@ def add_time_var(a_matrix, b_matrix=None):
 
         rv = (a_matrix, b_matrix)
 
-    print "returning b_matrix w/ shape {}".format(rv[1].shape)
-
     return rv
 
 def add_zero_cols(mat, num_new_cols):
