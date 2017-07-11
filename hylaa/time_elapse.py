@@ -84,7 +84,7 @@ class TimeElapser(Freezable):
             assert isinstance(self.key_dir_mat, csr_matrix)
             Timers.tic('time_elapse.step first step')
 
-            print_status = self.a_matrix.shape[0] > 100
+            print_status = self.a_matrix.shape[0] > 100 and self.settings.print_output
 
             if print_status:
                 print "Computing the one-step matrix exponential for the {}-dimensional system...".format(
