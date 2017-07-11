@@ -74,6 +74,35 @@ class TimeElapser(Freezable):
         # done constructing, convert to csc_matrix
         self.key_dir_mat = csr_matrix(lil_dir_mat)
 
+    def step(self):
+        'perform the computation to obtain the values of the key directions the current time'
+
+        Timers.tic('time_elapse.step Total')
+
+        if self.settings.simulation.sim_mode == SimulationSettings.MATRIX_EXP:
+            self.step_matrix_exp()
+        elif self.settings.simulation.sim_mode == SimulationSettings.EXP_MULT:
+            self.step_exp_mult()
+        elif self.settings.simulation.sim_mode == SimulationSettings.KRYLOV:
+            self.step_krylov()
+        else:
+            raise RuntimeError('Unimplemented sim_mode {}'.format(self.settings.simulation.sim_mode))
+
+        self.next_step += 1
+
+        Timers.toc('time_elapse.step Total')
+
+        # post-conditions check
+        assert isinstance(self.cur_time_elapse_mat, np.ndarray), "cur_time_elapse_mat should be an np.array"
+        assert self.cur_time_elapse_mat.shape == self.key_dir_mat.shape, \
+            "cur_time_elapse mat shape({}) should be {}".format(self.cur_time_elapse_mat.shape, self.key_dir_mat.shape)
+
+        if self.inputs == 0 or self.next_step == 1: # 0-th step input should be null
+            assert self.cur_input_effects_matrix is None
+        else:
+            assert isinstance(self.cur_input_effects_matrix, np.ndarray)
+            assert self.cur_input_effects_matrix.shape == (self.key_dir_mat.shape[0], self.inputs)
+
     def step_exp_mult(self):
         'first step matrix exp, other steps matrix multiplication'
 
@@ -91,11 +120,12 @@ class TimeElapser(Freezable):
                     self.a_matrix.shape[0]),
                 sys.stdout.flush()
 
-            self.one_step_matrix_exp = np.array(expm(self.a_matrix * self.settings.step).todense(), dtype=float)
+            a_step_mat = self.a_matrix * self.settings.step
+
+            self.one_step_matrix_exp = np.array(expm(a_step_mat).todense(), dtype=float)
 
             if print_status:
                 print "done"
-
 
             self.cur_time_elapse_mat = self.key_dir_mat * self.one_step_matrix_exp
 
@@ -182,29 +212,7 @@ class TimeElapser(Freezable):
             full_input_effects = (prev_exp * input_effects_matrix)
             self.cur_input_effects_matrix = self.key_dir_mat * full_input_effects
 
-    def step(self):
-        'perform the computation to obtain the values of the key directions the current time'
+    def step_krylov(self):
+        'updates self.cur_time_elapse_mat and, if there are inputs, self.cur_input_effects_matrix'
 
-        Timers.tic('time_elapse.step Total')
-
-        if self.settings.simulation.sim_mode == SimulationSettings.MATRIX_EXP:
-            self.step_matrix_exp()
-        elif self.settings.simulation.sim_mode == SimulationSettings.EXP_MULT:
-            self.step_exp_mult()
-        else:
-            raise RuntimeError('Unimplemented sim_mode {}'.format(self.settings.simulation.sim_mode))
-
-        self.next_step += 1
-
-        Timers.toc('time_elapse.step Total')
-
-        # post-conditions check
-        assert isinstance(self.cur_time_elapse_mat, np.ndarray), "cur_time_elapse_mat should be an np.array"
-        assert self.cur_time_elapse_mat.shape == self.key_dir_mat.shape, \
-            "cur_time_elapse mat shape({}) should be {}".format(self.cur_time_elapse_mat.shape, self.key_dir_mat.shape)
-
-        if self.inputs == 0 or self.next_step == 1: # 0-th step input should be null
-            assert self.cur_input_effects_matrix is None
-        else:
-            assert isinstance(self.cur_input_effects_matrix, np.ndarray)
-            assert self.cur_input_effects_matrix.shape == (self.key_dir_mat.shape[0], self.inputs)
+        raise RuntimeError('unimplemented; TRAN IMPLEMENT THIS!')

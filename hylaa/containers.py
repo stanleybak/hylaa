@@ -36,8 +36,7 @@ class SimulationSettings(Freezable):
     # simulation mode (matrix-exp)
     MATRIX_EXP = 0 # matrix exp every step
     EXP_MULT = 1 # first step matrix exp, remaining steps matrix-vector multiplication
-    KRYPY = 2
-    GPU_KRYLOV = 3
+    KRYLOV = 2
 
     # guard optimization mode
     GUARD_DECOMPOSED = 0
