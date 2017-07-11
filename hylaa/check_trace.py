@@ -169,7 +169,7 @@ def plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step, 
     tol = 1e-6
 
     if end_val - tol <= normal_val:
-        print "End Point is (close to) a violation: {} - {} <= {}".format(end_val, tol, normal_val)
+        print "End Point is a violation (within tolerance): {} - {} <= {}".format(end_val, tol, normal_val)
     else:
         print "End point is NOT a violation: {} > {}".format(end_val, normal_val)
 

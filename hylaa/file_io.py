@@ -114,16 +114,25 @@ def check_instance():
             f.write('    data = {}\n'.format(repr(mode.b_matrix.data)))
             f.write('    indices = {}\n'.format(repr(mode.b_matrix.indices)))
             f.write('    indptr = {}\n'.format(repr(mode.b_matrix.indptr)))
-            f.write('    b_matrix = csc_matrix((data, indices, indptr), dtype=float, shape=({}, {}))\n'.format(
+            f.write('    b_matrix = csc_matrix((data, indices, indptr), dtype=float, shape=({}, {}))\n\n'.format(
                 mode.b_matrix.shape[0], mode.b_matrix.shape[1]))
 
             # write inputs to use at each step
-            f.write('    inputs = [\n')
+            f.write('    inputs = []\n')
 
-            for i in inputs:
-                f.write('        {},\n'.format(repr(i)))
+            prev_input = inputs[0]
+            total = 1
 
-            f.write('       ]\n\n')
+            for i in xrange(1, len(inputs)):
+                if (inputs[i] == prev_input).all():
+                    total += 1
+                else:
+                    f.write('    inputs += [{}] * {}\n'.format([u for u in prev_input], total))
+                    prev_input = inputs[i]
+                    total = 1
+
+            # don't forget the last one
+            f.write('    inputs += [{}] * {}\n\n'.format([u for u in prev_input], total))
 
         ###
         f.write('    step = {}\n'.format(step_size))

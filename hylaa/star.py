@@ -19,9 +19,9 @@ from hylaa.hybrid_automaton import HyperRectangle, LinearAutomatonTransition
 from hylaa.hybrid_automaton import LinearAutomatonMode
 from hylaa.timerutil import Timers as Timers
 from hylaa.util import Freezable
-from hylaa.starutil import GuardOptData, InitParent
 from hylaa.containers import PlotSettings, HylaaSettings
 from hylaa.time_elapse import TimeElapser
+from hylaa.guard_opt_data import GuardOptData
 
 class Star(Freezable):
     '''
@@ -62,57 +62,15 @@ class Star(Freezable):
         ## private member initialization ##
         ###################################
         self._plot_lpi = None # LpInstance for plotting
-        self._guard_lpis = [None] * len(mode.transitions) # LP instance(s) for guard checks
         self._verts = None # for plotting optimization, a cached copy of this star's projected polygon verts
+        self._guard_opt_data = [GuardOptData(self, mode, i) for i in xrange(len(mode.transitions))]
 
         self.freeze_attrs()
 
     def get_guard_intersection(self, transition_index):
         '''update the LP for the given transition, solve, and return get the lp solution (if feasible)'''
 
-        transition = self.mode.transitions[transition_index]
-        num_constraints = transition.guard_matrix.shape[0]
-        key_dir_offset = 0 if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE else 2
-
-        for t_index in xrange(transition_index):
-            key_dir_offset += self.mode.transitions[t_index].guard_matrix.shape[0]
-
-        if self._guard_lpis[transition_index] is None:
-            # first time this was called... initialize the guard lpi
-
-            lpi = LpInstance(num_constraints, self.dims, self.inputs)
-            lpi.set_init_constraints_csr(self.init_mat_csr, self.init_rhs)
-            lpi.set_cur_time_constraint_bounds(transition.guard_rhs)
-
-            if self.inputs > 0:
-                lpi.set_input_constraints_csr(self.input_mat_csr, self.input_rhs)
-
-            self._guard_lpis[transition_index] = lpi
-
-        lpi = self._guard_lpis[transition_index]
-        cur_time_mat = self.time_elapse.cur_time_elapse_mat
-        lpi.update_time_elapse_matrix(cur_time_mat[key_dir_offset:key_dir_offset + num_constraints])
-
-        # add input effects for the current step (if it exists)
-        if self.time_elapse.cur_input_effects_matrix is not None:
-            input_effects_mat = self.time_elapse.cur_input_effects_matrix
-            lpi.add_input_effects_matrix(input_effects_mat[key_dir_offset:key_dir_offset + num_constraints])
-
-        lpi.commit_cur_time_rows()
-
-        result_len = num_constraints + self.dims
-
-        if self.inputs > 0:
-            num_steps = self.time_elapse.next_step - 1
-            result_len += self.inputs * num_steps
-
-        result = np.zeros((result_len), dtype=float)
-
-        direction = np.zeros((num_constraints,), dtype=float)
-
-        is_feasible = lpi.minimize(direction, result, error_if_infeasible=False)
-
-        return result if is_feasible else None
+        return self._guard_opt_data[transition_index].get_updated_lp_solution()
 
     def get_plot_lpi(self):
         'get (maybe create) the LpInstance object for this star, and return it'

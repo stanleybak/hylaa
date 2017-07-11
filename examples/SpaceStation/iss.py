@@ -31,11 +31,11 @@ def define_ha():
     # add two more variables due to the time term
     guard_matrix = csr_matrix(add_zero_cols(dynamics['C'][2], 2)) # extract y3
 
-    trans1 = ha.new_transition(mode, error)
-    trans1.set_guard(guard_matrix, np.array([-0.0005], dtype=float)) # y3 <= -0.0005
+    #trans1 = ha.new_transition(mode, error)
+    #trans1.set_guard(guard_matrix, np.array([-0.0005], dtype=float)) # y3 <= -0.0005
 
-#    trans2 = ha.new_transition(mode, error)
-#    trans2.set_guard(-guard_matrix, np.array([-0.0005], dtype=float)) # y3 >= 0.0005
+    trans2 = ha.new_transition(mode, error)
+    trans2.set_guard(-guard_matrix, np.array([-0.0005], dtype=float)) # y3 >= 0.0005
 
     return ha
 
@@ -151,8 +151,9 @@ def define_settings(ha):
     plot_settings.plot_size = (12, 10)
     plot_settings.label.big(size=40)
 
-    settings = HylaaSettings(step=0.05, max_time=20.0, plot_settings=plot_settings)
+    settings = HylaaSettings(step=0.005, max_time=20.0, plot_settings=plot_settings)
     settings.simulation.sim_mode = SimulationSettings.EXP_MULT
+    settings.simulation.guard_mode = SimulationSettings.GUARD_DECOMPOSED
 
     return settings
 
