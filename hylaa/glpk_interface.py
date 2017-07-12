@@ -149,7 +149,7 @@ class LpInstance(Freezable):
         assert matrix.shape[0] == self.num_cur_time_vars, "input-effects matrix wrong height"
         assert matrix.shape[1] == self.num_inputs, "input-effects matrix wrong width"
 
-        Timers.tic("lp overlead")
+        Timers.tic("lp overhead")
         LpInstance._add_input_effects_matrix(self.lp_data, matrix, matrix.shape[1], matrix.shape[0])
         Timers.toc("lp overhead")
 
