@@ -135,12 +135,12 @@ def make_init_star(ha, hylaa_settings):
 def define_settings():
     'get the hylaa settings object'
     plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_FULL
+    plot_settings.plot_mode = PlotSettings.PLOT_NONE
     plot_settings.xdim_dir = 0
     plot_settings.ydim_dir = 1
 
     # save a video file instead
-    # plot_settings.make_video("vid.mp4", frames=220, fps=40)
+    #plot_settings.make_video("vid.mp4", frames=20, fps=5)
 
     plot_settings.num_angles = 128
     plot_settings.max_shown_polys = 2048
@@ -151,7 +151,7 @@ def define_settings():
     #plot_settings.label.big(size=40)
 
     settings = HylaaSettings(step=math.pi/4, max_time=math.pi, plot_settings=plot_settings)
-    settings.simulation.sim_mode = SimulationSettings.MATRIX_EXP
+    settings.simulation.sim_mode = SimulationSettings.EXP_MULT
     #settings.simulation.sim_mode = SimulationSettings.MATRIX_EXP
 
     return settings

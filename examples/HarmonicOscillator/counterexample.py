@@ -1,20 +1,19 @@
 "Counter-example trace generated using HyLAA"
 
 import sys
-from numpy import array, int32
 from scipy.sparse import csc_matrix
 from hylaa.check_trace import check, plot
 
 def check_instance():
     'define parameters for one instance and call checking function'
 
-    data = array([-1.,  1.,  1.])
-    indices = array([1, 0, 2], dtype=int32)
-    indptr = array([0, 1, 2, 2, 3], dtype=int32)
+    data = [-1.0, 1.0, 1.0]
+    indices = [1, 0, 2]
+    indptr = [0, 1, 2, 2, 3]
     a_matrix = csc_matrix((data, indices, indptr), dtype=float, shape=(4, 4))
-    data = array([ 1.,  1.])
-    indices = array([0, 1], dtype=int32)
-    indptr = array([0, 1, 2], dtype=int32)
+    data = [1.0, 1.0]
+    indices = [0, 1]
+    indptr = [0, 1, 2]
     b_matrix = csc_matrix((data, indices, indptr), dtype=float, shape=(4, 2))
 
     inputs = []
@@ -24,8 +23,8 @@ def check_instance():
     step = 0.785398163397
     max_time = 3.14159265359
 
-    start_point = array([-6.,  1.,  0.,  1.])
-    normal_vec = array([-1.,  0.,  0.,  0.])
+    start_point = [-6.0, 1.0, 0.0, 1.0]
+    normal_vec = [-1.0, 0.0, 0.0, 0.0]
     normal_val = -7.5
 
     end_val = -8.0

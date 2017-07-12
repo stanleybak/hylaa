@@ -152,7 +152,7 @@ def define_settings(ha):
     plot_settings.plot_size = (12, 10)
     plot_settings.label.big(size=40)
 
-    settings = HylaaSettings(step=0.005, max_time=20.0, plot_settings=plot_settings)
+    settings = HylaaSettings(step=0.1, max_time=1.0, plot_settings=plot_settings)
     settings.simulation.sim_mode = SimulationSettings.EXP_MULT
 
     return settings
