@@ -418,9 +418,6 @@ class PlotManager(Freezable):
 
                 verts = star.verts()
 
-                if self.settings.print_lp_at_each_step:
-                    star.print_lp()
-
                 self.shapes.set_cur_state(verts)
 
                 if self.settings.label.axes_limits is None:
