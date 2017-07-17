@@ -18,6 +18,7 @@ typedef double FLOAT_TYPE;
 typedef cusp::host_memory MEMORY_TYPE;
 //typedef cusp::device_memory MEMORY_TYPE;
 
+//static int choose_GPU = 0; // choose_GPU == 1 means that user choose to use GPU, if not, using CPU
 // shared matrix in device memory
 static cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE>* curMatrix = 0;
 static std::vector< cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> > V_;
@@ -31,11 +32,28 @@ static int keyDirMatrix_h = 0;
 // timing shared variable
 static long lastTicUs = 0;
 
+
+void _choose_GPU_or_CPU(char* msg)
+{
+    if (strcmp(msg, "CPU")){
+            printf("User choosed to use CPU \n");
+            // choose_GPU = 0;
+        }
+        else if(strcmp(msg,"GPU")){
+            printf("User choosed to use GPU \n");
+            // choose_GPU = 1;
+        }  else{
+            printf("wrong input options, choose CPU or GPU only \n");
+        }
+
+}
+ 
+
+
 void error(const char* msg)
 {
     printf("Fatal Error: %s\n", msg);
-    exit(1);
-             
+    exit(1);             
 }
 
 void tic()
@@ -306,16 +324,6 @@ int _arnoldi_initVectorPos(int basic_initVector_pos, double* result_H, int size,
     cusp::copy(deviceInitVec,V_[0]); 
     toc("copy initial vector into V_[0]"); 
 
-    // compute beta 
-    tic();
-    FLOAT_TYPE beta = 1;
-    //FLOAT_TYPE beta = cusp::blas::nrm2(deviceInitVec);
-    toc("compute beta");
-   
-
-    // normalize initial vector
-    cusp::blas::scal(V_[0], float(1)/beta);
-
     // iteration
     tic();
     int j;
@@ -338,15 +346,6 @@ int _arnoldi_initVectorPos(int basic_initVector_pos, double* result_H, int size,
 
      }
      toc("iteration");
-
-
-     // scale V_ with beta, i.e. beta*V_, used later for computing simulation trace
-     tic();
-     for(int i = 0; i < maxiter; i++)
-     {
-        cusp::blas::scal(V_[i],beta);
-     }
-     toc("scaling matrix V with beta");
      
 
      // get matrix H (m x m dimension)
@@ -526,6 +525,11 @@ extern "C"
 int hasGpu()
 {
     return _hasGpu();
+}
+
+void choose_GPU_or_CPU(char* msg)
+{
+    _choose_GPU_or_CPU(msg);
 }
 
 void loadMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries, int nonZeroCount)

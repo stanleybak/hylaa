@@ -42,6 +42,10 @@ class GpuKrylovSim(object):
             GpuKrylovSim._has_gpu.restype = ctypes.c_int
             GpuKrylovSim._has_gpu.argtypes = None
 
+            GpuKrylovSim._choose_GPU_or_CPU = lib.choose_GPU_or_CPU
+            GpuKrylovSim._choose_GPU_or_CPU.restype = None
+            GpuKrylovSim._choose_GPU_or_CPU.argtypes = [ctypes.c_char_p]            
+
             GpuKrylovSim._load_matrix = lib.loadMatrix
             GpuKrylovSim._load_matrix.restype = None
             GpuKrylovSim._load_matrix.argtypes = [ctypes.c_int, ctypes.c_int,
@@ -57,8 +61,6 @@ class GpuKrylovSim(object):
                                              ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
                                              ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
                                              ctypes.c_int]
-
-
                                              
             GpuKrylovSim._arnoldi_initVector = lib.arnoldi_initVector
             GpuKrylovSim._arnoldi_initVector.restype = ctypes.c_int
@@ -92,6 +94,11 @@ class GpuKrylovSim(object):
         if GpuKrylovSim._has_gpu() == 0:
             raise RuntimeError("GPU not detected.")
 
+    @staticmethod
+    def choose_GPU_or_CPU(msg):
+        GpuKrylovSim._init_static()
+        GpuKrylovSim._choose_GPU_or_CPU(msg)
+        
     @staticmethod
     def load_matrix(sparse_matrix):
         'load a sparse matrix'
@@ -323,16 +330,17 @@ def test_gpu_krylov_sim():
 
     print "making matrix..."
     start = time.time()
-    a = random_sparse_matrix(1000000, entries_per_row=5, random_cols=True)
+    a = random_sparse_matrix(10000, entries_per_row=5, random_cols=True)
     #a = make_iss_matrix(1)
     print "made in {:.2f} seconds".format(time.time() - start)
 
-    m = 5 # number of iteration of Arnoldi Algorithm
+    m = 30 # number of iteration of Arnoldi Algorithm
     timeStep = 0.01  # simulation time step
     numStep = 1    # number of simulation step
 
     
     # get matrix H from Arnoldi Algorithm
+    GpuKrylovSim.choose_GPU_or_CPU("CPU")
     GpuKrylovSim.load_matrix(a)
 
     print"\n -------------------------------------------------"
@@ -432,7 +440,7 @@ def test_getKeySimResult():
     vec = np.zeros((systemSize,1))
     vec[basic_initVector_pos] = 1
 
-    GpuKrylovSim.load_matrix(a);
+    GpuKrylovSim.load_matrix(a)
     
     print"\n Selected number of iteration of Arnoldi argorithm m = {}".format(m)
     print"\n Selected simulation time step, timStep = {}".format(timeStep)
@@ -480,5 +488,5 @@ def test_getKeySimResult():
     
     
 if __name__ == '__main__':
-   # test_gpu_krylov_sim()
-    test_getKeySimResult()
+    test_gpu_krylov_sim()
+   # test_getKeySimResult()
