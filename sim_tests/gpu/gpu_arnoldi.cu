@@ -1,4 +1,4 @@
-// Dunf Tran
+// Dung Tran
 // GPU Arnoldi Algorithm interface using Cusp / Cuda
 // June 2017
 

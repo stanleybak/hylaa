@@ -35,6 +35,7 @@ void error(const char* msg)
 {
     printf("Fatal Error: %s\n", msg);
     exit(1);
+             
 }
 
 void tic()
@@ -242,7 +243,7 @@ int _arnoldi_initVector(double* init_vector, double* result_H, int size, int num
      // get matrix H (m x m dimension)
      tic(); 
      for(int rowH=0;rowH < maxiter; rowH++)
-	for(int colH = 0; colH <maxiter; colH++)
+     for(int colH = 0; colH <maxiter; colH++)
 		H(rowH,colH) = H_(rowH,colH);
      toc("get matrix H -- (m x m) dimension");
 
@@ -445,9 +446,7 @@ void _sim2(double* matrix_Hf, int size, int actual_numIter, int numStep)
     toc("compute simulation result without copy the result back to CPU"); 
 }
 
-
-
-void _getKeySimResult_Sparse(double* keySimResult)
+void _getKeySimResult(double* keySimResult)
 {   // Get the simulation result in a particular dimension, where the dimension is specified by a sparse matrix
     // Steps for using this function:
     // Step1. Load the direction sparse matrix by calling _loadKeyDirMatrix() function
@@ -499,71 +498,6 @@ void _getKeySimResult_Sparse(double* keySimResult)
     } 
     
 }
-
-void _getKeySimResult_Dense(double* keyDirDenseMatrix,int numRow,int numCol, double* keySimResult)
-{   // Get the simulation result in a particular dimension, where the demension is specified by a dense matrix
-    // Steps for using this function:
-
-    // suppose we have the keyDirDenseMatrix
-    // Step1. Run the arnoldi algorithm by calling arnoldi_initVector() or arnoldi_initVectorPos()
-    // Step2. Compute the matrix Hf = exp(i*timeStep*Hm)
-    // Step3. Call _sim2() to compute the simulation result. This function saves the result on device memory and doesnot copy the result to the CPU
-    // Step4. Call this function to get the simulation result at this particular dimension
-
-    // copy matrix keyDirDenseMatrix to device memory
-    tic();
-    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> device_keyDirDenseMatrix(numRow,numCol,0);
-    for(int k=0; k< numRow ; k++)
-       for(int i = 0; i < numCol; i++)
-         device_keyDirDenseMatrix(k,i) = keyDirDenseMatrix[k*numRow+i];
-
-    toc("\n Copy keyDirDenseMatrix to device memory");
-    ;
-
-    // check consistency and compute key simulation result
-    tic();
-    if (numStepOfSim == 0 || systemSize == 0) // check if there is simulation result in device memory
-        printf("\n There is no simulation result. Call _sim2() method first");
-    else
-    {   printf("\n Number of simulation step = %d",numStepOfSim);
-        printf("\n Number of Rows of key direction matrix = %d", numRow);
-        if (numCol != systemSize) // check consistency between the key direction matrix and system dimension
-        {
-             printf("\n The number of column of key direction matrix is inconsistent with the system dimension");
-             toc("check consistency");
-        }   
-        else
-        {   // create key simulation result in device memory
-            tic();
-            std::vector< cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> > device_keySimResult(numStepOfSim);
-            for (int i = 0; i < numStepOfSim; i++)
-                device_keySimResult[i].resize(numRow);
-            toc("\n Create keySimResult in device memory");
-            
-            // compute key simulation result
-            tic();
-            
-            for(int i = 0; i <numStepOfSim; i++)
-            {
-                cusp::multiply(device_keyDirDenseMatrix, device_sim_result[i],device_keySimResult[i]);
-            }
-            toc("\n Compute key simulation result");
-
-            // copy key direction simulation result to np.array
-            tic();
-            for(int i = 0; i < numStepOfSim; i++)
-                for(int k = 0; k < numRow; k++)
-                   {
-		                keySimResult[i*numStepOfSim + k] = device_keySimResult[i][k];		
-                   }
-            toc("\n Copy key simulation result to np.array");
-               
-        }
-        
-    }
-    
-}
-
 
 int _hasGpu()
 {
@@ -627,14 +561,8 @@ void sim2(double* matrix_Hf, int size, int actual_numIter, int numStep)\
 
 }
 
-void getKeySimResult_Sparse(double* keySimResult)
+void getKeySimResult(double* keySimResult)
 {
-    _getKeySimResult_Sparse(keySimResult);
+    _getKeySimResult(keySimResult);
 }
-
-    void getKeySimResult_Dense(double* keyDirDenseMatrix, int numRow, int numCol,  double* keySimResult)
-{
-    _getKeySimResult_Dense(keyDirDenseMatrix, numRow, numCol, keySimResult);
-}
-    
 }

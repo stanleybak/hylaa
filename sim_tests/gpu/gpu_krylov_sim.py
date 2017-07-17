@@ -84,14 +84,9 @@ class GpuKrylovSim(object):
                                             ctypes.c_int, ctypes.c_int, ctypes.c_int]
 
             
-            GpuKrylovSim._getKeySimResult_Dense = lib.getKeySimResult_Dense
-            GpuKrylovSim._getKeySimResult_Dense.restype = None
-            GpuKrylovSim._getKeySimResult_Dense.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
-                                            ctypes.c_int, ctypes.c_int, ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
-
-            GpuKrylovSim._getKeySimResult_Sparse = lib.getKeySimResult_Sparse
-            GpuKrylovSim._getKeySimResult_Sparse.restype = None
-            GpuKrylovSim._getKeySimResult_Sparse.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
+            GpuKrylovSim._getKeySimResult = lib.getKeySimResult
+            GpuKrylovSim._getKeySimResult.restype = None
+            GpuKrylovSim._getKeySimResult.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
 
             
         if GpuKrylovSim._has_gpu() == 0:
@@ -198,23 +193,10 @@ class GpuKrylovSim(object):
         GpuKrylovSim._sim2(matrix_Hf, size, numIter, numStep)
 
     @staticmethod
-    def getKeySimResult_Dense(keyDirMatrix_Dense,numStep):
-        'get Simulation Result in a specific direction defined by a dense matrix'
-
-        assert isinstance(keyDirMatrix_Dense, np.ndarray)
-        GpuKrylovSim._init_static()
-        numRows, numCols = keyDirMatrix_Dense.shape
-        keyDirMatrix_Dense.reshape(numRows*numCols)
-        keySimResult = np.zeros((numRows,numStep))
-        GpuKrylovSim._getKeySimResult_Dense(keyDirMatrix_Dense, numRows, numCols, keySimResult)
-        
-        return  keySimResult
-
-    @staticmethod
-    def getKeySimResult_Sparse(DirMatrix_numRows,numSimStep):
+    def getKeySimResult(DirMatrix_numRows,numSimStep):
         'get Simulation Result in a specific direction defined by a sparse matrix'
         keySimResult = np.zeros((DirMatrix_numRows,numSimStep))
-        GpuKrylovSim._getKeySimResult_Sparse(keySimResult)
+        GpuKrylovSim._getKeySimResult(keySimResult)
         
         return  keySimResult
         
@@ -341,8 +323,8 @@ def test_gpu_krylov_sim():
 
     print "making matrix..."
     start = time.time()
-    #a = random_sparse_matrix(1000000, entries_per_row=5, random_cols=True)
-    a = make_iss_matrix(1)
+    a = random_sparse_matrix(1000000, entries_per_row=5, random_cols=True)
+    #a = make_iss_matrix(1)
     print "made in {:.2f} seconds".format(time.time() - start)
 
     m = 5 # number of iteration of Arnoldi Algorithm
@@ -486,20 +468,13 @@ def test_getKeySimResult():
     print"\n Time for computing simulation result using gpu = {}ms".format(1000 * (time.time() - start))
 
     # compute the key simulation result corresponding to specific direction defined by direction matrix
-    print"\n Compute the key simulation result corresponding to a specific direction defined by a dense matrix ..."
-    # specify direction dense matrix
-    keyDirMatrix_Dense = np.zeros((2,systemSize))
-    keyDirMatrix_Dense[:,0] = 1
-    keyDirMatrix_Dense[:,1] = -1
-    keySimResult_Dense = GpuKrylovSim.getKeySimResult_Dense(keyDirMatrix_Dense,numStep)
-    print(keySimResult_Dense)
-
+   
     # generate random sparse direction matrix
     print"\n Compute the key simulation result corresponding to a specific direction defined by a sparse matrix..."
     print"\n Generate random sparse direction matrix"
     keyDirMatrix_Sparse = rand(2,systemSize,density = 0.01, format = 'csr',dtype = None, random_state = None)
     GpuKrylovSim.load_keyDirSparseMatrix(keyDirMatrix_Sparse)
-    keySimResult_Sparse = GpuKrylovSim.getKeySimResult_Sparse(2,numStep)
+    keySimResult_Sparse = GpuKrylovSim.getKeySimResult(2,numStep)
     print(keySimResult_Sparse)
 
     
