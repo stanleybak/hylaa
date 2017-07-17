@@ -253,7 +253,7 @@ def plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step, 
 
     if not do_2d:
         plt.xlim(0, max_time * 1.02)
-    else:
+    elif len(ax) > 1:
         ax[1].set_xlim(0, max_time * 1.02)
 
     plt.tight_layout()
