@@ -8,6 +8,7 @@ import numpy as np
 
 from scipy.sparse import lil_matrix, csr_matrix, csc_matrix
 from scipy.sparse.linalg import expm, expm_multiply
+from krypy.utils import arnoldi
 
 from hylaa.util import Freezable
 from hylaa.hybrid_automaton import LinearAutomatonMode
@@ -38,6 +39,11 @@ class TimeElapser(Freezable):
         self.one_step_input_effects_matrix = None # one step input effects matrix, if inputs exist
         self._extract_key_directions(mode)
 
+        # used for Krylov method        
+        self.krypy_VH_tuples = None # save V, H matrices from arnoldi algorithm
+        
+        
+        
         self.freeze_attrs()
 
     def _extract_key_directions(self, mode):
@@ -216,10 +222,38 @@ class TimeElapser(Freezable):
             full_input_effects = (prev_exp * input_effects_matrix)
             self.cur_input_effects_matrix = self.key_dir_mat * full_input_effects
 
-    def step_krylov_krypy(self):
-        'updates self.cur_time_elapse_mat and, if there are inputs, self.cur_input_effects_matrix'
 
-        raise RuntimeError('unimplemented; TRAN IMPLEMENT THIS!')
+       
+    def step_krylov_krypy(self,numIter):
+        'updates self.cur_time_elapse_mat and, if there are inputs, self.cur_input_effects_matrix'
+        # TRAN implements this 
+        
+        # arnoldi algorithm for single init basic vector, e.g [1, 0, ...,0], in which 1-element is defined by vec_pos
+        def arnoldi_krypy(vec_pos, numIter):
+            assert (numIter <= self.a_matrix.shape[0]), "Number of iteration {} is larger than system dimension {}!".format(numIter,self.a_matrix.shape[0])  
+            vec = np.zeros((self.a_matrix.shape[0],1))
+            vec[vec_pos] = 1
+            V, H = arnoldi(self.a_matrix,vec,numIter)
+            Vm = V[:,0:numIter]
+            Hm = H[0:numIter,:]
+            
+            return (Vm, Hm) # return a tuple containing matrices from arnoldi algorithm
+
+        # run arnoldi algorithm n-times to get n- (V,H) tuples, n is the dimension of the system
+        def get_VH_tuples():
+            assert (numIter <= self.a_matrix.shape[0]), "Number of iteration {} is larger than system dimension {}!".format(numIter,self.a_matrix.shape[0])
+            self.krypy_VH_tuples = []
+            for i in range(0,self.a_matrix.shape[0]):
+                self.krypy_VH_tuples.insert(i, arnoldi_krypy(i,numIter))
+
+        
+        if self.krypy_VH_tuples is None:
+            get_VH_tuples()
+
+        one_step_H_mat_exp_tuples = None
+        
+                    
+        
 
     
     def step_krylov_cusp_cpu(self):

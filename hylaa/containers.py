@@ -40,6 +40,10 @@ class SimulationSettings(Freezable):
     KRYLOV_CUSP_CPU = 3 # krylov method using CUSP Packet and GPU, computation is done in host memory
     KRYLOV_CUSP_GPU = 4 # krylov method using CUSP Packet and GPU, computation is done in device_memory
 
+    # krylov method setting
+    KRYLOV_H_MULT = 0 # use matrix multiplication for computing exp(Hm*t), used by default
+    KRYLOV_H_EXP = 1  # use matrix exponential for computing exp(Hm*t)
+    
     # guard optimization mode
     GUARD_DECOMPOSED = 0
     GUARD_FULL_LP = 1
