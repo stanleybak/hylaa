@@ -224,10 +224,10 @@ class TimeElapser(Freezable):
 
 
        
-    def step_krylov_krypy(self,numIter):
+    def step_krylov_krypy(self):
         'updates self.cur_time_elapse_mat and, if there are inputs, self.cur_input_effects_matrix'
         # TRAN implements this 
-        
+        numIter = self.settings.simulation.krylov_numIter
         # arnoldi algorithm for single init basic vector, e.g [1, 0, ...,0], in which 1-element is defined by vec_pos
         def arnoldi_krypy(vec_pos, numIter):
             assert (numIter <= self.a_matrix.shape[0]), "Number of iteration {} is larger than system dimension {}!".format(numIter,self.a_matrix.shape[0])  

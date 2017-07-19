@@ -52,6 +52,8 @@ class SimulationSettings(Freezable):
         self.step = step
         self.sim_mode = SimulationSettings.EXP_MULT
         self.guard_mode = SimulationSettings.GUARD_DECOMPOSED
+        self.krylov_compute_exp_Ht = SimulationSettings.KRYLOV_H_MULT
+        self.Krypy_numIter = None 
 
         self.freeze_attrs()
 
