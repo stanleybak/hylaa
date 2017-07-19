@@ -83,8 +83,12 @@ class TimeElapser(Freezable):
             self.step_matrix_exp()
         elif self.settings.simulation.sim_mode == SimulationSettings.EXP_MULT:
             self.step_exp_mult()
-        elif self.settings.simulation.sim_mode == SimulationSettings.KRYLOV:
-            self.step_krylov()
+        elif self.settings.simulation.sim_mode == SimulationSettings.KRYLOV_KRYPY:
+            self.step_krylov_krypy()
+        elif self.settings.simulation.sim_mode == SimulationSettings.KRYLOV_CUSP_CPU:
+            self.step_krylov_cusp_cpu()
+        elif self.settings.simulation.sim_mode == SimulationSettings.KRYLOV_CUSP_GPU:
+            self.step_krylov_cusp_gpu()
         else:
             raise RuntimeError('Unimplemented sim_mode {}'.format(self.settings.simulation.sim_mode))
 
@@ -212,7 +216,18 @@ class TimeElapser(Freezable):
             full_input_effects = (prev_exp * input_effects_matrix)
             self.cur_input_effects_matrix = self.key_dir_mat * full_input_effects
 
-    def step_krylov(self):
+    def step_krylov_krypy(self):
+        'updates self.cur_time_elapse_mat and, if there are inputs, self.cur_input_effects_matrix'
+
+        raise RuntimeError('unimplemented; TRAN IMPLEMENT THIS!')
+
+    
+    def step_krylov_cusp_cpu(self):
+        'updates self.cur_time_elapse_mat and, if there are inputs, self.cur_input_effects_matrix'
+
+        raise RuntimeError('unimplemented; TRAN IMPLEMENT THIS!')
+    
+    def step_krylov_cusp_gpu(self):
         'updates self.cur_time_elapse_mat and, if there are inputs, self.cur_input_effects_matrix'
 
         raise RuntimeError('unimplemented; TRAN IMPLEMENT THIS!')

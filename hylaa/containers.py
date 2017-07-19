@@ -36,7 +36,9 @@ class SimulationSettings(Freezable):
     # simulation mode (matrix-exp)
     MATRIX_EXP = 0 # matrix exp every step
     EXP_MULT = 1 # first step matrix exp, remaining steps matrix-vector multiplication
-    KRYLOV = 2
+    KRYLOV_KRYPY = 2 # krylov method using Krypy Packet
+    KRYLOV_CUSP_CPU = 3 # krylov method using CUSP Packet and GPU, computation is done in host memory
+    KRYLOV_CUSP_GPU = 4 # krylov method using CUSP Packet and GPU, computation is done in device_memory
 
     # guard optimization mode
     GUARD_DECOMPOSED = 0
