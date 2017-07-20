@@ -43,6 +43,7 @@ class SimulationSettings(Freezable):
     # krylov method setting
     KRYLOV_H_MULT = 0 # use matrix multiplication for computing exp(Hm*t), used by default
     KRYLOV_H_EXP = 1  # use matrix exponential for computing exp(Hm*t)
+   
     
     # guard optimization mode
     GUARD_DECOMPOSED = 0
@@ -53,7 +54,8 @@ class SimulationSettings(Freezable):
         self.sim_mode = SimulationSettings.EXP_MULT
         self.guard_mode = SimulationSettings.GUARD_DECOMPOSED
         self.krylov_compute_exp_Ht = SimulationSettings.KRYLOV_H_MULT
-        self.Krypy_numIter = None 
+        self.krylov_numIter = None   # user-set number of iteration for Arnoldi algorithm
+        
 
         self.freeze_attrs()
 

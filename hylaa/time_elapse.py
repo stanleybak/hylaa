@@ -39,9 +39,11 @@ class TimeElapser(Freezable):
         self.one_step_input_effects_matrix = None # one step input effects matrix, if inputs exist
         self._extract_key_directions(mode)
 
-        # used for Krylov method        
-        self.krypy_VH_tuples = None # save V, H matrices from arnoldi algorithm
-        
+        # used for Krylov method, let n be the system dimension, i.e. n = self.dims        
+        self.krypy_VH_tuples = None # save (V, H) matrices from arnoldi algorithm, there is n subtupble (V,H)
+        self.one_step_expH_tuples = None # save exp(H*step) for all n- matrices H, 
+        self.krylov_realNumIter_tuples = None # contain real number of iteration of Arnoldi algorithm
+        self.cur_step_expH_tuples = None # save exp(H*t) for n-matrices H at current step t
         
         
         self.freeze_attrs()
@@ -230,32 +232,95 @@ class TimeElapser(Freezable):
         numIter = self.settings.simulation.krylov_numIter
         # arnoldi algorithm for single init basic vector, e.g [1, 0, ...,0], in which 1-element is defined by vec_pos
         def arnoldi_krypy(vec_pos, numIter):
-            assert (numIter <= self.a_matrix.shape[0]), "Number of iteration {} is larger than system dimension {}!".format(numIter,self.a_matrix.shape[0])  
-            vec = np.zeros((self.a_matrix.shape[0],1))
+            assert not (numIter is None), "Choose number of iteration for Arnoldi algorithm"
+            assert (numIter <= self.dims), "Number of iteration {} is larger than system dimension {}!".format(numIter,self.a_matrix.shape[0])  
+            vec = np.zeros((self.dims,1))
             vec[vec_pos] = 1
             V, H = arnoldi(self.a_matrix,vec,numIter)
-            Vm = V[:,0:numIter]
-            Hm = H[0:numIter,:]
+            if H.shape[0] < numIter:
+                realNumIter = H.shape[0]
+            else:
+                realNumIter = numIter    
+            Vm = V[:,0:realNumIter]
+            Hm = H[0:realNumIter,:]
             
-            return (Vm, Hm) # return a tuple containing matrices from arnoldi algorithm
+            return (Vm, Hm), realNumIter # return a tuple containing matrices from arnoldi algorithm
 
-        # run arnoldi algorithm n-times to get n- (V,H) tuples, n is the dimension of the system
+        # run arnoldi algorithm n-times to get n- (V,H) tuples and n real-numbers of iteration, n is the dimension of the system
         def get_VH_tuples():
-            assert (numIter <= self.a_matrix.shape[0]), "Number of iteration {} is larger than system dimension {}!".format(numIter,self.a_matrix.shape[0])
             self.krypy_VH_tuples = []
-            for i in range(0,self.a_matrix.shape[0]):
-                self.krypy_VH_tuples.insert(i, arnoldi_krypy(i,numIter))
+            self.krylov_realNumIter_tuples = []
+            for i in range(0,self.dims):
+                VH_tuple, realNumIter = arnoldi_krypy(i,numIter)
+                self.krypy_VH_tuples.insert(i, VH_tuple)
+                self.krylov_realNumIter_tuples.insert(i,realNumIter)
 
-        
+                   
         if self.krypy_VH_tuples is None:
-            get_VH_tuples()
+            get_VH_tuples()  #  compute n (V,H) tuples
 
-        one_step_H_mat_exp_tuples = None
+        # check whether n realNumIter are equal  
+        realNumIter_0 = self.krylov_realNumIter_tuples[0]
+        for i in range(1,self.dims):
+            realNumIter_i = self.krylov_realNumIter_tuples[i]
+            assert (realNumIter_0 == realNumIter_i), "real numbers of interation are not equal"
         
+        # if all real numbers of iteration are the same, then continue
+        time_elapse_mat = np.zeros((self.dims,self.dims),dtype = float)    
+        
+        if self.settings.simulation.krylov_compute_exp_Ht == SimulationSettings.KRYLOV_H_MULT:
+        # first step matrix exp, other step matrix multiplication
+        
+            if self.next_step == 0:
+                self.cur_time_elapse_mat = np.array(self.key_dir_mat.todense(), dtype=float)
+            elif self.one_step_expH_tuples is None:  # compute exp(H*step)
+                assert self.next_step == 1
+                assert isinstance(self.key_dir_mat, csr_matrix)
+                Timers.tic('time_elapse.step first step')
+
+                self.one_step_expH_tuples = []
+                self.cur_step_expH_tuples = [] # save for next step
+                
+                for i in range(0,self.dims):
+                    VH = self.krypy_VH_tuples[i]
+                    V  = VH[0]
+                    H  = VH[1]
+                    Hstep = H*self.settings.step
+                    exp_Hstep = expm(Hstep)
+                    self.one_step_expH_tuples.insert(i,exp_Hstep)
+                    V_exp_Hstep = np.dot(V,exp_Hstep)
+                    time_elapse_mat[:,i] = V_exp_Hstep[:,0]
                     
-        
+                self.cur_step_expH_tuples = self.one_step_expH_tuples # save for next step
+                self.cur_time_elapse_mat = self.key_dir_mat*time_elapse_mat    
+                Timers.toc('time_elapse.step first step')
 
-    
+            else:               
+                Timers.tic('time_elapse.step other steps')
+                for i in range(0, self.dims):
+                    VH = self.krypy_VH_tuples[i]
+                    V  = VH[0]
+                    cur_step_expH = self.cur_step_expH_tuples[i]*self.one_step_expH_tuples[i]
+                    self.cur_step_expH_tuples[i] = cur_step_expH # save for next step
+                    cur_step_V_expH = np.dot(V,cur_step_expH)
+                    time_elapse_mat[:,i] = cur_step_V_expH[:,0]
+                self.cur_time_elapse_mat = self.key_dir_mat*time_elapse_mat
+                Timers.toc('time_elapse.step other steps')
+                
+                
+        elif self.settings.simulation.krylov_compute_exp_Ht == SimulationSettings.KRYLOV_H_EXP:
+        # matrix exponential for all steps
+            cur_time = self.settings.step*self.next_step
+            for i in range(0,self.dims):
+                VH = self.krypy_VH_tuples[i]
+                V = VH[0]
+                H = VH[1]
+                expH = expm(H*cur_time)
+                V_expH = np.dot(V,expH)
+                time_elapse_mat[:,i] = V_expH[:,0]
+            self.cur_time_elapse_mat = self.key_dir_mat*time_elapse_mat    
+                      
+        
     def step_krylov_cusp_cpu(self):
         'updates self.cur_time_elapse_mat and, if there are inputs, self.cur_input_effects_matrix'
 
