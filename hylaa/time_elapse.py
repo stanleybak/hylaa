@@ -14,6 +14,7 @@ from hylaa.util import Freezable
 from hylaa.hybrid_automaton import LinearAutomatonMode
 from hylaa.containers import HylaaSettings, PlotSettings, SimulationSettings
 from hylaa.timerutil import Timers
+from hylaa.gpu_krylov_sim import GpuKrylovSim
 
 class TimeElapser(Freezable):
     'Object which computes the time-elapse function for a single mode at multiples of the time step'
@@ -321,12 +322,11 @@ class TimeElapser(Freezable):
             self.cur_time_elapse_mat = self.key_dir_mat*time_elapse_mat    
                       
         
-    def step_krylov_cusp_cpu(self):
+    def step_krylov_cusp(self):
         'updates self.cur_time_elapse_mat and, if there are inputs, self.cur_input_effects_matrix'
 
-        raise RuntimeError('unimplemented; TRAN IMPLEMENT THIS!')
+        # TRAN implements this
+        
+        
     
-    def step_krylov_cusp_gpu(self):
-        'updates self.cur_time_elapse_mat and, if there are inputs, self.cur_input_effects_matrix'
 
-        raise RuntimeError('unimplemented; TRAN IMPLEMENT THIS!')
