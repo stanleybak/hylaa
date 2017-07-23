@@ -227,6 +227,141 @@ void _arnoldi(double* init_vector, double* result_V, double* result_H, int size,
 
 }
 
+
+void _arnoldi_all_pos(double* init_vector, double* result_V, double* result_H, int size, int numIter)
+{
+    if (curMatrix == 0)
+        error("loadMatrix must be called before multiply");
+    
+    // initialize input vector
+    tic();
+    cusp::array1d<FLOAT_TYPE, cusp::host_memory> hostInitVec(size);
+    
+    for (int i = 0; i < size; ++i)
+        hostInitVec[i] = init_vector[i];
+    toc("creating hostVec initial vector");
+    
+    // copy initial vector to device memory
+    tic();
+    cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> deviceInitVec(hostInitVec);
+    toc("copying initial vector to device memory");
+
+    // system dimension 
+    tic();
+    int N = size;
+    toc("get system dimension");
+
+    // maximum number of Iteration of Arnoldi algorithm
+    tic();
+    int maxiter = std::min(N, numIter);
+    toc("get maximum number of iteration of arnoldi algorithm");
+
+    // create matrix H_ in device memory for iteration
+    tic();	
+    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> H_(maxiter + 1, maxiter, 0);
+    toc("create matrix H_ in device memory for iteration");
+
+    // returned matrix H after iteration -- Hm in the algorithm -- (m x m) matrix 
+    tic();
+    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> H(maxiter, maxiter); 
+    toc("create returned matrix H after iteration -- Hm in the algorithm -- (m x m) matrix ");
+
+    // create matrix V_ for iteration
+    tic();
+    std::vector< cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> > V_(maxiter + 1);
+    for (int i = 0; i < maxiter + 1; i++)
+        V_[i].resize(N);
+    toc("create matrix V_ for iteration");
+
+    // returned matrix V after iteration -- Vm in the algorithm -- (N x m) matrix
+    tic();
+    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> V(N,maxiter);
+    toc("create returned matrix V after iteration -- Vm in the algorithm -- (N x m) matrix"); 
+
+    // copy initial vector into V_[0]
+    tic(); 
+    cusp::copy(deviceInitVec,V_[0]); 
+    toc("copy initial vector into V_[0]"); 
+
+    // compute beta 
+    tic();
+    FLOAT_TYPE beta = float(1) / cusp::blas::nrm2(deviceInitVec);
+    toc("compute beta");
+
+    // normalize initial vector
+    cusp::blas::scal(V_[0], beta);
+
+    // iteration
+    tic();
+    int j;
+    for(j = 0; j < maxiter; j++)
+    {
+	cusp::multiply(*curMatrix, V_[j], V_[j + 1]);
+	//cusp::print(V_[j]); 
+
+	for(int i = 0; i <= j; i++)
+	{
+		H_(i,j) = cusp::blas::dot(V_[i], V_[j + 1]);
+
+		cusp::blas::axpy(V_[i], V_[j + 1], -H_(i,j));
+	}
+
+		H_(j+1,j) = cusp::blas::nrm2(V_[j + 1]);
+
+		if(H_(j+1,j) < 1e-10) break;
+
+		cusp::blas::scal(V_[j + 1], float(1) / H_(j+1,j));
+
+     }
+     toc("iteration");	
+
+     // get matrix H (m x m dimension)
+     tic(); 
+     for(int rowH=0;rowH < maxiter; rowH++)
+	for(int colH = 0; colH <maxiter; colH++)
+		H(rowH,colH) = H_(rowH,colH);
+     toc("get matrix H -- (m x m) dimension");
+     
+
+     // get matrix V (N x m dimension) 
+     tic();
+     cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> x1(N);	
+
+     for(int colV = 0; colV < maxiter; colV++)
+     {	cusp::copy(V_[colV],x1);
+	for(int rowV=0;rowV < N; rowV++)
+		V(rowV, colV) = x1[rowV];
+     }
+     toc("get matrix V -- (N x m) dimension");
+
+     // copy result to host memory	
+     tic();
+     cusp::array2d<FLOAT_TYPE, cusp::host_memory> result_V_Host(V);
+     cusp::array2d<FLOAT_TYPE, cusp::host_memory> result_H_Host(H);
+     cusp::print(result_H_Host);
+     toc("copying result to host memory");
+
+     // copying to np.ndarray
+     tic();
+     for (int i = 0; i < N; ++i)
+        for (int k = 0; k < numIter; ++k)
+	{
+        	result_V[i*numIter + k] = result_V_Host(i,k);
+	}
+    
+     for (int i = 0; i < numIter; ++i )
+	for (int k = 0; k < numIter; ++k)
+	{
+		result_H[i*numIter + k] = result_H_Host(i,k);       
+	}
+
+
+     toc("copying to np.ndarray");
+     
+
+
+}
+
 int _hasGpu()
 {
     int rv = 1;

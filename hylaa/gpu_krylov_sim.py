@@ -71,7 +71,10 @@ class GpuKrylovSim(Freezable):
             GpuKrylovSim._arnoldi_initVectorPos.argtypes = [ctypes.c_int,
                                             ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
                                             ctypes.c_int, ctypes.c_int]
-
+            
+            GpuKrylovSim._arnoldi_parallel = lib.arnoldi_parallel
+            GpuKrylovSim._arnoldi_parallel.restype = ctypes.c_int 
+            GpuKrylovSim._arnoldi_parallel.argtypes = [ctypes.c_int, ctypes.c_int]
 
             GpuKrylovSim._sim = lib.sim
             GpuKrylovSim._sim.restype = None
@@ -175,6 +178,31 @@ class GpuKrylovSim(Freezable):
 
         return actual_result_H, actual_numIter
 
+    @staticmethod
+    def arnoldi_parallel(size, numIter):
+        'implement the aroldi algorithm in parallel'
+
+        GpuKrylovSim._init_static()
+
+        assert GpuKrylovSim._is_loaded
+
+        result_H = np.zeros((numIter*numIter))
+
+        actual_numIter = GpuKrylovSim._arnoldi_parallel(size, numIter)
+        
+        result_H.shape = (numIter, numIter)
+
+        actual_result_H = np.zeros((actual_numIter,actual_numIter))
+
+        for i in range(0,actual_numIter):
+            for j in range(0, actual_numIter):
+                actual_result_H[i,j] = result_H[i,j]
+
+        return actual_result_H, actual_numIter
+
+
+
+    
     @staticmethod
     def sim(matrix_Hf,size,numIter,numStep):
         'compute the simulation result from the matrix Hf = exp(i*timeStep*Hm)e1 and copy the result back to cpu'
@@ -483,8 +511,24 @@ def test_getKeySimResult():
     keySimResult_Sparse = GpuKrylovSim.getKeySimResult(2,numStep)
     print(keySimResult_Sparse)
 
+def test_arnoldi_parallel():
+
+    print "making matrix..."
+    start = time.time()
+    a = random_sparse_matrix(10, entries_per_row=5, random_cols=True)
+    #a = make_iss_matrix(1)
+    print "made in {:.2f} seconds".format(time.time() - start)
+
+    m = 5 # number of iteration of Arnoldi Algorithm
     
+    # get matrix H from Arnoldi Algorithm
+    GpuKrylovSim.choose_GPU_or_CPU("CPU")
+    GpuKrylovSim.load_matrix(a)
+
+    res_gpu_arnoldi_H, actual_numIter = GpuKrylovSim.arnoldi_parallel(a.shape[0],m)
+
     
 if __name__ == '__main__':
-    test_gpu_krylov_sim()
+   # test_gpu_krylov_sim()
    # test_getKeySimResult()
+     test_arnoldi_parallel()
