@@ -334,7 +334,7 @@ int _arnoldi_initVectorPos(int basic_initVector_pos, double* result_H, int size,
     for(j = 0; j < maxiter; j++)
     {
 	cusp::multiply(*curMatrix, V_[j], V_[j + 1]);
-	
+    
 	for(int i = 0; i <= j; i++)
 	{
 		H_(i,j) = cusp::blas::dot(V_[i], V_[j + 1]);
@@ -351,7 +351,14 @@ int _arnoldi_initVectorPos(int basic_initVector_pos, double* result_H, int size,
      }
      toc("iteration");
      
+     printf("matrix Vm coresponding to the %d-th inital vector: \n", basic_initVector_pos);
+     for(int i=0; i<numIter; i++)
+         cusp::print(V_[i]);
 
+     printf("matrix Hm corresponding to the %d-th initial vector: \n", basic_initVector_pos);
+     cusp::print(H_);
+
+         
      // get matrix H (m x m dimension)
      tic(); 
      for(int rowH=0;rowH < maxiter; rowH++)
@@ -374,7 +381,7 @@ int _arnoldi_initVectorPos(int basic_initVector_pos, double* result_H, int size,
 }
 
 
-int _arnoldi_parallel(int size, int numIter)
+int _arnoldi_parallel(int size, int numIter,double* result_H)
 {   
     if (curMatrix == 0)
         error("loadMatrix must be called before running arnoldi algorithm");
@@ -387,7 +394,7 @@ int _arnoldi_parallel(int size, int numIter)
     // create matrix V_all to contain all matrix V: V_all = [Vm_1, Vm_2, ...Vm_n]
     
     tic();
-    V_all.resize(maxiter);
+    V_all.resize(maxiter+1);
  
     toc("create matrix V_all to contain all matrix V_");
 
@@ -395,14 +402,14 @@ int _arnoldi_parallel(int size, int numIter)
     // Hm_1, Hm_2 , ... Hm_n are m x m matrices, Hm_i is conresponding to the initial vector i 
         
     tic();
-    H_all.resize(size);
+    H_all.resize(size+1);
     toc("create matrix H_all to contain all matrix H");
 
      // create initial basic vector V_all[0] = n-dimension identity mat
     tic();
     cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> identity_mat(size,size,0);
     cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> zero_Vmat(size,size,0);
-    cusp::array2d<FLOAT_TYPE, MEMORY_TYPE> zero_Hmat(maxiter+1,maxiter,0);
+    cusp::array2d<FLOAT_TYPE, MEMORY_TYPE> Hmat_k(maxiter+1,maxiter,0);
     
    
     for (int i = 0; i < size; i++)
@@ -410,9 +417,9 @@ int _arnoldi_parallel(int size, int numIter)
             if (i == j) identity_mat(i,j) = 1;
     
     for (int i = 0; i< size; i++)
-        cusp::copy(zero_Hmat,H_all[i]); // initialize H_all[i] 
+        cusp::copy(Hmat_k,H_all[i]); // initialize H_all[i] 
 
-    for (int i = 1; i < maxiter; i++)
+    for (int i = 1; i < maxiter+1; i++)
         cusp::copy(zero_Vmat,V_all[i]); // initalize V_all[i]
 
     cusp::copy(identity_mat,V_all[0]); // initialize V_all[0] by basic initial vectors
@@ -420,10 +427,103 @@ int _arnoldi_parallel(int size, int numIter)
     toc("initialize V_all and H_all, create all initial basic vector on device memory V_all[0]");
     
     // Arnoldi parallel algorithm iteration
+
  
+    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> Vj_plus1(size,size,0);
+    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> Vi(size,size,0);
+    cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> Vj_plus1_col_k(size); 
+    cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> Vi_col_k(size);
+    
+    tic();
+    int j;
+    for (j = 0; j < maxiter; j++){
+
+        cusp::multiply(*curMatrix,V_all[j],V_all[j+1]);
+         
+        cusp::copy(V_all[j+1],Vj_plus1);
+  
+        for(int k = 0; k < size; k++){
+            // compute Hm-k 
+
+            for(int l = 0; l < size; l++){
+                Vj_plus1_col_k[l] = Vj_plus1(l,k); // Load column k of Vj_plus1
+            }
+
+            cusp::copy(H_all[k],Hmat_k); // Load k-th Hmat matrix         
+                
+            for(int i = 0; i <= j; i++){
+                
+                cusp::copy(V_all[i],Vi);
+
+                for(int l = 0; l < size; l++){
+
+                    Vi_col_k[l] = Vi(l,k); // Load column k of Vi
+                    
+                }
+                
+
+                Hmat_k(i,j) = cusp::blas::dot(Vi_col_k, Vj_plus1_col_k);
+                
+                cusp::blas::axpy(Vi_col_k, Vj_plus1_col_k, -Hmat_k(i,j));
+
+            }
+            
+            Hmat_k(j+1,j) = cusp::blas::nrm2(Vj_plus1_col_k);
+
+		    if(Hmat_k(j+1,j) < 1e-10) break;
+
+		    cusp::blas::scal(Vj_plus1_col_k, float(1) / Hmat_k(j+1,j));
+            
+            for(int l = 0; l < size; l++){
+                Vj_plus1(l,k) =  Vj_plus1_col_k[l]; // update  column k of Vj_plus1
+            }
+
+            cusp::copy(Hmat_k,H_all[k]); // update the k-th Hmatrix
+            
+        }
+
+        cusp::copy(Vj_plus1,V_all[j+1]); // update column k of  V_all[j+1], i.e. corresponding to the k-th initial vector
+
+    }
+
+    // for testing       
+    for(int k = 0; k < numIter; k++){
+        printf("Matrix V_%d after iteration:",k);
+        cusp::print(V_all[k]);
+    }
+       
+
+    for (int k = 0; k < size; k++){
+        printf("the %d-th Hm =: \n", k);
+        cusp::print(H_all[k]);
+    }
+    
+    
+    toc("iteration time of Arnoldi algorithm");
+
+     // copying H matrix to np.ndarray
+     tic();
+    
+      // copying H matrix to np.ndarray
+     tic();
+     cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> H(maxiter+1,maxiter,0);
+     for (int k = 0; k< size; ++k){   
+         cusp::copy(H_all[k],H);
+         for (int i = 0; i < numIter; i++){
+             for(int l = 0; l < numIter; l++)
+                 result_H[k*i*numIter + l] = H(i,l);
+         }
+     }
+          
+     toc("copying H to np.ndarray");
+
+
+    // return actual number of iteration     
+    if(j < maxiter)
+    return j+1;
+    else return maxiter;
 
     
-    return 0;
 }
 
 
@@ -611,9 +711,9 @@ int arnoldi_initVectorPos(int basic_initVector_pos, double* result_H, int size, 
    return _arnoldi_initVectorPos(basic_initVector_pos, result_H, size, numIter);
 }
 
-int arnoldi_parallel(int size, int numIter)
+    int arnoldi_parallel(int size, int numIter, double* result_H)
 {
-   return _arnoldi_parallel(size, numIter);
+    return _arnoldi_parallel(size, numIter,result_H);
 }
 
 void sim(double* matrix_Hf, double* sim_result, int size, int actual_numIter, int numStep)\
