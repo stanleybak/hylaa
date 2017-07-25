@@ -22,7 +22,8 @@ typedef cusp::host_memory MEMORY_TYPE;
 // shared matrix in device memory
 static cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE>* curMatrix = 0;
 static std::vector< cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> > V_;
-static std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> > V_all; // contain all n - Vm matrix
+static std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> > V_all; // use to compute n- Vm matrix
+static std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> > V_all_final; // contain all n- Vm matrix
 static std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> > H_all; // contain all n Hm matrix
 
 
@@ -274,8 +275,8 @@ int _arnoldi_initVector(double* init_vector, double* result_H, int size, int num
      tic();
     
      for (int i = 0; i < numIter; ++i )
-	for (int k = 0; k < numIter; ++k)
-		result_H[i*numIter + k] = H_(i,k);       
+	    for (int k = 0; k < numIter; ++k)
+		    result_H[i*numIter + k] = H_(i,k);       
      toc("copying H to np.ndarray");
      
      if(j < maxiter)
@@ -391,12 +392,21 @@ int _arnoldi_parallel(int size, int numIter,double* result_H)
     int maxiter = std::min(size, numIter);
     toc("get maximum number of iteration of arnoldi algorithm");
 
-    // create matrix V_all to contain all matrix V: V_all = [Vm_1, Vm_2, ...Vm_n]
+    // create matrix V_all to contain all matrix V: V_all = [V0 V1 ...Vm]
+    // V0 = [V0_1 ... V0_n] is (n x n) matrix containing all initial vectors of n-dimensions system
+    // Vi = [Vi_1 ... Vi_n] is (n x n) matrix containing all i-th vectors in step i of Arnoldi algorithm
     
     tic();
     V_all.resize(maxiter+1);
- 
-    toc("create matrix V_all to contain all matrix V_");
+    toc("create matrix V_all to contain all matrix Vm");
+
+    // create matrix V_all_final to contain all matrix V; V_all_final = [Vm_0 Vm_2 ...Vm_(n-1)]
+    // Vm_0 is the matrix (n x m) V (obtained from Arnoldi algorithm) that corresponds to the 0-th initial vector  
+    // Vm_i is the (n x m) matrix V (obtained from Arnoldi algorithm) that corresponds to the i-th initial vector
+    
+    tic();
+    V_all_final.resize(size);
+    toc("create matrix V_all_final to contain all matrix Vm");    
 
     // create matrix H_all to contain all matrix H: H_all = [Hm_1 Hm_2 ...Hm_n]
     // Hm_1, Hm_2 , ... Hm_n are m x m matrices, Hm_i is conresponding to the initial vector i 
@@ -487,17 +497,16 @@ int _arnoldi_parallel(int size, int numIter,double* result_H)
     }
 
     // for testing       
-    for(int k = 0; k < numIter; k++){
-        printf("Matrix V_%d after iteration:",k);
-        cusp::print(V_all[k]);
-    }
+    //for(int k = 0; k < numIter; k++){
+    //    printf("Matrix V_%d after iteration:",k);
+    //    cusp::print(V_all[k]);
+    //}
        
 
-    for (int k = 0; k < size; k++){
-        printf("the %d-th Hm =: \n", k);
-        cusp::print(H_all[k]);
-    }
-    
+    //for (int k = 0; k < size; k++){
+    //    printf("the %d-th Hm =: \n", k);
+    //    cusp::print(H_all[k]);
+    //}
     
     toc("iteration time of Arnoldi algorithm");
 
@@ -509,20 +518,47 @@ int _arnoldi_parallel(int size, int numIter,double* result_H)
      cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> H(maxiter+1,maxiter,0);
      for (int k = 0; k< size; ++k){   
          cusp::copy(H_all[k],H);
-         for (int i = 0; i < numIter; i++){
-             for(int l = 0; l < numIter; l++)
-                 result_H[k*i*numIter + l] = H(i,l);
+         for (int i = 0; i < numIter; ++i){
+             for(int l = 0; l < numIter; ++l)
+                 result_H[i*numIter + l + k*numIter*numIter] = H(i,l);
          }
      }
           
-     toc("copying H to np.ndarray");
+     toc("copying H matrix to np.ndarray");
 
+     int actual_numIter = 0; 
 
     // return actual number of iteration     
     if(j < maxiter)
-    return j+1;
-    else return maxiter;
+    actual_numIter = j+1;
+    else actual_numIter = maxiter;
 
+    
+     // save all matrix Vm into V_all_final
+     tic();
+     cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> V(size,size,0);
+     cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> Vm(size,actual_numIter,0); 
+    
+     
+     for (int k = 0; k < size; k++){
+
+         for(int i = 0; i < actual_numIter; i++){
+
+             cusp::copy(V_all[i],V);
+
+             for (int l = 0; l < size; l++){
+
+                 Vm(l,i) = V(l,k); // fill the column i- of Vm by the column k of V                 
+             }    
+         }
+         cusp::copy(Vm, V_all_final[k]);
+
+     }   
+     
+     toc("save all matrix Vm into V_all_final");
+     
+
+    return actual_numIter;
     
 }
 
