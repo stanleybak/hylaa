@@ -25,6 +25,7 @@ static std::vector< cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> > V_;
 static std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> > V_all; // use to compute n- Vm matrix
 static std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> > V_all_final; // contain all n- Vm matrix
 static std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> > H_all; // contain all n Hm matrix
+static std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> > expHt_all; // contain all n exp(H*t) matrix, used to compute simulation result
 
 
 static std::vector< cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> > device_sim_result;
@@ -516,7 +517,6 @@ int _arnoldi_parallel(int size, int numIter,double* result_H)
     
      // save all matrix Vm into V_all_final
      tic();
-     cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> V(size,size,0);
      cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> Vm(size,actual_numIter,0); 
     
      
@@ -524,11 +524,11 @@ int _arnoldi_parallel(int size, int numIter,double* result_H)
 
          for(int i = 0; i < actual_numIter; i++){
 
-             cusp::copy(V_all[i],V);
+             cusp::copy(V_all[i],Vi);
 
              for (int l = 0; l < size; l++){
 
-                 Vm(l,i) = V(l,k); // fill the column i- of Vm by the column k of V                 
+                 Vm(l,i) = Vi(l,k); // fill the column i- of Vm by the column k of V                 
              }    
          }
          cusp::copy(Vm, V_all_final[k]);
@@ -618,6 +618,7 @@ void _sim2(double* matrix_Hf, int size, int actual_numIter, int numStep)
     toc("compute simulation result without copy the result back to CPU"); 
 }
 
+
 void _getKeySimResult(double* keySimResult)
 {   // Get the simulation result in a particular dimension, where the dimension is specified by a sparse matrix
     // Steps for using this function:
@@ -668,6 +669,42 @@ void _getKeySimResult(double* keySimResult)
         }
         
     } 
+    
+}
+
+void _getKeySimResult_parallel(int size, int H_numRows, double* expHt_tuples)
+{
+    // get Simulation result in specific direction defined by keyDirMatrix
+    // SimResult = V*exp(H*t)*e1, (V,H) are matrices obtained from Arnoldi algorithm
+    // KeySimResult = keyDirMatrix*SimResult
+
+    // Check consitency 
+    if (keyDirMatrix_h != size) // check consistency between the key direction matrix and system dimension
+        {
+             printf("\n The number of column of key direction matrix is inconsistent with the system dimension");
+             toc("check consistency");
+        }
+    else{
+        tic();
+        expHt_all.resize(size);
+        cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> device_expHt(H_numRows,H_numRows,0);
+
+        for (int i = 0; i < size; i++){           
+            for(int k=0; k< H_numRows ; k++)
+               for(int l = 0; l < H_numRows; l++)
+                  device_expHt(k,l) = expHt_tuples[k*H_numRows+l+i*H_numRows*H_numRows];
+
+            cusp::copy(device_expHt,expHt_all[i]);
+
+            printf("The %d-th exp(Ht) matrix is: \n",i);
+            cusp::print(expHt_all[i]);
+            
+        }
+
+        toc("copying exp(H*t) into device memory"); 
+
+      }
+    
     
 }
 
@@ -747,4 +784,11 @@ void getKeySimResult(double* keySimResult)
 {
     _getKeySimResult(keySimResult);
 }
+
+    
+void getKeySimResult_parallel(int size, int numIter, double* expHt_tuples)
+{
+    _getKeySimResult_parallel(size,numIter,expHt_tuples);   
+}
+
 }

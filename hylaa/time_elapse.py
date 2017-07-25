@@ -42,9 +42,13 @@ class TimeElapser(Freezable):
 
         # used for Krylov method, let n be the system dimension, i.e. n = self.dims        
         self.krypy_VH_tuples = None # save (V, H) matrices from arnoldi algorithm, there is n subtupble (V,H)
-        self.one_step_expH_tuples = None # save exp(H*step) for all n- matrices H, 
         self.krylov_realNumIter_tuples = None # contain real number of iteration of Arnoldi algorithm
         self.cur_step_expH_tuples = None # save exp(H*t) for n-matrices H at current step t
+        self.one_step_expH_tuples = None # save exp(H*step) for all n- matrices H,
+
+        self.cusp_H_tuples = None # save H matrices from Arnoldi algorithm using Cusp
+        self.cusp_realNumIter = None # real number of iteration of Arnoldi algorithm
+        
         
         
         self.freeze_attrs()
@@ -94,10 +98,8 @@ class TimeElapser(Freezable):
             self.step_exp_mult()
         elif self.settings.simulation.sim_mode == SimulationSettings.KRYLOV_KRYPY:
             self.step_krylov_krypy()
-        elif self.settings.simulation.sim_mode == SimulationSettings.KRYLOV_CUSP_CPU:
-            self.step_krylov_cusp_cpu()
-        elif self.settings.simulation.sim_mode == SimulationSettings.KRYLOV_CUSP_GPU:
-            self.step_krylov_cusp_gpu()
+        elif self.settings.simulation.sim_mode == SimulationSettings.KRYLOV_CUSP:
+            self.step_krylov_cusp()
         else:
             raise RuntimeError('Unimplemented sim_mode {}'.format(self.settings.simulation.sim_mode))
 
@@ -327,6 +329,51 @@ class TimeElapser(Freezable):
 
         # TRAN implements this
         
+        numIter = self.settings.simulation.krylov_numIter
+
+        def get_H_tuples():
+            GpuKrylovSim.load_matrix(self.a_matrix.tocsr())
+            self.cusp_H_tuples, self.cusp_realNumIter = GpuKrylovSim.arnoldi_parallel(self.dims,numIter)
+
+        def get_one_step_expH_tuples():
+            one_step_expH_tuples = [];
+            for i in range(0,self.dims):
+                one_step_expH_tuples.insert(i,expm(self.settings.step*self.cusp_H_tuples[i,:,:]))
+            self.one_step_expH_tuples = one_step_expH_tuples    
+                
+        if self.cusp_H_tuples is None:
+            get_H_tuples()
+
+        if self.one_step_expH_tuples is None:
+            get_one_step_expH_tuples()
+
         
+        if self.settings.simulation.krylov_compute_exp_Ht == SimulationSettings.KRYLOV_H_MULT:
+        # first step matrix exp, other step matrix multiplication
+            if self.next_step == 0:
+                self.cur_time_elapse_mat = np.array(self.key_dir_mat.todense(), dtype=float)
+            elif self.one_step_expH_tuples is None:  # compute exp(H*step)
+                assert self.next_step == 1
+                assert isinstance(self.key_dir_mat, csr_matrix)
+                Timers.tic('time_elapse.step first step')
+                get_one_step_expH_tuples()
+                
+                self.cur_step_expH_tuples = self.one_step_expH_tuples # save for next step
+                # to do: get keySimResult in parallel
+                #self.cur_time_elapse_mat = GpuKrylovSim.    
+
+                Timers.toc('time_elapse.step first step')
+
+            else:               
+                Timers.tic('time_elapse.step other steps')
+                for i in range(0, self.dims):
+                    cur_step_expH = self.cur_step_expH_tuples[i]*self.one_step_expH_tuples[i]
+                    self.cur_step_expH_tuples[i] = cur_step_expH # save for next step
+                    
+                # todo: get keySimResult in parallel
+                #self.cur_time_elapse_mat 
+                Timers.toc('time_elapse.step other steps')
+            
+            
     
 

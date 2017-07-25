@@ -516,11 +516,11 @@ def test_arnoldi_parallel():
 
     print "making matrix..."
     start = time.time()
-    a = random_sparse_matrix(5, entries_per_row=5, random_cols=True)
+    a = random_sparse_matrix(100, entries_per_row=5, random_cols=True)
     #a = make_iss_matrix(1)
     print "made in {:.2f} seconds".format(time.time() - start)
 
-    m = 2 # number of iteration of Arnoldi Algorithm
+    m = 5 # number of iteration of Arnoldi Algorithm
     
     # get matrix H from Arnoldi Algorithm
     GpuKrylovSim.choose_GPU_or_CPU("CPU")
@@ -535,8 +535,51 @@ def test_arnoldi_parallel():
         print "the {}-th Hm computed by Arnoldi_parallel is:\n {}".format(i,res_gpu_arnoldi_H[i,:,:])
         print "the {}-th Hm computed by Arnoldi_initVectorPos is: \n {}".format(i,res_gpu_arnoldi_H_i)
         
+
+def test_getKeySimResult_parallel():
+    print "making matrix..."
+    start = time.time()
+    a = random_sparse_matrix(100, entries_per_row=5, random_cols=True)
+    #a = make_iss_matrix(1)
+    print "made in {:.2f} seconds".format(time.time() - start)
+    numIter = 5  # number of iteration of Arnoldi algorithm
+    step = 0.01  # simulation time step
+    size = a.shape[0]
     
+    # Load a matrix into device memory
+    GpuKrylovSim.load_matrix(a)
+
+    keyDirMatrix = np.zeros((2,size))
+    keyDirMatrix[0,0] = 1
+    keyDirMatrix[0,1] = 1    # direction x0+x1
+
+    keyDirMatrix[1,2] = 1
+    keyDirMatrix[1,3] = -1   # direction x2-x3
+
+    keyDirMatrix_Sparse = csr_matrix(keyDirMatrix)
+
+    # Load key direction matrix 
+    GpuKrylovSim.load_keyDirSparseMatrix(keyDirMatrix_Sparse)
+
+    # Run Arnoldi algorithm in paralel
+    H_tuples, actual_numIter = GpuKrylovSim.arnoldi_parallel(size,numIter)
+
+    for i in range(0, size):
+        print "The {}-th H matrix is: \n {}".format(i,H_tuples[i])
+
+    curStep = 2; 
+    
+    # Compute exp(H*t) at current time step, i.e., t = curStep*step
+
+    expHt_tuples = []
+    for i in range(0,size):
+        curTimeStep = curStep*step
+        expHt_tuples.insert(i,expm(curTimeStep*H_tuples[i]))
+        print "The {}-th exp(H*t) at time t = {} is: \n {}".format(i,curTimeStep,expHt_tuples[i])
+
+        
 if __name__ == '__main__':
    # test_gpu_krylov_sim()
    # test_getKeySimResult()
     test_arnoldi_parallel()
+   # test_getKeySimResult_parallel()
