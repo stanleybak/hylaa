@@ -350,15 +350,7 @@ int _arnoldi_initVectorPos(int basic_initVector_pos, double* result_H, int size,
 		cusp::blas::scal(V_[j + 1], float(1) / H_(j+1,j));
 
      }
-     toc("iteration");
-     
-     printf("matrix Vm coresponding to the %d-th inital vector: \n", basic_initVector_pos);
-     for(int i=0; i<numIter; i++)
-         cusp::print(V_[i]);
-
-     printf("matrix Hm corresponding to the %d-th initial vector: \n", basic_initVector_pos);
-     cusp::print(H_);
-
+     toc("iteration time of Arnoldi algorithm");
          
      // get matrix H (m x m dimension)
      tic(); 
@@ -495,18 +487,6 @@ int _arnoldi_parallel(int size, int numIter,double* result_H)
         cusp::copy(Vj_plus1,V_all[j+1]); // update column k of  V_all[j+1], i.e. corresponding to the k-th initial vector
 
     }
-
-    // for testing       
-    //for(int k = 0; k < numIter; k++){
-    //    printf("Matrix V_%d after iteration:",k);
-    //    cusp::print(V_all[k]);
-    //}
-       
-
-    //for (int k = 0; k < size; k++){
-    //    printf("the %d-th Hm =: \n", k);
-    //    cusp::print(H_all[k]);
-    //}
     
     toc("iteration time of Arnoldi algorithm");
 
