@@ -92,6 +92,10 @@ class GpuKrylovSim(Freezable):
             GpuKrylovSim._getKeySimResult.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
 
             
+            GpuKrylovSim._getKeySimResult_parallel = lib.getKeySimResult_parallel
+            GpuKrylovSim._getKeySimResult_parallel.restype = None
+            GpuKrylovSim._getKeySimResult_parallel.argtypes = [ctypes.c_int, ctypes.c_int, ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
+            
         if GpuKrylovSim._has_gpu() == 0:
             raise RuntimeError("GPU not detected.")
 
@@ -233,6 +237,24 @@ class GpuKrylovSim(Freezable):
         GpuKrylovSim._getKeySimResult(keySimResult)
         
         return  keySimResult
+    
+    @staticmethod
+    def getKeySimResult_parallel(dirMatrix_numRows,size,numIter,expHt_tuples):
+        'get Simulation Result in parallel in a specific direction defined by a sparse matrix'
+
+        expHt_parallel = np.zeros((size,numIter))
+        
+        for i in range(0,size):
+            expHt = expHt_tuples[i]
+            expHt_parallel[i,:] = expHt[:,0] # get exp(H*t)*e1, e1 = [1 0 ...0]^T, get first column of exp(H*t)
+        
+            
+        keySimResult_tuples = np.zeros((size,dirMatrix_numRows))
+        GpuKrylovSim._getKeySimResult_parallel(size,numIter,expHt_parallel,keySimResult_tuples)
+
+        keySimResult_tuples = np.transpose(keySimResult_tuples)
+        
+        return  keySimResult_tuples
         
 def make_iss_matrix(num_copies):
     'create a matrix from the international space station system model'
@@ -541,7 +563,7 @@ def test_arnoldi_parallel():
 def test_getKeySimResult_parallel():
     print "making matrix..."
     start = time.time()
-    a = random_sparse_matrix(100, entries_per_row=5, random_cols=True)
+    a = random_sparse_matrix(10, entries_per_row=5, random_cols=True)
     #a = make_iss_matrix(1)
     print "made in {:.2f} seconds".format(time.time() - start)
     numIter = 5  # number of iteration of Arnoldi algorithm
@@ -552,6 +574,8 @@ def test_getKeySimResult_parallel():
     GpuKrylovSim.load_matrix(a)
 
     keyDirMatrix = np.zeros((2,size))
+    keyDirMatrix_numRows = keyDirMatrix.shape[0]
+    
     keyDirMatrix[0,0] = 1
     keyDirMatrix[0,1] = 1    # direction x0+x1
 
@@ -562,12 +586,10 @@ def test_getKeySimResult_parallel():
 
     # Load key direction matrix 
     GpuKrylovSim.load_keyDirSparseMatrix(keyDirMatrix_Sparse)
-
+    print "number of Rows of keyDirMatrix is: {}\n".format(keyDirMatrix_numRows)
+    
     # Run Arnoldi algorithm in paralel
     H_tuples, actual_numIter = GpuKrylovSim.arnoldi_parallel(size,numIter)
-
-    for i in range(0, size):
-        print "The {}-th H matrix is: \n {}".format(i,H_tuples[i])
 
     curStep = 2; 
     
@@ -577,11 +599,14 @@ def test_getKeySimResult_parallel():
     for i in range(0,size):
         curTimeStep = curStep*step
         expHt_tuples.insert(i,expm(curTimeStep*H_tuples[i]))
+        print "The {}-th H matrix is: \n {}".format(i,H_tuples[i])
         print "The {}-th exp(H*t) at time t = {} is: \n {}".format(i,curTimeStep,expHt_tuples[i])
+
+    keySimResult_tuples = GpuKrylovSim.getKeySimResult_parallel(keyDirMatrix_numRows,size,numIter,expHt_tuples)
 
         
 if __name__ == '__main__':
    # test_gpu_krylov_sim()
    # test_getKeySimResult()
-    test_arnoldi_parallel()
-   # test_getKeySimResult_parallel()
+   # test_arnoldi_parallel()
+    test_getKeySimResult_parallel()

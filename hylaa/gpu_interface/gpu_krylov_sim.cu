@@ -25,10 +25,10 @@ static std::vector< cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> > V_;
 static std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> > V_all; // use to compute n- Vm matrix
 static std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> > V_all_final; // contain all n- Vm matrix
 static std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> > H_all; // contain all n Hm matrix
-static std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> > expHt_all; // contain all n exp(H*t) matrix, used to compute simulation result
 
 
 static std::vector< cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> > device_sim_result;
+static std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> >  device_keySimResult_tuples; // contain all keySimResult
 static cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE>* keyDirMatrix = 0;
 static int numStepOfSim = 0;
 static int systemSize = 0;
@@ -698,37 +698,58 @@ void _getKeySimResult(double* keySimResult)
     
 }
 
-void _getKeySimResult_parallel(int size, int H_numRows, double* expHt_tuples)
+void _getKeySimResult_parallel(int size, int numIter, double* expHt_e1_tuples, double* keySimResult_tuples)
 {
     // get Simulation result in specific direction defined by keyDirMatrix
+    // for one initial vector we have:
     // SimResult = V*exp(H*t)*e1, (V,H) are matrices obtained from Arnoldi algorithm
     // KeySimResult = keyDirMatrix*SimResult
 
-    // Check consitency 
+    // we get keySimResult for all initial vectors at one time, the result is saved in keySimResult_tuples   
+
+     std::vector< cusp::array1d <FLOAT_TYPE,MEMORY_TYPE> > V_expHt_e1(size); // contain all V*exp(H*t)*e1
+     std::vector< cusp::array1d <FLOAT_TYPE, MEMORY_TYPE> > device_keySimResult_tuples(size);
+     
+     cusp::array1d<FLOAT_TYPE,MEMORY_TYPE > expHt_e1_col_i(numIter);
+     
+    // Check consitency
+    
     if (keyDirMatrix_h != size) // check consistency between the key direction matrix and system dimension
         {
              printf("\n The number of column of key direction matrix is inconsistent with the system dimension");
              toc("check consistency");
         }
     else{
+        // compute key Simulation result in parallel
+        
         tic();
-        expHt_all.resize(size);
-        cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> device_expHt(H_numRows,H_numRows,0);
 
-        for (int i = 0; i < size; i++){           
-            for(int k=0; k< H_numRows ; k++)
-               for(int l = 0; l < H_numRows; l++)
-                  device_expHt(k,l) = expHt_tuples[k*H_numRows+l+i*H_numRows*H_numRows];
+        for (int i = 0; i < size; i++){
+            V_expHt_e1[i].resize(size);
+            device_keySimResult_tuples[i].resize(keyDirMatrix_w);
 
-            cusp::copy(device_expHt,expHt_all[i]);
+            for(int k = 0; k < numIter; k++){
 
-            printf("The %d-th exp(Ht) matrix is: \n",i);
-            cusp::print(expHt_all[i]);
-            
+                expHt_e1_col_i[k] = expHt_e1_tuples[i*numIter + k];
+
+            }
+
+            cusp::multiply(V_all_final[i], expHt_e1_col_i,V_expHt_e1[i]); // compute V*exp(H*t)*e1
+            cusp::multiply(*keyDirMatrix,V_expHt_e1[i],device_keySimResult_tuples[i]); // compute keyDirMatrix * V * exp(H*t) * e1           
+
+            printf("the %d-th key simulation result corresponding to the %d-th initial vector is: \n", i, i );
+            cusp::print(device_keySimResult_tuples[i]);
         }
 
-        toc("copying exp(H*t) into device memory"); 
+        toc("Compute keySimResult in parallel");
 
+        // copy keySimulation Result to np.array
+
+        tic();
+        
+        for (int i = 0; i < size; i++)
+            for (int j = 0; j < keyDirMatrix_w; j++)        
+                keySimResult_tuples[i*keyDirMatrix_w + j] = device_keySimResult_tuples[i][j];
       }
     
     
@@ -812,9 +833,9 @@ void getKeySimResult(double* keySimResult)
 }
 
     
-void getKeySimResult_parallel(int size, int numIter, double* expHt_tuples)
+    void getKeySimResult_parallel(int size, int numIter, double* expHt_tuples, double* keySimResult_tuples)
 {
-    _getKeySimResult_parallel(size,numIter,expHt_tuples);   
+    _getKeySimResult_parallel(size, numIter, expHt_tuples, keySimResult_tuples);   
 }
 
 }
