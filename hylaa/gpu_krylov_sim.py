@@ -525,14 +525,16 @@ def test_arnoldi_parallel():
     # get matrix H from Arnoldi Algorithm
     GpuKrylovSim.choose_GPU_or_CPU("CPU")
     GpuKrylovSim.load_matrix(a)
-     
+
+    print "running arnoldi algorithm in parallel for all initial vectors..."
     res_gpu_arnoldi_H, actual_numIter = GpuKrylovSim.arnoldi_parallel(a.shape[0],m)
 
-    print "matrix H_all:\n"
-
     for i in range(0,a.shape[0]):
+        print "running arnoldi algorithm for single initial vector..."
         res_gpu_arnoldi_H_i, actual_numIter_i = GpuKrylovSim.arnoldi_initVectorPos(i,a.shape[0],m) # using arnoldi_initVectorPos() method
+        print "the actual number of iteration of Arnoldi_parallel is: {}".format(actual_numIter)
         print "the {}-th Hm computed by Arnoldi_parallel is:\n {}".format(i,res_gpu_arnoldi_H[i,:,:])
+        print "the actual number of iteration of Arnoldi_initVectorPos is: {}".format(actual_numIter_i)
         print "the {}-th Hm computed by Arnoldi_initVectorPos is: \n {}".format(i,res_gpu_arnoldi_H_i)
         
 

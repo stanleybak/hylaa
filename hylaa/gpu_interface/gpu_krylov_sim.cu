@@ -333,6 +333,7 @@ int _arnoldi_initVectorPos(int basic_initVector_pos, double* result_H, int size,
     // iteration
     tic();
     int j;
+    printf("running Arnoldi algorithm...");
     for(j = 0; j < maxiter; j++)
     {
 	cusp::multiply(*curMatrix, V_[j], V_[j + 1]);
@@ -346,7 +347,7 @@ int _arnoldi_initVectorPos(int basic_initVector_pos, double* result_H, int size,
 
 		H_(j+1,j) = cusp::blas::nrm2(V_[j + 1]);
 
-		if(H_(j+1,j) < 1e-10) break;
+		if(H_(j+1,j) < 1e-10)  break;     
 
 		cusp::blas::scal(V_[j + 1], float(1) / H_(j+1,j));
 
@@ -439,6 +440,10 @@ int _arnoldi_parallel(int size, int numIter,double* result_H)
     
     tic();
     int j;
+    int mem = 0; // memorize where break condition happens
+
+    printf("running Arnoldi Algorithm in parallel ...\n");
+    
     for (j = 0; j < maxiter; j++){
 
         cusp::multiply(*curMatrix,V_all[j],V_all[j+1]);
@@ -446,8 +451,8 @@ int _arnoldi_parallel(int size, int numIter,double* result_H)
         cusp::copy(V_all[j+1],Vj_plus1);
   
         for(int k = 0; k < size; k++){
-            // compute Hm-k 
-
+            // compute Hm-k
+            
             for(int l = 0; l < size; l++){
                 Vj_plus1_col_k[l] = Vj_plus1(l,k); // Load column k of Vj_plus1
             }
@@ -473,9 +478,29 @@ int _arnoldi_parallel(int size, int numIter,double* result_H)
             
             Hmat_k(j+1,j) = cusp::blas::nrm2(Vj_plus1_col_k);
 
-		    if(Hmat_k(j+1,j) < 1e-10) break;
+		    if(Hmat_k(j+1,j) < 1e-10) {
 
-		    cusp::blas::scal(Vj_plus1_col_k, float(1) / Hmat_k(j+1,j));
+                // an interesting problem: given a system matrix A, different initial vector can produce
+                // different number of iteration, i.e, the actual number of iteration
+                // To do arnoldi in parallel, we neglect the break condition as in the function arnoldi_initVectorPos
+                // We make all vector has the same number of iteration and equal to maxiter
+                // i.e., actual_numIter = maxiter (user input parameter)
+
+               
+                if (mem == 1){
+                    ;
+                }
+                else {
+                    printf("***Notice***: break condition of Arnoldi algorithm is neglected for the initial vector V_%d \n", k);
+                    printf("***Notice***: the actual number of iteration corresponding to initial vector V_%d is %d \n", k, j+1);
+                    mem = 1;
+                }
+                
+                Hmat_k(j+1,j) = 0;
+                cusp::blas::scal(Vj_plus1_col_k,float(0));
+                //break;
+            } 
+            else  cusp::blas::scal(Vj_plus1_col_k, float(1) / Hmat_k(j+1,j));
             
             for(int l = 0; l < size; l++){
                 Vj_plus1(l,k) =  Vj_plus1_col_k[l]; // update  column k of Vj_plus1
@@ -489,7 +514,8 @@ int _arnoldi_parallel(int size, int numIter,double* result_H)
 
     }
     
-    toc("iteration time of Arnoldi algorithm");
+    toc("iteration time of parallel Arnoldi algorithm");
+    
 
      // copying H matrix to np.ndarray
      tic();
@@ -497,7 +523,7 @@ int _arnoldi_parallel(int size, int numIter,double* result_H)
       // copying H matrix to np.ndarray
      tic();
      cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> H(maxiter+1,maxiter,0);
-     for (int k = 0; k< size; ++k){   
+     for (int k = 0; k< size; ++k){
          cusp::copy(H_all[k],H);
          for (int i = 0; i < numIter; ++i){
              for(int l = 0; l < numIter; ++l)
