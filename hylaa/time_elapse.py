@@ -332,21 +332,18 @@ class TimeElapser(Freezable):
         numIter = self.settings.simulation.krylov_numIter
 
         def get_H_tuples():
-            GpuKrylovSim.load_matrix(self.a_matrix.tocsr())
+            GpuKrylovSim.load_matrix(self.a_matrix.tocsr()) # load a_matrix into device memory
+            GpuKrylovSim.load_keyDirSparseMatrix(self.key_dir_mat) # load key direction matrix into device memory
             self.cusp_H_tuples, self.cusp_realNumIter = GpuKrylovSim.arnoldi_parallel(self.dims,numIter)
 
         def get_one_step_expH_tuples():
-            one_step_expH_tuples = [];
+            one_step_expH_tuples = []
             for i in range(0,self.dims):
                 one_step_expH_tuples.insert(i,expm(self.settings.step*self.cusp_H_tuples[i,:,:]))
             self.one_step_expH_tuples = one_step_expH_tuples    
                 
         if self.cusp_H_tuples is None:
             get_H_tuples()
-
-        if self.one_step_expH_tuples is None:
-            get_one_step_expH_tuples()
-
         
         if self.settings.simulation.krylov_compute_exp_Ht == SimulationSettings.KRYLOV_H_MULT:
         # first step matrix exp, other step matrix multiplication
