@@ -340,7 +340,13 @@ class TimeElapser(Freezable):
             one_step_expH_tuples = []
             for i in range(0,self.dims):
                 one_step_expH_tuples.insert(i,expm(self.settings.step*self.cusp_H_tuples[i,:,:]))
-            self.one_step_expH_tuples = one_step_expH_tuples    
+            self.one_step_expH_tuples = one_step_expH_tuples
+
+        def get_any_step_expH_tuples(next_step):
+            cur_step_expH_tuples = []
+            for i in range(0,self.dims):
+                cur_step_expH_tuples.insert(i,expm(next_step*self.settings.step*self.cusp_H_tuples[i,:,:]))
+            self.cur_step_expH_tuples = cur_step_expH_tuples
                 
         if self.cusp_H_tuples is None:
             get_H_tuples()
@@ -357,7 +363,7 @@ class TimeElapser(Freezable):
                 
                 self.cur_step_expH_tuples = self.one_step_expH_tuples # save for next step
                 # to do: get keySimResult in parallel
-                #self.cur_time_elapse_mat = GpuKrylovSim.    
+                self.cur_time_elapse_mat = GpuKrylovSim.getKeySimResult_parallel(self.key_dir_mat.shape[0],self.dims,self.settings.simulation.krylov_numIter,self.cur_step_expH_tuples)    
 
                 Timers.toc('time_elapse.step first step')
 
@@ -368,9 +374,12 @@ class TimeElapser(Freezable):
                     self.cur_step_expH_tuples[i] = cur_step_expH # save for next step
                     
                 # todo: get keySimResult in parallel
-                #self.cur_time_elapse_mat 
+                self.cur_time_elapse_mat = GpuKrylovSim.getKeySimResult_parallel(self.key_dir_mat.shape[0],self.dims,self.settings.simulation.krylov_numIter,self.cur_step_expH_tuples)     
                 Timers.toc('time_elapse.step other steps')
-            
-            
+
+        elif self.settings.simulation.krylov_compute_exp_Ht == SimulationSettings.KRYLOV_H_EXP:
+        # matrix exponential for all steps
+            get_any_step_expH_tuples(self.next_step)
+            self.cur_time_elapse_mat = GpuKrylovSim.getKeySimResult_parallel(self.key_dir_mat.shape[0],self.dims,self.settings.simulation.krylov_numIter,self.cur_step_expH_tuples)          
     
 
