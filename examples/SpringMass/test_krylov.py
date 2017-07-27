@@ -139,9 +139,9 @@ def define_settings(_):
     plot_settings.label.big(size=32)
 
     settings = HylaaSettings(step=0.1, max_time=2.0, plot_settings=plot_settings)
-    #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
+    settings.simulation.sim_mode = SimulationSettings.EXP_MULT
     #settings.simulation.sim_mode = SimulationSettings.KRYLOV_KRYPY # choose krylov method using krypy packet
-    settings.simulation.sim_mode = SimulationSettings.KRYLOV_CUSP # choose krylov method using cusp and GPU
+    #settings.simulation.sim_mode = SimulationSettings.KRYLOV_CUSP # choose krylov method using cusp and GPU
     settings.simulation.guard_mode = SimulationSettings.GUARD_DECOMPOSED
 
     # setting for krylov method

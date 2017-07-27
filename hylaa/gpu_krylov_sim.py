@@ -17,13 +17,14 @@ from numpy.ctypeslib import ndpointer
 from scipy.sparse import csr_matrix, coo_matrix, rand
 from scipy.linalg import expm
 from hylaa.util import Freezable, get_script_path
-
+from hylaa.containers import SimulationSettings
 
 class GpuKrylovSim(Freezable):
     'GPU-enhanced matrix-vector multiplication using the python/c interface'
 
     # static member (library)
     _lib = None
+    _lib_path =  os.path.join(get_script_path(__file__), 'gpu_interface', 'cusp_krylov_sim_CPU.so') # default setting
 
     def __init__(self):
         raise RuntimeError('GpuKrylovSim is a static class and should not be instantiated')
@@ -31,10 +32,9 @@ class GpuKrylovSim(Freezable):
     @staticmethod
     def _init_static():
         'open the library (if not opened already) and initialize the static members'
-
         if GpuKrylovSim._lib is None:
-            lib_path = os.path.join(get_script_path(__file__), 'gpu_interface', 'gpu_krylov_sim.so')
-            GpuKrylovSim._lib = lib = ctypes.CDLL(lib_path)
+           
+            GpuKrylovSim._lib = lib = ctypes.CDLL(GpuKrylovSim._lib_path)
 
             GpuKrylovSim._has_gpu = lib.hasGpu
             GpuKrylovSim._has_gpu.restype = ctypes.c_int
@@ -100,7 +100,16 @@ class GpuKrylovSim(Freezable):
             raise RuntimeError("GPU not detected.")
 
     @staticmethod
-    def choose_GPU_or_CPU(msg):
+    def choose_GPU_or_CPU(cusp_memory):
+        if(cusp_memory == SimulationSettings.KRYLOV_CUSP_HOST):
+            msg = 'CPU'
+            GpuKrylovSim._lib_path = os.path.join(get_script_path(__file__), 'gpu_interface', 'cusp_krylov_sim_CPU.so')
+        elif (cusp_memory == SimulationSettings.KRYLOV_CUSP_DEVICE):
+            msg = 'GPU'
+            GpuKrylovSim._lib_path = os.path.join(get_script_path(__file__), 'gpu_interface', 'cusp_krylov_sim_GPU.so')
+        else:
+            msg = 'CPU'
+            print "Computation is done on CPU by default. Change it by choosing CPU/GPU"
         GpuKrylovSim._init_static()
         GpuKrylovSim._choose_GPU_or_CPU(msg)
         

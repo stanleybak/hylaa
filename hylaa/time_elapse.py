@@ -50,7 +50,6 @@ class TimeElapser(Freezable):
         self.cusp_realNumIter = None # real number of iteration of Arnoldi algorithm
         
         
-        
         self.freeze_attrs()
 
     def _extract_key_directions(self, mode):
@@ -330,7 +329,7 @@ class TimeElapser(Freezable):
         # TRAN implements this
         
         numIter = self.settings.simulation.krylov_numIter
-
+        
         def get_H_tuples():
             GpuKrylovSim.load_matrix(self.a_matrix.tocsr()) # load a_matrix into device memory
             GpuKrylovSim.load_keyDirSparseMatrix(self.key_dir_mat) # load key direction matrix into device memory
@@ -347,7 +346,11 @@ class TimeElapser(Freezable):
             for i in range(0,self.dims):
                 cur_step_expH_tuples.insert(i,expm(next_step*self.settings.step*self.cusp_H_tuples[i,:,:]))
             self.cur_step_expH_tuples = cur_step_expH_tuples
-                
+
+
+        # Choose using CPU (host_memory) or GPU (device_memory)
+        GpuKrylovSim.choose_GPU_or_CPU(self.settings.simulation.krylov_cusp_memory)
+            
         if self.cusp_H_tuples is None:
             get_H_tuples()
         

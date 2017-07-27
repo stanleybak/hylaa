@@ -15,15 +15,14 @@
 #include <sys/time.h>
 
 typedef double FLOAT_TYPE;
-typedef cusp::host_memory MEMORY_TYPE; // using CPU for computation
-//typedef cusp::device_memory MEMORY_TYPE; // using GPU for computation
+typedef cusp::device_memory MEMORY_TYPE; // using GPU for computation
 
 //static int choose_GPU = 0; // choose_GPU == 1 means that user choose to use GPU, if not, using CPU
 // shared matrix in device memory
 static cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE>* curMatrix = 0;
 static std::vector< cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> > V_;
-static std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> > V_all; // use to compute n- Vm matrix
-static std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> > V_all_final; // contain all n- Vm matrix
+static std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE,cusp::column_major> > V_all; // use to compute n- Vm matrix
+static std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE,cusp::column_major> > V_all_final; // contain all n- Vm matrix
 static std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> > H_all; // contain all n Hm matrix
 
 
@@ -432,7 +431,7 @@ int _arnoldi_parallel(int size, int numIter,double* result_H)
     
     // Arnoldi parallel algorithm iteration
 
- 
+    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> Vj(size,size,0);
     cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> Vj_plus1(size,size,0);
     cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> Vi(size,size,0);
     cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> Vj_plus1_col_k(size); 
@@ -447,9 +446,8 @@ int _arnoldi_parallel(int size, int numIter,double* result_H)
     for (j = 0; j < maxiter; j++){
 
         cusp::multiply(*curMatrix,V_all[j],V_all[j+1]);
-         
         cusp::copy(V_all[j+1],Vj_plus1);
-  
+        
         for(int k = 0; k < size; k++){
             // compute Hm-k
             
@@ -734,7 +732,9 @@ void _getKeySimResult_parallel(int size, int numIter, double* expHt_e1_tuples, d
 
             }
 
-            cusp::multiply(V_all_final[i], expHt_e1_col_i,V_expHt_e1[i]); // compute V*exp(H*t)*e1
+            cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE> Vi;
+            cusp::convert(V_all_final[i],Vi);
+            cusp::multiply(Vi, expHt_e1_col_i,V_expHt_e1[i]); // compute V*exp(H*t)*e1
             cusp::multiply(*keyDirMatrix,V_expHt_e1[i],device_keySimResult_tuples[i]); // compute keyDirMatrix * V * exp(H*t) * e1           
 
             printf("the %d-th key simulation result corresponding to the %d-th initial vector is: \n", i, i );

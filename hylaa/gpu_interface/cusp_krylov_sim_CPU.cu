@@ -16,7 +16,7 @@
 
 typedef double FLOAT_TYPE;
 typedef cusp::host_memory MEMORY_TYPE; // using CPU for computation
-//typedef cusp::device_memory MEMORY_TYPE; // using GPU for computation
+
 
 //static int choose_GPU = 0; // choose_GPU == 1 means that user choose to use GPU, if not, using CPU
 // shared matrix in device memory
