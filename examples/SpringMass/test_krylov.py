@@ -139,15 +139,15 @@ def define_settings(_):
     plot_settings.label.big(size=32)
 
     settings = HylaaSettings(step=0.1, max_time=2.0, plot_settings=plot_settings)
-    settings.simulation.sim_mode = SimulationSettings.EXP_MULT
+    #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
     #settings.simulation.sim_mode = SimulationSettings.KRYLOV_KRYPY # choose krylov method using krypy packet
-    #settings.simulation.sim_mode = SimulationSettings.KRYLOV_CUSP # choose krylov method using cusp and GPU
+    settings.simulation.sim_mode = SimulationSettings.KRYLOV_CUSP # choose krylov method using cusp and GPU
     settings.simulation.guard_mode = SimulationSettings.GUARD_DECOMPOSED
 
     # setting for krylov method
-    settings.simulation.krylov_numIter = 5 # choose number of iteration of Arnoldi algorithm  
-    #settings.simulation.krylov_compute_exp_Ht = SimulationSettings.KRYLOV_H_MULT # compute exp(Ht) using matrix multiplication
-    settings.simulation.krylov_compute_exp_Ht = SimulationSettings.KRYLOV_H_EXP # compute exp(Ht) using matrix exponential
+    settings.simulation.krylov_numIter = 15 # choose number of iteration of Arnoldi algorithm  
+    settings.simulation.krylov_compute_exp_Ht = SimulationSettings.KRYLOV_H_MULT # compute exp(Ht) using matrix multiplication
+    #settings.simulation.krylov_compute_exp_Ht = SimulationSettings.KRYLOV_H_EXP # compute exp(Ht) using matrix exponential
     settings.simulation.krylov_cusp_memory = SimulationSettings.KRYLOV_CUSP_HOST  # choose host memory to run Arnoldi algorithm      
     #settings.simulation.krylov_cusp_memory = SimulationSettings.KRYLOV_CUSP_DEVICE  # choose device memory to run Arnoldi algorithm      
 

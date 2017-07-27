@@ -41,17 +41,8 @@ static long lastTicUs = 0;
 
 void _choose_GPU_or_CPU(char* msg)
 {
-    if (strcmp(msg, "CPU")){
-            printf("User choosed to use CPU \n");
-            // choose_GPU = 0;
-        }
-        else if(strcmp(msg,"GPU")){
-            printf("User choosed to use GPU \n");
-            // choose_GPU = 1;
-        }  else{
-            printf("wrong input options, choose CPU or GPU only \n");
-        }
-
+    printf("User choose to use %s for computation \n",msg);
+    
 }
  
 
@@ -737,8 +728,8 @@ void _getKeySimResult_parallel(int size, int numIter, double* expHt_e1_tuples, d
             cusp::multiply(V_all_final[i], expHt_e1_col_i,V_expHt_e1[i]); // compute V*exp(H*t)*e1
             cusp::multiply(*keyDirMatrix,V_expHt_e1[i],device_keySimResult_tuples[i]); // compute keyDirMatrix * V * exp(H*t) * e1           
 
-            printf("the %d-th key simulation result corresponding to the %d-th initial vector is: \n", i, i );
-            cusp::print(device_keySimResult_tuples[i]);
+            // printf("the %d-th key simulation result corresponding to the %d-th initial vector is: \n", i, i );
+            // cusp::print(device_keySimResult_tuples[i]);
         }
 
         toc("Compute keySimResult in parallel");
