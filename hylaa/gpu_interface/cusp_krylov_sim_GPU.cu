@@ -415,8 +415,7 @@ int _arnoldi_parallel(int size, int numIter,double* result_H)
         cusp::copy(Imat,V_all[i]);
 
     for (int i = 0; i < size; i++)
-        for(int j = 0; j < size; j++)
-            if (i == j)  Imat(i,j) = 1;
+        Imat(i,i) = 1;
 
     cusp::copy(Imat,V_all[0]);
     

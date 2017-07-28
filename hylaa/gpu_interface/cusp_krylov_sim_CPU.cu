@@ -410,14 +410,13 @@ int _arnoldi_parallel(int size, int numIter,double* result_H)
     
     for (int i = 0; i< size; i++){
         cusp::copy(Hmat_k,H_all[i]); // initialize H_all[i]
-        cusp::copy(Vm,V_all_final[i]); // initialize V_finall_all[i]
+        cusp::copy(Vm,V_all_final[i]); // initialize V_finall_all[k]
     }
     for (int i = 0; i < maxiter+1; i++)
         cusp::copy(Imat,V_all[i]);
 
     for (int i = 0; i < size; i++)
-        for(int j = 0; j < size; j++)
-            if (i == j)  Imat(i,j) = 1;
+        Imat(i,i) = 1;
 
     cusp::copy(Imat,V_all[0]);
     
@@ -497,8 +496,7 @@ int _arnoldi_parallel(int size, int numIter,double* result_H)
     
      // save all matrix Vm into V_all_final
      tic();
-     
-     for (int k = 0; k < size; k++)
+     for (int k = 0; k < size; k++)     
          for(int i = 0; i < maxiter; i++)
              cusp::blas::copy(V_all[i].column(k),V_all_final[k].column(i));
      
