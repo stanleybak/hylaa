@@ -547,11 +547,11 @@ def test_arnoldi_parallel():
 
     print "making matrix..."
     start = time.time()
-    a = random_sparse_matrix(100, entries_per_row=5, random_cols=True)
+    a = random_sparse_matrix(5, entries_per_row=5, random_cols=True)
     #a = make_iss_matrix(1)
     print "made in {:.2f} seconds".format(time.time() - start)
 
-    m = 5 # number of iteration of Arnoldi Algorithm
+    m = 3 # number of iteration of Arnoldi Algorithm
     
     # get matrix H from Arnoldi Algorithm
     GpuKrylovSim.choose_GPU_or_CPU("CPU")
@@ -617,5 +617,5 @@ def test_getKeySimResult_parallel():
 if __name__ == '__main__':
    # test_gpu_krylov_sim()
    # test_getKeySimResult()
-   # test_arnoldi_parallel()
-    test_getKeySimResult_parallel()
+    test_arnoldi_parallel()
+   # test_getKeySimResult_parallel()
