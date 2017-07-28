@@ -487,8 +487,6 @@ int _arnoldi_parallel(int size, int numIter,double* result_H)
      cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> H(maxiter+1,maxiter,0);
      for (int k = 0; k< size; ++k){
          cusp::copy(H_all[k],H);
-         printf("%d-th matrix Hm is: \n",k);
-         cusp::print(H);
          for (int i = 0; i < maxiter; ++i){
              for(int l = 0; l < maxiter; ++l)
                  result_H[i*maxiter + l + k*maxiter*maxiter] = H(i,l);
