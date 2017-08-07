@@ -193,7 +193,7 @@ class TimeElapser(Freezable):
         if self.cur_time_elapse_mat_list is None:
             self.cur_time_elapse_mat_list = make_cur_time_elapse_mat_list(self)
 
-        return self.cur_time_elapse_mat_list[self.next_step]
+        self.cur_time_elapse_mat = self.cur_time_elapse_mat_list[self.next_step].copy()
 
     def step(self):
         'perform the computation to obtain the values of the key directions the current time'
@@ -215,7 +215,8 @@ class TimeElapser(Freezable):
         Timers.toc('time_elapse.step Total')
 
         # post-conditions check
-        assert isinstance(self.cur_time_elapse_mat, np.ndarray), "cur_time_elapse_mat should be an np.array"
+        assert isinstance(self.cur_time_elapse_mat, np.ndarray), "cur_time_elapse_mat should be an np.array, " + \
+            "but it was {}".format(type(self.cur_time_elapse_mat))
         assert self.cur_time_elapse_mat.shape == self.key_dir_mat.shape, \
             "cur_time_elapse mat shape({}) should be {}".format(self.cur_time_elapse_mat.shape, self.key_dir_mat.shape)
 

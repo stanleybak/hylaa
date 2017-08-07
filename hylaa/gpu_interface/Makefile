@@ -2,7 +2,8 @@
 
 CC=nvcc
 
-CFLAGS_SHARED = --compiler-options '-fPIC -Wall -Werror' -O2 -D_FORCE_INLINES -Icusplibrary-0.4.0 -shared
+#CFLAGS_SHARED = --compiler-options '-fPIC -Wall -Werror' -O2 -D_FORCE_INLINES -Icusplibrary-0.4.0 -shared
+CFLAGS_SHARED = --compiler-options '-fPIC -Wall' -O2 -D_FORCE_INLINES -Icusplibrary-0.4.0 -shared
 CFLAGS = -O2 -D_FORCE_INLINES -Icusplibrary-0.4.0
 
 all:  cusp_krylov_sim_CPU.so cusp_krylov_sim_GPU.so 

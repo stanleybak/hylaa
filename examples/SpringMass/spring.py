@@ -25,7 +25,7 @@ def define_ha():
     mode = ha.new_mode('mode')
 
     # each mass will add 2 dimensions to the system
-    num_masses = 100
+    num_masses = 1000
     #num_masses = 1000 # 10 thousand dims -> 800 MB
     #num_masses = 50000 # 100 thousand dims -> memory error (80 GB mem needed)
     #num_mases = 500000 # one million dims (8 TB mem needed)
@@ -142,8 +142,7 @@ def define_settings(_):
     settings = HylaaSettings(step=0.1, max_time=2.0, plot_settings=plot_settings)
 
 
-    settings.simulation.sim_mode = SimulationSettings.KRYLOV_KRYPY
-    settings.simulation.krylov_numIter = 15
+    settings.simulation.sim_mode = SimulationSettings.KRYLOV_CPU
     #settings.simulation.check_answer = True
 
     #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
