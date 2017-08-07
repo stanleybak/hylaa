@@ -155,8 +155,7 @@ def define_settings():
     #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
     #settings.simulation.sim_mode = SimulationSettings.MATRIX_EXP
 
-    settings.simulation.sim_mode = SimulationSettings.KRYLOV_KRYPY
-    settings.simulation.krylov_numIter = 2
+    settings.simulation.sim_mode = SimulationSettings.KRYLOV_CPU
     settings.simulation.check_answer = True
 
     return settings

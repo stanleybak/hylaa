@@ -36,17 +36,9 @@ class SimulationSettings(Freezable):
     # simulation mode (matrix-exp)
     MATRIX_EXP = 0 # matrix exp every step
     EXP_MULT = 1 # first step matrix exp, remaining steps matrix-vector multiplication
-    KRYLOV_KRYPY = 2 # krylov method using Krypy Packet
-    KRYLOV_CUSP = 3 # krylov method using CUSP Packet and GPU, computation can be done in host memory/device memory
+    KRYLOV_CPU = 2 # krylov method using CPU
+    KRYLOV_GPU = 3 # krylov method using GPU
 
-    # krylov method setting
-    KRYLOV_H_MULT = 0 # use matrix multiplication for computing exp(Hm*t), used by default
-    KRYLOV_H_EXP = 1  # use matrix exponential for computing exp(Hm*t)
-
-    # choose host or device memory for executing Arnoldi algorithm using CUSP
-    KRYLOV_CUSP_HOST = 0
-    KRYLOV_CUSP_DEVICE = 1 
-    
     # guard optimization mode
     GUARD_DECOMPOSED = 0
     GUARD_FULL_LP = 1
@@ -55,9 +47,7 @@ class SimulationSettings(Freezable):
         self.step = step
         self.sim_mode = SimulationSettings.EXP_MULT
         self.guard_mode = SimulationSettings.GUARD_DECOMPOSED
-        self.krylov_compute_exp_Ht = SimulationSettings.KRYLOV_H_MULT
-        self.krylov_numIter = None   # user-set number of iteration for Arnoldi algorithm
-        self.krylov_cusp_memory = None # user set the memory for executing Arnoldi algorithm
+        self.krylov_dimension = 15 # number of basis vectors of the krylov subspace (iterations of arnoldi)
 
         self.check_answer = False # double-check the expm answer at each step (slow!)
 

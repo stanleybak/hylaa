@@ -2,7 +2,7 @@
 Dung Tran
 June 2017
 
-Simulation of linear system x' = Ax using krylov supspace method in CPU and GPU 
+Simulation of linear system x' = Ax using krylov supspace method in CPU and GPU
 
 '''
 
@@ -24,7 +24,7 @@ class GpuKrylovSim(Freezable):
 
     # static member (library)
     _lib = None
-    _lib_path =  os.path.join(get_script_path(__file__), 'gpu_interface', 'cusp_krylov_sim_CPU.so') # default setting
+    _lib_path = os.path.join(get_script_path(__file__), 'gpu_interface', 'cusp_krylov_sim_CPU.so') # default setting
 
     def __init__(self):
         raise RuntimeError('GpuKrylovSim is a static class and should not be instantiated')
@@ -42,49 +42,51 @@ class GpuKrylovSim(Freezable):
 
             GpuKrylovSim._choose_GPU_or_CPU = lib.choose_GPU_or_CPU
             GpuKrylovSim._choose_GPU_or_CPU.restype = None
-            GpuKrylovSim._choose_GPU_or_CPU.argtypes = [ctypes.c_char_p]            
+            GpuKrylovSim._choose_GPU_or_CPU.argtypes = [ctypes.c_char_p]
 
             GpuKrylovSim._load_matrix = lib.loadMatrix
             GpuKrylovSim._load_matrix.restype = None
             GpuKrylovSim._load_matrix.argtypes = [ctypes.c_int, ctypes.c_int,
-                                             ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
-                                             ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
-                                             ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
-                                             ctypes.c_int]
+                                                  ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
+                                                  ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
+                                                  ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                                  ctypes.c_int]
 
             GpuKrylovSim._load_keyMatrix = lib.loadKeyDirMatrix
             GpuKrylovSim._load_keyMatrix.restype = None
             GpuKrylovSim._load_keyMatrix.argtypes = [ctypes.c_int, ctypes.c_int,
-                                             ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
-                                             ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
-                                             ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
-                                             ctypes.c_int]
+                                                     ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
+                                                     ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
+                                                     ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                                     ctypes.c_int]
                                              
             GpuKrylovSim._arnoldi_initVector = lib.arnoldi_initVector
             GpuKrylovSim._arnoldi_initVector.restype = ctypes.c_int
             GpuKrylovSim._arnoldi_initVector.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
-                                            ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
-                                            ctypes.c_int, ctypes.c_int]
+                                                         ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                                         ctypes.c_int, ctypes.c_int]
 
             GpuKrylovSim._arnoldi_initVectorPos = lib.arnoldi_initVectorPos
-            GpuKrylovSim._arnoldi_initVectorPos.restype = ctypes.c_int 
+            GpuKrylovSim._arnoldi_initVectorPos.restype = ctypes.c_int
             GpuKrylovSim._arnoldi_initVectorPos.argtypes = [ctypes.c_int,
-                                            ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
-                                            ctypes.c_int, ctypes.c_int]
+                                                            ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                                            ctypes.c_int, ctypes.c_int]
             
             GpuKrylovSim._arnoldi_parallel = lib.arnoldi_parallel
-            GpuKrylovSim._arnoldi_parallel.restype = ctypes.c_int 
-            GpuKrylovSim._arnoldi_parallel.argtypes = [ctypes.c_int, ctypes.c_int, ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
+            GpuKrylovSim._arnoldi_parallel.restype = ctypes.c_int
+            GpuKrylovSim._arnoldi_parallel.argtypes = [ctypes.c_int, ctypes.c_int,
+                                                       ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
 
             GpuKrylovSim._sim = lib.sim
             GpuKrylovSim._sim.restype = None
-            GpuKrylovSim._sim.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
-                                            ctypes.c_int, ctypes.c_int, ctypes.c_int]
+            GpuKrylovSim._sim.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                          ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                          ctypes.c_int, ctypes.c_int, ctypes.c_int]
 
             GpuKrylovSim._sim2 = lib.sim2
             GpuKrylovSim._sim2.restype = None
             GpuKrylovSim._sim2.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
-                                            ctypes.c_int, ctypes.c_int, ctypes.c_int]
+                                           ctypes.c_int, ctypes.c_int, ctypes.c_int]
 
             
             GpuKrylovSim._getKeySimResult = lib.getKeySimResult
@@ -94,22 +96,24 @@ class GpuKrylovSim(Freezable):
             
             GpuKrylovSim._getKeySimResult_parallel = lib.getKeySimResult_parallel
             GpuKrylovSim._getKeySimResult_parallel.restype = None
-            GpuKrylovSim._getKeySimResult_parallel.argtypes = [ctypes.c_int, ctypes.c_int, ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
+            GpuKrylovSim._getKeySimResult_parallel.argtypes = [ctypes.c_int, ctypes.c_int, 
+                                                               ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), 
+                                                               ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
             
         if GpuKrylovSim._has_gpu() == 0:
             raise RuntimeError("GPU not detected.")
 
     @staticmethod
-    def choose_GPU_or_CPU(cusp_memory):
-        if(cusp_memory == SimulationSettings.KRYLOV_CUSP_HOST):
+    def set_use_gpu(use_gpu):
+        'set if we should be using the gpu (else cpu)'
+
+        if not use_gpu:
             msg = 'CPU'
             GpuKrylovSim._lib_path = os.path.join(get_script_path(__file__), 'gpu_interface', 'cusp_krylov_sim_CPU.so')
-        elif (cusp_memory == SimulationSettings.KRYLOV_CUSP_DEVICE):
+        elif use_gpu:
             msg = 'GPU'
             GpuKrylovSim._lib_path = os.path.join(get_script_path(__file__), 'gpu_interface', 'cusp_krylov_sim_GPU.so')
-        else:
-            msg = 'CPU'
-            print "Computation is done on CPU by default. Change it by choosing CPU/GPU"
+
         GpuKrylovSim._init_static()
         GpuKrylovSim._choose_GPU_or_CPU(msg)
         
