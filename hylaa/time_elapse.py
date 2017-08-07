@@ -10,11 +10,13 @@ from scipy.sparse import lil_matrix, csr_matrix, csc_matrix
 from scipy.sparse.linalg import expm, expm_multiply
 from krypy.utils import arnoldi
 
-from hylaa.util import Freezable
+from hylaa.util import Freezable, matrix_to_string
 from hylaa.hybrid_automaton import LinearAutomatonMode
 from hylaa.containers import HylaaSettings, PlotSettings, SimulationSettings
 from hylaa.timerutil import Timers
 from hylaa.gpu_krylov_sim import GpuKrylovSim
+
+
 
 class TimeElapser(Freezable):
     'Object which computes the time-elapse function for a single mode at multiples of the time step'
@@ -48,8 +50,7 @@ class TimeElapser(Freezable):
 
         self.cusp_H_tuples = None # save H matrices from Arnoldi algorithm using Cusp
         self.cusp_realNumIter = None # real number of iteration of Arnoldi algorithm
-        
-        
+
         self.freeze_attrs()
 
     def _extract_key_directions(self, mode):
@@ -85,37 +86,6 @@ class TimeElapser(Freezable):
 
         # done constructing, convert to csc_matrix
         self.key_dir_mat = csr_matrix(lil_dir_mat)
-
-    def step(self):
-        'perform the computation to obtain the values of the key directions the current time'
-
-        Timers.tic('time_elapse.step Total')
-
-        if self.settings.simulation.sim_mode == SimulationSettings.MATRIX_EXP:
-            self.step_matrix_exp()
-        elif self.settings.simulation.sim_mode == SimulationSettings.EXP_MULT:
-            self.step_exp_mult()
-        elif self.settings.simulation.sim_mode == SimulationSettings.KRYLOV_KRYPY:
-            self.step_krylov_krypy()
-        elif self.settings.simulation.sim_mode == SimulationSettings.KRYLOV_CUSP:
-            self.step_krylov_cusp()
-        else:
-            raise RuntimeError('Unimplemented sim_mode {}'.format(self.settings.simulation.sim_mode))
-
-        self.next_step += 1
-
-        Timers.toc('time_elapse.step Total')
-
-        # post-conditions check
-        assert isinstance(self.cur_time_elapse_mat, np.ndarray), "cur_time_elapse_mat should be an np.array"
-        assert self.cur_time_elapse_mat.shape == self.key_dir_mat.shape, \
-            "cur_time_elapse mat shape({}) should be {}".format(self.cur_time_elapse_mat.shape, self.key_dir_mat.shape)
-
-        if self.inputs == 0 or self.next_step == 1: # 0-th step input should be null
-            assert self.cur_input_effects_matrix is None
-        else:
-            assert isinstance(self.cur_input_effects_matrix, np.ndarray)
-            assert self.cur_input_effects_matrix.shape == (self.key_dir_mat.shape[0], self.inputs)
 
     def step_exp_mult(self):
         'first step matrix exp, other steps matrix multiplication'
@@ -226,19 +196,25 @@ class TimeElapser(Freezable):
             full_input_effects = (prev_exp * input_effects_matrix)
             self.cur_input_effects_matrix = self.key_dir_mat * full_input_effects
 
-
        
     def step_krylov_krypy(self):
         'updates self.cur_time_elapse_mat and, if there are inputs, self.cur_input_effects_matrix'
         # TRAN implements this 
-        numIter = self.settings.simulation.krylov_numIter
+        numIter = min(self.settings.simulation.krylov_numIter, self.a_matrix.shape[0])
+
         # arnoldi algorithm for single init basic vector, e.g [1, 0, ...,0], in which 1-element is defined by vec_pos
         def arnoldi_krypy(vec_pos, numIter):
-            assert not (numIter is None), "Choose number of iteration for Arnoldi algorithm"
-            assert (numIter <= self.dims), "Number of iteration {} is larger than system dimension {}!".format(numIter,self.a_matrix.shape[0])  
+            assert numIter is not None, "Choose number of iterations for Arnoldi algorithm " + \
+                "(settings.simulation.krylov_numIter was None)"
+            assert (numIter <= self.dims), "Number of iteration {} is larger than system dimension {}!".format(
+                numIter,self.a_matrix.shape[0])  
             vec = np.zeros((self.dims,1))
             vec[vec_pos] = 1
+
+            Timers.tic("krypy arnoldi()")
             V, H = arnoldi(self.a_matrix,vec,numIter)
+            Timers.toc("krypy arnoldi()")
+
             if H.shape[0] < numIter:
                 realNumIter = H.shape[0]
             else:
@@ -253,13 +229,16 @@ class TimeElapser(Freezable):
             self.krypy_VH_tuples = []
             self.krylov_realNumIter_tuples = []
             for i in range(0,self.dims):
-                VH_tuple, realNumIter = arnoldi_krypy(i,numIter)
-                self.krypy_VH_tuples.insert(i, VH_tuple)
-                self.krylov_realNumIter_tuples.insert(i,realNumIter)
+                VH_tuple, realNumIter = arnoldi_krypy(i, numIter)
+
+                self.krypy_VH_tuples.append(VH_tuple)
+                self.krylov_realNumIter_tuples.append(realNumIter)
 
                    
         if self.krypy_VH_tuples is None:
+            Timers.tic('krypy get_VH_tuples()')
             get_VH_tuples()  #  compute n (V,H) tuples
+            Timers.toc('krypy get_VH_tuples()')
 
         # check whether n realNumIter are equal  
         realNumIter_0 = self.krylov_realNumIter_tuples[0]
@@ -282,34 +261,34 @@ class TimeElapser(Freezable):
 
                 self.one_step_expH_tuples = []
                 self.cur_step_expH_tuples = [] # save for next step
-                
-                for i in range(0,self.dims):
-                    VH = self.krypy_VH_tuples[i]
-                    V  = VH[0]
-                    H  = VH[1]
+
+                for i in range(0, self.dims):
+                    V, H = self.krypy_VH_tuples[i]
                     Hstep = H*self.settings.step
                     exp_Hstep = expm(Hstep)
-                    self.one_step_expH_tuples.insert(i,exp_Hstep)
+                    self.one_step_expH_tuples.append(exp_Hstep)
+                    self.cur_step_expH_tuples.append(exp_Hstep)
+
                     V_exp_Hstep = np.dot(V,exp_Hstep)
                     time_elapse_mat[:,i] = V_exp_Hstep[:,0]
-                    
-                self.cur_step_expH_tuples = self.one_step_expH_tuples # save for next step
-                self.cur_time_elapse_mat = self.key_dir_mat*time_elapse_mat    
+
+                self.cur_time_elapse_mat = self.key_dir_mat * time_elapse_mat
                 Timers.toc('time_elapse.step first step')
 
-            else:               
+            else:
                 Timers.tic('time_elapse.step other steps')
                 for i in range(0, self.dims):
-                    VH = self.krypy_VH_tuples[i]
-                    V  = VH[0]
-                    cur_step_expH = self.cur_step_expH_tuples[i]*self.one_step_expH_tuples[i]
-                    self.cur_step_expH_tuples[i] = cur_step_expH # save for next step
-                    cur_step_V_expH = np.dot(V,cur_step_expH)
-                    time_elapse_mat[:,i] = cur_step_V_expH[:,0]
+
+                    v_mat, _ = self.krypy_VH_tuples[i]
+                    cur_step_exp_h = np.dot(self.cur_step_expH_tuples[i], self.one_step_expH_tuples[i])
+                    self.cur_step_expH_tuples[i] = cur_step_exp_h # save for next step
+                    cur_step_v_exp_h = np.dot(v_mat, cur_step_exp_h)
+                    time_elapse_mat[:, i] = cur_step_v_exp_h[:, 0]
+
                 self.cur_time_elapse_mat = self.key_dir_mat*time_elapse_mat
                 Timers.toc('time_elapse.step other steps')
-                
-                
+
+
         elif self.settings.simulation.krylov_compute_exp_Ht == SimulationSettings.KRYLOV_H_EXP:
         # matrix exponential for all steps
             cur_time = self.settings.step*self.next_step
@@ -385,4 +364,52 @@ class TimeElapser(Freezable):
             get_any_step_expH_tuples(self.next_step)
             self.cur_time_elapse_mat = GpuKrylovSim.getKeySimResult_parallel(self.key_dir_mat.shape[0],self.dims,self.settings.simulation.krylov_numIter,self.cur_step_expH_tuples)          
     
+    def step(self):
+        'perform the computation to obtain the values of the key directions the current time'
 
+        Timers.tic('time_elapse.step Total')
+
+        if self.settings.simulation.sim_mode == SimulationSettings.MATRIX_EXP:
+            self.step_matrix_exp()
+        elif self.settings.simulation.sim_mode == SimulationSettings.EXP_MULT:
+            self.step_exp_mult()
+        elif self.settings.simulation.sim_mode == SimulationSettings.KRYLOV_KRYPY:
+            self.step_krylov_krypy()
+        elif self.settings.simulation.sim_mode == SimulationSettings.KRYLOV_CUSP:
+            self.step_krylov_cusp()
+        else:
+            raise RuntimeError('Unimplemented sim_mode {}'.format(self.settings.simulation.sim_mode))
+
+        self.next_step += 1
+
+        Timers.toc('time_elapse.step Total')
+
+        # post-conditions check
+        assert isinstance(self.cur_time_elapse_mat, np.ndarray), "cur_time_elapse_mat should be an np.array"
+        assert self.cur_time_elapse_mat.shape == self.key_dir_mat.shape, \
+            "cur_time_elapse mat shape({}) should be {}".format(self.cur_time_elapse_mat.shape, self.key_dir_mat.shape)
+
+        if self.inputs == 0 or self.next_step == 1: # 0-th step input should be null
+            assert self.cur_input_effects_matrix is None
+        else:
+            assert isinstance(self.cur_input_effects_matrix, np.ndarray)
+            assert self.cur_input_effects_matrix.shape == (self.key_dir_mat.shape[0], self.inputs)
+
+        # answer accuracy check (optional)
+        if self.settings.simulation.check_answer:
+            Timers.tic('expm check answer')
+            assert self.a_matrix.shape[0] <= 1000, "settings.simulation.check_answer == True with large matrix"
+
+            t = self.settings.step * (self.next_step - 1)
+            exp = expm(self.a_matrix * t)
+            expected = np.array((self.key_dir_mat * exp).todense(), dtype=float)
+            diff = np.linalg.norm(expected - self.cur_time_elapse_mat, ord=np.inf)
+            tol = 1e-4
+
+            if diff >= tol:
+                print "\nself.cur_time_elapse_mat:\n{}\n".format(matrix_to_string(self.cur_time_elapse_mat))
+                print "expected result:\n{}\n".format(matrix_to_string(expected))
+
+                assert diff < tol, "EXPM answer was incorrect. L-inf norm of difference was {}".format(diff)
+
+            Timers.toc('expm check answer')

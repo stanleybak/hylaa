@@ -20,20 +20,21 @@ def define_ha():
     a_matrix = np.array([[0, 1], [-1, 0]], dtype=float)
     a_matrix = csc_matrix(a_matrix, dtype=float)
 
-    b_matrix = np.array([[1, 0], [0, 1]], dtype=float)
-    b_matrix = csc_matrix(b_matrix, dtype=float)
+    #b_matrix = np.array([[1, 0], [0, 1]], dtype=float)
+    #b_matrix = csc_matrix(b_matrix, dtype=float)
 
-    a_matrix, b_matrix = add_time_var(a_matrix, b_matrix)
+    #a_matrix, b_matrix = add_time_var(a_matrix, b_matrix)
 
     mode = ha.new_mode('mode')
 
-    mode.set_dynamics(a_matrix, b_matrix)
+    #mode.set_dynamics(a_matrix, b_matrix)
+    mode.set_dynamics(a_matrix)
 
     # error if x >= 7.5
-    error = ha.new_mode('error')
-    trans = ha.new_transition(mode, error)
-    guard_matrix = np.array([-1, 0, 0, 0], dtype=float)
-    trans.set_guard(csr_matrix(guard_matrix, dtype=float), np.array([-7.5], dtype=float))
+    #error = ha.new_mode('error')
+    #trans = ha.new_transition(mode, error)
+    #guard_matrix = np.array([-1, 0, 0, 0], dtype=float)
+    #trans.set_guard(csr_matrix(guard_matrix, dtype=float), np.array([-7.5], dtype=float))
 
     return ha
 
@@ -46,8 +47,9 @@ def make_init_constraints(ha):
 
     constraint_rhs = []
 
-    time_var = ha.dims - 2
-    affine_var = ha.dims - 1
+    #affine_var = ha.dims - 1
+    affine_var = 3
+    time_var = affine_var - 1
 
     for dim in xrange(ha.dims):
         if dim == 0:
@@ -126,15 +128,15 @@ def make_init_star(ha, hylaa_settings):
     '''returns a star'''
 
     init_mat, init_rhs = make_init_constraints(ha)
-    input_mat, input_rhs = make_input_constraints(ha)
+    #input_mat, input_rhs = make_input_constraints(ha)
 
-    return Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs, input_mat, input_rhs)
-    #return Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs)
+    #return Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs, input_mat, input_rhs)
+    return Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs)
 
 def define_settings():
     'get the hylaa settings object'
     plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_INTERACTIVE
+    plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
     plot_settings.xdim_dir = 0
     plot_settings.ydim_dir = 1
 
@@ -150,8 +152,12 @@ def define_settings():
     #plot_settings.label.big(size=40)
 
     settings = HylaaSettings(step=math.pi/4, max_time=math.pi, plot_settings=plot_settings)
-    settings.simulation.sim_mode = SimulationSettings.EXP_MULT
+    #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
     #settings.simulation.sim_mode = SimulationSettings.MATRIX_EXP
+
+    settings.simulation.sim_mode = SimulationSettings.KRYLOV_KRYPY
+    settings.simulation.krylov_numIter = 2
+    settings.simulation.check_answer = True
 
     return settings
 

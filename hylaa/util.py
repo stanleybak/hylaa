@@ -18,9 +18,14 @@ class Freezable(object):
     def __setattr__(self, key, value):
         if self._frozen and not hasattr(self, key):
             raise TypeError("{} does not contain attribute '{}' (object was frozen)".format(self, key))
-        
+
         object.__setattr__(self, key, value)
 
 def get_script_path(filename):
     '''get the path this script, pass in __file__ for the filename'''
     return os.path.dirname(os.path.realpath(filename))
+
+def matrix_to_string(m):
+    'get a matrix as a string'
+
+    return "\n".join([", ".join([str(val) for val in row]) for row in m])
