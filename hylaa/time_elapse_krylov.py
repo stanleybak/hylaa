@@ -41,6 +41,11 @@ def make_cur_time_elapse_mat_list(time_elapser):
     stride = settings.simulation.gpu_mem_vmatrix_mb * 1024.0 * 1024.0 / single_v_size_bytes
     stride = max(1, int(math.floor(stride)))
 
+    if stride < dims:
+        print "\nUsing stride of {} (systems has {} dims)".format(stride, dims)
+    else:
+        print "\nComputing arnoldi for all {} dims in parallel".format(dims)
+
     for start_vec in xrange(0, dims, stride):
         end_vec = min(start_vec + stride, dims)
 
@@ -50,24 +55,35 @@ def make_cur_time_elapse_mat_list(time_elapser):
         cusp_h_tuples = GpuKrylovSim.arnoldi_parallel(start_vec, end_vec - 1, krylov_iter)
         Timers.toc('krylov arnoldi_parallel')
 
+        cur_col = np.array([1.0 if c == 0 else 0.0 for c in xrange(krylov_iter)], dtype=float)
+
+        matrix_exp_list = []
+        cur_col_list = []
+
         for step in xrange(1, time_elapser.settings.num_steps + 1):
             expm_column_list = []
 
-            Timers.tic('krylov expm (first step)')
-            mat = step * step_time * cusp_h_tuples[i, :, :]
-            exp = expm(mat)
-            cur_col = exp[:, 0]
-            expm_column_list.append(cur_col)
-            Timers.toc('krylov expm (first step)')
+            Timers.tic('krylov expm')
+            for i in xrange(0, num_vec):
+                if step == 1:
+                    #Timers.tic('krylov expm (first step)')
+                    mat = step * step_time * cusp_h_tuples[i, :, :]
+                    exp = expm(mat)
+                    matrix_exp_list.append(exp)
 
-            Timers.tic('krylov expm (other steps)')
+                    cur_col = exp[:, 0]
+                    cur_col_list.append(cur_col)
 
-            for i in xrange(1, num_vec):
-                cur_col = np.dot(exp, cur_col)
-                expm_column_list.append(cur_col)
+                    expm_column_list.append(cur_col)
+                    #Timers.toc('krylov expm (first step)')
+                else:
+                    #Timers.tic('krylov expm (other steps)')
 
-            Timers.toc('krylov expm (other steps)')
+                    cur_col_list[i] = np.dot(matrix_exp_list[i], cur_col_list[i])
+                    expm_column_list.append(cur_col_list[i])
 
+                    #Timers.toc('krylov expm (other steps)')
+            Timers.toc('krylov expm')
 
             # TODO: get rid of time_elapser.key_dir_mat.shape[0] in this call
             # getKeySimResult_parallel(dirMatrix_numRows, numInitVec, numIter, expHt_tuples):
