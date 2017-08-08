@@ -33,6 +33,7 @@ static int numStepOfSim = 0;
 static int systemSize = 0;
 static int keyDirMatrix_w = 0;
 static int keyDirMatrix_h = 0;
+static int numIteration = 0;
 
 // timing shared variable
 static long lastTicUs = 0;
@@ -81,6 +82,8 @@ long toc(const char* label)
 void _loadMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries, int nonZeroCount)
 {
     tic();
+    systemSize = w;
+    
     cusp::coo_matrix<int, FLOAT_TYPE, cusp::host_memory> hostMatrix(w, h, nonZeroCount);
         
     printf("loadMatrix() called, estimated size in memory of sparse matrix: %.2f MB (%d nonzeros)\n", 
@@ -161,221 +164,16 @@ void _loadKeyDirMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double*
 
 }
 
-int _arnoldi_initVector(double* init_vector, double* result_H, int size, int numIter)
-{
-    
-    if (curMatrix == 0)
-        error("loadMatrix must be called before running arnoldi algorithm");
-    
-    // initialize input vector
-    tic();
-    cusp::array1d<FLOAT_TYPE, cusp::host_memory> hostInitVec(size);
-    
-    for (int i = 0; i < size; ++i)
-        hostInitVec[i] = init_vector[i];
-    toc("creating hostVec initial vector");
-    
-    // copy initial vector to device memory
-    tic();
-    cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> deviceInitVec(hostInitVec);
-    toc("copying initial vetocctor to device memory");
-
-    // system dimension 
-    tic();
-    int N = size;
-    toc("get system dimension");
-
-    // maximum number of Iteration of Arnoldi algorithm
-    tic();
-    int maxiter = std::min(N, numIter);
-    toc("get maximum number of iteration of arnoldi algorithm");
-
-    // create matrix H_ in device memory for iteration
-    tic();	
-    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> H_(maxiter + 1, maxiter, 0);
-    toc("create matrix H_ in device memory for iteration");
-
-    // returned matrix H after iteration -- Hm in the algorithm -- (m x m) matrix 
-    tic();
-    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> H(maxiter, maxiter); 
-    toc("create returned matrix H after iteration -- Hm in the algorithm -- (m x m) matrix ");
-
-    // create matrix V_ for iteration
-    tic();
-    V_.resize(maxiter+1);
-    for (int i = 0; i < maxiter + 1; i++)
-        V_[i].resize(N);
-    toc("create matrix V_ for iteration");
-
-    // copy initial vector into V_[0]
-    tic(); 
-    cusp::copy(deviceInitVec,V_[0]); 
-    toc("copy initial vector into V_[0]"); 
-
-    // compute beta 
-    tic();
-    FLOAT_TYPE beta = cusp::blas::nrm2(deviceInitVec);
-    toc("compute beta");
-   
-
-    // normalize initial vector
-    cusp::blas::scal(V_[0], float(1)/beta);
-
-    // iteration
-    tic();
-    int j;
-    for(j = 0; j < maxiter; j++)
-    {
-	cusp::multiply(*curMatrix, V_[j], V_[j + 1]);
-	
-	for(int i = 0; i <= j; i++)
-	{
-		H_(i,j) = cusp::blas::dot(V_[i], V_[j + 1]);
-
-		cusp::blas::axpy(V_[i], V_[j + 1], -H_(i,j));
-	}
-
-		H_(j+1,j) = cusp::blas::nrm2(V_[j + 1]);
-
-		if(H_(j+1,j) < 1e-10) break;
-
-		cusp::blas::scal(V_[j + 1], float(1) / H_(j+1,j));
-
-     }
-     toc("iteration");
-
-
-     // scale V_ with beta, i.e. beta*V_, used later for computing simulation trace
-     tic();
-     for(int i = 0; i < maxiter; i++)
-     {
-        cusp::blas::scal(V_[i],beta);
-     }
-     toc("scaling matrix V with beta");
-     
-
-     // get matrix H (m x m dimension)
-     tic(); 
-     for(int rowH=0;rowH < maxiter; rowH++)
-     for(int colH = 0; colH <maxiter; colH++)
-		H(rowH,colH) = H_(rowH,colH);
-     toc("get matrix H -- (m x m) dimension");
-
-
-     // copying H matrix to np.ndarray
-     tic();
-    
-     for (int i = 0; i < numIter; ++i )
-	    for (int k = 0; k < numIter; ++k)
-		    result_H[i*numIter + k] = H_(i,k);       
-     toc("copying H to np.ndarray");
-     
-     if(j < maxiter)
-     return j+1;
-     else return maxiter;
-}
-
-int _arnoldi_initVectorPos(int basic_initVector_pos, double* result_H, int size, int numIter)
+int _arnoldi_parallel(int numIter,double* result_H)
 {   
     if (curMatrix == 0)
         error("loadMatrix must be called before running arnoldi algorithm");
-    
-    // create initial basic vector on device memory
-    tic();
 
-    cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> deviceInitVec(size,0);
-
-    deviceInitVec[basic_initVector_pos] = 1;
-    toc("create initial basic vector on device memory based on its position, i.e. basic_initVector_pos");
-    
-    // system dimension 
-    tic();
-    int N = size;
-    toc("get system dimension");
-
-    // maximum number of Iteration of Arnoldi algorithm
-    tic();
-    int maxiter = std::min(N, numIter);
-    toc("get maximum number of iteration of arnoldi algorithm");
-
-    // create matrix H_ in device memory for iteration
-    tic();	
-    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> H_(maxiter + 1, maxiter, 0);
-    toc("create matrix H_ in device memory for iteration");
-
-    // returned matrix H after iteration -- Hm in the algorithm -- (m x m) matrix 
-    tic();
-    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> H(maxiter, maxiter); 
-    toc("create returned matrix H after iteration -- Hm in the algorithm -- (m x m) matrix ");
-
-    // create matrix V_ for iteration
-    tic();
-    V_.resize(maxiter+1);
-    for (int i = 0; i < maxiter + 1; i++)
-        V_[i].resize(N);
-    toc("create matrix V_ for iteration");
-
-    // copy initial vector into V_[0]
-    tic(); 
-    cusp::copy(deviceInitVec,V_[0]); 
-    toc("copy initial vector into V_[0]"); 
-
-    // iteration
-    tic();
-    int j;
-    printf("running Arnoldi algorithm...");
-    for(j = 0; j < maxiter; j++)
-    {
-        
-	cusp::multiply(*curMatrix, V_[j], V_[j + 1]);
-     
-	for(int i = 0; i <= j; i++)
-	{
-		H_(i,j) = cusp::blas::dot(V_[i], V_[j + 1]);
-
-		cusp::blas::axpy(V_[i], V_[j + 1], -H_(i,j));
-	}
-
-		H_(j+1,j) = cusp::blas::nrm2(V_[j + 1]);
-
-		if(H_(j+1,j) < 1e-10)  break;     
-
-		cusp::blas::scal(V_[j + 1], float(1) / H_(j+1,j));
-
-     }
-     toc("iteration time of Arnoldi algorithm");
-     
-         
-     // get matrix H (m x m dimension)
-     tic(); 
-     for(int rowH=0;rowH < maxiter; rowH++)
-	    for(int colH = 0; colH <maxiter; colH++)
-		    H(rowH,colH) = H_(rowH,colH);
-     toc("get matrix H -- (m x m) dimension");
-
-
-     // copying H matrix to np.ndarray
-     tic();
-    
-     for (int i = 0; i < numIter; ++i )
-	    for (int k = 0; k < numIter; ++k)
-		    result_H[i*numIter + k] = H_(i,k);       
-     toc("copying H to np.ndarray");
-
-     if(j < maxiter)
-     return j+1;
-     else return maxiter;
-}
-
-
-int _arnoldi_parallel(int size, int numIter,double* result_H)
-{   
-    if (curMatrix == 0)
-        error("loadMatrix must be called before running arnoldi algorithm");
+    numIteration = numIter;
     
     // maximum number of Iteration of Arnoldi algorithm
     tic();
-    int maxiter = std::min(size, numIter);
+    int maxiter = std::min(systemSize, numIter);
     toc("get maximum number of iteration of arnoldi algorithm");
 
     // create matrix V_all to contain all matrix V: V_all = [V0 V1 ...Vm]
@@ -391,31 +189,31 @@ int _arnoldi_parallel(int size, int numIter,double* result_H)
     // Vm_i is the (n x m) matrix V (obtained from Arnoldi algorithm) that corresponds to the i-th initial vector
     
     tic();
-    V_all_final.resize(size);
+    V_all_final.resize(systemSize);
     toc("create matrix V_all_final to contain all matrix Vm");    
 
     // create matrix H_all to contain all matrix H: H_all = [Hm_1 Hm_2 ...Hm_n]
     // Hm_1, Hm_2 , ... Hm_n are m x m matrices, Hm_i is conresponding to the initial vector i 
         
     tic();
-    H_all.resize(size+1);
+    H_all.resize(systemSize+1);
     toc("create matrix H_all to contain all matrix H");
 
      // create initial basic vector V_all[0] = n-dimension identity mat
     tic();
  
     cusp::array2d<FLOAT_TYPE, MEMORY_TYPE> Hmat_k(maxiter+1,maxiter,0);
-    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> Imat(size,size,0);
-    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE,cusp::column_major> Vm(size,maxiter,0);
+    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> Imat(systemSize,systemSize,0);
+    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE,cusp::column_major> Vm(systemSize,maxiter,0);
     
-    for (int i = 0; i< size; i++){
+    for (int i = 0; i< systemSize; i++){
         cusp::copy(Hmat_k,H_all[i]); // initialize H_all[i]
         cusp::copy(Vm,V_all_final[i]); // initialize V_finall_all[k]
     }
     for (int i = 0; i < maxiter+1; i++)
         cusp::copy(Imat,V_all[i]);
 
-    for (int i = 0; i < size; i++)
+    for (int i = 0; i < systemSize; i++)
         Imat(i,i) = 1;
 
     cusp::copy(Imat,V_all[0]);
@@ -434,7 +232,7 @@ int _arnoldi_parallel(int size, int numIter,double* result_H)
 
         cusp::multiply(*curMatrix,V_all[j],V_all[j+1]);
   
-        for(int k = 0; k < size; k++){
+        for(int k = 0; k < systemSize; k++){
             // compute Hm-k
           
             cusp::copy(H_all[k],Hmat_k); // Load k-th Hmat matrix         
@@ -484,7 +282,7 @@ int _arnoldi_parallel(int size, int numIter,double* result_H)
       // copying H matrix to np.ndarray
      tic();
      cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> H(maxiter+1,maxiter,0);
-     for (int k = 0; k< size; ++k){
+     for (int k = 0; k< systemSize; ++k){
          cusp::copy(H_all[k],H);
          for (int i = 0; i < maxiter; ++i){
              for(int l = 0; l < maxiter; ++l)
@@ -496,7 +294,7 @@ int _arnoldi_parallel(int size, int numIter,double* result_H)
     
      // save all matrix Vm into V_all_final
      tic();
-     for (int k = 0; k < size; k++)     
+     for (int k = 0; k < systemSize; k++)     
          for(int i = 0; i < maxiter; i++)
              cusp::blas::copy(V_all[i].column(k),V_all_final[k].column(i));
      
@@ -711,7 +509,7 @@ void _getKeySimResult(double* keySimResult)
     
 }
 
-void _getKeySimResult_parallel(int size, int numIter, double* expHt_e1_tuples, double* keySimResult_tuples)
+void _getKeySimResult_parallel(double* expHt_e1_tuples, double* keySimResult_tuples)
 {
     // get Simulation result in specific direction defined by keyDirMatrix
     // for one initial vector we have:
@@ -720,14 +518,14 @@ void _getKeySimResult_parallel(int size, int numIter, double* expHt_e1_tuples, d
 
     // we get keySimResult for all initial vectors at one time, the result is saved in keySimResult_tuples   
 
-    std::vector< cusp::array1d <FLOAT_TYPE,MEMORY_TYPE> > V_expHt_e1(size); // contain all V*exp(H*t)*e1
-     std::vector< cusp::array1d <FLOAT_TYPE, MEMORY_TYPE> > device_keySimResult_tuples(size);
+    std::vector< cusp::array1d <FLOAT_TYPE,MEMORY_TYPE> > V_expHt_e1(systemSize); // contain all V*exp(H*t)*e1
+     std::vector< cusp::array1d <FLOAT_TYPE, MEMORY_TYPE> > device_keySimResult_tuples(systemSize);
      
-     cusp::array1d<FLOAT_TYPE,MEMORY_TYPE > expHt_e1_col_i(numIter);
+     cusp::array1d<FLOAT_TYPE,MEMORY_TYPE > expHt_e1_col_i(numIteration);
      
     // Check consitency
     
-    if (keyDirMatrix_h != size) // check consistency between the key direction matrix and system dimension
+    if (keyDirMatrix_h != systemSize) // check consistency between the key direction matrix and system dimension
         {
              printf("\n The number of column of key direction matrix is inconsistent with the system dimension");
              toc("check consistency");
@@ -737,13 +535,13 @@ void _getKeySimResult_parallel(int size, int numIter, double* expHt_e1_tuples, d
         
         tic();
 
-        for (int i = 0; i < size; i++){
-            V_expHt_e1[i].resize(size);
+        for (int i = 0; i < systemSize; i++){
+            V_expHt_e1[i].resize(systemSize);
             device_keySimResult_tuples[i].resize(keyDirMatrix_w);
 
-            for(int k = 0; k < numIter; k++){
+            for(int k = 0; k < numIteration; k++){
 
-                expHt_e1_col_i[k] = expHt_e1_tuples[i*numIter + k];
+                expHt_e1_col_i[k] = expHt_e1_tuples[i*numIteration + k];
 
             }
 
@@ -760,7 +558,7 @@ void _getKeySimResult_parallel(int size, int numIter, double* expHt_e1_tuples, d
 
         tic();
         
-        for (int i = 0; i < size; i++)
+        for (int i = 0; i < systemSize; i++)
             for (int j = 0; j < keyDirMatrix_w; j++)        
                 keySimResult_tuples[i*keyDirMatrix_w + j] = device_keySimResult_tuples[i][j];
       }
@@ -813,20 +611,10 @@ void loadKeyDirMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* 
     _loadKeyDirMatrix(w, h, nonZeroRows, nonZeroCols, nonZeroEntries, nonZeroCount);
 }
     
-int arnoldi_initVector(double* init_vector, double* result_H, int size, int numIter)
-{
-   return _arnoldi_initVector(init_vector, result_H, size, numIter);
-   
-}
 
-int arnoldi_initVectorPos(int basic_initVector_pos, double* result_H, int size, int numIter)
+int arnoldi_parallel( int numIter, double* result_H)
 {
-   return _arnoldi_initVectorPos(basic_initVector_pos, result_H, size, numIter);
-}
-
-int arnoldi_parallel(int size, int numIter, double* result_H)
-{
-    return _arnoldi_parallel(size, numIter,result_H);
+    return _arnoldi_parallel(numIter,result_H);
 }
 
 
@@ -853,9 +641,9 @@ void getKeySimResult(double* keySimResult)
 }
 
     
-    void getKeySimResult_parallel(int size, int numIter, double* expHt_tuples, double* keySimResult_tuples)
+void getKeySimResult_parallel( double* expHt_tuples, double* keySimResult_tuples)    
 {
-    _getKeySimResult_parallel(size, numIter, expHt_tuples, keySimResult_tuples);   
+    _getKeySimResult_parallel( expHt_tuples, keySimResult_tuples);   
 }
 
 }
