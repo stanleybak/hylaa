@@ -43,6 +43,7 @@ class GuardOptData(Freezable):
                 "SimulationSettings.guard_mode == GUARD_DECOMPOSED requires num transition constraints to be 1"
 
             self.noinput_lpi = LpInstance(self.num_constraints, self.dims, 0)
+
             self.noinput_lpi.set_init_constraints_csr(star.init_mat_csr, star.init_rhs)
 
             if self.inputs > 0:

@@ -48,6 +48,7 @@ class SimulationSettings(Freezable):
         self.sim_mode = SimulationSettings.EXP_MULT
         self.guard_mode = SimulationSettings.GUARD_DECOMPOSED
         self.krylov_dimension = 15 # number of basis vectors of the krylov subspace (iterations of arnoldi)
+        self.gpu_mem_vmatrix_mb = 1024 # megabytes used in GPU to store V matrices
 
         self.check_answer = False # double-check the expm answer at each step (slow!)
 

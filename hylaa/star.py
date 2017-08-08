@@ -63,6 +63,7 @@ class Star(Freezable):
         ###################################
         self._plot_lpi = None # LpInstance for plotting
         self._verts = None # for plotting optimization, a cached copy of this star's projected polygon verts
+
         self._guard_opt_data = [GuardOptData(self, mode, i) for i in xrange(len(mode.transitions))]
 
         self.freeze_attrs()

@@ -449,8 +449,8 @@ class LpData
             glp_set_row_bnds(lp, i + 1, GLP_UP, 0, rhs[i]);
 
         // worst case entries in one row is dataLen
-        int rowIndices[dataLen + 1];
-        double rowData[dataLen + 1];
+        vector <int> rowIndices(dataLen + 1, 0);
+        vector <double> rowData(dataLen + 1, 0.0);
 
         for (int row = 0; row < rhsLen; ++row)
         {
@@ -462,7 +462,7 @@ class LpData
                 rowData[rowIndex++] = data[i];
             }
 
-            glp_set_mat_row(lp, row + 1, rowIndex - 1, rowIndices, rowData);
+            glp_set_mat_row(lp, row + 1, rowIndex - 1, &rowIndices[0], &rowData[0]);
         }
     }
 

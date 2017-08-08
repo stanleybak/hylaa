@@ -169,6 +169,9 @@ void _arnoldi_parallel(int start_pos, int final_pos, int numIter,double* result_
     if (curMatrix == 0)
         error("loadMatrix must be called before running arnoldi algorithm");
 
+    if (final_pos >= systemSize)
+        error("start_pos + final_pos >= systemSize (too many initial vectors)");
+
     numIteration = numIter;
     numInitVec  = final_pos - start_pos + 1; 
     

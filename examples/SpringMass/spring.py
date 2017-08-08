@@ -25,10 +25,10 @@ def define_ha():
     mode = ha.new_mode('mode')
 
     # each mass will add 2 dimensions to the system
-    num_masses = 1000
+    num_masses = 100
     #num_masses = 1000 # 10 thousand dims -> 800 MB
     #num_masses = 50000 # 100 thousand dims -> memory error (80 GB mem needed)
-    #num_mases = 500000 # one million dims (8 TB mem needed)
+    #num_masses = 500000 # one million dims (8 TB mem needed)
     a_matrix = make_a_matrix(num_masses)
     mode.set_dynamics(a_matrix)
 
@@ -73,6 +73,7 @@ def make_init_constraints(ha):
     indptr.append(len(values))
 
     init_mat = csr_matrix((values, indices, indptr), shape=(2*ha.dims, ha.dims), dtype=float)
+
     init_rhs = np.array(constraint_rhs, dtype=float)
 
     return (init_mat, init_rhs)
@@ -143,7 +144,7 @@ def define_settings(_):
 
 
     settings.simulation.sim_mode = SimulationSettings.KRYLOV_CPU
-    #settings.simulation.check_answer = True
+    settings.simulation.check_answer = True
 
     #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
 
@@ -153,8 +154,10 @@ def define_settings(_):
 
 def run_hylaa():
     'Runs hylaa with the given settings, returning the HylaaResult object.'
+
     ha = define_ha()
     settings = define_settings(ha)
+
     init = make_init_star(ha, settings)
 
     engine = HylaaEngine(ha, settings)

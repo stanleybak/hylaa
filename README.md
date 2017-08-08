@@ -22,6 +22,18 @@ sudo apt-get install make nvidia-cuda-toolkit python-numpy python-scipy
 
 (optional) sudo apt-get install emacs24
 
+### Interesting Issues ###
+C++ running out of stack space (seg fault) when allocating local array of size 4,000,000
+
+int rowIndices[dataLen + 1];
+double rowData[dataLen + 1];
+
+---
+expm 4000 times of 15x15 matrix takes a long time! ~4 seconds
+we need to do expm for each time step for each initial vector
+
+
+
 ### Profiling Results ###
 
 ## random million matrix (5 entires / col) ##

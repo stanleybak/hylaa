@@ -138,17 +138,15 @@ class GpuKrylovSim(Freezable):
         return result_H
     
     @staticmethod
-    def getKeySimResult_parallel(dirMatrix_numRows,numInitVec,numIter,expHt_tuples):
+    def getKeySimResult_parallel(dirMatrix_numRows, numInitVec, numIter, expm_column_list):
         'get Simulation Result in parallel in a specific direction defined by a sparse matrix'
 
-        expHt_parallel = np.zeros((numInitVec,numIter))
-        
-        for i in xrange(0,numInitVec):
-            expHt = expHt_tuples[i]
-            expHt_parallel[i,:] = expHt[:,0] # get exp(H*t)*e1, e1 = [1 0 ...0]^T, get first column of exp(H*t)
-                   
+        assert isinstance(expm_column_list, list)
+
+        expm_column_mat = np.concatenate(expm_column_list)
+    
         keySimResult_tuples = np.zeros((numInitVec,dirMatrix_numRows))
-        GpuKrylovSim._getKeySimResult_parallel(expHt_parallel,keySimResult_tuples)
+        GpuKrylovSim._getKeySimResult_parallel(expm_column_mat, keySimResult_tuples)
 
         keySimResult_tuples = np.transpose(keySimResult_tuples)
         
