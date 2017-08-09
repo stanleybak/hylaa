@@ -1,6 +1,7 @@
 '''
 Spring-Mass Example in Hylaa-Continuous
 
+
 This is a spring-mass system, where there are two springs next to each mass, and the sides are rigid.
 See simulate.py for a visualization.
 
@@ -26,7 +27,7 @@ def define_ha():
 
     # each mass will add 2 dimensions to the system
     num_masses = 200
-    #num_masses = 500 # 1 thousand dims    
+    #num_masses = 500 # 1 thousand dims
     #num_masses = 5000 # 10 thousand dims -> 800 MB
     #num_masses = 50000 # 100 thousand dims -> memory error (80 GB mem needed)
     #num_masses = 500000 # one million dims (8 TB mem needed)

@@ -48,23 +48,23 @@ class GpuKrylovSim(Freezable):
             GpuKrylovSim._load_matrix_Cpu = lib.loadMatrixCpu
             GpuKrylovSim._load_matrix_Cpu.restype = None
             GpuKrylovSim._load_matrix_Cpu.argtypes = [ctypes.c_int, ctypes.c_int,
-                                                  ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
-                                                  ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
-                                                  ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
-                                                  ctypes.c_int]
+                                                      ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
+                                                      ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
+                                                      ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                                      ctypes.c_int]
 
             GpuKrylovSim._load_keyMatrix_Cpu = lib.loadKeyDirMatrixCpu
             GpuKrylovSim._load_keyMatrix_Cpu.restype = None
             GpuKrylovSim._load_keyMatrix_Cpu.argtypes = [ctypes.c_int, ctypes.c_int,
-                                                     ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
-                                                     ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
-                                                     ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
-                                                     ctypes.c_int]
-                                             
+                                                         ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
+                                                         ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
+                                                         ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                                         ctypes.c_int]
+
             GpuKrylovSim._arnoldi_parallel_Cpu = lib.arnoldiParallelCpu
             GpuKrylovSim._arnoldi_parallel_Cpu.restype = None
             GpuKrylovSim._arnoldi_parallel_Cpu.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int,
-                                                       ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
+                                                           ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
             
             GpuKrylovSim._getKeySimResult_parallel_Cpu = lib.getKeySimResultParallelCpu
             GpuKrylovSim._getKeySimResult_parallel_Cpu.restype = None
