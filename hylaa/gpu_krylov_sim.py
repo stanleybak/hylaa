@@ -24,7 +24,8 @@ class GpuKrylovSim(Freezable):
 
     # static member (library)
     _lib = None
-    _lib_path = os.path.join(get_script_path(__file__), 'gpu_interface', 'cusp_krylov_sim_CPU.so') # default setting
+    _lib_path = os.path.join(get_script_path(__file__), 'gpu_interface', 'cusp_krylov.so') # default setting
+    _use_gpu = False # default setting using CPU
 
     def __init__(self):
         raise RuntimeError('GpuKrylovSim is a static class and should not be instantiated')
@@ -44,31 +45,58 @@ class GpuKrylovSim(Freezable):
             GpuKrylovSim._choose_GPU_or_CPU.restype = None
             GpuKrylovSim._choose_GPU_or_CPU.argtypes = [ctypes.c_char_p]
 
-            GpuKrylovSim._load_matrix = lib.loadMatrix
-            GpuKrylovSim._load_matrix.restype = None
-            GpuKrylovSim._load_matrix.argtypes = [ctypes.c_int, ctypes.c_int,
+            GpuKrylovSim._load_matrix_Cpu = lib.loadMatrixCpu
+            GpuKrylovSim._load_matrix_Cpu.restype = None
+            GpuKrylovSim._load_matrix_Cpu.argtypes = [ctypes.c_int, ctypes.c_int,
                                                   ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
                                                   ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
                                                   ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
                                                   ctypes.c_int]
 
-            GpuKrylovSim._load_keyMatrix = lib.loadKeyDirMatrix
-            GpuKrylovSim._load_keyMatrix.restype = None
-            GpuKrylovSim._load_keyMatrix.argtypes = [ctypes.c_int, ctypes.c_int,
+            GpuKrylovSim._load_keyMatrix_Cpu = lib.loadKeyDirMatrixCpu
+            GpuKrylovSim._load_keyMatrix_Cpu.restype = None
+            GpuKrylovSim._load_keyMatrix_Cpu.argtypes = [ctypes.c_int, ctypes.c_int,
                                                      ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
                                                      ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
                                                      ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
                                                      ctypes.c_int]
                                              
-            GpuKrylovSim._arnoldi_parallel = lib.arnoldi_parallel
-            GpuKrylovSim._arnoldi_parallel.restype = None
-            GpuKrylovSim._arnoldi_parallel.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int,
+            GpuKrylovSim._arnoldi_parallel_Cpu = lib.arnoldiParallelCpu
+            GpuKrylovSim._arnoldi_parallel_Cpu.restype = None
+            GpuKrylovSim._arnoldi_parallel_Cpu.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int,
                                                        ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
             
-            GpuKrylovSim._getKeySimResult_parallel = lib.getKeySimResult_parallel
-            GpuKrylovSim._getKeySimResult_parallel.restype = None
-            GpuKrylovSim._getKeySimResult_parallel.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), 
+            GpuKrylovSim._getKeySimResult_parallel_Cpu = lib.getKeySimResultParallelCpu
+            GpuKrylovSim._getKeySimResult_parallel_Cpu.restype = None
+            GpuKrylovSim._getKeySimResult_parallel_Cpu.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), 
                                                                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
+            
+            GpuKrylovSim._load_matrix_Gpu = lib.loadMatrixGpu
+            GpuKrylovSim._load_matrix_Gpu.restype = None
+            GpuKrylovSim._load_matrix_Gpu.argtypes = [ctypes.c_int, ctypes.c_int,
+                                                  ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
+                                                  ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
+                                                  ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                                  ctypes.c_int]
+
+            GpuKrylovSim._load_keyMatrix_Gpu = lib.loadKeyDirMatrixGpu
+            GpuKrylovSim._load_keyMatrix_Gpu.restype = None
+            GpuKrylovSim._load_keyMatrix_Gpu.argtypes = [ctypes.c_int, ctypes.c_int,
+                                                     ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
+                                                     ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
+                                                     ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                                     ctypes.c_int]
+                                             
+            GpuKrylovSim._arnoldi_parallel_Gpu = lib.arnoldiParallelGpu
+            GpuKrylovSim._arnoldi_parallel_Gpu.restype = None
+            GpuKrylovSim._arnoldi_parallel_Gpu.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                                       ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
+            
+            GpuKrylovSim._getKeySimResult_parallel_Gpu = lib.getKeySimResultParallelGpu
+            GpuKrylovSim._getKeySimResult_parallel_Gpu.restype = None
+            GpuKrylovSim._getKeySimResult_parallel_Gpu.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), 
+                                                               ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
+
             
         if GpuKrylovSim._has_gpu() == 0:
             raise RuntimeError("GPU not detected.")
@@ -79,11 +107,11 @@ class GpuKrylovSim(Freezable):
 
         if not use_gpu:
             msg = 'CPU'
-            GpuKrylovSim._lib_path = os.path.join(get_script_path(__file__), 'gpu_interface', 'cusp_krylov_sim_CPU.so')
+            GpuKrylovSim._use_gpu = False
         elif use_gpu:
             msg = 'GPU'
-            GpuKrylovSim._lib_path = os.path.join(get_script_path(__file__), 'gpu_interface', 'cusp_krylov_sim_GPU.so')
-
+            GpuKrylovSim._use_gpu = True
+            
         GpuKrylovSim._init_static()
         GpuKrylovSim._choose_GPU_or_CPU(msg)
         
@@ -98,7 +126,11 @@ class GpuKrylovSim(Freezable):
         rows, cols = sparse_matrix.nonzero()
         entries = sparse_matrix[rows, cols].A1.copy()
 
-        GpuKrylovSim._load_matrix(w, h, rows, cols, entries, len(rows))
+        if not GpuKrylovSim._use_gpu:
+            GpuKrylovSim._load_matrix_Cpu(w, h, rows, cols, entries, len(rows))
+        else:
+            GpuKrylovSim._load_matrix_Gpu(w, h, rows, cols, entries, len(rows))
+
         GpuKrylovSim._is_loaded = True
         GpuKrylovSim._loaded_w = w
         GpuKrylovSim._loaded_h = h
@@ -114,7 +146,11 @@ class GpuKrylovSim(Freezable):
         rows, cols = keyDirSparseMatrix.nonzero()
         entries = keyDirSparseMatrix[rows, cols].A1.copy()
 
-        GpuKrylovSim._load_keyMatrix(w, h, rows, cols, entries, len(rows))
+        if not GpuKrylovSim._use_gpu:
+            GpuKrylovSim._load_keyMatrix_Cpu(w, h, rows, cols, entries, len(rows))
+        else:
+            GpuKrylovSim._load_keyMatrix_Gpu(w, h, rows, cols, entries, len(rows))
+
         GpuKrylovSim._is_keyLoaded = True
         GpuKrylovSim._keyLoaded_w = w
         GpuKrylovSim._keyLoaded_h = h
@@ -131,8 +167,11 @@ class GpuKrylovSim(Freezable):
 
         result_H = np.zeros((numInitVec*numIter*numIter))
 
-        GpuKrylovSim._arnoldi_parallel(start_pos,final_pos, numIter, result_H)
-        
+        if not GpuKrylovSim._use_gpu:
+            GpuKrylovSim._arnoldi_parallel_Cpu(start_pos,final_pos, numIter, result_H)
+        else:
+            GpuKrylovSim._arnoldi_parallel_Gpu(start_pos,final_pos, numIter, result_H)
+            
         result_H.shape = (numInitVec, numIter, numIter)
 
         return result_H
@@ -146,7 +185,11 @@ class GpuKrylovSim(Freezable):
         expm_column_mat = np.concatenate(expm_column_list)
     
         keySimResult_tuples = np.zeros((numInitVec,dirMatrix_numRows))
-        GpuKrylovSim._getKeySimResult_parallel(expm_column_mat, keySimResult_tuples)
+        if not GpuKrylovSim._use_gpu:
+            GpuKrylovSim._getKeySimResult_parallel_Cpu(expm_column_mat, keySimResult_tuples)
+
+        else:
+            GpuKrylovSim._getKeySimResult_parallel_Gpu(expm_column_mat, keySimResult_tuples)
 
         keySimResult_tuples = np.transpose(keySimResult_tuples)
         
