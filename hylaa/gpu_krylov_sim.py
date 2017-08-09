@@ -97,9 +97,10 @@ class GpuKrylovSim(Freezable):
             GpuKrylovSim._getKeySimResult_parallel_Gpu.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), 
                                                                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
 
-            
-        if GpuKrylovSim._has_gpu() == 0:
-            raise RuntimeError("GPU not detected.")
+
+        if GpuKrylovSim._use_gpu:
+            if GpuKrylovSim._has_gpu() == 0:
+                raise RuntimeError("GPU not detected.")
 
     @staticmethod
     def set_use_gpu(use_gpu):
