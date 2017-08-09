@@ -23,8 +23,10 @@ def make_cur_time_elapse_mat_list(time_elapser):
 
     # Choose using CPU (host_memory) or GPU (device_memory)
     use_gpu = settings.simulation.sim_mode is SimulationSettings.KRYLOV_GPU
+
+    print "Initializing GPU"
     GpuKrylovSim.set_use_gpu(use_gpu)
-   
+    print "Initialized\n"
 
     rv = []
     rv.append(np.array(key_dir_mat.todense(), dtype=float)) # step zero

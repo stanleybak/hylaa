@@ -18,9 +18,19 @@ Installation libraries on amazon ec2 gpu instance (p2.xlarge) using image Ubuntu
 
 sudo apt-get update
 
-sudo apt-get install make nvidia-cuda-toolkit python-numpy python-scipy
+sudo apt-get install make nvidia-cuda-toolkit python-numpy python-scipy python-matplotlib
 
-(optional) sudo apt-get install emacs24
+(optional) sudo apt-get install emacs24 pylint
+
+This a custom C++ interface to GLPK for use in Hylaa that you need to compile. See hylaa/glpk-interface/README for details on how to do this. Essentially, you need to get glpk-4.60 (which may be newer than what comes with Ubuntu), and then run make (the Makefile is in that folder). This will produce hylaa_glpk.so.
+
+Setup the PYTHONPATH environment variable. A Hylaa model is just python code, which imports the hylaa files, creates a model definition and settings objects, and then calls a function with these objects. The hylaa folder contains the python package. You should add the parent folder of the hylaa folder to your PYTHONPATH environment variable. On Linux, this can be done by updating your ~/.profile or ~/.bashrc to include:
+
+export PYTHONPATH="${PYTHONPATH}:/path/to/parent/of/hylaa/folder"
+
+After you do this, you may need to restart the terminal (for ~/.bashrc) or log out and log back in (for ~/.profile), or otherwise ensure the environment variable is updated (do echo $PYTHONPATH to see if it includes the correct folder). Once this is done, you should be able to run the example models.
+
+(Optional) For .mp4 video export, ffmpeg is used. Make sure you can run the command ffmpeg from a terminal for this to work.
 
 ### Interesting Issues ###
 C++ running out of stack space (seg fault) when allocating local array of size 4,000,000

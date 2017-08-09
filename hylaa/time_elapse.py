@@ -14,6 +14,7 @@ from hylaa.hybrid_automaton import LinearAutomatonMode
 from hylaa.containers import HylaaSettings, PlotSettings, SimulationSettings
 from hylaa.timerutil import Timers
 from hylaa.time_elapse_krylov import make_cur_time_elapse_mat_list
+from hylaa.gpu_krylov_sim import GpuKrylovSim
 
 class TimeElapser(Freezable):
     'Object which computes the time-elapse function for a single mode at multiples of the time step'
@@ -43,6 +44,9 @@ class TimeElapser(Freezable):
         self.cur_time_elapse_mat_list = None
 
         self.freeze_attrs()
+
+    def __del__(self):
+        GpuKrylovSim.reset()
 
     def _extract_key_directions(self, mode):
         'extract the key directions for lp solving'

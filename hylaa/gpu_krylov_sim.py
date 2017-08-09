@@ -10,14 +10,13 @@ import ctypes
 import os
 import time
 import random
-from krypy.utils import arnoldi
 
 import numpy as np
 from numpy.ctypeslib import ndpointer
-from scipy.sparse import csr_matrix, coo_matrix, rand
+from scipy.sparse import csr_matrix, coo_matrix
 from scipy.linalg import expm
 from hylaa.util import Freezable, get_script_path
-from hylaa.containers import SimulationSettings
+from hylaa.timerutil import Timers
 
 class GpuKrylovSim(Freezable):
     'GPU-enhanced matrix-vector multiplication using the python/c interface'
@@ -40,6 +39,10 @@ class GpuKrylovSim(Freezable):
             GpuKrylovSim._has_gpu = lib.hasGpu
             GpuKrylovSim._has_gpu.restype = ctypes.c_int
             GpuKrylovSim._has_gpu.argtypes = None
+
+            GpuKrylovSim._reset = lib.reset
+            GpuKrylovSim._reset.restype = None
+            GpuKrylovSim._reset.argtypes = None
 
             GpuKrylovSim._choose_GPU_or_CPU = lib.choose_GPU_or_CPU
             GpuKrylovSim._choose_GPU_or_CPU.restype = None
@@ -97,10 +100,21 @@ class GpuKrylovSim(Freezable):
             GpuKrylovSim._getKeySimResult_parallel_Gpu.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), 
                                                                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
 
+            if GpuKrylovSim._use_gpu:
+                Timers.tic('Initialize GPU Overhead')
+                
+                if GpuKrylovSim._has_gpu() == 0:
+                    raise RuntimeError("GPU not detected.")
+                
+                Timers.toc('Initialize GPU Overhead')
 
-        if GpuKrylovSim._use_gpu:
-            if GpuKrylovSim._has_gpu() == 0:
-                raise RuntimeError("GPU not detected.")
+    @staticmethod
+    def reset():
+        'reset gpu / cpu variables used in c code'
+
+        GpuKrylovSim._init_static()
+        GpuKrylovSim._reset()
+       
 
     @staticmethod
     def set_use_gpu(use_gpu):

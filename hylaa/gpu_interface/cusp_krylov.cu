@@ -71,6 +71,20 @@ long toc(const char* label)
     return dif;
 }
 
+// returns the us elaspsed
+long toc()
+{
+    struct timeval now;
+
+    if(gettimeofday( &now, 0))
+        error("gettimeofday");
+
+    long nowUs = 1000000 * now.tv_sec + now.tv_usec;
+    long dif = nowUs - lastTicUs;
+
+    return dif;
+}
+
 template <class FLOAT_TYPE, class MEMORY_TYPE>
 class CuspData
 {
@@ -79,9 +93,7 @@ public:
     // shared matrix in device memory
     cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE>* curMatrix;
     std::vector< cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> > V_;
-    std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE, cusp::column_major> > V_all; // use to compute n- Vm matrix in parallel
     std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE, cusp::column_major> > V_all_final; // contain all n- Vm matrix
-    std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> > H_all; // contain all n Hm matrix
 
 
     std::vector< cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> > device_sim_result;
@@ -106,6 +118,11 @@ public:
 
     ~CuspData()
     {
+        reset();
+    }
+
+    void reset()
+    {
         if (keyDirMatrix != 0)
         {
             delete keyDirMatrix;
@@ -117,17 +134,23 @@ public:
             delete curMatrix;
             curMatrix = 0;
         }
+
+        // empty all variables
+        V_.clear();
+        V_all_final.clear();
+
+        device_sim_result.clear();
+        device_keySimResult_tuples.clear(); // contain all keySimResult
     }
 
     void _loadMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries, int nonZeroCount)
     {
-        tic();
         systemSize = w;
 
         cusp::coo_matrix<int, FLOAT_TYPE, cusp::host_memory> hostMatrix(w, h, nonZeroCount);
 
-        printf("loadMatrix() called, estimated size in memory of sparse matrix: %.2f MB (%d nonzeros)\n", 
-            nonZeroCount * (8 + 4 + 4) / 1024.0 / 1024.0, nonZeroCount);
+        //printf("loadMatrix() called, estimated size in memory of sparse matrix: %.2f MB (%d nonzeros)\n", 
+        //    nonZeroCount * (8 + 4 + 4) / 1024.0 / 1024.0, nonZeroCount);
 
         // initialize matrix entries on host
         int index = 0;
@@ -143,9 +166,6 @@ public:
             hostMatrix.values[index++] = val;
         }
 
-        toc("creating host coo matrix");
-
-        tic();
         if (curMatrix != 0)
         {
             delete curMatrix;
@@ -156,8 +176,6 @@ public:
 
         if (curMatrix == 0)
             error("allocation of heap-based csr matrix in device memory returned nullptr");
-
-        toc("copying matrix to device memory");
     }
 
     void _loadKeyDirMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries, int nonZeroCount)
@@ -169,8 +187,8 @@ public:
 
         cusp::coo_matrix<int, FLOAT_TYPE, cusp::host_memory> hostKeyMatrix(w, h, nonZeroCount);
 
-        printf("loadKeyDirMatrix() called, estimated size in memory of sparse matrix: %.2f MB (%d nonzeros)\n", 
-            nonZeroCount * (8 + 4 + 4) / 1024.0 / 1024.0, nonZeroCount);
+        //printf("loadKeyDirMatrix() called, estimated size in memory of sparse matrix: %.2f MB (%d nonzeros)\n", 
+        //    nonZeroCount * (8 + 4 + 4) / 1024.0 / 1024.0, nonZeroCount);
 
         // initialize key matrix entries on host
         int index = 0;
@@ -216,36 +234,29 @@ public:
         numInitVec  = final_pos - start_pos + 1; 
 
         // maximum number of Iteration of Arnoldi algorithm
-        tic();
         int maxiter = std::min(systemSize, numIter);
-        toc("get maximum number of iteration of arnoldi algorithm");
 
         // create matrix V_all to contain all matrix V: V_all = [V0 V1 ...Vm]
         // V0 = [V0_1 ... V0_n] is (n x n) matrix containing all initial vectors, n = numInitVec 
         // Vi = [Vi_1 ... Vi_n] is (n x n) matrix containing all i-th vectors in step i of Arnoldi algorithm
 
-        tic();
+        std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE, cusp::column_major> > V_all; // use to compute n- Vm matrix in parallel
         V_all.resize(maxiter+1);
-        toc("create matrix V_all to contain all matrix Vm");
 
         // n = numInitVec
         // create matrix V_all_final to contain all matrix V; V_all_final = [Vm_0 Vm_2 ...Vm_(n-1)]
         // Vm_0 is the matrix (n x m) V (obtained from Arnoldi algorithm) that corresponds to the 0-th initial vector  
         // Vm_i is the (n x m) matrix V (obtained from Arnoldi algorithm) that corresponds to the i-th initial vector
 
-        tic();
         V_all_final.resize(numInitVec);
-        toc("create matrix V_all_final to contain all matrix Vm");    
 
         // create matrix H_all to contain all matrix H: H_all = [Hm_1 Hm_2 ...Hm_n]
         // Hm_1, Hm_2 , ... Hm_n are m x m matrices, Hm_i is conresponding to the initial vector i 
 
-        tic();
+        std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> > H_all; // contain all n Hm matrix
         H_all.resize(numInitVec+1);
-        toc("create matrix H_all to contain all matrix H");
 
          // create initial basic vector V_all[0] = n-dimension identity mat
-        tic();
 
         cusp::array2d<FLOAT_TYPE, MEMORY_TYPE> Hmat_k(maxiter+1,maxiter,0);
         cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> Imat(systemSize,numInitVec,0);
@@ -266,32 +277,44 @@ public:
 
         cusp::copy(Imat,V_all[0]);
 
-        toc("create all initial basic vector on device memory V_all[0]");
-
         // Arnoldi parallel algorithm iteration
 
-        tic();
         int j;
         int mem = 0; // memorize where break condition happens
 
         printf("running Arnoldi Algorithm in parallel ...\n");
+        long multiplyTime = 0;
+        long dotTime = 0;
+        long axpyTime = 0;
+        long ioTime = 0;
 
         for (j = 0; j < maxiter; j++){
 
-            cusp::multiply(*curMatrix,V_all[j],V_all[j+1]);
+            tic();
+            // multiply(a, b, c) -> c = a * b
+            cusp::multiply(*curMatrix, V_all[j], V_all[j+1]);
+            multiplyTime += toc("arnoldi multiply");   
 
             for(int k = 0; k < numInitVec; k++){
                 // compute Hm-k
 
-                cusp::copy(H_all[k],Hmat_k); // Load k-th Hmat matrix         
+                tic();
+                cusp::copy(H_all[k], Hmat_k); // Load k-th Hmat matrix
+                ioTime += toc();
 
+                
                 for(int i = 0; i <= j; i++){
 
+                    tic();
                     Hmat_k(i,j) = cusp::blas::dot(V_all[i].column(k), V_all[j+1].column(k));
+                    dotTime += toc();
 
+                    tic();
+                    // axpy(a, b, c) computes b += c*a
                     cusp::blas::axpy(V_all[i].column(k), V_all[j+1].column(k), -Hmat_k(i,j));
-
+                    axpyTime += toc();
                 }
+
 
                 Hmat_k(j+1,j) = cusp::blas::nrm2(V_all[j+1].column(k));
 
@@ -319,19 +342,24 @@ public:
                 }
                 else  cusp::blas::scal(V_all[j+1].column(k), float(1) / Hmat_k(j+1,j));           
 
+                tic();
                 cusp::copy(Hmat_k,H_all[k]); // update the k-th Hmatrix           
-
+                ioTime += toc();
             }
 
         }
 
-        toc("iteration time of parallel Arnoldi algorithm");   
+        printf("Multiply time: %.3f seconds\n", multiplyTime / 1000.0 / 1000.0);
+        printf("Dot time: %.3f seconds\n", dotTime / 1000.0 / 1000.0);
+        printf("Axpy time: %.3f seconds\n", axpyTime / 1000.0 / 1000.0);
+        printf("I/O time: %.3f seconds\n", ioTime / 1000.0 / 1000.0);
 
           // copying H matrix to np.ndarray
          tic();
-         cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> H(maxiter+1,maxiter,0);
+         
+         cusp::array2d<FLOAT_TYPE, cusp::host_memory> H(maxiter+1,maxiter,0);
          for (int k = 0; k< numInitVec; ++k){
-             cusp::copy(H_all[k],H);
+             cusp::copy(H_all[k], H);
              for (int i = 0; i < maxiter; ++i){
                  for(int l = 0; l < maxiter; ++l)
                      result_H[i*maxiter + l + k*maxiter*maxiter] = H(i,l);
@@ -427,6 +455,12 @@ int hasGpu()
 void choose_GPU_or_CPU(char* msg)
 {
     printf("void choose_GPU_or_CPU(char* msg) unimplemented!\n");
+}
+
+void reset()
+{
+    cuspDataCpu.reset();
+    cuspDataGpu.reset();
 }
 
 ////// CPU Version
