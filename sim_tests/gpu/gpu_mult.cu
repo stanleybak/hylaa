@@ -148,7 +148,11 @@ void _dot2(double* matrix_a, double* matrix_b, int num_rows, int num_cols, doubl
 
     tic();
     // convert device_matrix_b to hybrid format for efficient multiplication
+
     cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE> device_matrix_b_sparse(device_matrix_b);
+    toc("convert matrix b to sparse");
+
+    tic();
     cusp::array1d<FLOAT_TYPE, MEMORY_TYPE>  device_result(num_cols,0);
     cusp::multiply(device_matrix_b_sparse, device_matrix_a,device_result);
     //cusp::multiply(device_matrix_b, device_matrix_a,device_result);

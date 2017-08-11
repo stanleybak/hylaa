@@ -23,7 +23,7 @@ class GpuMult(object):
 
     # static member (library)
     _lib = None
-    _use_gpu = False
+    _use_gpu = True
 
     def __init__(self):
         raise RuntimeError('GpuMult is a static class and should not be instantiated')
@@ -287,7 +287,7 @@ def test():
 def test_dot_product():
     'test dot product of two matrices using two different approaches'
 
-    num_rows = 3
+    num_rows = 1000000
     num_cols = 2
     matrix_a = np.random.rand(num_rows, num_cols)
     matrix_b = np.random.rand(num_rows, num_cols)
