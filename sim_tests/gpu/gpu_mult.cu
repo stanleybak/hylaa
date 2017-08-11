@@ -14,6 +14,9 @@
 #include <sys/time.h>
 
 typedef double FLOAT_TYPE;
+typedef cusp::device_memory MEMORY_TYPE;
+//typedef cusp::host_memory MEMORY_TYPE;
+
 // shared matrix in device memory
 static cusp::hyb_matrix<int, FLOAT_TYPE, cusp::device_memory>* curMatrix = 0;
 
@@ -99,8 +102,8 @@ void _dot1(double* matrix_a, double* matrix_b, int num_rows, int num_cols, doubl
 
     //copy matrix A to device memory
     tic();
-    cusp::array2d<FLOAT_TYPE, cusp::host_memory,cusp::column_major> device_matrix_a(num_rows,num_cols,0);
-    cusp::array2d<FLOAT_TYPE,cusp::host_memory,cusp::column_major> device_matrix_b(num_rows,num_cols,0);
+    cusp::array2d<FLOAT_TYPE, MEMORY_TYPE,cusp::column_major> device_matrix_a(num_rows,num_cols,0);
+    cusp::array2d<FLOAT_TYPE, MEMORY_TYPE,cusp::column_major> device_matrix_b(num_rows,num_cols,0);
 
     for (int i = 0; i < num_rows; i++)
         for(int j = 0; j < num_cols; j++) {
@@ -127,8 +130,8 @@ void _dot2(double* matrix_a, double* matrix_b, int num_rows, int num_cols, doubl
     //copy matrix A to device memory
     tic();
     int size = num_rows*num_cols; 
-    cusp::array1d<FLOAT_TYPE,cusp::host_memory> device_matrix_a(size,0);
-    cusp::array2d<FLOAT_TYPE,cusp::host_memory> device_matrix_b(num_cols,size,0);
+    cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> device_matrix_a(size,0);
+    cusp::array2d<FLOAT_TYPE, MEMORY_TYPE> device_matrix_b(num_cols,size,0);
     
 
     for(int i = 0; i < num_cols; i++)
@@ -145,10 +148,10 @@ void _dot2(double* matrix_a, double* matrix_b, int num_rows, int num_cols, doubl
 
     tic();
     // convert device_matrix_b to hybrid format for efficient multiplication
-    // cusp::hyb_matrix<int, FLOAT_TYPE, cusp::host_memory> device_matrix_b_sparse(device_matrix_b);
-    cusp::array1d<FLOAT_TYPE,cusp::host_memory>  device_result(num_cols,0);
-    // cusp::multiply(device_matrix_b_sparse, device_matrix_a,device_result);
-    cusp::multiply(device_matrix_b, device_matrix_a,device_result);
+    cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE> device_matrix_b_sparse(device_matrix_b);
+    cusp::array1d<FLOAT_TYPE, MEMORY_TYPE>  device_result(num_cols,0);
+    cusp::multiply(device_matrix_b_sparse, device_matrix_a,device_result);
+    //cusp::multiply(device_matrix_b, device_matrix_a,device_result);
     
     for (int i = 0; i < num_cols; i++)
         result[i] = device_result[i];
