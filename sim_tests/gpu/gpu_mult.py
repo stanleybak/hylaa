@@ -23,6 +23,7 @@ class GpuMult(object):
 
     # static member (library)
     _lib = None
+    _use_gpu = False
 
     def __init__(self):
         raise RuntimeError('GpuMult is a static class and should not be instantiated')
@@ -53,8 +54,22 @@ class GpuMult(object):
                                           ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
                                           ctypes.c_int]
 
-        if GpuMult._has_gpu() == 0:
-            raise RuntimeError("GPU not detected.")
+            GpuMult._dot1 = lib.dot1
+            GpuMult._dot1.restype = None
+            GpuMult._dot1.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                      ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                      ctypes.c_int, ctypes.c_int,
+                                      ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
+
+            GpuMult._dot2 = lib.dot2
+            GpuMult._dot2.restype = None
+            GpuMult._dot2.argtypes = [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                      ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+                                      ctypes.c_int, ctypes.c_int,
+                                      ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
+        if GpuMult._use_gpu:
+            if GpuMult._has_gpu() == 0:
+                raise RuntimeError("GPU not detected.")
 
     @staticmethod
     def load_matrix(sparse_matrix):
@@ -85,6 +100,46 @@ class GpuMult(object):
         result = np.zeros((GpuMult._loaded_h,))
 
         GpuMult._multiply(vector, result, GpuMult._loaded_h)
+
+        return result
+
+    @staticmethod
+    def dot_product1(matrix_a, matrix_b):
+        'compute dot product of two matrices using standard command  cusp::blas::dot'
+
+        assert isinstance(matrix_a, np.ndarray)
+        assert isinstance(matrix_b, np.ndarray)
+        GpuMult._init_static()
+
+        num_rows = matrix_a.shape[0]
+        num_cols = matrix_a.shape[1]
+
+
+        if (num_rows != matrix_b.shape[0]) or (num_cols != matrix_b.shape[1]):
+            raise "matrix a and matrix b has inconsitent dimension"
+        else:
+            result = np.zeros((num_cols,))
+            GpuMult._dot1(matrix_a, matrix_b, num_rows, num_cols, result)
+
+        return result
+
+    @staticmethod
+    def dot_product2(matrix_a, matrix_b):
+        'compute dot product of two matrices using matrix multiplication'
+
+        assert isinstance(matrix_a, np.ndarray)
+        assert isinstance(matrix_b, np.ndarray)
+        GpuMult._init_static()
+
+        num_rows = matrix_a.shape[0]
+        num_cols = matrix_a.shape[1]
+
+
+        if (num_rows != matrix_b.shape[0]) or (num_cols != matrix_b.shape[1]):
+            raise "matrix a and matrix b has inconsitent dimension"
+        else:
+            result = np.zeros((num_cols,))
+            GpuMult._dot2(matrix_a, matrix_b, num_rows, num_cols, result)
 
         return result
 
@@ -229,7 +284,23 @@ def test():
 
     print "norm of difference: {}".format(np.linalg.norm(res_gpu - res_sparse))
 
+def test_dot_product():
+    'test dot product of two matrices using two different approaches'
+
+    num_rows = 3
+    num_cols = 2
+    matrix_a = np.random.rand(num_rows, num_cols)
+    matrix_b = np.random.rand(num_rows, num_cols)
+
+    print "\nmatrix a: \n{}".format(matrix_a)
+    print "\nmatrix b: \n{}".format(matrix_b)
+
+    dot_result1 = GpuMult.dot_product1(matrix_a, matrix_b)
+    dot_result2 = GpuMult.dot_product2(matrix_a, matrix_b)
+
+    print "\ndot production result of first method using cusp::blas::dot: \n{}".format(dot_result1)
+    print "\ndot production result of second method using matrix multiplication: \n{}".format(dot_result2)
 
 if __name__ == '__main__':
-    test()
-
+    #test()
+    test_dot_product()

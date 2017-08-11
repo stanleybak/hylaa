@@ -9,6 +9,7 @@
 #include <cusp/csr_matrix.h>
 #include <cusp/hyb_matrix.h>
 #include <cusp/multiply.h>
+#include <cusp/print.h>
 
 #include <sys/time.h>
 
@@ -93,6 +94,69 @@ void _loadMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZe
     nonZeros = nonZeroCount;
 }
 
+void _dot1(double* matrix_a, double* matrix_b, int num_rows, int num_cols, double* result)
+{   // compute dot product of two matrices dot(matrix_a,matrix_b) using cusp::blas::dot
+
+    //copy matrix A to device memory
+    tic();
+    cusp::array2d<FLOAT_TYPE, cusp::host_memory,cusp::column_major> device_matrix_a(num_rows,num_cols,0);
+    cusp::array2d<FLOAT_TYPE,cusp::host_memory,cusp::column_major> device_matrix_b(num_rows,num_cols,0);
+
+    for (int i = 0; i < num_rows; i++)
+        for(int j = 0; j < num_cols; j++) {
+            device_matrix_a(i,j) = matrix_a[i*num_cols + j];
+            device_matrix_b(i,j) = matrix_b[i*num_cols + j];
+        }
+   
+    toc("copy matrices to device memory");
+
+    // compute dot product of two matrices using cusp::blas::dot
+    tic();
+    for (int j = 0; j < num_cols; j++)
+        result[j] = cusp::blas::dot(device_matrix_a.column(j),device_matrix_b.column(j));
+
+    toc("compute the dot product of two matrices using cusp::blas::dot");
+    
+}
+
+
+void _dot2(double* matrix_a, double* matrix_b, int num_rows, int num_cols, double* result)
+{
+    // compute dot product of two matrices (matrix_a, matrix_b) using matrix multiplication
+
+    //copy matrix A to device memory
+    tic();
+    int size = num_rows*num_cols; 
+    cusp::array1d<FLOAT_TYPE,cusp::host_memory> device_matrix_a(size,0);
+    cusp::array2d<FLOAT_TYPE,cusp::host_memory> device_matrix_b(num_cols,size,0);
+    
+
+    for(int i = 0; i < num_cols; i++)
+        for (int j = 0; j < num_rows; j++){
+            device_matrix_a[i*num_rows + j] = matrix_a[j*num_cols + i];
+            device_matrix_b(i,i*num_rows + j) = matrix_b[j*num_cols + i];
+        }
+      
+    toc("copy matrices to device memory");
+
+    
+
+    // compute dot product of two matrices dot(matrix_a,matrix_b) using matrix multiplication
+
+    tic();
+    // convert device_matrix_b to hybrid format for efficient multiplication
+    // cusp::hyb_matrix<int, FLOAT_TYPE, cusp::host_memory> device_matrix_b_sparse(device_matrix_b);
+    cusp::array1d<FLOAT_TYPE,cusp::host_memory>  device_result(num_cols,0);
+    // cusp::multiply(device_matrix_b_sparse, device_matrix_a,device_result);
+    cusp::multiply(device_matrix_b, device_matrix_a,device_result);
+    
+    for (int i = 0; i < num_cols; i++)
+        result[i] = device_result[i];
+
+    toc("compute dot product of two matrices using matrix multiplication");
+       
+}
+
 void _multiply(double* vector, double* result, int size)
 {
     if (curMatrix == 0)
@@ -173,5 +237,19 @@ void multiply(double* vector, double* result, int size)\
 {
     _multiply(vector, result, size);
 }
+
+ void dot1(double* matrix_a, double* matrix_b, int num_rows, int num_cols, double* result)
+{
+
+    _dot1(matrix_a, matrix_b, num_rows, num_cols, result);
+}
+
+    
+ void dot2(double* matrix_a, double* matrix_b, int num_rows, int num_cols, double* result)
+{
+
+    _dot2(matrix_a, matrix_b, num_rows, num_cols, result);
+}
+
 
 }

@@ -222,7 +222,7 @@ public:
 
     }
 
-    void _arnoldi_parallel(int start_pos, int final_pos, int numIter,double* result_H)
+    void _arnoldi_parallel2(int start_pos, int final_pos, int numIter,double* result_H)
     {   
         if (curMatrix == 0)
             error("loadMatrix must be called before running arnoldi algorithm");
@@ -378,6 +378,134 @@ public:
 
     }
 
+    
+    void _arnoldi_parallel(int start_pos, int final_pos, int numIter,double* result_H)
+    {   
+        if (curMatrix == 0)
+            error("loadMatrix must be called before running arnoldi algorithm");
+
+        if (final_pos >= systemSize)
+            error("start_pos + final_pos >= systemSize (too many initial vectors)");
+
+        numIteration = numIter;
+        numInitVec  = final_pos - start_pos + 1; 
+
+        // maximum number of Iteration of Arnoldi algorithm
+        int maxiter = std::min(systemSize, numIter);
+
+        // create matrix V_all to contain all matrix V: V_all = [V0 V1 ...Vm]
+        // V0 = [V0_1 ... V0_n] is (n x n) matrix containing all initial vectors, n = numInitVec 
+        // Vi = [Vi_1 ... Vi_n] is (n x n) matrix containing all i-th vectors in step i of Arnoldi algorithm
+
+        std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE, cusp::column_major> > V_all; // use to compute n- Vm matrix in parallel
+        V_all.resize(maxiter+1);
+
+        // n = numInitVec
+        // create matrix V_all_final to contain all matrix V; V_all_final = [Vm_0 Vm_2 ...Vm_(n-1)]
+        // Vm_0 is the matrix (n x m) V (obtained from Arnoldi algorithm) that corresponds to the 0-th initial vector  
+        // Vm_i is the (n x m) matrix V (obtained from Arnoldi algorithm) that corresponds to the i-th initial vector
+
+        V_all_final.resize(numInitVec);
+
+        // create matrix H_all to contain all matrix H: H_all = [Hm_1 Hm_2 ...Hm_n]
+        // Hm_1, Hm_2 , ... Hm_n are m x m matrices, Hm_i is conresponding to the initial vector i 
+
+        std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE,cusp::row_major> > H_all; // contain all n Hm matrix
+        H_all.resize(maxiter);
+
+         // create initial basic vector V_all[0] = n-dimension identity mat
+
+        cusp::array2d<FLOAT_TYPE, MEMORY_TYPE> Hmat_k(maxiter+1,numInitVec,0);
+        cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> Imat(systemSize,numInitVec,0);
+        cusp::array2d<FLOAT_TYPE,MEMORY_TYPE,cusp::column_major> Vm(systemSize,maxiter,0);
+        
+        for (int i = 0; i< numInitVec; i++){
+            cusp::copy(Hmat_k,H_all[i]); // initialize H_all[i]
+            cusp::copy(Vm,V_all_final[i]); // initialize V_finall_all[k]
+        }
+        for (int i = 0; i < maxiter+1; i++)
+            cusp::copy(Imat,V_all[i]);
+
+        int pos = start_pos;
+        for (int i = 0; i < numInitVec; i++){
+            Imat(pos,i) = 1;
+            pos = pos+1;
+        }
+        
+        cusp::copy(Imat,V_all[0]);
+
+        // Arnoldi parallel algorithm iteration
+
+        int j;
+        int mem = 0; // memorize where break condition happens
+
+        printf("running Arnoldi Algorithm in parallel ...\n");
+        long multiplyTime = 0;
+        long dotTime = 0;
+        long axpyTime = 0;
+        long ioTime = 0;
+
+        cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> nrm_array(numInitVec);
+        cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> dot_array(numInitVec); 
+        for (j = 0; j < maxiter; j++){
+
+            tic();
+            // multiply(a, b, c) -> c = a * b
+             cusp::multiply(*curMatrix, V_all[j], V_all[j+1]);
+             multiplyTime += toc("arnoldi multiply");   
+                
+              for(int i = 0; i <= j; i++){
+                  // cusp::blas::dot(V_all[i], V_all[j+1]);
+                    // cusp::blas::copy(dot_array, H_all[j].row(i));
+                }
+
+            //    for(int i = 0; i <= j; i++){
+                    // cusp::blas::axpy(V_all[i], V_all[j+1], H_all[j]);                   
+            //    }
+                
+                // nrm_array = cusp::blas::nrm2(V_all[j+1]); 
+
+            //    for (int k = 0; k < numInitVec; k++){
+            //        if (nrm_array[k] < 1e-10){
+            //            nrm_array[k] = 0;
+                        //cusp::blas::scal(V_all[j+1].column(k), float(0));
+            //        }
+                    // else cusp::blas::scal(V_all[j+1].column(k), float(1) / nrm_array[k]);
+            
+            //    }
+
+                //  cusp::blas::copy(nrm_array, H_all[j].row(j+1));
+
+        }
+
+        // copy and save matrice H and V
+
+         // copying H matrix to np.ndarray
+
+                
+        // cusp::array2d<FLOAT_TYPE, cusp::host_memory,cusp::column_major> H(maxiter+1,maxiter,0);
+
+        // for (int k = 0; k < numInitVec; ++k)
+        //     for(int i = 0; i < maxiter; ++i){
+                 // cusp::blas::copy(H_all[k].column(i),H.column(i));
+        //         for(int l = 0; l < maxiter; ++l)                     
+                     //    result_H[i*maxiter + l + k*maxiter*maxiter] = H(i,l);
+        //     }
+           
+        
+         // save all matrix Vm into V_all_final
+         //tic();
+         //for (int k = 0; k < numInitVec; k++)     
+         //    for(int i = 0; i < maxiter; i++)
+                 //   cusp::blas::copy(V_all[i].column(k),V_all_final[k].column(i));
+
+        //toc("save all matrix Vm into V_all_final");
+
+         
+        
+
+    }
+
 
     void _getKeySimResult_parallel(double* expHt_e1_tuples, double* keySimResult_tuples)
     {
@@ -478,6 +606,7 @@ void arnoldiParallelCpu( int start_pos, int final_pos, int numIter, double* resu
 {
     cuspDataCpu._arnoldi_parallel(start_pos, final_pos, numIter,result_H);
 }
+
     
 void getKeySimResultParallelCpu( double* expHt_tuples, double* keySimResult_tuples)    
 {
