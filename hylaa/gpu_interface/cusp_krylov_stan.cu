@@ -11,7 +11,7 @@
 #include <cusp/hyb_matrix.h>
 #include <cusp/multiply.h>
 #include <cusp/print.h>
-#include <cusp/blas.h>
+#include <cusp/blas/blas.h>
 #include <sys/time.h>
 
 // timing shared variable
@@ -92,9 +92,8 @@ public:
     //static int choose_GPU = 0; // choose_GPU == 1 means that user choose to use GPU, if not, using CPU
     // shared matrix in device memory
     cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE>* curMatrix;
-    std::vector< cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> > V_;
     std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE, cusp::column_major> > V_all_final; // contain all n- Vm matrix
-
+    std::vector< cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> > V_;
 
     std::vector< cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> > device_sim_result;
     std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> >  device_keySimResult_tuples; // contain all keySimResult
