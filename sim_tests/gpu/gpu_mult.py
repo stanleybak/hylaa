@@ -67,9 +67,9 @@ class GpuMult(object):
                                       ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
                                       ctypes.c_int, ctypes.c_int,
                                       ndpointer(ctypes.c_double, flags="C_CONTIGUOUS")]
-        if GpuMult._use_gpu:
-            if GpuMult._has_gpu() == 0:
-                raise RuntimeError("GPU not detected.")
+            if GpuMult._use_gpu:
+                if GpuMult._has_gpu() == 0:
+                    raise RuntimeError("GPU not detected.")
 
     @staticmethod
     def load_matrix(sparse_matrix):
@@ -115,8 +115,8 @@ class GpuMult(object):
         num_cols = matrix_a.shape[1]
 
 
-        if (num_rows != matrix_b.shape[0]) or (num_cols != matrix_b.shape[1]):
-            raise "matrix a and matrix b has inconsitent dimension"
+        if num_cols != matrix_b.shape[1]:
+            raise RuntimeError("matrix a and matrix b has inconsitent dimension")
         else:
             result = np.zeros((num_cols,))
             GpuMult._dot1(matrix_a, matrix_b, num_rows, num_cols, result)
@@ -134,9 +134,8 @@ class GpuMult(object):
         num_rows = matrix_a.shape[0]
         num_cols = matrix_a.shape[1]
 
-
-        if (num_rows != matrix_b.shape[0]) or (num_cols != matrix_b.shape[1]):
-            raise "matrix a and matrix b has inconsitent dimension"
+        if num_cols != matrix_b.shape[1]:
+            raise RuntimeError("matrix a and matrix b has inconsitent dimension")
         else:
             result = np.zeros((num_cols,))
             GpuMult._dot2(matrix_a, matrix_b, num_rows, num_cols, result)
@@ -288,15 +287,14 @@ def test_dot_product():
     'test dot product of two matrices using two different approaches'
 
     num_rows = 1000000
-    num_cols = 2
-    matrix_a = np.random.rand(num_rows, num_cols)
-    matrix_b = np.random.rand(num_rows, num_cols)
+    num_cols = 10
+    matrix = np.random.rand(num_rows, num_cols)
+    vector = np.random.rand(1, num_cols)
 
-    print "\nmatrix a: \n{}".format(matrix_a)
-    print "\nmatrix b: \n{}".format(matrix_b)
+    print "data initialized"
 
-    dot_result1 = GpuMult.dot_product1(matrix_a, matrix_b)
-    dot_result2 = GpuMult.dot_product2(matrix_a, matrix_b)
+    dot_result1 = GpuMult.dot_product1(matrix, vector)
+    dot_result2 = GpuMult.dot_product2(matrix, vector)
 
     print "\ndot production result of first method using cusp::blas::dot: \n{}".format(dot_result1)
     print "\ndot production result of second method using matrix multiplication: \n{}".format(dot_result2)

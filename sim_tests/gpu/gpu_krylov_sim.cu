@@ -11,7 +11,7 @@
 #include <cusp/hyb_matrix.h>
 #include <cusp/multiply.h>
 #include <cusp/print.h>
-#include <cusp/blas.h>
+#include <cusp/blas/blas.h>
 #include <sys/time.h>
 
 typedef double FLOAT_TYPE;

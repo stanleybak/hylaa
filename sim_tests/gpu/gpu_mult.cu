@@ -8,6 +8,7 @@
 #include <cusp/coo_matrix.h>
 #include <cusp/csr_matrix.h>
 #include <cusp/hyb_matrix.h>
+#include <cusp/ell_matrix.h>
 #include <cusp/multiply.h>
 #include <cusp/print.h>
 
@@ -97,71 +98,129 @@ void _loadMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZe
     nonZeros = nonZeroCount;
 }
 
-void _dot1(double* matrix_a, double* matrix_b, int num_rows, int num_cols, double* result)
-{   // compute dot product of two matrices dot(matrix_a,matrix_b) using cusp::blas::dot
+void _dot1(double* matrix, double* vector, int num_rows, int num_cols, double* result)
+{
+    // compute dot product of two matrices dot(matrix_a,matrix_b) using cusp::blas::dot
 
-    //copy matrix A to device memory
-    tic();
-    cusp::array2d<FLOAT_TYPE, MEMORY_TYPE,cusp::column_major> device_matrix_a(num_rows,num_cols,0);
-    cusp::array2d<FLOAT_TYPE, MEMORY_TYPE,cusp::column_major> device_matrix_b(num_rows,num_cols,0);
+    const char* events[] =
+    {
+        "copy matrices to device memory",
+        "dot product",
+        "copy result to cpu",
+    };
+
+    const int NUM_EVENTS = sizeof(events) / sizeof(events[0]);
+
+    cudaEvent_t startEvents[NUM_EVENTS];
+    cudaEvent_t stopEvents[NUM_EVENTS];
+    int curEvent = 0;
+
+    for (int i = 0; i < NUM_EVENTS; ++i)
+    {
+        cudaEventCreate(&startEvents[i]);
+        cudaEventCreate(&stopEvents[i]);
+    }
+    
+
+    //tic();
+    cudaEventRecord(startEvents[curEvent]);
+
+    cusp::array2d<FLOAT_TYPE, cusp::host_memory> host_matrix(num_rows, num_cols, 0);
+    cusp::array1d<FLOAT_TYPE, cusp::host_memory> host_vector(num_cols, 0);
 
     for (int i = 0; i < num_rows; i++)
+    {
         for(int j = 0; j < num_cols; j++) {
-            device_matrix_a(i,j) = matrix_a[i*num_cols + j];
-            device_matrix_b(i,j) = matrix_b[i*num_cols + j];
+            host_matrix(i,j) = matrix[i*num_cols + j];
         }
-   
-    toc("copy matrices to device memory");
+    }
+
+    for(int j = 0; j < num_cols; j++) {
+            host_vector[j] = vector[j];
+        }
+
+    cusp::array2d<FLOAT_TYPE, MEMORY_TYPE> device_matrix(host_matrix);
+    cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> device_vector(host_vector);
+    cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> device_result(num_cols, 0);
+
+    cudaEventRecord(stopEvents[curEvent++]);
+    //toc("copy matrices to device memory");
 
     // compute dot product of two matrices using cusp::blas::dot
-    tic();
+    //tic();
+    cudaEventRecord(startEvents[curEvent]);
+    
     for (int j = 0; j < num_cols; j++)
-        result[j] = cusp::blas::dot(device_matrix_a.column(j),device_matrix_b.column(j));
+    {
+        device_result[j] = cusp::blas::dot(device_matrix.row(j), device_vector);
+    }
 
-    toc("compute the dot product of two matrices using cusp::blas::dot");
+    cudaEventRecord(stopEvents[curEvent++]);
+    //toc("compute the dot product of two matrices using cusp::blas::dot");
+
+    // compute dot product of two matrices using cusp::blas::dot
+    //tic();
+    cudaEventRecord(startEvents[curEvent]);
+    
+    for (int j = 0; j < num_cols; j++)
+    {
+        result[j] = device_result[j];
+    }
+
+    cudaEventRecord(stopEvents[curEvent++]);
+    //toc("copy result back to cpu memory");
+
+    for (int i = 0; i < NUM_EVENTS; ++i)
+    {
+      cudaEventSynchronize(stopEvents[i]);
+      
+      float milliseconds = 0;
+      cudaEventElapsedTime(&milliseconds, startEvents[i], stopEvents[i]);
+      printf("%s: %f ms\n", events[i], milliseconds);
+    }
     
 }
 
 
-void _dot2(double* matrix_a, double* matrix_b, int num_rows, int num_cols, double* result)
+void _dot2(double* matrix, double* vector, int num_rows, int num_cols, double* result)
 {
-    // compute dot product of two matrices (matrix_a, matrix_b) using matrix multiplication
-
-    //copy matrix A to device memory
     tic();
-    int size = num_rows*num_cols; 
-    cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> device_matrix_a(size,0);
-    cusp::array2d<FLOAT_TYPE, MEMORY_TYPE> device_matrix_b(num_cols,size,0);
-    
+    cusp::array2d<FLOAT_TYPE, MEMORY_TYPE> device_matrix(num_rows, num_cols, 0);
+    cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> device_vector(num_cols, 0);
+    cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> device_result(num_cols, 0);
 
-    for(int i = 0; i < num_cols; i++)
-        for (int j = 0; j < num_rows; j++){
-            device_matrix_a[i*num_rows + j] = matrix_a[j*num_cols + i];
-            device_matrix_b(i,i*num_rows + j) = matrix_b[j*num_cols + i];
+    for (int i = 0; i < num_rows; i++)
+    {
+        for(int j = 0; j < num_cols; j++) {
+            device_matrix(i, j) = matrix[i*num_cols + j];
         }
-      
-    toc("copy matrices to device memory");
+    }
 
+    for(int j = 0; j < num_cols; j++) {
+            device_vector[j] = vector[j];
+        }
     
+    toc("copy matrices to device memory");
 
     // compute dot product of two matrices dot(matrix_a,matrix_b) using matrix multiplication
 
     tic();
     // convert device_matrix_b to hybrid format for efficient multiplication
-
-    cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE> device_matrix_b_sparse(device_matrix_b);
+    cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE> device_sparse_matrix(device_matrix);
     toc("convert matrix b to sparse");
 
-    tic();
-    cusp::array1d<FLOAT_TYPE, MEMORY_TYPE>  device_result(num_cols,0);
-    cusp::multiply(device_matrix_b_sparse, device_matrix_a,device_result);
-    //cusp::multiply(device_matrix_b, device_matrix_a,device_result);
-    
-    for (int i = 0; i < num_cols; i++)
-        result[i] = device_result[i];
+    cusp::multiply(device_sparse_matrix, device_vector, device_result);
 
     toc("compute dot product of two matrices using matrix multiplication");
-       
+
+    tic();
+    
+    for (int j = 0; j < num_cols; j++)
+    {
+        result[j] = device_result[j];
+    }
+    
+    toc("copy result back to cpu memory");
 }
 
 void _multiply(double* vector, double* result, int size)
@@ -206,9 +265,96 @@ void _multiply(double* vector, double* result, int size)
     toc("copying to np.ndarray");
 }
 
+int getSPcores(cudaDeviceProp devProp)
+{
+    int cores = 0;
+    int mp = devProp.multiProcessorCount;
+    switch (devProp.major){
+    case 2: // Fermi
+        if (devProp.minor == 1) cores = mp * 48;
+        else cores = mp * 32;
+        break;
+    case 3: // Kepler
+        cores = mp * 192;
+        break;
+    case 5: // Maxwell
+        cores = mp * 128;
+        break;
+    case 6: // Pascal
+        if (devProp.minor == 1) cores = mp * 128;
+        else if (devProp.minor == 0) cores = mp * 64;
+        else printf("Unknown device type\n");
+        break;
+    default:
+        printf("Unknown device type\n");
+        break;
+    }
+    return cores;
+}
+
+void printGpuStats()
+{
+    size_t free_byte;
+    size_t total_byte;
+    cudaError_t cuda_status = cudaMemGetInfo( &free_byte, &total_byte ) ;
+
+    if ( cudaSuccess != cuda_status ){
+
+        printf("Error: cudaMemGetInfo failed - %s \n", cudaGetErrorString(cuda_status) );
+        exit(1);
+    }
+
+    double free_db = (double)free_byte ;
+    double total_db = (double)total_byte ;
+    double used_db = total_db - free_db ;
+
+    printf("GPU memory usage: used = %f, free = %f MB, total = %f MB\n",
+           used_db/1024.0/1024.0, free_db/1024.0/1024.0, total_db/1024.0/1024.0);
+
+
+    //////////// print device info
+    
+    int nDevices;
+
+    cudaGetDeviceCount(&nDevices);
+    
+    for (int i = 0; i < nDevices; i++)
+    {
+        cudaDeviceProp prop;
+        cudaGetDeviceProperties(&prop, i);
+        
+        printf("Device Number: %d\n", i);
+      
+        printf("  Device name: %s\n", prop.name);
+        printf("  Memory Clock Rate (KHz): %d\n",
+               prop.memoryClockRate);
+        printf("  Memory Bus Width (bits): %d\n",
+               prop.memoryBusWidth);
+        printf("  Peak Memory Bandwidth (GB/s): %f\n\n",
+               2.0*prop.memoryClockRate*(prop.memoryBusWidth/8)/1.0e6);
+
+        printf("  Major revision number:         %d\n", prop.major);
+        printf("  Minor revision number:         %d\n", prop.minor);
+        printf("  Total global memory:           %d", (int)(prop.totalGlobalMem / 1024 / 1024));
+        printf(" MB\n");
+        printf("  Number of multiprocessors:     %d\n", prop.multiProcessorCount);
+        printf("  Total amount of shared memory per block: %d\n", (int)prop.sharedMemPerBlock);
+        printf("  Total registers per block:     %d\n", prop.regsPerBlock);
+        printf("  Warp size:                     %d\n", prop.warpSize);
+        printf("  Maximum memory pitch:          %d\n", (int)prop.memPitch);
+        printf("  Total amount of constant memory: %d\n", (int)prop.totalConstMem);
+
+        printf("  SPCores: %d\n", getSPcores(prop));
+        printf("\n");
+    }
+}
+
 int _hasGpu()
 {
     int rv = 1;
+
+    // show memory usage of GPU
+    printGpuStats();
     
     try
     {
@@ -245,17 +391,17 @@ void multiply(double* vector, double* result, int size)\
     _multiply(vector, result, size);
 }
 
- void dot1(double* matrix_a, double* matrix_b, int num_rows, int num_cols, double* result)
+ void dot1(double* matrix, double* vector, int num_rows, int num_cols, double* result)
 {
 
-    _dot1(matrix_a, matrix_b, num_rows, num_cols, result);
+    _dot1(matrix, vector, num_rows, num_cols, result);
 }
 
     
- void dot2(double* matrix_a, double* matrix_b, int num_rows, int num_cols, double* result)
+ void dot2(double* matrix, double* vector, int num_rows, int num_cols, double* result)
 {
 
-    _dot2(matrix_a, matrix_b, num_rows, num_cols, result);
+    _dot2(matrix, vector, num_rows, num_cols, result);
 }
 
 
