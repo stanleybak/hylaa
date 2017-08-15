@@ -23,27 +23,6 @@ void error(const char* msg)
     exit(1);             
 }
 
-int _hasGpu()
-{
-    int rv = 1;
-
-    try
-    {
-        cusp::array1d<double, cusp::host_memory> hostVec(10);
-
-        for (int i = 0; i < 10; ++i)
-            hostVec[i] = 0;
-
-        cusp::array1d<double, cusp::device_memory> deviceVec(hostVec);
-    }
-    catch(std::exception &e)
-    {
-        printf("hasGpu() Failed: %s\n", e.what());
-        rv = 0;
-    }
-
-    return rv;
-}
 
 void tic()
 {
@@ -83,6 +62,38 @@ long toc()
     long dif = nowUs - lastTicUs;
 
     return dif;
+}
+
+int _hasGpu()
+{
+    int rv = 1;
+
+    tic();
+
+    try
+    {
+        cusp::array1d<double, cusp::host_memory> hostVec(10);
+
+        for (int i = 0; i < 10; ++i)
+            hostVec[i] = 0;
+
+        cusp::array1d<double, cusp::device_memory> deviceVec(hostVec);
+    }
+    catch(std::exception &e)
+    {
+        printf("hasGpu() Failed: %s\n", e.what());
+        rv = 0;
+    }
+
+    long us = toc();
+
+    if (us > 500 * 1000)
+    {
+        printf("Long GPU Initialization time (%d ms). Have you run 'nvidia-smi -pm 1' to enable persistant GPU mode?\n",
+               (int)(us / 1000));
+    }
+
+    return rv;
 }
 
 template <class FLOAT_TYPE, class MEMORY_TYPE>

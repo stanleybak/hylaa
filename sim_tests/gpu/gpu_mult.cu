@@ -92,7 +92,7 @@ void _loadMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZe
     curMatrix = new (std::nothrow) cusp::hyb_matrix<int, FLOAT_TYPE,cusp::device_memory>(hostMatrix);
         
     if (curMatrix == 0)
-        error("allocation of heap-based csr matrix in device memory returned nullptr");
+        error("allocation of gpu-based csr matrix returned nullptr (out of GPU memory?)");
         
     toc("copying matrix to device memory");
     nonZeros = nonZeroCount;
@@ -125,19 +125,32 @@ void _dot1(double* matrix, double* vector, int num_rows, int num_cols, double* r
     //tic();
     cudaEventRecord(startEvents[curEvent]);
 
-    cusp::array2d<FLOAT_TYPE, cusp::host_memory> host_matrix(num_rows, num_cols, 0);
-    cusp::array1d<FLOAT_TYPE, cusp::host_memory> host_vector(num_cols, 0);
+    cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view host_matrix_1d(matrix, matrix + num_rows * num_cols);
+
+    cusp::array2d<FLOAT_TYPE, cusp::host_memory, cusp::row_major>::view host_matrix = make_array2d_view(
+        num_rows, num_cols, num_cols, host_matrix_1d, cusp::row_major);
+
+    //make_array2d_view(size_t num_rows, size_t num_cols, size_t pitch, const cusp::array1d_view<Iterator>& values, Orientation)
+
+    /*cusp::array2d<FLOAT_TYPE, cusp::host_memory> host_matrix(num_rows, num_cols, 0);
 
     for (int i = 0; i < num_rows; i++)
     {
         for(int j = 0; j < num_cols; j++) {
             host_matrix(i,j) = matrix[i*num_cols + j];
         }
-    }
+        }*/
 
-    for(int j = 0; j < num_cols; j++) {
-            host_vector[j] = vector[j];
+    /*cusp::array1d<FLOAT_TYPE, cusp::host_memory> host_vector(num_cols, 0);
+
+    for(int j = 0; j < num_cols; j++) 
+    {
+        host_vector[j] = vector[j];
         }
+    */
+
+    //RawArrayIterator raw(vector, num_cols);
+    cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view host_vector(vector, vector + num_cols);
 
     cudaEventRecord(stopEvents[curEvent++]);
     cudaEventRecord(startEvents[curEvent]);

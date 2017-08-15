@@ -119,7 +119,12 @@ class GpuMult(object):
             raise RuntimeError("matrix a and matrix b has inconsitent dimension")
         else:
             result = np.zeros((num_cols,))
+
+            start = time.time()
             GpuMult._dot1(matrix_a, matrix_b, num_rows, num_cols, result)
+            diff = time.time() - start
+            print "dot1 total time = {:.2f}ms".format(diff * 1000.0)
+
 
         return result
 
