@@ -2,9 +2,9 @@
 
 CC=nvcc
 
-CFLAGS_SHARED = --compiler-options '-O2 -fPIC -Wall -Werror' -O2 -D_FORCE_INLINES -Icusplibrary-0.5.1 -shared
+CFLAGS_SHARED = --compiler-options '-O2 -fPIC -Wall -Werror' -O2 -D_FORCE_INLINES -Icusplibrary-0.4.0 -shared
 
-all:  cusp_krylov_tran.so cusp_krylov_stan.so
+all: cusp_krylov_stan.so
 
 cusp_krylov_tran.so: cusp_krylov_tran.cu
 	$(CC) $(CFLAGS_SHARED) cusp_krylov_tran.cu -o cusp_krylov_tran.so

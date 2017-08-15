@@ -104,6 +104,7 @@ void _dot1(double* matrix, double* vector, int num_rows, int num_cols, double* r
 
     const char* events[] =
     {
+        "copy to cpus array2d",
         "copy matrices to device memory",
         "dot product",
         "copy result to cpu",
@@ -120,7 +121,6 @@ void _dot1(double* matrix, double* vector, int num_rows, int num_cols, double* r
         cudaEventCreate(&startEvents[i]);
         cudaEventCreate(&stopEvents[i]);
     }
-    
 
     //tic();
     cudaEventRecord(startEvents[curEvent]);
@@ -139,6 +139,9 @@ void _dot1(double* matrix, double* vector, int num_rows, int num_cols, double* r
             host_vector[j] = vector[j];
         }
 
+    cudaEventRecord(stopEvents[curEvent++]);
+    cudaEventRecord(startEvents[curEvent]);
+
     cusp::array2d<FLOAT_TYPE, MEMORY_TYPE> device_matrix(host_matrix);
     cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> device_vector(host_vector);
     cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> device_result(num_cols, 0);
@@ -155,6 +158,7 @@ void _dot1(double* matrix, double* vector, int num_rows, int num_cols, double* r
         device_result[j] = cusp::blas::dot(device_matrix.row(j), device_vector);
     }
 
+    int flopEvent = curEvent;
     cudaEventRecord(stopEvents[curEvent++]);
     //toc("compute the dot product of two matrices using cusp::blas::dot");
 
@@ -177,50 +181,95 @@ void _dot1(double* matrix, double* vector, int num_rows, int num_cols, double* r
       float milliseconds = 0;
       cudaEventElapsedTime(&milliseconds, startEvents[i], stopEvents[i]);
       printf("%s: %f ms\n", events[i], milliseconds);
-    }
-    
+
+      if (i == flopEvent)
+      {
+        // compute number of flops during flopEvent
+        int opCount = 2 * num_rows * num_cols;
+        float mflops = opCount / milliseconds / 1000.0;
+
+        printf("MFLOPS: %f\n", mflops);
+      }
+    } 
 }
 
 
 void _dot2(double* matrix, double* vector, int num_rows, int num_cols, double* result)
 {
-    tic();
-    cusp::array2d<FLOAT_TYPE, MEMORY_TYPE> device_matrix(num_rows, num_cols, 0);
-    cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> device_vector(num_cols, 0);
-    cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> device_result(num_cols, 0);
+    const char* events[] =
+    {
+        "copy matrices to device memory",
+        "convert to sparse matrix",
+        "matrix-vector multiplication",
+        "copy result to cpu",
+    };
+
+    const int NUM_EVENTS = sizeof(events) / sizeof(events[0]);
+
+    cudaEvent_t startEvents[NUM_EVENTS];
+    cudaEvent_t stopEvents[NUM_EVENTS];
+    int curEvent = 0;
+
+    for (int i = 0; i < NUM_EVENTS; ++i)
+    {
+        cudaEventCreate(&startEvents[i]);
+        cudaEventCreate(&stopEvents[i]);
+    }
+    
+    cudaEventRecord(startEvents[curEvent]);
+
+    cusp::array2d<FLOAT_TYPE, cusp::host_memory> host_matrix(num_rows, num_cols, 0);
+    cusp::array1d<FLOAT_TYPE, cusp::host_memory> host_vector(num_cols, 0);
 
     for (int i = 0; i < num_rows; i++)
     {
         for(int j = 0; j < num_cols; j++) {
-            device_matrix(i, j) = matrix[i*num_cols + j];
+            host_matrix(i,j) = matrix[i*num_cols + j];
         }
     }
 
     for(int j = 0; j < num_cols; j++) {
-            device_vector[j] = vector[j];
+            host_vector[j] = vector[j];
         }
-    
-    toc("copy matrices to device memory");
 
+    cusp::array2d<FLOAT_TYPE, MEMORY_TYPE> device_matrix(host_matrix);
+    cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> device_vector(host_vector);
+    cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> device_result(num_cols, 0);
+
+    cudaEventRecord(stopEvents[curEvent++]); 
     // compute dot product of two matrices dot(matrix_a,matrix_b) using matrix multiplication
 
-    tic();
+    cudaEventRecord(startEvents[curEvent]);
     // convert device_matrix_b to hybrid format for efficient multiplication
-    cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE> device_sparse_matrix(device_matrix);
-    toc("convert matrix b to sparse");
+    cusp::ell_matrix<int, FLOAT_TYPE, MEMORY_TYPE> device_sparse_matrix(device_matrix);
+
+    cudaEventRecord(stopEvents[curEvent++]);
+
+    cudaEventRecord(startEvents[curEvent]);
 
     cusp::multiply(device_sparse_matrix, device_vector, device_result);
 
-    toc("compute dot product of two matrices using matrix multiplication");
-
-    tic();
+    cudaEventRecord(stopEvents[curEvent++]);
+    
+    cudaEventRecord(startEvents[curEvent]);
     
     for (int j = 0; j < num_cols; j++)
     {
         result[j] = device_result[j];
     }
+
+    cudaEventRecord(stopEvents[curEvent++]);
+
     
-    toc("copy result back to cpu memory");
+    printf("\n");
+    for (int i = 0; i < NUM_EVENTS; ++i)
+    {
+      cudaEventSynchronize(stopEvents[i]);
+      
+      float milliseconds = 0;
+      cudaEventElapsedTime(&milliseconds, startEvents[i], stopEvents[i]);
+      printf("%s: %f ms\n", events[i], milliseconds);
+    }
 }
 
 void _multiply(double* vector, double* result, int size)
@@ -296,6 +345,7 @@ void printGpuStats()
 {
     size_t free_byte;
     size_t total_byte;
+    
     cudaError_t cuda_status = cudaMemGetInfo( &free_byte, &total_byte ) ;
 
     if ( cudaSuccess != cuda_status ){
@@ -353,8 +403,10 @@ int _hasGpu()
 {
     int rv = 1;
 
+    printf("has gpu started\n");
+
     // show memory usage of GPU
-    printGpuStats();
+    //printGpuStats();
     
     try
     {
@@ -370,6 +422,8 @@ int _hasGpu()
         printf("hasGpu() Failed: %s\n", e.what());
         rv = 0;
     }
+
+    printf("has gpu ended\n");
     
     return rv;
 }

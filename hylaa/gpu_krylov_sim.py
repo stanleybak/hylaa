@@ -23,7 +23,7 @@ class GpuKrylovSim(Freezable):
 
     # static member (library)
     _lib = None
-    _lib_path = os.path.join(get_script_path(__file__), 'gpu_interface', 'cusp_krylov.so') # default setting
+    _lib_path = os.path.join(get_script_path(__file__), 'gpu_interface', 'cusp_krylov_stan.so') # default setting
     _use_gpu = False # default setting using CPU
 
     def __init__(self):
