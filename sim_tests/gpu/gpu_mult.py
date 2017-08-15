@@ -291,18 +291,41 @@ def test():
 def test_dot_product():
     'test dot product of two matrices using two different approaches'
 
-    num_rows = 1000000
-    num_cols = 10
+    num_rows = 100000000
+    num_cols = 13
     matrix = np.random.rand(num_rows, num_cols)
     vector = np.random.rand(1, num_cols)
 
-    print "data initialized"
+    print "data initialized. matrix size = {:.3f}GB".format(matrix.nbytes / 1024.0 / 1024.0 / 1024.0)
 
     dot_result1 = GpuMult.dot_product1(matrix, vector)
-    dot_result2 = GpuMult.dot_product2(matrix, vector)
+    #dot_result2 = GpuMult.dot_product2(matrix, vector)
 
-    print "\ndot production result of first method using cusp::blas::dot: \n{}".format(dot_result1)
-    print "\ndot production result of second method using matrix multiplication: \n{}".format(dot_result2)
+    #print "\ndot production result of first method using cusp::blas::dot: \n{}".format(dot_result1)
+    #print "\ndot production result of second method using matrix multiplication: \n{}".format(dot_result2)
+
+
+# measurements with num_rows = 50000000, num_cols = 10
+### cusp 4.0.0 ###
+#copy to cpus array2d: 0.003232 ms
+#copy matrices to device memory: 6234.200684 ms
+#Copied 3814.697 MB (0.612 GB / sec)
+#create blank result in device memory: 0.036672 ms
+#dot product: 0.930912 ms
+#GFLOPS: 1074.215454
+#copy result to cpu: 0.136640 ms
+#total: 6235.3920 ms
+
+#### cusp 5.0.1 ###
+#copy to cpus array2d: 0.003072 ms
+#copy matrices to device memory: 562.794739 ms
+#Copied 3814.697 MB (6.778 GB / sec)
+#create blank result in device memory: 0.039840 ms
+#dot product: 0.917984 ms
+#GFLOPS: 1089.344
+#copy result to cpu: 0.134912 ms
+#total: 563.9970 ms
+
 
 if __name__ == '__main__':
     #test()

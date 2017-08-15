@@ -14,6 +14,8 @@
 
 #include <sys/time.h>
 
+// sudo nvidia-smi -pm 1 to enable persistant gpu
+
 typedef double FLOAT_TYPE;
 typedef cusp::device_memory MEMORY_TYPE;
 //typedef cusp::host_memory MEMORY_TYPE;
@@ -104,8 +106,12 @@ void _dot1(double* matrix, double* vector, int num_rows, int num_cols, double* r
 
     const char* events[] =
     {
+        "allocate raw cuda gpu matrix (cudaMalloc)",
+        "copy raw cuda matrix to gpu (cudaMemcpy)",
         "copy to cpus array2d",
-        "copy matrices to device memory",
+        "copy vector to device memory",
+        "copy matrix to device memory",
+        "create blank result in device memory",
         "dot product",
         "copy result to cpu",
     };
@@ -122,45 +128,48 @@ void _dot1(double* matrix, double* vector, int num_rows, int num_cols, double* r
         cudaEventCreate(&stopEvents[i]);
     }
 
-    //tic();
+    cudaEventRecord(startEvents[curEvent]);
+
+    // create raw gpu matrix
+    long bytes = sizeof(FLOAT_TYPE) * num_cols * num_rows;
+    int *device_address;
+    cudaMalloc((int**)&device_address, bytes);
+
+    cudaEventRecord(stopEvents[curEvent++]);
+    cudaEventRecord(startEvents[curEvent]);
+
+    // copy to raw gpu matrix
+    cudaMemcpy(device_address, matrix, bytes, cudaMemcpyHostToDevice);
+    cudaEventRecord(stopEvents[curEvent++]);
+
+    // free it
+    cudaFree(device_address);
+
     cudaEventRecord(startEvents[curEvent]);
 
     cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view host_matrix_1d(matrix, matrix + num_rows * num_cols);
+    cusp::array2d<FLOAT_TYPE, cusp::host_memory>::view host_matrix = make_array2d_view(
+        num_rows, num_cols, num_cols, host_matrix_1d, cusp::row_major());
 
-    cusp::array2d<FLOAT_TYPE, cusp::host_memory, cusp::row_major>::view host_matrix = make_array2d_view(
-        num_rows, num_cols, num_cols, host_matrix_1d, cusp::row_major);
-
-    //make_array2d_view(size_t num_rows, size_t num_cols, size_t pitch, const cusp::array1d_view<Iterator>& values, Orientation)
-
-    /*cusp::array2d<FLOAT_TYPE, cusp::host_memory> host_matrix(num_rows, num_cols, 0);
-
-    for (int i = 0; i < num_rows; i++)
-    {
-        for(int j = 0; j < num_cols; j++) {
-            host_matrix(i,j) = matrix[i*num_cols + j];
-        }
-        }*/
-
-    /*cusp::array1d<FLOAT_TYPE, cusp::host_memory> host_vector(num_cols, 0);
-
-    for(int j = 0; j < num_cols; j++) 
-    {
-        host_vector[j] = vector[j];
-        }
-    */
-
-    //RawArrayIterator raw(vector, num_cols);
     cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view host_vector(vector, vector + num_cols);
 
     cudaEventRecord(stopEvents[curEvent++]);
     cudaEventRecord(startEvents[curEvent]);
 
-    cusp::array2d<FLOAT_TYPE, MEMORY_TYPE> device_matrix(host_matrix);
     cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> device_vector(host_vector);
+
+    cudaEventRecord(stopEvents[curEvent++]);
+    cudaEventRecord(startEvents[curEvent]);
+
+    cusp::array2d<FLOAT_TYPE, MEMORY_TYPE> device_matrix(host_matrix);
+
+    int copyEvent = curEvent;
+    cudaEventRecord(stopEvents[curEvent++]);
+    cudaEventRecord(startEvents[curEvent]);
+
     cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> device_result(num_cols, 0);
 
     cudaEventRecord(stopEvents[curEvent++]);
-    //toc("copy matrices to device memory");
 
     // compute dot product of two matrices using cusp::blas::dot
     //tic();
@@ -185,7 +194,8 @@ void _dot1(double* matrix, double* vector, int num_rows, int num_cols, double* r
     }
 
     cudaEventRecord(stopEvents[curEvent++]);
-    //toc("copy result back to cpu memory");
+
+    ///////////// print timing results
 
     for (int i = 0; i < NUM_EVENTS; ++i)
     {
@@ -198,12 +208,20 @@ void _dot1(double* matrix, double* vector, int num_rows, int num_cols, double* r
       if (i == flopEvent)
       {
         // compute number of flops during flopEvent
-        int opCount = 2 * num_rows * num_cols;
-        float mflops = opCount / milliseconds / 1000.0;
+        long opCount = 2l * (long)num_rows * (long)num_cols;
+        double gflops = opCount / milliseconds / 1000.0 / 1000.0;
 
-        printf("MFLOPS: %f\n", mflops);
+        printf("num ops = %ld\n", opCount);
+        printf("GFLOPS: %.3f\n", gflops);
       }
-    } 
+      else if (i == copyEvent)
+      {
+          long bytes = sizeof(FLOAT_TYPE) * (num_rows) * num_cols;
+          double mb = bytes / 1024.0 / 1024.0;
+          double gbPerSec = mb / (milliseconds / 1000.0) / 1000.0;
+          printf("Copied %.3f MB (%.3f GB / sec)\n", mb, gbPerSec);
+      }
+    }
 }
 
 
@@ -374,7 +392,6 @@ void printGpuStats()
     printf("GPU memory usage: used = %f, free = %f MB, total = %f MB\n",
            used_db/1024.0/1024.0, free_db/1024.0/1024.0, total_db/1024.0/1024.0);
 
-
     //////////// print device info
     
     int nDevices;
@@ -467,7 +484,6 @@ void multiply(double* vector, double* result, int size)\
     
  void dot2(double* matrix, double* vector, int num_rows, int num_cols, double* result)
 {
-
     _dot2(matrix, vector, num_rows, num_cols, result);
 }
 
