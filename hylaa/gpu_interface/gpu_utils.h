@@ -16,7 +16,7 @@ using namespace std;
 
 class CpuTimingData
 {
-public:
+   public:
     CpuTimingData()
     {
         name = "(unnamed)";
@@ -59,7 +59,8 @@ public:
     {
         if (started)
         {
-            printf("Fatal Error: Cpu Timer getTotalMs() called but timer was never stopped: '%s'\n", name);
+            printf("Fatal Error: Cpu Timer getTotalMs() called but timer was never stopped: '%s'\n",
+                   name);
             exit(1);
         }
 
@@ -70,26 +71,27 @@ public:
     {
         if (started)
         {
-            printf("Fatal Error: Cpu Timer getCount() called but timer was never stopped: '%s'\n", name);
+            printf("Fatal Error: Cpu Timer getCount() called but timer was never stopped: '%s'\n",
+                   name);
             exit(1);
         }
 
         return count;
     }
 
-private:
+   private:
     const char* name;
     bool started;
     int count;
     long totalUs;
     long startUs;
-    
+
     // get the current time using the cpu / os timer in microseconds
     long now()
     {
         struct timeval nowUs;
 
-        if(gettimeofday(&nowUs, 0))
+        if (gettimeofday(&nowUs, 0))
         {
             error("gettimeofday");
             exit(1);
@@ -101,16 +103,10 @@ private:
 
 class GpuTimingData
 {
-public:
-    GpuTimingData()
-    {
-        name = "(unnamed)";        
-    }
+   public:
+    GpuTimingData() { name = "(unnamed)"; }
 
-    ~GpuTimingData()
-    {
-        clearEvents();
-    }
+    ~GpuTimingData() { clearEvents(); }
 
     void tic(const char* clockName)
     {
@@ -140,7 +136,8 @@ public:
     {
         if (startEvents.size() != stopEvents.size())
         {
-            printf("Fatal Error: Gpu Timer getTotalUs() called but timer is still running: '%s'\n", name);
+            printf("Fatal Error: Gpu Timer getTotalUs() called but timer is still running: '%s'\n",
+                   name);
             exit(1);
         }
 
@@ -164,22 +161,23 @@ public:
     {
         if (startEvents.size() != stopEvents.size())
         {
-            printf("Fatal Error: Gpu Timer getCount() called but timer is still running: '%s'\n", name);
+            printf("Fatal Error: Gpu Timer getCount() called but timer is still running: '%s'\n",
+                   name);
             exit(1);
         }
-    
+
         return (int)startEvents.size();
     }
 
-private:
+   private:
     const char* name;
 
-    vector <cudaEvent_t> startEvents;
-    vector <cudaEvent_t> stopEvents;
+    vector<cudaEvent_t> startEvents;
+    vector<cudaEvent_t> stopEvents;
 
     cudaEvent_t recordEvent()
     {
-        cudaEvent_t event; // cudaEvent_t is a pointer
+        cudaEvent_t event;  // cudaEvent_t is a pointer
 
         cudaEventCreate(&event);
         cudaEventRecord(event);
@@ -202,7 +200,7 @@ private:
 
 class GpuUtil
 {
-public:
+   public:
     GpuUtil(bool forceCpuTiming)
     {
         if (forceCpuTiming)
@@ -213,10 +211,7 @@ public:
         useProfiling = false;
     }
 
-    void setUseProfiling(bool enabled)
-    {
-        useProfiling = enabled;
-    }
+    void setUseProfiling(bool enabled) { useProfiling = enabled; }
 
     void tic(const char* clockName)
     {
@@ -265,7 +260,8 @@ public:
 
             if (useGpu)
             {
-                for (map<string, GpuTimerData>::iterator i = gpuTimers.begin(); i != gpuTimers.end(); ++i)
+                for (map<string, GpuTimerData>::iterator i = gpuTimers.begin();
+                     i != gpuTimers.end(); ++i)
                 {
                     const char* name = i->first.c_str();
                     int count = i->second.getCount();
@@ -276,7 +272,8 @@ public:
             }
             else
             {
-                for (map<string, CpuTimerData>::iterator i = cpuTimers.begin(); i != cpuTimers.end(); ++i)
+                for (map<string, CpuTimerData>::iterator i = cpuTimers.begin();
+                     i != cpuTimers.end(); ++i)
                 {
                     const char* name = i->first.c_str();
                     int count = i->second.getCount();
@@ -299,10 +296,10 @@ public:
     {
         unsigned long rv = 0;
 
-        if (!useGpu) // cpu memory
+        if (!useGpu)  // cpu memory
         {
             struct sysinfo info;
-            
+
             if (sysinfo(&info) != 0)
             {
                 perror("sysinfo");
@@ -311,7 +308,7 @@ public:
 
             rv = info.freeram;
         }
-        else // gpu memory
+        else  // gpu memory
         {
             size_t free;
             size_t total;
@@ -337,13 +334,13 @@ public:
         return num > 0;
     }
 
-private:
+   private:
     bool useProfiling;
     bool useGpu;
-    long lastTicUs = 0; // for tic() and toc()
+    long lastTicUs = 0;  // for tic() and toc()
 
-    map <string, CpuTimingData> cpuTimers;
-    map <string, GpuTimerData> gpuTimers;
+    map<string, CpuTimingData> cpuTimers;
+    map<string, GpuTimerData> gpuTimers;
 };
 
 #endif
