@@ -2,7 +2,7 @@
 
 CC=nvcc
 
-CFLAGS_SHARED = --compiler-options '-O2 -fPIC -Wall -Werror' -O2 -D_FORCE_INLINES -Icusplibrary-0.4.0 -shared
+CFLAGS_SHARED = --compiler-options '-O2 -fPIC -Wall -Werror' -O2 -D_FORCE_INLINES -Icusplibrary-0.5.1 -shared
 
 all: cusp_krylov_stan.so
 

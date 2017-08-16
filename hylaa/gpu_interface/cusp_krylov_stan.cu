@@ -1,5 +1,4 @@
-// Dung Tran
-// An interface
+// Dung Tran & Stanley Bak
 // Krylov subspace - based simulation using Gpu- Cusp / Cuda for sparse ode
 // June 2017
 
@@ -11,119 +10,33 @@
 #include <cusp/hyb_matrix.h>
 #include <cusp/multiply.h>
 #include <cusp/print.h>
-#include <cusp/blas.h>
 #include <sys/time.h>
-
-// timing shared variable
-long lastTicUs = 0;
-
-void error(const char* msg)
-{
-    printf("Fatal Error: %s\n", msg);
-    exit(1);             
-}
-
-
-void tic()
-{
-    struct timeval now;
-
-    if(gettimeofday( &now, 0))
-        error("gettimeofday");
-
-    lastTicUs = 1000000 * now.tv_sec + now.tv_usec;
-}
-
-// returns the us elaspsed
-long toc(const char* label)
-{
-    struct timeval now;
-
-    if(gettimeofday( &now, 0))
-        error("gettimeofday");
-
-    long nowUs = 1000000 * now.tv_sec + now.tv_usec;
-    long dif = nowUs - lastTicUs;
-
-    printf("%s: %.4f ms\n", label, dif / 1000.0);
-
-    return dif;
-}
-
-// returns the us elaspsed
-long toc()
-{
-    struct timeval now;
-
-    if(gettimeofday( &now, 0))
-        error("gettimeofday");
-
-    long nowUs = 1000000 * now.tv_sec + now.tv_usec;
-    long dif = nowUs - lastTicUs;
-
-    return dif;
-}
-
-int _hasGpu()
-{
-    int rv = 1;
-
-    tic();
-
-    try
-    {
-        cusp::array1d<double, cusp::host_memory> hostVec(10);
-
-        for (int i = 0; i < 10; ++i)
-            hostVec[i] = 0;
-
-        cusp::array1d<double, cusp::device_memory> deviceVec(hostVec);
-    }
-    catch(std::exception &e)
-    {
-        printf("hasGpu() Failed: %s\n", e.what());
-        rv = 0;
-    }
-
-    long us = toc();
-
-    if (us > 500 * 1000)
-    {
-        printf("Long GPU Initialization time (%d ms). Have you run 'nvidia-smi -pm 1' to enable persistant GPU mode?\n",
-               (int)(us / 1000));
-    }
-
-    return rv;
-}
+#include "gpu_utils.h"
 
 template <class FLOAT_TYPE, class MEMORY_TYPE>
 class CuspData
 {
 public:
-    //static int choose_GPU = 0; // choose_GPU == 1 means that user choose to use GPU, if not, using CPU
-    // shared matrix in device memory
     cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE>* curMatrix;
-    std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE, cusp::column_major> > V_all_final; // contain all n- Vm matrix
-    std::vector< cusp::array1d<FLOAT_TYPE,MEMORY_TYPE> > V_;
-
-    std::vector< cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> > device_sim_result;
-    std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> >  device_keySimResult_tuples; // contain all keySimResult
     cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE>* keyDirMatrix;
-    int systemSize;
-    int keyDirMatrix_w;
-    int keyDirMatrix_h;
-    int numIteration;
-    int numInitVec;
+
+    // each row is a single initial vector, first n values are the initial vector, next n are the second, ect.
+    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE, cusp::column_major>* vMatrix;
+    
+    GpuUtil util; // timers and other utility functions
+
+    int dims;
+    int keyDirHeight;
+    bool useProfiling;
+    int iterations;
 
     CuspData()
     {
         curMatrix = 0;
         keyDirMatrix = 0;
-        systemSize = 0;
-        keyDirMatrix_w = 0;
-        keyDirMatrix_h = 0;
-        numIteration = 0;
-        numInitVec = 0; 
+        vMatrix = 0;
+
+        reset(); // this resets all variables
     }
 
     ~CuspData()
@@ -145,22 +58,38 @@ public:
             curMatrix = 0;
         }
 
-        // empty all variables
-        V_.clear();
-        V_all_final.clear();
+        if (vMatrix != 0)
+        {
+            delete vMatrix;
+            vMatrix = 0;
+        }
 
-        device_sim_result.clear();
-        device_keySimResult_tuples.clear(); // contain all keySimResult
+        util.clearTimers();
+
+        iterations = 0;
+        dims = 0;
+        keyDirHeight = 0;
+        useProfiling = false;
     }
 
-    void _loadMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries, int nonZeroCount)
+    void setUseProfiling(bool enabled)
     {
-        systemSize = w;
+        useProfiling = enabled;
+
+        utils.setUseProfiling(enabled);
+    }
+
+    void loadMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries, int nonZeroCount)
+    {
+        dims = w;
 
         cusp::coo_matrix<int, FLOAT_TYPE, cusp::host_memory> hostMatrix(w, h, nonZeroCount);
 
-        //printf("loadMatrix() called, estimated size in memory of sparse matrix: %.2f MB (%d nonzeros)\n", 
-        //    nonZeroCount * (8 + 4 + 4) / 1024.0 / 1024.0, nonZeroCount);
+        if (useProfiling)
+        {
+            printf("loadMatrix() called, estimated size in memory of sparse matrix: %.2f MB (%d nonzeros)\n", 
+                nonZeroCount * (8 + 4 + 4) / 1024.0 / 1024.0, nonZeroCount);
+        }
 
         // initialize matrix entries on host
         int index = 0;
@@ -185,20 +114,31 @@ public:
         curMatrix = new (std::nothrow) cusp::hyb_matrix<int, FLOAT_TYPE,MEMORY_TYPE>(hostMatrix);
 
         if (curMatrix == 0)
-            error("allocation of heap-based csr matrix in device memory returned nullptr");
+        {
+            printf("Fatal Error: allocation of heap-based csr matrix in device memory returned nullptr\n");
+            exit(1);
+        }
     }
 
-    void _loadKeyDirMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries, int nonZeroCount)
+    void loadKeyDirMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries, int nonZeroCount)
     {   // Load key Direction Sparse Matrix to get a particular direction of simulation result
 
-        tic();
+        if (curMatrix == 0)
+        {
+            printf("Fatal Error: loadKeyDirMat called before loadMatrix\n");
+            exit(1);
+        }
+
+        if (w != dims)
+        {
+            printf("Fatal Error: loadKeyDirMat called with width %d, but system dimensions was %d\n", w, dims);
+            exit(1);
+        }
+
         keyDirMatrix_w = w;
         keyDirMatrix_h = h;
 
         cusp::coo_matrix<int, FLOAT_TYPE, cusp::host_memory> hostKeyMatrix(w, h, nonZeroCount);
-
-        //printf("loadKeyDirMatrix() called, estimated size in memory of sparse matrix: %.2f MB (%d nonzeros)\n", 
-        //    nonZeroCount * (8 + 4 + 4) / 1024.0 / 1024.0, nonZeroCount);
 
         // initialize key matrix entries on host
         int index = 0;
@@ -214,9 +154,6 @@ public:
             hostKeyMatrix.values[index++] = val;
         }
 
-        toc("creating host coo key matrix");
-
-        tic();
         if (keyDirMatrix != 0)
         {
             delete keyDirMatrix;
@@ -226,13 +163,13 @@ public:
         keyDirMatrix = new (std::nothrow) cusp::hyb_matrix<int, FLOAT_TYPE,MEMORY_TYPE>(hostKeyMatrix);
 
         if (keyDirMatrix == 0)
-            error("allocation of heap-based csr key matrix in device memory returned nullptr");
-
-        toc("copying key matrix to device memory");
-
+        {
+            printf("Fatal Error: allocation of heap-based csr key matrix in device memory returned nullptr\n");
+            exit(1);
+        }
     }
 
-    void _arnoldi_parallel(int start_pos, int final_pos, int numIter,double* result_H)
+    void arnoldi_parallel(int startPos, int finalPos, int numIter, double* result_H)
     {   
         if (curMatrix == 0)
             error("loadMatrix must be called before running arnoldi algorithm");
@@ -240,7 +177,7 @@ public:
         if (final_pos >= systemSize)
             error("start_pos + final_pos >= systemSize (too many initial vectors)");
 
-        numIteration = numIter;
+        iterations = numIter;
         numInitVec  = final_pos - start_pos + 1; 
 
         // maximum number of Iteration of Arnoldi algorithm
@@ -389,7 +326,7 @@ public:
     }
 
 
-    void _getKeySimResult_parallel(double* expHt_e1_tuples, double* keySimResult_tuples)
+    void getKeySimResult_parallel(double* expHt_e1_tuples, double* keySimResult_tuples)
     {
         // get Simulation result in specific direction defined by keyDirMatrix
         // for one initial vector we have:
@@ -459,12 +396,7 @@ extern "C"
 {
 int hasGpu()
 {
-    return _hasGpu();
-}
-
-void choose_GPU_or_CPU(char* msg)
-{
-    printf("void choose_GPU_or_CPU(char* msg) unimplemented!\n");
+    return cuspDataGpu.utils.hasGpu();
 }
 
 void reset()
@@ -476,44 +408,43 @@ void reset()
 ////// CPU Version
 void loadMatrixCpu(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries, int nonZeroCount)
 {
-    cuspDataCpu._loadMatrix(w, h, nonZeroRows, nonZeroCols, nonZeroEntries, nonZeroCount);
+    cuspDataCpu.loadMatrix(w, h, nonZeroRows, nonZeroCols, nonZeroEntries, nonZeroCount);
 }
 
 void loadKeyDirMatrixCpu(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries, int nonZeroCount)
 {
-    cuspDataCpu._loadKeyDirMatrix(w, h, nonZeroRows, nonZeroCols, nonZeroEntries, nonZeroCount);
+    cuspDataCpu.loadKeyDirMatrix(w, h, nonZeroRows, nonZeroCols, nonZeroEntries, nonZeroCount);
 }   
 
 void arnoldiParallelCpu( int start_pos, int final_pos, int numIter, double* result_H)
 {
-    cuspDataCpu._arnoldi_parallel(start_pos, final_pos, numIter,result_H);
+    cuspDataCpu.arnoldi_parallel(start_pos, final_pos, numIter,result_H);
 }
-
     
 void getKeySimResultParallelCpu( double* expHt_tuples, double* keySimResult_tuples)    
 {
-    cuspDataCpu._getKeySimResult_parallel( expHt_tuples, keySimResult_tuples);   
+    cuspDataCpu.getKeySimResult_parallel( expHt_tuples, keySimResult_tuples);   
 }
 
 ////// GPU Version
 void loadMatrixGpu(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries, int nonZeroCount)
 {
-    cuspDataGpu._loadMatrix(w, h, nonZeroRows, nonZeroCols, nonZeroEntries, nonZeroCount);
+    cuspDataGpu.loadMatrix(w, h, nonZeroRows, nonZeroCols, nonZeroEntries, nonZeroCount);
 }
 
 void loadKeyDirMatrixGpu(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries, int nonZeroCount)
 {
-    cuspDataGpu._loadKeyDirMatrix(w, h, nonZeroRows, nonZeroCols, nonZeroEntries, nonZeroCount);
+    cuspDataGpu.loadKeyDirMatrix(w, h, nonZeroRows, nonZeroCols, nonZeroEntries, nonZeroCount);
 }   
 
 void arnoldiParallelGpu( int start_pos, int final_pos, int numIter, double* result_H)
 {
-    cuspDataGpu._arnoldi_parallel(start_pos, final_pos, numIter,result_H);
+    cuspDataGpu.arnoldi_parallel(start_pos, final_pos, numIter,result_H);
 }
     
 void getKeySimResultParallelGpu( double* expHt_tuples, double* keySimResult_tuples)    
 {
-    cuspDataGpu._getKeySimResult_parallel( expHt_tuples, keySimResult_tuples);   
+    cuspDataGpu.getKeySimResult_parallel( expHt_tuples, keySimResult_tuples);   
 }
 
 }
