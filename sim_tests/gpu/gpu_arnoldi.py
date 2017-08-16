@@ -220,7 +220,7 @@ def test():
 
     vec = np.random.random((a.shape[0],))
 
-    m = 10
+    m = 2
 
     GpuArnoldi.load_matrix(a)
 
