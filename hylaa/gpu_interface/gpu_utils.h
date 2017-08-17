@@ -5,6 +5,7 @@
 #include <sys/time.h>
 #include <sys/sysinfo.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <vector>
 #include <map>
 #include <string>
@@ -13,6 +14,19 @@ using namespace std;
 
 #ifndef HYLAA_GPU_UTILS_H
 #define HYLAA_GPU_UTILS_H
+
+// print an error and then exit
+void error(const char* format, ...)
+{
+    va_list args;
+    fprintf(stdout, "Fatal Error: ");
+    va_start(args, format);
+    vfprintf(stdout, format, args);
+    va_end(args);
+    fprintf(stdout, "\n");
+
+    exit(1);
+}
 
 class CpuTimingData
 {
@@ -24,6 +38,7 @@ class CpuTimingData
         count = 0;
         totalUs = 0;
         startUs = 0;
+        totalOps = 0;
     }
 
     void tic(const char* clockName)
@@ -31,38 +46,31 @@ class CpuTimingData
         name = clockName;
 
         if (started)
-        {
-            printf("Fatal Error: Cpu Timer started twice: '%s'\n", name);
-            exit(1);
-        }
+            error("Cpu Timer started twice: '%s'\n", name);
 
         started = true;
         ++count;
         startUs = now();
     }
 
-    void toc()
+    void toc() { toc(0); }
+
+    void toc(unsigned long ops)
     {
         if (!started)
-        {
-            printf("Fatal Error: Cpu Timer stopped without being started: '%s'\n", name);
-            exit(1);
-        }
+            error("Cpu Timer stopped without being started: '%s'\n", name);
 
         started = false;
         long endUs = now();
 
         totalUs += endUs - startUs;
+        totalOps += ops;
     }
 
     float getTotalMs()
     {
         if (started)
-        {
-            printf("Fatal Error: Cpu Timer getTotalMs() called but timer was never stopped: '%s'\n",
-                   name);
-            exit(1);
-        }
+            error("Cpu Timer getTotalMs() called but timer was never stopped: '%s'\n", name);
 
         return totalUs / 1000.0;
     }
@@ -70,19 +78,24 @@ class CpuTimingData
     int getCount()
     {
         if (started)
-        {
-            printf("Fatal Error: Cpu Timer getCount() called but timer was never stopped: '%s'\n",
-                   name);
-            exit(1);
-        }
+            error("Cpu Timer getCount() called but timer was never stopped: '%s'\n", name);
 
         return count;
+    }
+
+    unsigned long getOps()
+    {
+        if (started)
+            error("Cpu Timer getOps() called but timer was never stopped: '%s'\n", name);
+
+        return totalOps;
     }
 
    private:
     const char* name;
     bool started;
     int count;
+    unsigned long totalOps;
     long totalUs;
     long startUs;
 
@@ -93,8 +106,8 @@ class CpuTimingData
 
         if (gettimeofday(&nowUs, 0))
         {
-            error("gettimeofday");
-            exit(1);
+            perror("gettimeofday");
+            error("gettimeofday failed");
         }
 
         return 1000000l * now.tv_sec + now.tv_usec;
@@ -104,7 +117,11 @@ class CpuTimingData
 class GpuTimingData
 {
    public:
-    GpuTimingData() { name = "(unnamed)"; }
+    GpuTimingData()
+    {
+        name = "(unnamed)";
+        totalOps = 0;
+    }
 
     ~GpuTimingData() { clearEvents(); }
 
@@ -113,33 +130,26 @@ class GpuTimingData
         name = clockName;
 
         if (startEvents.size() != stopEvents.size())
-        {
-            printf("Fatal Error: Gpu Timer started twice: '%s'\n", name);
-            exit(1);
-        }
+            error("Gpu Timer started twice: '%s'\n", name);
 
         startEvents.push_back(recordEvent());
     }
 
-    void toc()
+    void toc() { toc(0); }
+
+    void toc(unsigned long ops)
     {
         if (startEvents.size() != 1 + stopEvents.size())
-        {
-            printf("Fatal Error: Gpu Timer stopped without being started: '%s'\n", name);
-            exit(1);
-        }
+            error("Gpu Timer stopped without being started: '%s'\n", name);
 
+        totalOps += ops;
         stopEvents.push_back(recordEvent());
     }
 
     float getTotalMs()
     {
         if (startEvents.size() != stopEvents.size())
-        {
-            printf("Fatal Error: Gpu Timer getTotalUs() called but timer is still running: '%s'\n",
-                   name);
-            exit(1);
-        }
+            error("Gpu Timer getTotalUs() called but timer is still running: '%s'\n", name);
 
         int numEvents = (int)startEvents.size();
         float totalMs = 0;
@@ -160,17 +170,22 @@ class GpuTimingData
     int getCount()
     {
         if (startEvents.size() != stopEvents.size())
-        {
-            printf("Fatal Error: Gpu Timer getCount() called but timer is still running: '%s'\n",
-                   name);
-            exit(1);
-        }
+            error("Gpu Timer getCount() called but timer is still running: '%s'\n", name);
 
         return (int)startEvents.size();
     }
 
+    unsigned long getOps()
+    {
+        if (startEvents.size() != stopEvents.size())
+            error("Gpu Timer getOps() called but timer was never stopped: '%s'\n", name);
+
+        return totalOps;
+    }
+
    private:
     const char* name;
+    unsigned long totalOps;
 
     vector<cudaEvent_t> startEvents;
     vector<cudaEvent_t> stopEvents;
@@ -224,31 +239,17 @@ class GpuUtil
         }
     }
 
-    void toc(const char* clockName)
+    void toc(const char* clockName) { toc(clockName, 0); }
+
+    void toc(const char* clockName, unsigned long ops)
     {
         if (useProfiling)
         {
             if (useGpu)
-                gpuTimers[clockName].toc();
+                gpuTimers[clockName].toc(ops);
             else
-                cpuTimers[clockName].toc();
+                cpuTimers[clockName].toc(ops);
         }
-    }
-
-    // get timing data for a specific timer
-    float getTimerMs(const char* name)
-    {
-        float rv = -1;
-
-        if (useProfiling)
-        {
-            if (useGpu)
-                rv = gpuTimers[name].getTotalMs();
-            else
-                rv = cpuTimers[name].getTotalMs();
-        }
-
-        return rv;
     }
 
     // print timers results
@@ -257,6 +258,8 @@ class GpuUtil
         if (useProfiling)
         {
             printf("Timing Information (%s):\n", useGpu ? "GPU Timing" : "CPU Timing");
+            char buf[256];
+            multimap<float, string> sorted;
 
             if (useGpu)
             {
@@ -266,8 +269,18 @@ class GpuUtil
                     const char* name = i->first.c_str();
                     int count = i->second.getCount();
                     float ms = i->second.getTotalMs();
+                    unsigned long ops = i->second.getOps();
 
-                    printf(" %s: %.3fms (%d calls)".format(name, ms, count);
+                    if (ops == 0)
+                        snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls)", name, ms, count);
+                    else
+                    {
+                        double gigaFlops = ops / ms / 1000.0 / 1000.0;
+                        snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls) (%d GFLOPS)", name, ms,
+                                 count, gigaFlops);
+                    }
+
+                    sorted[ms] = buf;
                 }
             }
             else
@@ -278,9 +291,27 @@ class GpuUtil
                     const char* name = i->first.c_str();
                     int count = i->second.getCount();
                     float ms = i->second.getTotalMs();
+                    unsigned long ops = i->second.getOps();
 
-                    printf(" %s: %.3fms (%d calls)".format(name, ms, count);
+                    if (ops == 0)
+                        snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls)", name, ms, count);
+                    else
+                    {
+                        double gigaFlops = ops / ms / 1000.0 / 1000.0;
+                        snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls) (%d GFLOPS)", name, ms,
+                                 count, gigaFlops);
+                    }
+
+                    sorted[ms] = buf;
                 }
+            }
+
+            // print in descending order
+            for (multimap<float, string>::reverse_iterator i = sorted.rbegin(); i != sorted.rend();
+                 ++i)
+            {
+                const char* msg = i->second.c_str();
+                printf("%s\n", msg);
             }
         }
     }
@@ -303,7 +334,7 @@ class GpuUtil
             if (sysinfo(&info) != 0)
             {
                 perror("sysinfo");
-                exit(1);
+                error("sysinfo failed");
             }
 
             rv = info.freeram;
@@ -315,10 +346,7 @@ class GpuUtil
             cudaError_t status = cudaMemGetInfo(&free, &total);
 
             if (cudaSuccess != cuda_status)
-            {
-                printf("cudaMemGetInfo() error: %s\n", cudaGetErrorString(cuda_status));
-                exit(1);
-            }
+                error("cudaMemGetInfo() failed: %s\n", cudaGetErrorString(cuda_status));
 
             rv = free;
         }

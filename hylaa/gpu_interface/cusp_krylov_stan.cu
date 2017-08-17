@@ -16,46 +16,53 @@
 template <class FLOAT_TYPE, class MEMORY_TYPE>
 class CuspData
 {
-public:
-    cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE>* curMatrix;
+    typedef cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> Array1d;
+    typedef cusp::array1d<FLOAT_TYPE, MEMORY_TYPE>::view Array1dView;
+
+   public:
+    cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE>* aTranspose;
     cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE>* keyDirMatrix;
 
-    // each row is a single initial vector, first n values are the initial vector, next n are the second, ect.
-    cusp::array2d<FLOAT_TYPE,MEMORY_TYPE, cusp::column_major>* vMatrix;
-    
-    GpuUtil util; // timers and other utility functions
+    // each row is the arnoldi v matrix from a single initial vector
+    Array1d* vMatrix;
+    Array1d* hMatrix;
+
+    GpuUtil util;  // timers and other utility functions
+
+    int aTransposeNonzeros;
 
     int dims;
     int keyDirHeight;
     bool useProfiling;
-    int iterations;
+
+    int arnoldiIterations;
+    int numTimeSteps;
+    int numParallelInitVecs;
 
     CuspData()
     {
-        curMatrix = 0;
+        aTranspose = 0;
         keyDirMatrix = 0;
         vMatrix = 0;
+        hMatrix = 0;
 
-        reset(); // this resets all variables
+        reset();  // this resets all variables
     }
 
-    ~CuspData()
-    {
-        reset();
-    }
+    ~CuspData() { reset(); }
 
     void reset()
     {
+        if (aTranspose != 0)
+        {
+            delete aTranspose;
+            aTranspose = 0;
+        }
+
         if (keyDirMatrix != 0)
         {
             delete keyDirMatrix;
             keyDirMatrix = 0;
-        }
-
-        if (curMatrix != 0)
-        {
-            delete curMatrix;
-            curMatrix = 0;
         }
 
         if (vMatrix != 0)
@@ -64,32 +71,48 @@ public:
             vMatrix = 0;
         }
 
+        if (hMatrix != 0)
+        {
+            delete hMatrix;
+            hMatrix = 0;
+        }
+
         util.clearTimers();
 
-        iterations = 0;
+        aTransposeNonzeros = 0;
+
         dims = 0;
         keyDirHeight = 0;
         useProfiling = false;
+
+        arnoldiIterations = 0;
+        numTimeSteps = 0;
+        numParallelInitVecs = 0;
     }
 
     void setUseProfiling(bool enabled)
     {
         useProfiling = enabled;
-
         utils.setUseProfiling(enabled);
     }
 
-    void loadMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries, int nonZeroCount)
+    void loadATranspose(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries,
+                        int nonZeroCount)
     {
         dims = w;
+        aTransposeNonzeros = nonZeroCount;
 
         cusp::coo_matrix<int, FLOAT_TYPE, cusp::host_memory> hostMatrix(w, h, nonZeroCount);
 
         if (useProfiling)
         {
-            printf("loadMatrix() called, estimated size in memory of sparse matrix: %.2f MB (%d nonzeros)\n", 
+            printf(
+                "loadATranspose() called, estimated size in memory of sparse matrix: %.2f MB (%d "
+                "nonzeros)\n",
                 nonZeroCount * (8 + 4 + 4) / 1024.0 / 1024.0, nonZeroCount);
         }
+
+        utils.tic("loadATranspose()");
 
         // initialize matrix entries on host
         int index = 0;
@@ -105,35 +128,32 @@ public:
             hostMatrix.values[index++] = val;
         }
 
-        if (curMatrix != 0)
+        if (aTranspose != 0)
         {
-            delete curMatrix;
-            curMatrix = 0;
+            delete aTranspose;
+            aTranspose = 0;
         }
 
-        curMatrix = new (std::nothrow) cusp::hyb_matrix<int, FLOAT_TYPE,MEMORY_TYPE>(hostMatrix);
+        aTranspose = new (std::nothrow) cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE>(hostMatrix);
 
-        if (curMatrix == 0)
-        {
-            printf("Fatal Error: allocation of heap-based csr matrix in device memory returned nullptr\n");
-            exit(1);
-        }
+        if (aTranspose == 0)
+            error("memory allocation of aTranspose returned nullptr\n");
+
+        utils.toc("loadATranspose()");
+        utils.printTimers();
+        utils.clearTimers();
     }
 
-    void loadKeyDirMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries, int nonZeroCount)
-    {   // Load key Direction Sparse Matrix to get a particular direction of simulation result
+    void loadKeyDirMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries,
+                          int nonZeroCount)
+    {  // Load key Direction Sparse Matrix to get a particular direction of simulation result
+        utils.tic("loadKeyDirMatrix()");
 
         if (curMatrix == 0)
-        {
-            printf("Fatal Error: loadKeyDirMat called before loadMatrix\n");
-            exit(1);
-        }
+            error("loadKeyDirMat called before loadMatrix\n");
 
         if (w != dims)
-        {
-            printf("Fatal Error: loadKeyDirMat called with width %d, but system dimensions was %d\n", w, dims);
-            exit(1);
-        }
+            error("loadKeyDirMat called with width %d, but system dimensions was %d\n", w, dims);
 
         keyDirMatrix_w = w;
         keyDirMatrix_h = h;
@@ -160,171 +180,233 @@ public:
             keyDirMatrix = 0;
         }
 
-        keyDirMatrix = new (std::nothrow) cusp::hyb_matrix<int, FLOAT_TYPE,MEMORY_TYPE>(hostKeyMatrix);
+        keyDirMatrix =
+            new (std::nothrow) cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE>(hostKeyMatrix);
 
         if (keyDirMatrix == 0)
-        {
-            printf("Fatal Error: allocation of heap-based csr key matrix in device memory returned nullptr\n");
-            exit(1);
-        }
+            error("memory allocation of keyDirMatrix returned nullptr\n");
+
+        utils.toc("loadKeyDirMatrix()");
+        utils.printTimers();
+        utils.clearTimers();
     }
 
-    void arnoldi_parallel(int startPos, int finalPos, int numIter, double* result_H)
-    {   
-        if (curMatrix == 0)
-            error("loadMatrix must be called before running arnoldi algorithm");
+    double getFreeMemoryMb()
+    {
+        unsigned long bytes = utils.getFreeMemory();
 
-        if (final_pos >= systemSize)
-            error("start_pos + final_pos >= systemSize (too many initial vectors)");
+        return bytes / 1024.0 / 1024.0;
+    }
 
-        iterations = numIter;
-        numInitVec  = final_pos - start_pos + 1; 
+    // frees memory if it was previously allocated, returns false if memory error occurs
+    bool preallocateMemory(int arnoldiIt, int numSteps, int numParInitVecs)
+    {
+        if (dims == 0)
+            error("preallocateMemory() called before loadMatrix() (dims==0)\n");
 
-        // maximum number of Iteration of Arnoldi algorithm
-        int maxiter = std::min(systemSize, numIter);
+        arnoldiIterations = arnoldiIt;
+        numTimeSteps = numSteps;
+        numParallelInitVecs = numParInitVecs;
 
-        // create matrix V_all to contain all matrix V: V_all = [V0 V1 ...Vm]
-        // V0 = [V0_1 ... V0_n] is (n x n) matrix containing all initial vectors, n = numInitVec 
-        // Vi = [Vi_1 ... Vi_n] is (n x n) matrix containing all i-th vectors in step i of Arnoldi algorithm
-
-        std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE, cusp::column_major> > V_all; // use to compute n- Vm matrix in parallel
-        V_all.resize(maxiter+1);
-
-        // n = numInitVec
-        // create matrix V_all_final to contain all matrix V; V_all_final = [Vm_0 Vm_2 ...Vm_(n-1)]
-        // Vm_0 is the matrix (n x m) V (obtained from Arnoldi algorithm) that corresponds to the 0-th initial vector  
-        // Vm_i is the (n x m) matrix V (obtained from Arnoldi algorithm) that corresponds to the i-th initial vector
-
-        V_all_final.resize(numInitVec);
-
-        // create matrix H_all to contain all matrix H: H_all = [Hm_1 Hm_2 ...Hm_n]
-        // Hm_1, Hm_2 , ... Hm_n are m x m matrices, Hm_i is conresponding to the initial vector i 
-
-        std::vector< cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> > H_all; // contain all n Hm matrix
-        H_all.resize(numInitVec+1);
-
-         // create initial basic vector V_all[0] = n-dimension identity mat
-
-        cusp::array2d<FLOAT_TYPE, MEMORY_TYPE> Hmat_k(maxiter+1,maxiter,0);
-        cusp::array2d<FLOAT_TYPE,MEMORY_TYPE> Imat(systemSize,numInitVec,0);
-        cusp::array2d<FLOAT_TYPE,MEMORY_TYPE,cusp::column_major> Vm(systemSize,maxiter,0);
-
-        for (int i = 0; i< numInitVec; i++){
-            cusp::copy(Hmat_k,H_all[i]); // initialize H_all[i]
-            cusp::copy(Vm,V_all_final[i]); // initialize V_finall_all[k]
-        }
-        for (int i = 0; i < maxiter+1; i++)
-            cusp::copy(Imat,V_all[i]);
-
-        int pos = start_pos;
-        for (int i = 0; i < numInitVec; i++){
-            Imat(pos,i) = 1;
-            pos = pos+1;
+        // preallocate vMatrix, width = dims * iterations, height = numParInit
+        if (vMatrix != 0)
+        {
+            delete vMatrix;
+            vMatrix = 0;
         }
 
-        cusp::copy(Imat,V_all[0]);
+        unsigned long vMatrixSize = dims * arnoldiIterations * numParallelInitVecs;
+        vMatrix = new (std::nothrow) cusp::array1d<FLOAT_TYPE, MEMORY_TYPE>(vMatrixSize, 0);
+
+        // preallocate hMatrix, numParInit * iterations * iterations
+        if (hMatrix != 0)
+        {
+            delete hMatrix;
+            hMatrix = 0;
+        }
+
+        unsigned long hMatrixSize = numParallelInitVecs * arnoldiIterations * arnoldiIterations;
+        hMatrix = new (std::nothrow) cusp::array1d<FLOAT_TYPE, MEMORY_TYPE>(hMatrixSize, 0);
+
+        return vMatrix != 0 && hMatrix != 0;
+    }
+
+    void initParallelArnoldiV(int startDim, int numInitVecs)
+    {
+        util.tic("init parallel");
+
+        if (startDim + numInitVecs > dims)
+            error("initParallelArnoldiV called with startDim=%d, numInitVecs=%d, but dims=%d",
+                  startDim, numInitVecs, dims);
+
+        unsigned long rowWidth = dims * arnoldiIterations;
+
+        // initialize each row
+        for (unsigned long rowNum = 0; rowNum < numInitVecs; ++rowNum)
+        {
+            unsigned long rowOffset = rowNum * rowWidth;
+            Array1dView initView = vMatrix.subarray(rowOffset, dims);
+
+            cusp::blas::fill(initView, 0.0);
+            initView[startDim + rowNum] = 1.0;
+        }
+
+        util.toc("init parallel");
+    }
+
+    // reads/writes from/to vMatrix, writes to hMatrix
+    void runArnoldi(int iterations, int numInitVecs)
+    {
+        util.tic("arnoldi iteration");
 
         // Arnoldi parallel algorithm iteration
+        for (int it = 1; it < iterations; it++)
+        {
+            // do all the multiplications up front
+            // for cur_vec in xrange(num_init):
+            //    vec = np.dot(prev_v[cur_vec, (cur_it-1)*size:cur_it*size], a_transpose)
+            //    prev_v[cur_vec, cur_it*size:(cur_it+1)*size] = vec
 
-        int j;
+            util.tic("arnoldi matrix vector multiply");
 
-        printf("running Arnoldi Algorithm in parallel ...\n");
-        long multiplyTime = 0;
-        long ioTime = 0;
-        long dotTime = 0;
-        long axpyTime = 0;
+            for (int curInitVec = 0; curInitVec < numInitVecs; ++curInitVec)
+            {
+                unsigned long rowOffset = curInitVec * dims * iterations;
+                unsigned long prevColOffset = dims * (it - 1);
+                unsigned long curColOffset = dims * it;
 
-        int mem = 0;
+                Array1dView vecView = vMatrix.subarray(rowOffset + prevColOffset, dims);
+                Array1dView resultView = vMatrix.subarray(rowOffset + curColOffset, dims);
 
-        for (j = 0; j < maxiter; j++){
+                // ????
+                cusp::multiply(A, V[j], V[j + 1]);
 
-            tic();
+                cusp::blas::dot()
+                // v_1 = A * v_0
+            }
+
             // multiply(a, b, c) -> c = a * b
-            cusp::multiply(*curMatrix, V_all[j], V_all[j+1]);
-            multiplyTime += toc("arnoldi multiply");   
+            cusp::multiply(*curMatrix, V_all[j], V_all[j + 1]);
 
-            for(int k = 0; k < numInitVec; k++){
+            unsigned long ops = aTransposeNonzeros * numInitVecs;
+
+            util.toc("arnoldi matrix vector multiply", ops);
+
+            for (int k = 0; k < numInitVec; k++)
+            {
                 // compute Hm-k
 
                 tic();
-                cusp::copy(H_all[k], Hmat_k); // Load k-th Hmat matrix
+                cusp::copy(H_all[k], Hmat_k);  // Load k-th Hmat matrix
                 ioTime += toc();
-                
-                for(int i = 0; i <= j; i++){
 
+                for (int i = 0; i <= j; i++)
+                {
                     tic();
-                    Hmat_k(i,j) = cusp::blas::dot(V_all[i].column(k), V_all[j+1].column(k));
+                    Hmat_k(i, j) = cusp::blas::dot(V_all[i].column(k), V_all[j + 1].column(k));
                     dotTime += toc();
 
                     tic();
                     // axpy(a, b, c) computes b += c*a
-                    cusp::blas::axpy(V_all[i].column(k), V_all[j+1].column(k), -Hmat_k(i,j));
+                    cusp::blas::axpy(V_all[i].column(k), V_all[j + 1].column(k), -Hmat_k(i, j));
                     axpyTime += toc();
                 }
 
+                Hmat_k(j + 1, j) = cusp::blas::nrm2(V_all[j + 1].column(k));
 
-                Hmat_k(j+1,j) = cusp::blas::nrm2(V_all[j+1].column(k));
-
-                if(Hmat_k(j+1,j) < 1e-10) {
-
-                    // an interesting problem: given a system matrix A, different initial vector can produce
+                if (Hmat_k(j + 1, j) < 1e-10)
+                {
+                    // an interesting problem: given a system matrix A, different initial vector can
+                    // produce
                     // different number of iteration, i.e, the actual number of iteration
-                    // To do arnoldi in parallel, we neglect the break condition as in the function arnoldi_initVectorPos
+                    // To do arnoldi in parallel, we neglect the break condition as in the function
+                    // arnoldi_initVectorPos
                     // We make all vector has the same number of iteration and equal to maxiter
                     // i.e., actual_numIter = maxiter (user input parameter)
 
-
-                    if (mem == 1){
+                    if (mem == 1)
+                    {
                         ;
                     }
-                    else {
-                        printf("***Notice***: break condition of Arnoldi algorithm is neglected for the initial vector V_%d \n", k);
-                        printf("***Notice***: the actual number of iteration corresponding to initial vector V_%d is %d \n", k, j+1);
+                    else
+                    {
+                        printf(
+                            "***Notice***: break condition of Arnoldi algorithm is neglected for "
+                            "the initial vector V_%d \n",
+                            k);
+                        printf(
+                            "***Notice***: the actual number of iteration corresponding to initial "
+                            "vector V_%d is %d \n",
+                            k, j + 1);
                         mem = 1;
                     }
 
-                    Hmat_k(j+1,j) = 0;
-                    cusp::blas::scal(V_all[j+1].column(k),float(0));
-                    //break;
+                    Hmat_k(j + 1, j) = 0;
+                    cusp::blas::scal(V_all[j + 1].column(k), float(0));
+                    // break;
                 }
-                else  cusp::blas::scal(V_all[j+1].column(k), float(1) / Hmat_k(j+1,j));           
+                else
+                    cusp::blas::scal(V_all[j + 1].column(k), float(1) / Hmat_k(j + 1, j));
 
                 tic();
-                cusp::copy(Hmat_k,H_all[k]); // update the k-th Hmatrix           
+                cusp::copy(Hmat_k, H_all[k]);  // update the k-th Hmatrix
                 ioTime += toc();
             }
-
         }
 
-        printf("Multiply time: %.3f seconds\n", multiplyTime / 1000.0 / 1000.0);
-        printf("Dot time: %.3f seconds\n", dotTime / 1000.0 / 1000.0);
-        printf("Axpy time: %.3f seconds\n", axpyTime / 1000.0 / 1000.0);
-        printf("I/O time: %.3f seconds\n", ioTime / 1000.0 / 1000.0);
-
-          // copying H matrix to np.ndarray
-         tic();
-         
-         cusp::array2d<FLOAT_TYPE, cusp::host_memory> H(maxiter+1,maxiter,0);
-         for (int k = 0; k< numInitVec; ++k){
-             cusp::copy(H_all[k], H);
-             for (int i = 0; i < maxiter; ++i){
-                 for(int l = 0; l < maxiter; ++l)
-                     result_H[i*maxiter + l + k*maxiter*maxiter] = H(i,l);
-             }
-         }
-
-         toc("copying H matrix to np.ndarray");
-
-         // save all matrix Vm into V_all_final
-         tic();
-         for (int k = 0; k < numInitVec; k++)     
-             for(int i = 0; i < maxiter; i++)
-                 cusp::blas::copy(V_all[i].column(k),V_all_final[k].column(i));
-
-         toc("save all matrix Vm into V_all_final");
-
+        util.toc("arnoldi iteration");
     }
 
+    void arnoldiParallel(int startDim, double* result_H)
+    {
+        util.tic("arnoldi parallel total");
+
+        if (vMatrix == 0 || hMatrix == 0)
+            error("preallocateMemory() must be sucessfully called before running arnoldi");
+
+        if (startdim < 0 || startdim >= dims)
+            error("invalid startDim in arnodli (%d dim system): %d", dims, startDim);
+
+        int parInitVecs = numParallelInitVecs;
+
+        if (startDim + parInitVecs > dims)
+            parInitVecs = dims - startDim;
+
+        initParallelArnoldiV(startDim, parInitVecs);
+
+        runArnoldi(arnoldiIterations, parInitVecs);
+
+        // copying H matrix to np.ndarray
+        util.tic("copying H matrix to np.ndarray");
+
+        // TODO: create a view of the h array... first implement arnoldi_parallel to figure out how
+        // H is laid out in memory
+
+        cusp::array2d<FLOAT_TYPE, cusp::host_memory> H(maxiter + 1, maxiter, 0);
+        for (int k = 0; k < numInitVec; ++k)
+        {
+            cusp::copy(H_all[k], H);
+            for (int i = 0; i < maxiter; ++i)
+            {
+                for (int l = 0; l < maxiter; ++l)
+                    result_H[i * maxiter + l + k * maxiter * maxiter] = H(i, l);
+            }
+        }
+
+        util.toc("copying H matrix to np.ndarray");
+
+        // save all matrix Vm into V_all_final
+        tic();
+        for (int k = 0; k < numInitVec; k++)
+            for (int i = 0; i < maxiter; i++)
+                cusp::blas::copy(V_all[i].column(k), V_all_final[k].column(i));
+
+        toc("save all matrix Vm into V_all_final");
+
+        util.toc("arnoldi parallel total");
+        util.printTimers();
+        util.resetTimers();
+    }
 
     void getKeySimResult_parallel(double* expHt_e1_tuples, double* keySimResult_tuples)
     {
@@ -333,44 +415,55 @@ public:
         // SimResult = V*exp(H*t)*e1, (V,H) are matrices obtained from Arnoldi algorithm
         // KeySimResult = keyDirMatrix*SimResult
 
-        // we get keySimResult for all initial vectors at one time, the result is saved in keySimResult_tuples   
+        // we get keySimResult for all initial vectors at one time, the result is saved in
+        // keySimResult_tuples
 
-        std::vector< cusp::array1d <FLOAT_TYPE,MEMORY_TYPE> > V_expHt_e1(numInitVec); // contain all V*exp(H*t)*e1
-        std::vector< cusp::array1d <FLOAT_TYPE, MEMORY_TYPE> > device_keySimResult_tuples(numInitVec);
+        std::vector<cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> > V_expHt_e1(
+            numInitVec);  // contain all V*exp(H*t)*e1
+        std::vector<cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> > device_keySimResult_tuples(numInitVec);
 
-        cusp::array1d<FLOAT_TYPE,MEMORY_TYPE > expHt_e1_col_i(numIteration);
+        cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> expHt_e1_col_i(numIteration);
         cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE> Vi;
 
         // Check consitency
 
-        if (keyDirMatrix_h != systemSize) // check consistency between the key direction matrix and system dimension
-            {
-                 printf("\n The number of column of key direction matrix is inconsistent with the system dimension");
-                 toc("check consistency");
-            }
-        else{
+        if (keyDirMatrix_h !=
+            systemSize)  // check consistency between the key direction matrix and system dimension
+        {
+            printf(
+                "\n The number of column of key direction matrix is inconsistent with the system "
+                "dimension");
+            toc("check consistency");
+        }
+        else
+        {
             // compute key Simulation result in parallel
 
             tic();
 
-            for (int i = 0; i < numInitVec; i++){
+            for (int i = 0; i < numInitVec; i++)
+            {
                 V_expHt_e1[i].resize(systemSize);
                 device_keySimResult_tuples[i].resize(keyDirMatrix_w);
 
-                for(int k = 0; k < numIteration; k++){
-
-                    expHt_e1_col_i[k] = expHt_e1_tuples[i*numIteration + k];
-
+                for (int k = 0; k < numIteration; k++)
+                {
+                    expHt_e1_col_i[k] = expHt_e1_tuples[i * numIteration + k];
                 }
 
-                // cusp::multiply(V_all_final[i], expHt_e1_col_i,V_expHt_e1[i]); // compute V*exp(H*t)*e1
-                //cusp::multiply(*keyDirMatrix,V_expHt_e1[i],device_keySimResult_tuples[i]); // compute keyDirMatrix * V * exp(H*t) * e1           
-                
-                cusp::convert(V_all_final[i],Vi);
-                cusp::multiply(Vi, expHt_e1_col_i,V_expHt_e1[i]); // compute V*exp(H*t)*e1
-                cusp::multiply(*keyDirMatrix,V_expHt_e1[i],device_keySimResult_tuples[i]); // compute keyDirMatrix * V * exp(H*t) * e1 
+                // cusp::multiply(V_all_final[i], expHt_e1_col_i,V_expHt_e1[i]); // compute
+                // V*exp(H*t)*e1
+                // cusp::multiply(*keyDirMatrix,V_expHt_e1[i],device_keySimResult_tuples[i]); //
+                // compute keyDirMatrix * V * exp(H*t) * e1
 
-                // printf("the %d-th key simulation result corresponding to the %d-th initial vector is: \n", i, i );
+                cusp::convert(V_all_final[i], Vi);
+                cusp::multiply(Vi, expHt_e1_col_i, V_expHt_e1[i]);  // compute V*exp(H*t)*e1
+                cusp::multiply(
+                    *keyDirMatrix, V_expHt_e1[i],
+                    device_keySimResult_tuples[i]);  // compute keyDirMatrix * V * exp(H*t) * e1
+
+                // printf("the %d-th key simulation result corresponding to the %d-th initial vector
+                // is: \n", i, i );
                 // cusp::print(device_keySimResult_tuples[i]);
             }
 
@@ -381,19 +474,16 @@ public:
             tic();
 
             for (int i = 0; i < numInitVec; i++)
-                for (int j = 0; j < keyDirMatrix_w; j++)        
-                    keySimResult_tuples[i*keyDirMatrix_w + j] = device_keySimResult_tuples[i][j];
-          }
-
-
+                for (int j = 0; j < keyDirMatrix_w; j++)
+                    keySimResult_tuples[i * keyDirMatrix_w + j] = device_keySimResult_tuples[i][j];
+        }
     }
 };
 
-CuspData <double, cusp::host_memory> cuspDataCpu;
-CuspData <double, cusp::device_memory> cuspDataGpu;
+CuspData<double, cusp::host_memory> cuspDataCpu;
+CuspData<double, cusp::device_memory> cuspDataGpu;
 
-extern "C"
-{
+extern "C" {
 int hasGpu()
 {
     return cuspDataGpu.utils.hasGpu();
@@ -406,45 +496,69 @@ void reset()
 }
 
 ////// CPU Version
-void loadMatrixCpu(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries, int nonZeroCount)
+void loadATransposeCpu(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries,
+                       int nonZeroCount)
 {
-    cuspDataCpu.loadMatrix(w, h, nonZeroRows, nonZeroCols, nonZeroEntries, nonZeroCount);
+    cuspDataCpu.loadATranspose(w, h, nonZeroRows, nonZeroCols, nonZeroEntries, nonZeroCount);
 }
 
-void loadKeyDirMatrixCpu(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries, int nonZeroCount)
+void loadKeyDirMatrixCpu(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries,
+                         int nonZeroCount)
 {
     cuspDataCpu.loadKeyDirMatrix(w, h, nonZeroRows, nonZeroCols, nonZeroEntries, nonZeroCount);
-}   
-
-void arnoldiParallelCpu( int start_pos, int final_pos, int numIter, double* result_H)
-{
-    cuspDataCpu.arnoldi_parallel(start_pos, final_pos, numIter,result_H);
 }
-    
-void getKeySimResultParallelCpu( double* expHt_tuples, double* keySimResult_tuples)    
+
+double getFreeMemoryMbCpu()
 {
-    cuspDataCpu.getKeySimResult_parallel( expHt_tuples, keySimResult_tuples);   
+    cuspDataCpu.getFreeMemoryMb();
+}
+
+int preallocateMemoryCpu(int arnoldiIt, int numTimeSteps, int numParallelInitVecs)
+{
+    return cuspDataCpu.preallocateMemory(arnoldiIt, numTimeSteps, numParallelInitVecs) ? 1 : 0;
+}
+
+void arnoldiParallelCpu(int startDim, double* resultH)
+{
+    cuspDataCpu.arnoldiParallel(startDim, resultH);
+}
+
+void getKeySimResultParallelCpu(double* expHt_tuples, double* keySimResult_tuples)
+{
+    cuspDataCpu.getKeySimResult_parallel(expHt_tuples, keySimResult_tuples);
 }
 
 ////// GPU Version
-void loadMatrixGpu(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries, int nonZeroCount)
+void loadATransposeGpu(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries,
+                       int nonZeroCount)
 {
-    cuspDataGpu.loadMatrix(w, h, nonZeroRows, nonZeroCols, nonZeroEntries, nonZeroCount);
+    cuspDataGpu.loadATranpose(w, h, nonZeroRows, nonZeroCols, nonZeroEntries, nonZeroCount);
 }
 
-void loadKeyDirMatrixGpu(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries, int nonZeroCount)
+void loadKeyDirMatrixGpu(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries,
+                         int nonZeroCount)
 {
     cuspDataGpu.loadKeyDirMatrix(w, h, nonZeroRows, nonZeroCols, nonZeroEntries, nonZeroCount);
-}   
-
-void arnoldiParallelGpu( int start_pos, int final_pos, int numIter, double* result_H)
-{
-    cuspDataGpu.arnoldi_parallel(start_pos, final_pos, numIter,result_H);
-}
-    
-void getKeySimResultParallelGpu( double* expHt_tuples, double* keySimResult_tuples)    
-{
-    cuspDataGpu.getKeySimResult_parallel( expHt_tuples, keySimResult_tuples);   
 }
 
+double getFreeMemoryMbGpu()
+{
+    cuspDataGpu.getFreeMemoryMb();
+}
+
+int preallocateMemoryGpu(int arnoldiIterations, int numTimeSteps, int numParallelInitVecs)
+{
+    return cuspDataGpu.preallocateMemory(arnoldiIterations, numTimeSteps, numParallelInitVecs) ? 1
+                                                                                               : 0;
+}
+
+void arnoldiParallelGpu(int startDim, double* resultH)
+{
+    cuspDataGpu.arnoldiParallel(startDim, result_H);
+}
+
+void getKeySimResultParallelGpu(double* expHt_tuples, double* keySimResult_tuples)
+{
+    cuspDataGpu.getKeySimResult_parallel(expHt_tuples, keySimResult_tuples);
+}
 }
