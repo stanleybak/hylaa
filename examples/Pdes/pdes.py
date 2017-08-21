@@ -101,11 +101,9 @@ class HeatEquationOneDimension(object):
                 matrix_b = sparse.csr_matrix(z) # no heat source
             else:
                 heat_start_pos = int(math.ceil(self.heat_source_pos[0]/disc_step))
-                print "\nheat_start_pos:{}".format(heat_start_pos)
-                print "\nfloat value heat_start_pos:\n{}".format((self.heat_source_pos[0]/disc_step))
                 heat_end_pos = int(math.ceil(self.heat_source_pos[1]/disc_step))
-                print "\nfloat value heat_end_pos:\n{}".format((self.heat_source_pos[1]/disc_step))
-                print "\nheat_end_pos:{}".format(heat_end_pos)
+                print "\nheat source is supplied from mesh point x_{} to mesh point x_{}"\
+                  .format(heat_start_pos, heat_end_pos)
                 z = np.zeros((num_mesh_point, 3))
                 z[0, 0] = alpha
                 z[num_mesh_point - 1, 1] = alpha
