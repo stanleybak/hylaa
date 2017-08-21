@@ -13,7 +13,7 @@ The code was mostly written by Stanley Bak (http://stanleybak.com) with input fr
 
 Libraries: numpy, scipy, matplotlib, krypy (pip install krypy)
 
-### Installation on Amazon Ec2 GPU Instance with Ubuntu ###
+### Installation on Amazon EC2 GPU Instance with Ubuntu ###
 Installation libraries on amazon ec2 gpu instance (p2.xlarge) using image Ubuntu 16.04 LTS Server:
 
 sudo apt-get update
@@ -31,6 +31,16 @@ export PYTHONPATH="${PYTHONPATH}:/path/to/parent/of/hylaa/folder"
 After you do this, you may need to restart the terminal (for ~/.bashrc) or log out and log back in (for ~/.profile), or otherwise ensure the environment variable is updated (do echo $PYTHONPATH to see if it includes the correct folder). Once this is done, you should be able to run the example models.
 
 (Optional) For .mp4 video export, ffmpeg is used. Make sure you can run the command ffmpeg from a terminal for this to work.
+
+### NVCC compilation issues ###
+
+NVCC is the n-videa cuda compiler that you should use to compile c++ code from .cu files into executables. 
+You should use at least version 7.5 of nvcc (use 'nvcc --version' to check). Version 8.0 is probably better.
+
+For version 8.0 on ubuntu, here are some resources:
+
+installation (we've tried with the "deb (local)" variant): https://developer.nvidia.com/cuda-downloads
+post-installation: http://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html#post-installation-actions
 
 ### Interesting Issues ###
 C++ running out of stack space (seg fault) when allocating local array of size 4,000,000

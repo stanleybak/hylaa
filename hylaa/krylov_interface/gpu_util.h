@@ -110,7 +110,7 @@ class CpuTimingData
             error("gettimeofday failed");
         }
 
-        return 1000000l * now.tv_sec + now.tv_usec;
+        return 1000000l * nowUs.tv_sec + nowUs.tv_usec;
     }
 };
 
@@ -197,16 +197,16 @@ class GpuTimingData
         cudaEventCreate(&event);
         cudaEventRecord(event);
 
-        return cudaEvent_t;
+        return event;
     }
 
     void clearEvents()
     {
         for (int i = 0; i < (int)startEvents.size(); ++i)
-            cudeEventDestroy(startEvents[i]);
+            cudaEventDestroy(startEvents[i]);
 
         for (int i = 0; i < (int)stopEvents.size(); ++i)
-            cudeEventDestroy(stopEvents[i]);
+            cudaEventDestroy(stopEvents[i]);
 
         startEvents.clear();
         stopEvents.clear();
@@ -263,7 +263,7 @@ class GpuUtil
 
             if (useGpu)
             {
-                for (map<string, GpuTimerData>::iterator i = gpuTimers.begin();
+                for (map<string, GpuTimingData>::iterator i = gpuTimers.begin();
                      i != gpuTimers.end(); ++i)
                 {
                     const char* name = i->first.c_str();
@@ -276,16 +276,16 @@ class GpuUtil
                     else
                     {
                         double gigaFlops = ops / ms / 1000.0 / 1000.0;
-                        snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls) (%d GFLOPS)", name, ms,
+                        snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls) (%f GFLOPS)", name, ms,
                                  count, gigaFlops);
                     }
 
-                    sorted[ms] = buf;
+                    sorted.insert(make_pair(ms, buf));
                 }
             }
             else
             {
-                for (map<string, CpuTimerData>::iterator i = cpuTimers.begin();
+                for (map<string, CpuTimingData>::iterator i = cpuTimers.begin();
                      i != cpuTimers.end(); ++i)
                 {
                     const char* name = i->first.c_str();
@@ -298,11 +298,11 @@ class GpuUtil
                     else
                     {
                         double gigaFlops = ops / ms / 1000.0 / 1000.0;
-                        snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls) (%d GFLOPS)", name, ms,
+                        snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls) (%f GFLOPS)", name, ms,
                                  count, gigaFlops);
                     }
 
-                    sorted[ms] = buf;
+                    sorted.insert(make_pair(ms, buf));
                 }
             }
 
@@ -345,8 +345,8 @@ class GpuUtil
             size_t total;
             cudaError_t status = cudaMemGetInfo(&free, &total);
 
-            if (cudaSuccess != cuda_status)
-                error("cudaMemGetInfo() failed: %s\n", cudaGetErrorString(cuda_status));
+            if (status != cudaSuccess)
+                error("cudaMemGetInfo() failed: %s\n", cudaGetErrorString(status));
 
             rv = free;
         }
@@ -365,10 +365,9 @@ class GpuUtil
    private:
     bool useProfiling;
     bool useGpu;
-    long lastTicUs = 0;  // for tic() and toc()
 
     map<string, CpuTimingData> cpuTimers;
-    map<string, GpuTimerData> gpuTimers;
+    map<string, GpuTimingData> gpuTimers;
 };
 
 #endif
