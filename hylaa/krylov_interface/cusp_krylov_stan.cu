@@ -558,6 +558,7 @@ double getFreeMemoryMbGpu()
 int preallocateMemoryGpu(int arnoldiIterations, int numTimeSteps, int numParallelInitVecs)
 {
     return cuspDataGpu.preallocateMemory(arnoldiIterations, numTimeSteps, numParallelInitVecs) ? 1
+                                                                                               : 0;
 }
 
 void arnoldiParallelGpu(int startDim, double* resultH)
