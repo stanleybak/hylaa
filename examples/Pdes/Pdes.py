@@ -6,11 +6,20 @@ from scipy import sparse
 import numpy as np
 
 class HeatEquationOneDimension(object):
-    """Generate ODEs from 1-d diffusion heat equation of the form PDEs"""
-    def __init__(self, viscosity, len_x):
-        self.visco = viscosity if viscosity > 0 else 0 # viscosity parameter
+    """Generate ODEs from 1-d diffusion heat equation"""
+
+    # consider 1-d diffusion problem
+    # boundary conditions (BCs): u(0,t) = u0 in range [a, b]; u(len_x, t) = uN in range [c, d]
+    # initial condition (IC): u(x,0) = 0
+    # no heat source
+
+    # todo: generate ODEs of 1-d diffusion equation with heat source: u_t = a*u_xx + u(x,t)
+    # where heat source position is given
+
+    def __init__(self, diffusity_const, len_x):
+        self.diffusity_const = diffusity_const if diffusity_const > 0 else 0 # diffusity constant
         self.len_x = len_x if len_x > 0 else 0 # length along x-axis
-        if self.visco == 0 or self.len_x == 0:
+        if self.diffusity_const == 0 or self.len_x == 0:
             raise ValueError('inappropriate parameters')
 
     def get_odes(self, num_mesh_point):
@@ -22,7 +31,7 @@ class HeatEquationOneDimension(object):
             raise ValueError('num_mesh_point <= 0')
         else:
             disc_step = float((self.len_x)/(num_mesh_point +1)) # discretization step
-            alpha = self.visco/disc_step**2
+            alpha = self.diffusity_const/disc_step**2
 
             print "\ndiscretization step: {}".format(disc_step)
             print "\nnumber of mesh point: {}".format(num_mesh_point)
@@ -80,6 +89,11 @@ class HeatEquationOneDimension(object):
             matrix_b = sparse.csr_matrix(z)
 
             return matrix_a, matrix_b
+
+#class HeatEquationTwoDimensions(object):
+#    """Generate ODEs from 2-d Heat equation"""
+
+#    def __init__(self, diffusity_const, len_x, len_y):
 
 def test():
     'test'
