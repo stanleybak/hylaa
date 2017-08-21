@@ -4,6 +4,7 @@ import copy
 from scipy.sparse import csr_matrix
 from scipy import sparse
 import numpy as np
+import math
 
 class HeatEquationOneDimension(object):
     """Generate ODEs from 1-d diffusion heat equation"""
@@ -15,12 +16,20 @@ class HeatEquationOneDimension(object):
 
     # todo: generate ODEs of 1-d diffusion equation with heat source: u_t = a*u_xx + u(x,t)
     # where heat source position is given
-
-    def __init__(self, diffusity_const, len_x):
+    # first element in heat_source_pos array is where heat source start
+    # second element in heat_source_pos array is where heat source end
+    
+    def __init__(self, diffusity_const, len_x, has_heat_source, heat_source_pos):
         self.diffusity_const = diffusity_const if diffusity_const > 0 else 0 # diffusity constant
         self.len_x = len_x if len_x > 0 else 0 # length along x-axis
         if self.diffusity_const == 0 or self.len_x == 0:
             raise ValueError('inappropriate parameters')
+        self.has_heat_source = has_heat_source
+        assert isinstance(heat_source_pos, np.ndarray), "heat_source_pos is not an array"
+        if heat_source_pos.shape[0] != 2:
+            raise ValueError('heat_source_pos should be an array with shape (2,)')
+        else:
+            self.heat_source_pos = heat_source_pos # shoule be somewhere between 0 and len_x
 
     def get_odes(self, num_mesh_point):
         'Generate linear state space model dot(x) = Ax + Bu'
@@ -82,11 +91,27 @@ class HeatEquationOneDimension(object):
 
             matrix_a = csr_matrix((data, indices, indptr), shape=(num_mesh_point, num_mesh_point))
 
-            z = np.zeros((num_mesh_point, 2))
-            z[0, 0] = alpha
-            z[num_mesh_point-1, 1] = alpha
+            # get matrix_b which may be related to heat source
 
-            matrix_b = sparse.csr_matrix(z)
+            if not self.has_heat_source:
+                z = np.zeros((num_mesh_point, 2))
+                z[0, 0] = alpha
+                z[num_mesh_point-1, 1] = alpha
+
+                matrix_b = sparse.csr_matrix(z) # no heat source
+            else:
+                heat_start_pos = int(math.ceil(self.heat_source_pos[0]/disc_step))
+                print "\nheat_start_pos:{}".format(heat_start_pos)
+                print "\nfloat value heat_start_pos:\n{}".format((self.heat_source_pos[0]/disc_step))
+                heat_end_pos = int(math.ceil(self.heat_source_pos[1]/disc_step))
+                print "\nfloat value heat_end_pos:\n{}".format((self.heat_source_pos[1]/disc_step))
+                print "\nheat_end_pos:{}".format(heat_end_pos)
+                z = np.zeros((num_mesh_point, 3))
+                z[0, 0] = alpha
+                z[num_mesh_point - 1, 1] = alpha
+                z[heat_start_pos-1:heat_end_pos, 2] = 1
+
+                matrix_b = sparse.csr_matrix(z)
 
             return matrix_a, matrix_b
 
@@ -97,7 +122,11 @@ class HeatEquationOneDimension(object):
 
 def test():
     'test'
-    he = HeatEquationOneDimension(0.1, 1)
+    len_x = 1
+    diffusity_const = 0.1
+    has_heat_source = True
+    heat_source_pos = np.array([0.3, 0.5])
+    he = HeatEquationOneDimension(diffusity_const, len_x, has_heat_source, heat_source_pos)
     matrix_a, matrix_b = he.get_odes(10)
     print "\nmatrix_a:\n{}".format(matrix_a.toarray())
     print "\nmatrix_b:\n{}".format(matrix_b.toarray())
