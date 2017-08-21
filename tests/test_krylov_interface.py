@@ -8,7 +8,9 @@ import unittest
 
 from hylaa.krylov_interface import KrylovInterface
 import numpy as np
-from scipy.sparse import coo_matrix
+from scipy.sparse import coo_matrix, csr_matrix
+
+import krypy
 
 def make_iss_matrix(num_copies):
     'create a matrix from the international space station system model'
@@ -160,6 +162,7 @@ def test_arnoldi_parallel(mat, vecs, iterations):
     size = vecs.shape[1]
 
     prev_v = np.zeros((num_init, iterations * size))
+    h_mat = np.zeros((num_init, (iterations) * (iterations)))
 
     for c in xrange(num_init):
         vec = vecs[c, :]
@@ -170,6 +173,8 @@ def test_arnoldi_parallel(mat, vecs, iterations):
     a_transpose = mat.T.copy()
 
     for cur_it in xrange(1, iterations):
+        print "cur_it = {}".format(cur_it)
+
         # do all the multiplications up front
         for cur_vec in xrange(num_init):
             vec = np.dot(prev_v[cur_vec, (cur_it-1)*size:cur_it*size], a_transpose)
@@ -182,18 +187,27 @@ def test_arnoldi_parallel(mat, vecs, iterations):
             prev_mat.shape = (cur_it, size)
             dots = np.dot(prev_mat, vec.T)
 
+            for j in xrange(0, cur_it):
+                dot_val = dots[j-1]
+                h_mat[cur_vec][j * iterations + cur_it] = dot_val
+                print "! dotval = {}".format(dot_val)
+
             sub_vecs = np.dot(np.diag(dots), prev_mat)
 
             for c in xrange(cur_it):
                 vec -= sub_vecs[c]
 
             norm = np.linalg.norm(vec)
+            print "! norm = {}".format(norm)
 
             if norm >= 1e-6:
                 vec = vec / norm
                 prev_v[cur_vec, cur_it*size:(cur_it+1)*size] = vec
 
-    return prev_v
+                k = cur_it + 1
+                h_mat[cur_vec][k * iterations + (k-1)] = norm
+
+    return prev_v, h_mat
 
 class TestKrylovInterface(unittest.TestCase):
     'Unit tests for krylov utilities'
@@ -201,7 +215,33 @@ class TestKrylovInterface(unittest.TestCase):
     def test_arnoldi(self):
         'compare test_arnoldi_parallel with test_arnoldi'
 
-        print "ok"
+        dense_a = np.array([[0.1, 1.0], [-1.0, -0.5]], dtype=float)
+
+
+        a_matrix_t = csr_matrix(dense_a.T)
+        key_dir_mat = csr_matrix(np.array([[1.0, 0], [0.0, 1.0]]), dtype=float)
+
+        num_iterations = 2
+        num_parallel = 1
+        num_steps = 4
+
+        KrylovInterface.load_a_transpose(a_matrix_t)
+        KrylovInterface.load_key_dir_matrix(key_dir_mat)
+        KrylovInterface.preallocate_memory(num_iterations, num_steps, num_parallel)
+
+        result_h = KrylovInterface.arnoldi_parallel(0)
+
+        print "KrylovInterface - result_h:\n{}\n".format(result_h)
+
+        # test with vanilla arnoldi
+        vecs = np.array([[1.0, 0.0]], dtype=float)
+        test_v, test_h = test_arnoldi_parallel(dense_a, vecs, num_iterations)
+
+        print "test_arnoldi v:\n{}\nh:\n{}\n".format(test_v, test_h)
+
+        krypy_v, krypy_h = krypy.utils.arnoldi(dense_a, vecs.T, maxiter=2)
+
+        print "krypy results, v:\n{}\n\nh:\n{}".format(krypy_v, krypy_h)
 
 if __name__ == '__main__':
     unittest.main()

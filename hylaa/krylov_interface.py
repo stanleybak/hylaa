@@ -8,21 +8,30 @@ Simulation of linear system x' = Ax using krylov supspace method in CPU and GPU
 
 import ctypes
 import os
-import time
-import random
 
 import numpy as np
 from numpy.ctypeslib import ndpointer
-from scipy.sparse import csr_matrix, coo_matrix
-from scipy.linalg import expm
 from hylaa.util import Freezable, get_script_path
+from scipy.sparse import csr_matrix
 
-class KrylovInterface(Freezable):
+class FuncPtrs(Freezable):
+    'Function pointers container for gpu or cpu'
+
+    def __init__(self):
+        self.load_a_transpose = None
+        self.load_key_dir_matrix = None
+        self.get_free_memory_mb = None
+        self.preallocate_memory = None
+        self.arnoldi_parallel = None
+
+        self.freeze_attrs()
+
+class KrylovInterface(object):
     'GPU (and CPU) interface for Krylov subspace simulations of a linear system'
 
     # static member (library)
     _lib = None
-    _lib_path = os.path.join(get_script_path(__file__), 'gpu_interface', 'cusp_krylov_stan.so')
+    _lib_path = os.path.join(get_script_path(__file__), 'krylov_interface', 'cusp_krylov_stan.so')
 
     def __init__(self):
         raise RuntimeError(
@@ -47,12 +56,14 @@ class KrylovInterface(Freezable):
             KrylovInterface._reset.argtypes = None
 
             # CPU and GPU container objects... _funcs stores the selected version
-            KrylovInterface._cpu = object()
-            KrylovInterface._gpu = object()
+            KrylovInterface._cpu = FuncPtrs()
+            KrylovInterface._gpu = FuncPtrs()
             KrylovInterface._funcs = KrylovInterface._cpu # can be changed programatically
 
             #void loadATransposeGpu(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries,
             #           int nonZeroCount)
+            KrylovInterface._cpu.load_a_transpose = lib.loadATransposeCpu
+
             cpu_func = KrylovInterface._cpu.load_a_transpose = lib.loadATransposeCpu
             gpu_func = KrylovInterface._gpu.load_a_transpose = lib.loadATransposeGpu
             gpu_func.restype = cpu_func.restype = None
@@ -100,6 +111,19 @@ class KrylovInterface(Freezable):
             # initialize GPU ?
 
     @staticmethod
+    def set_use_gpu(use_gpu):
+        'set if the GPU should be used (false = CPU)'
+
+        KrylovInterface._init_static()
+
+        if use_gpu:
+            assert KrylovInterface.has_gpu(), "set_use_gpu(True) called, but no GPU hardware was detected"
+
+            KrylovInterface._funcs = KrylovInterface._gpu
+        else:
+            KrylovInterface._funcs = KrylovInterface._cpu
+
+    @staticmethod
     def has_gpu():
         'is a GPU detected?'
 
@@ -128,7 +152,8 @@ class KrylovInterface(Freezable):
         KrylovInterface._init_static()
         w, h = matrix.shape
 
-        assert isinstance(matrix, csr_matrix)
+        assert isinstance(matrix, csr_matrix), "expected a_matrix to be csr_matrix, got {}".format(type(matrix))
+        assert matrix.dtype == float
         assert w == h, "a matrix should be square"
 
         rows, cols = matrix.nonzero()
@@ -147,13 +172,14 @@ class KrylovInterface(Freezable):
         w, h = matrix.shape
 
         assert isinstance(matrix, csr_matrix)
+        assert matrix.dtype == float
         assert KrylovInterface._loaded_a
         assert KrylovInterface._dims == w
 
         rows, cols = matrix.nonzero()
         entries = matrix[rows, cols].A1.copy()
 
-        KrylovInterface._funcs.load_key_dir_matrix(w, h, entries, len(entries))
+        KrylovInterface._funcs.load_key_dir_matrix(w, h, rows, cols, entries, len(entries))
 
         KrylovInterface._loaded_key = True
         KrylovInterface._key_h = h
