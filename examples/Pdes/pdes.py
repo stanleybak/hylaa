@@ -113,13 +113,54 @@ class HeatEquationOneDimension(object):
 
             return matrix_a, matrix_b
 
-#class HeatEquationTwoDimensions(object):
-#    """Generate ODEs from 2-d Heat equation"""
+class HeatEquationTwoDimensions(object):
+    """Generate ODEs from 2-d Heat equation"""
 
-#    def __init__(self, diffusity_const, len_x, len_y):
+    def __init__(self, diffusity_const, heat_exchange_coeff, thermal_cond, len_x, len_y, has_heat_source, heat_source_pos):
+        self.diffusity_const = diffusity_const if diffusity_const > 0 else 0 # diffusity constant
+        self.heat_exchange_coeff = heat_exchange_coeff if heat_exchange_coeff > 0 else 0 # heat exchange coefficient
+        self.thermal_cond = thermal_cond if thermal_cond > 0 else 0 # thermal conductivity
+        self.len_x = len_x if len_x > 0 else 0 # length x 
+        self.len_y = len_y if len_y > 0 else 0 # length y
 
-def test():
-    'test'
+        if self.diffusity_const == 0 or self.heat_exchange_coeff == 0 or self.thermal_cond == 0 or  self.len_x == 0 or self.len_y == 0:
+            raise ValueError("inappropriate parameters")
+        self.has_heat_source = has_heat_source
+
+        assert isinstance(heat_source_pos, np.ndarray), "heat source pos is not an ndarray"
+        self.heat_source_pos = heat_source_pos # an array to indicate the position of heat source
+
+        # heat_source_pos = ([[x_start, x_end], [y_start, y_end]])
+
+    def get_odes(self, num_x, num_y):
+        'obtain the linear model of 2-d heat equation'
+
+        assert isinstance(num_x, int), "number of mesh point should be an integer"
+        assert isinstance(num_y, int), "number of messh point should be an integer"
+        
+        if num_x <= 0 or num_y <=0:
+            raise ValueError('number of mesh points should be larger than zero')
+        
+        disc_step_x = self.len_x/num_x # dicrezation step along x axis
+        disc_step_y = self.len_y/num_y # discrezation step along y axis
+
+        # we use explicit semi- finite-difference method to obtain the linear model of 2-d heat equation
+
+        num_var = num_x*num_y # number of discrezation variables
+        matrix_a = np.zeros((num_var, num_var))
+        
+        a = 1
+        b = 1
+        c = -2*(a+b)
+
+        # fill matrix_a
+
+
+        return matrix_a
+        
+
+def test_1d():
+    'test 1-d heat equation'
     len_x = 1
     diffusity_const = 0.1
     has_heat_source = True
@@ -129,5 +170,25 @@ def test():
     print "\nmatrix_a:\n{}".format(matrix_a.toarray())
     print "\nmatrix_b:\n{}".format(matrix_b.toarray())
 
+def test_2d():
+    'test 2-d heat equation'
+    diffusity_const = 0.1
+    heat_exchange_coeff = 1
+    thermal_cond = 1
+    len_x = 1
+    len_y = 1
+    
+    has_heat_source = True
+    heat_source_pos = np.array([[0, 0.4], [0, 1]])
+
+    he = HeatEquationTwoDimensions(diffusity_const, heat_exchange_coeff, thermal_cond, len_x, len_y, has_heat_source, heat_source_pos)
+
+    matrix_a = he.get_odes(2, 2)
+    print "\nmatrix_a :\n{}".format(matrix_a)
+    
+    
+
+
 if __name__ == '__main__':
-    test()
+    #test_1d()
+    test_2d()
