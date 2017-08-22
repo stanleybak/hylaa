@@ -144,16 +144,41 @@ class HeatEquationTwoDimensions(object):
         disc_step_x = self.len_x/num_x # dicrezation step along x axis
         disc_step_y = self.len_y/num_y # discrezation step along y axis
 
-        # we use explicit semi- finite-difference method to obtain the linear model of 2-d heat equation
+        # we use explicit semi- finite-difference method to obtain the
+        # linear model of 2-d heat equation
 
         num_var = num_x*num_y # number of discrezation variables
-        matrix_a = np.zeros((num_var, num_var))
+        matrix_a = sparse.csr_matrix((num_var, num_var))
         
         a = 1
-        b = 1
+        b = 2
         c = -2*(a+b)
 
         # fill matrix_a
+
+        for i in xrange(0, num_var):
+            matrix_a[i,i] = c # filling diagonal
+            
+            x_pos = i%num_x # x-position corresponding to i-th state variable
+            y_pos = int((i - x_pos)/num_x) # y-position corresponding to i-th variable
+
+            print "\n x_pos = {}, y_pos = {}".format(x_pos, y_pos)
+
+            # fill along x - axis
+            if x_pos - 1 >= 0:
+                matrix_a[i, i-1] = a
+            if x_pos + 1 <= num_x -1:
+                matrix_a[i, i+1] = a
+
+            # fill along y-axis
+            if y_pos - 1 >= 0:
+                matrix_a[i, (y_pos-1)*num_x + x_pos] = b
+
+            if y_pos + 1 <= num_y - 1:
+                matrix_a[i, (y_pos+1)*num_x + x_pos] = b
+    
+
+            
 
 
         return matrix_a
@@ -181,10 +206,11 @@ def test_2d():
     has_heat_source = True
     heat_source_pos = np.array([[0, 0.4], [0, 1]])
 
-    he = HeatEquationTwoDimensions(diffusity_const, heat_exchange_coeff, thermal_cond, len_x, len_y, has_heat_source, heat_source_pos)
+    he = HeatEquationTwoDimensions(diffusity_const, heat_exchange_coeff, thermal_cond,\
+                                   len_x, len_y, has_heat_source, heat_source_pos)
 
     matrix_a = he.get_odes(2, 2)
-    print "\nmatrix_a :\n{}".format(matrix_a)
+    print "\nmatrix_a :\n{}".format(matrix_a.todense())
     
     
 
