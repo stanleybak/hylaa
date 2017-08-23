@@ -113,13 +113,112 @@ class HeatEquationOneDimension(object):
 
             return matrix_a, matrix_b
 
-#class HeatEquationTwoDimensions(object):
-#    """Generate ODEs from 2-d Heat equation"""
+class HeatEquationTwoDimensions(object):
+    """Generate ODEs from 2-d Heat equation"""
 
-#    def __init__(self, diffusity_const, len_x, len_y):
+    # We consider the 2-d heat diffusion equation on a rectangle metal plate with the form:
+    # u_t = alpha*(u_xx + u_yy) + q(t)
+    # q(t) is the heat source
+    # we assume the following boundary conditions (BCs):
+    # BC1: u(x,0,t) = 0, BC2: u(x, len_y, t) = 0, BC3: u(0,y,t) = 0
+    # In the right side of the metal plate, the heat is exchanged with the environment
+    # The boundary condition for the right hand side is: BC4:  u_x(len_x,y,t) = -k*[u(len_x,y,t) - g(t)]
+    # k is the heat_lost_constant and g(t) is environment temperature, c1 <= g(t) <= c2
+    # The BC4 shows that the metal plate lost its heat linearly to the environment
 
-def test():
-    'test'
+    # we assume the following initial condition (IC): u(x,y,0) = 0
+
+    def __init__(self, diffusity_const, heat_exchange_coeff, thermal_cond, \
+                     len_x, len_y, has_heat_source, heat_source_pos):
+        self.diffusity_const = diffusity_const if diffusity_const > 0 else 0 # diffusity constant
+        self.heat_exchange_coeff = heat_exchange_coeff if heat_exchange_coeff > 0 else 0 # heat exchange coefficient
+        self.thermal_cond = thermal_cond if thermal_cond > 0 else 0 # thermal conductivity
+        self.len_x = len_x if len_x > 0 else 0 # length x
+        self.len_y = len_y if len_y > 0 else 0 # length y
+
+        if self.diffusity_const == 0 or self.heat_exchange_coeff == 0 or \
+          self.thermal_cond == 0 or  self.len_x == 0 or self.len_y == 0:
+            raise ValueError("inappropriate parameters")
+        self.heat_lost_const = self.thermal_cond/self.heat_exchange_coeff
+
+        self.has_heat_source = has_heat_source
+        assert isinstance(heat_source_pos, np.ndarray), "heat source pos is not an ndarray"
+        if heat_source_pos.shape != (2, 2):
+            raise ValueError("heat source position is not 2x2 array")
+        if heat_source_pos[0, 0] < 0 or heat_source_pos[0, 1] > self.len_x or \
+                heat_source_pos[1, 0] < 0 or heat_source_pos[1, 1] > self.len_y:
+            raise ValueError("Heat source position value error")
+        self.heat_source_pos = heat_source_pos # an array to indicate the position of heat source
+        # heat_source_pos = ([[x_start, x_end], [y_start, y_end]])
+
+    def get_odes(self, num_x, num_y):
+        'obtain the linear model of 2-d heat equation'
+
+        assert isinstance(num_x, int), "number of mesh point should be an integer"
+        assert isinstance(num_y, int), "number of messh point should be an integer"
+
+        if num_x <= 0 or num_y <= 0:
+            raise ValueError('number of mesh points should be larger than zero')
+
+        disc_step_x = self.len_x/num_x # dicrezation step along x axis
+        disc_step_y = self.len_y/num_y # discrezation step along y axis
+
+        if self.has_heat_source:
+            heat_start_pos_x = int(math.ceil(self.heat_source_pos[0, 0]/disc_step_x))
+            heat_end_pos_x = int(math.ceil(self.heat_source_pos[0, 1]/disc_step_x))
+            heat_start_pos_y = int(math.ceil(self.heat_source_pos[1, 0]/disc_step_y))
+            heat_end_pos_y = int(math.ceil(self.heat_source_pos[1, 1]/disc_step_y))
+
+            print "\nheat source is from point {} to point {} on x-axis".\
+              format(heat_start_pos_x, heat_end_pos_x)
+            print "\nheat source is from point {} to point {} on y-axis".\
+              format(heat_start_pos_y, heat_end_pos_y)
+
+        # we use explicit semi- finite-difference method to obtain the
+        # linear model of heat equation
+
+        num_var = num_x*num_y # number of discrezation variables
+        # changing the sparsity structure of a csr_matrix is expensive. lil_matrix is more efficient
+        matrix_a = sparse.lil_matrix((num_var, num_var))
+        matrix_b = sparse.lil_matrix((num_var, 2))
+        a = 1/disc_step_x**2
+        b = 1/disc_step_y**2
+        c = -2*(a+b)
+        k = self.heat_lost_const
+        step_x = disc_step_x
+
+        # fill matrix_a
+
+        for i in xrange(0, num_var):
+            matrix_a[i, i] = c # filling diagonal
+            x_pos = i%num_x # x-position corresponding to i-th state variable
+            y_pos = int((i - x_pos)/num_x) # y-position corresponding to i-th variable
+
+            # fill along x - axis
+            if x_pos - 1 >= 0:
+                matrix_a[i, i-1] = a
+            if x_pos + 1 <= num_x -1:
+                matrix_a[i, i+1] = a
+            else:
+                # fill diffusion term
+                matrix_a[i, i] = matrix_a[i, i] + 1/(1+k*step_x)
+                matrix_b[i, 0] = (k*step_x)/(1+k*step_x)
+            # fill along y-axis
+            if y_pos - 1 >= 0:
+                matrix_a[i, (y_pos-1)*num_x + x_pos] = b
+
+            if y_pos + 1 <= num_y - 1:
+                matrix_a[i, (y_pos+1)*num_x + x_pos] = b
+
+            # fill heat source
+            if x_pos >= heat_start_pos_x and x_pos <= heat_end_pos_x and y_pos >= heat_start_pos_y and \
+                y_pos <= heat_end_pos_y:
+                matrix_b[i, 1] = 1
+
+        return matrix_a.tocsr(), matrix_b.tocsr()
+
+def test_1d():
+    'test 1-d heat equation'
     len_x = 1
     diffusity_const = 0.1
     has_heat_source = True
@@ -129,5 +228,23 @@ def test():
     print "\nmatrix_a:\n{}".format(matrix_a.toarray())
     print "\nmatrix_b:\n{}".format(matrix_b.toarray())
 
+def test_2d():
+    'test 2-d heat equation'
+    diffusity_const = 0.1
+    heat_exchange_coeff = 1
+    thermal_cond = 1
+    len_x = 1
+    len_y = 1
+    has_heat_source = True
+    heat_source_pos = np.array([[0, 0.4], [0.4, 0.6]])
+
+    he = HeatEquationTwoDimensions(diffusity_const, heat_exchange_coeff, thermal_cond,\
+                                   len_x, len_y, has_heat_source, heat_source_pos)
+
+    matrix_a, matrix_b = he.get_odes(4, 4)
+    print "\nmatrix_a :\n{}".format(matrix_a.todense())
+    print "\nmatrix_b :\n{}".format(matrix_b.todense())
+    
 if __name__ == '__main__':
-    test()
+    #test_1d()
+    test_2d()
