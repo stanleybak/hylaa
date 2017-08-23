@@ -3,6 +3,9 @@ from __future__ import division
 import copy
 from scipy.sparse import csr_matrix
 from scipy import sparse
+from scipy.integrate import odeint
+import matplotlib.pyplot as plt
+import time
 import numpy as np
 import math
 
@@ -217,6 +220,27 @@ class HeatEquationTwoDimensions(object):
 
         return matrix_a.tocsr(), matrix_b.tocsr()
 
+def sim_odeint_sparse(sparse_a_matrix, init_vec, input_vec, step, num_steps):
+    'use odeint and keep the A matrix sparse'
+
+    num_dims = sparse_a_matrix.shape[0]
+    times = np.linspace(0, step, num_steps)
+
+    def der_func(state, _):
+        'linear derivative function'
+
+        rv = np.array(sparse_a_matrix * state) + input_vec
+        rv.shape = (num_dims,)
+
+        return rv
+
+    start = time.time()
+    result = odeint(der_func, init_vec, times)
+    runtime = time.time() - start
+
+    return runtime, result
+
+
 def test_1d():
     'test 1-d heat equation'
     len_x = 1
@@ -230,20 +254,65 @@ def test_1d():
 
 def test_2d():
     'test 2-d heat equation'
+
+    # parameters
     diffusity_const = 0.1
     heat_exchange_coeff = 1
     thermal_cond = 1
     len_x = 1
     len_y = 1
     has_heat_source = True
-    heat_source_pos = np.array([[0, 0.4], [0.4, 0.6]])
+    heat_source_pos = np.array([[0, 0.4], [0, 1]])
 
     he = HeatEquationTwoDimensions(diffusity_const, heat_exchange_coeff, thermal_cond,\
                                    len_x, len_y, has_heat_source, heat_source_pos)
 
-    matrix_a, matrix_b = he.get_odes(4, 4)
+    # get linear ode model of 2-d heat equation
+    num_x = 10 # number of discretized steps between 0 and len_x
+    num_y = 10 # number of discretized steps between 0 and len_y
+    matrix_a, matrix_b = he.get_odes(num_x, num_y)
     print "\nmatrix_a :\n{}".format(matrix_a.todense())
     print "\nmatrix_b :\n{}".format(matrix_b.todense())
+
+    # simulate the linear ode model of 2-d heat equation
+    
+    heat_source = 1
+    envi_temp = 0
+    inputs = np.array([envi_temp, heat_source])
+
+    print "\ninputs to the odes including heat_source = {} and environment temperature = {}".\
+      format(heat_source, envi_temp)
+
+    input_vec = matrix_b*inputs
+    print "\input vector v = matrix_b*inputs is: \n{}".format(input_vec)
+
+    init_vec = np.zeros((matrix_a.shape[0]),)
+    step = 0.3
+    num_steps = 1000000
+    times = np.linspace(0, step, num_steps)
+    runtime, result = sim_odeint_sparse(matrix_a, init_vec, input_vec, step, num_steps)
+
+    print "\n the result is: \n{}".format(result)
+    print "\n result shape is: \n{}".format(result.shape)
+    
+    # plot the result
+
+    # plot the center point temperature
+    center_point_pos_x = int(math.ceil(num_x/2)) - 1
+    center_point_pos_y = int(math.ceil(num_y/2)) - 1
+
+    center_point_state_pos = center_point_pos_y*num_x + center_point_pos_x
+    print "\ncenter_point corresponds to the {}-th state variable".format(center_point_state_pos)
+
+    center_point_temp = result[:, center_point_state_pos]
+    plt.plot(times, center_point_temp, 'b', label = 'center_point')
+    plt.legend(loc = 'best')
+    plt.xlabel('t')
+    plt.grid()
+    plt.show()
+    
+    
+    
     
 if __name__ == '__main__':
     #test_1d()
