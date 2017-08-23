@@ -276,9 +276,9 @@ def test_2d():
 
     # simulate the linear ode model of 2-d heat equation
     
-    heat_source = 1
-    envi_temp = 0
-    inputs = np.array([envi_temp, heat_source])
+    heat_source = 1 # the value of heat source is 1 degree celcius 
+    envi_temp = 0   # environment temperature is 0 degree celcius
+    inputs = np.array([envi_temp, heat_source]) # input to linear ode model
 
     print "\ninputs to the odes including heat_source = {} and environment temperature = {}".\
       format(heat_source, envi_temp)
@@ -310,6 +310,9 @@ def test_2d():
     plt.xlabel('t')
     plt.grid()
     plt.show()
+
+    # plot all points in 3-d
+    
     
     
     
