@@ -5,6 +5,7 @@
 #include <new>
 #include <stdio.h>
 #include <stdlib.h>
+#include <cusp/array1d.h>
 #include <cusp/coo_matrix.h>
 #include <cusp/csr_matrix.h>
 #include <cusp/hyb_matrix.h>
@@ -18,36 +19,46 @@ class CuspData
 {
     typedef cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> Array1d;
     typedef typename Array1d::view Array1dView;
-    typedef cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE> HybMatrix;
 
-    typedef cusp::coo_matrix<int, FLOAT_TYPE, cusp::host_memory> HostCooMatrix;
+    typedef cusp::array1d<FLOAT_TYPE, cusp::host_memory> HostFloatArray1d;
+    typedef typename HostFloatArray1d::view HostFloatArray1dView;
+
+    typedef cusp::array1d<int, cusp::host_memory> HostIntArray1d;
+    typedef typename HostIntArray1d::view HostIntArray1dView;
+
+    typedef cusp::csr_matrix<int, FLOAT_TYPE, MEMORY_TYPE> CsrMatrix;
+
+    typedef cusp::csr_matrix<int, FLOAT_TYPE, cusp::host_memory> HostCsrMatrix;
+    typedef typename HostCsrMatrix::view HostCsrMatrixView;
 
    public:
-    HybMatrix* aTranspose;
-    HybMatrix* keyDirMatrix;
-
-    // each row is the arnoldi v matrix from a single initial vector
-    Array1d* vMatrix;
-    Array1d* hMatrix;
-
     GpuUtil util;  // timers and other utility functions
 
-    int aTransposeNonzeros;
+    CsrMatrix* aTranspose;
+    CsrMatrix* keyDirMatrix;
 
-    int dims;
-    int keyDirHeight;
+    Array1d* vMatrix;
+    Array1d* hMatrix;
+    Array1d* vProjected;
+
+    int _n;  // number of dimensions in the system
+    int _k;  // number of key directions
+    int _i;  // number of arnoldi iterations
+    int _p;  // number of parallel initial vectors in arnoldi
+
+    // profiling variables
     bool useProfiling;
-
-    int arnoldiIterations;
-    int numTimeSteps;
-    int numParallelInitVecs;
+    int aTransposeNonzeros;
+    int keyDirMatrixNonzeros;
 
     CuspData(bool useCpu) : util(useCpu)
     {
         aTranspose = 0;
         keyDirMatrix = 0;
+
         vMatrix = 0;
         hMatrix = 0;
+        vProjected = 0;
 
         reset();  // this resets all variables
     }
@@ -80,17 +91,22 @@ class CuspData
             hMatrix = 0;
         }
 
+        if (vProjected != 0)
+        {
+            delete vProjected;
+            vProjected = 0;
+        }
+
         util.clearTimers();
 
-        aTransposeNonzeros = 0;
+        _n = 0;
+        _k = 0;
+        _i = 0;
+        _p = 0;
 
-        dims = 0;
-        keyDirHeight = 0;
         useProfiling = false;
-
-        arnoldiIterations = 0;
-        numTimeSteps = 0;
-        numParallelInitVecs = 0;
+        aTransposeNonzeros = 0;
+        keyDirMatrixNonzeros = 0;
     }
 
     void setUseProfiling(bool enabled)
@@ -99,37 +115,27 @@ class CuspData
         util.setUseProfiling(enabled);
     }
 
-    void loadATranspose(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries,
-                        int nonZeroCount)
+    // load a transpose, passed in as a csr matrix
+    void loadATranspose(int dims, int* rowOffsets, int rowOffsetsLen, int* colInds, int colIndsLen,
+                        FLOAT_TYPE* values, int valuesLen)
     {
-        dims = w;
-        aTransposeNonzeros = nonZeroCount;
-
-        HostCooMatrix hostMatrix(w, h, nonZeroCount);
+        if (rowOffsetsLen != dims + 1)
+            error("in loadATranspose(), rowOffsetsLen(%d) != dims(%d) + 1", rowOffsetsLen, dims);
 
         if (useProfiling)
-        {
-            printf(
-                "loadATranspose() called, estimated size in memory of sparse matrix: %.2f MB (%d "
-                "nonzeros)\n",
-                nonZeroCount * (8 + 4 + 4) / 1024.0 / 1024.0, nonZeroCount);
-        }
+            printf("loadATranspose() with sparse matrix size: %.2f MB (%d nonzeros)\n",
+                   valuesLen * (8 + 4 + 4) / 1024.0 / 1024.0, valuesLen);
 
         util.tic("loadATranspose()");
 
-        // initialize matrix entries on host
-        int index = 0;
+        _n = dims;
+        aTransposeNonzeros = valuesLen;
 
-        for (int i = 0; i < nonZeroCount; ++i)
-        {
-            int row = nonZeroRows[i];
-            int col = nonZeroCols[i];
-            double val = nonZeroEntries[i];
+        HostIntArray1dView rowOffsetsView(rowOffsets, rowOffsets + rowOffsetsLen);
+        HostIntArray1dView colIndsView(colInds, colInds + colIndsLen);
+        HostFloatArray1dView valuesView(values, values + colIndsLen);
 
-            hostMatrix.row_indices[index] = row;
-            hostMatrix.column_indices[index] = col;
-            hostMatrix.values[index++] = val;
-        }
+        HostCsrMatrixView view(_n, _n, valuesLen, rowOffsetsView, colIndsView, valuesView);
 
         if (aTranspose != 0)
         {
@@ -137,7 +143,9 @@ class CuspData
             aTranspose = 0;
         }
 
-        aTranspose = new (std::nothrow) cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE>(hostMatrix);
+        util.tic("copy a_mat to gpu");
+        aTranspose = new (std::nothrow) CsrMatrix(view);
+        util.tic("copy a_mat to gpu");
 
         if (aTranspose == 0)
             error("memory allocation of aTranspose returned nullptr\n");
@@ -147,34 +155,27 @@ class CuspData
         util.clearTimers();
     }
 
-    void loadKeyDirMatrix(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries,
-                          int nonZeroCount)
-    {  // Load key Direction Sparse Matrix to get a particular direction of simulation result
-        util.tic("loadKeyDirMatrix()");
+    void loadKeyDirMatrixTranspose(int numKeyDirs, int* rowOffsets, int rowOffsetsLen, int* colInds,
+                                   int colIndsLen, FLOAT_TYPE* values, int valuesLen)
+    {
+        if (rowOffsetsLen != _n + 1)
+            error("in loadKeyDirMatrixTranspose(), rowOffsetsLen(%d) != dims(%d) + 1",
+                  rowOffsetsLen, _n);
 
-        if (aTranspose == 0)
-            error("loadKeyDirMat called before loadATranspose\n");
+        if (useProfiling)
+            printf("loadKeyDirMatrixTranspose() with sparse matrix size: %.2f MB (%d nonzeros)\n",
+                   valuesLen * (8 + 4 + 4) / 1024.0 / 1024.0, valuesLen);
 
-        if (w != dims)
-            error("loadKeyDirMat called with width %d, but system dimensions was %d\n", w, dims);
+        util.tic("loadKeyDirMatrixTranspose()");
 
-        keyDirHeight = h;
+        _k = numKeyDirs;
+        keyDirMatrixNonzeros = valuesLen;
 
-        HostCooMatrix hostKeyMatrix(w, h, nonZeroCount);
+        HostIntArray1dView rowOffsetsView(rowOffsets, rowOffsets + rowOffsetsLen);
+        HostIntArray1dView colIndsView(colInds, colInds + colIndsLen);
+        HostFloatArray1dView valuesView(values, values + colIndsLen);
 
-        // initialize key matrix entries on host
-        int index = 0;
-
-        for (int i = 0; i < nonZeroCount; ++i)
-        {
-            int row = nonZeroRows[i];
-            int col = nonZeroCols[i];
-            double val = nonZeroEntries[i];
-
-            hostKeyMatrix.row_indices[index] = row;
-            hostKeyMatrix.column_indices[index] = col;
-            hostKeyMatrix.values[index++] = val;
-        }
+        HostCsrMatrixView view(_n, _n, valuesLen, rowOffsetsView, colIndsView, valuesView);
 
         if (keyDirMatrix != 0)
         {
@@ -182,13 +183,14 @@ class CuspData
             keyDirMatrix = 0;
         }
 
-        keyDirMatrix =
-            new (std::nothrow) cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE>(hostKeyMatrix);
+        util.tic("copy key_mat to gpu");
+        keyDirMatrix = new (std::nothrow) CsrMatrix(view);
+        util.tic("copy key_mat to gpu");
 
         if (keyDirMatrix == 0)
-            error("memory allocation of keyDirMatrix returned nullptr\n");
+            error("memory allocation of keyDirMatrixTranspose returned nullptr\n");
 
-        util.toc("loadKeyDirMatrix()");
+        util.toc("loadKeyDirMatrixTranspose()");
         util.printTimers();
         util.clearTimers();
     }
@@ -201,14 +203,16 @@ class CuspData
     }
 
     // frees memory if it was previously allocated, returns false if memory error occurs
-    bool preallocateMemory(int arnoldiIt, int numSteps, int numParInitVecs)
+    bool preallocateMemory(int arnoldiIt, int numParallelInit)
     {
-        if (dims == 0)
-            error("preallocateMemory() called before loadMatrix() (dims==0)\n");
+        if (_n == 0)
+            error("preallocateMemory() called before loadMatrix() (_n==0)\n");
 
-        arnoldiIterations = arnoldiIt;
-        numTimeSteps = numSteps;
-        numParallelInitVecs = numParInitVecs;
+        if (_k == 0)
+            error("preallocateMemory() called before loadKeyDirMatrix() (_k==0)\n");
+
+        _i = arnoldiIt;
+        _p = numParallelInit;
 
         // preallocate vMatrix, width = dims * iterations, height = numParInit
         if (vMatrix != 0)
@@ -217,7 +221,7 @@ class CuspData
             vMatrix = 0;
         }
 
-        unsigned long vMatrixSize = dims * arnoldiIterations * numParallelInitVecs;
+        unsigned long vMatrixSize = _p * _n * (_i + 1);
         vMatrix = new (std::nothrow) Array1d(vMatrixSize, 0);
 
         // preallocate hMatrix, numParInit * iterations * iterations
@@ -227,27 +231,45 @@ class CuspData
             hMatrix = 0;
         }
 
-        unsigned long hMatrixSize = numParallelInitVecs * arnoldiIterations * arnoldiIterations;
+        unsigned long hMatrixSize = _p * _i * (_i + 1);
         hMatrix = new (std::nothrow) Array1d(hMatrixSize, 0);
 
-        return vMatrix != 0 && hMatrix != 0;
+        // preallocate vProjected
+        if (vProjected != 0)
+        {
+            delete vProjected;
+            vProjected = 0;
+        }
+
+        unsigned long vProjectedSize = _p * _n * (_i + 1);
+        vProjected = new (std::nothrow) Array1d(vProjectedSize, 0);
+
+        bool success = vMatrix != 0 && hMatrix != 0 && vProjected != 0;
+
+        if (!success)
+        {
+            _i = 0;
+            _p = 0;
+        }
+
+        return success;
     }
 
     void initParallelArnoldiV(int startDim, int numInitVecs)
     {
         util.tic("init parallel");
 
-        if (startDim + numInitVecs > dims)
+        if (startDim + numInitVecs > _n)
             error("initParallelArnoldiV called with startDim=%d, numInitVecs=%d, but dims=%d",
-                  startDim, numInitVecs, dims);
+                  startDim, numInitVecs, _n);
 
-        unsigned long rowWidth = dims * arnoldiIterations;
+        unsigned long rowWidth = _n * (_i + 1);
 
         // initialize each row
         for (unsigned long rowNum = 0; rowNum < numInitVecs; ++rowNum)
         {
             unsigned long rowOffset = rowNum * rowWidth;
-            Array1dView initView = vMatrix->subarray(rowOffset, dims);
+            Array1dView initView = vMatrix->subarray(rowOffset, _n);
 
             cusp::blas::fill(initView, 0.0);
             initView[startDim + rowNum] = 1.0;
@@ -273,12 +295,12 @@ class CuspData
 
             for (int curInitVec = 0; curInitVec < numInitVecs; ++curInitVec)
             {
-                unsigned long rowOffset = curInitVec * dims * iterations;
-                unsigned long prevColOffset = dims * (it - 1);
-                unsigned long curColOffset = dims * it;
+                unsigned long rowOffset = curInitVec * _n * iterations;
+                unsigned long prevColOffset = _n * (it - 1);
+                unsigned long curColOffset = _n * it;
 
-                Array1dView vecView = vMatrix->subarray(rowOffset + prevColOffset, dims);
-                Array1dView resultView = vMatrix->subarray(rowOffset + curColOffset, dims);
+                Array1dView vecView = vMatrix->subarray(rowOffset + prevColOffset, _n);
+                Array1dView resultView = vMatrix->subarray(rowOffset + curColOffset, _n);
 
                 // ????
                 // cusp::multiply(A, V[j], V[j + 1]);
@@ -363,22 +385,28 @@ class CuspData
 
     void arnoldiParallel(int startDim, double* result_H)
     {
+        if (_n == 0)
+            error("arnoldiParallel() called before loadMatrix() (_n==0)\n");
+
+        if (_k == 0)
+            error("arnoldiParrallel() called before loadKeyDirMatrix() (_k==0)\n");
+
+        if (_i == 0 || _p == 0)
+            error("arnoldiParrallel() called before preallocate() (_i==0 or _p==0)\n");
+
+        if (startDim < 0 || startDim >= _n)
+            error("invalid startDim in arnodli (%d dim system): %d", _n, startDim);
+
         util.tic("arnoldi parallel total");
 
-        if (vMatrix == 0 || hMatrix == 0)
-            error("preallocateMemory() must be sucessfully called before running arnoldi");
+        int parInitVecs = _p;
 
-        if (startDim < 0 || startDim >= dims)
-            error("invalid startDim in arnodli (%d dim system): %d", dims, startDim);
-
-        int parInitVecs = numParallelInitVecs;
-
-        if (startDim + parInitVecs > dims)
-            parInitVecs = dims - startDim;
+        if (startDim + parInitVecs > _n)
+            parInitVecs = _n - startDim;
 
         initParallelArnoldiV(startDim, parInitVecs);
 
-        runArnoldi(arnoldiIterations, parInitVecs);
+        runArnoldi(_i, parInitVecs);
         /*
 
         // copying H matrix to np.ndarray
@@ -414,79 +442,6 @@ class CuspData
         util.printTimers();
         util.clearTimers();
     }
-
-    /*void getKeySimResult_parallel(double* expHt_e1_tuples, double* keySimResult_tuples)
-    {
-
-        // get Simulation result in specific direction defined by keyDirMatrix
-        // for one initial vector we have:
-        // SimResult = V*exp(H*t)*e1, (V,H) are matrices obtained from Arnoldi algorithm
-        // KeySimResult = keyDirMatrix*SimResult
-
-        // we get keySimResult for all initial vectors at one time, the result is saved in
-        // keySimResult_tuples
-
-        std::vector<cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> > V_expHt_e1(
-            numInitVec);  // contain all V*exp(H*t)*e1
-        std::vector<cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> > device_keySimResult_tuples(numInitVec);
-
-        cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> expHt_e1_col_i(numIteration);
-        cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE> Vi;
-
-        // Check consitency
-
-        if (keyDirMatrix_h !=
-            systemSize)  // check consistency between the key direction matrix and system dimension
-        {
-            printf(
-                "\n The number of column of key direction matrix is inconsistent with the system "
-                "dimension");
-            toc("check consistency");
-        }
-        else
-        {
-            // compute key Simulation result in parallel
-
-            tic();
-
-            for (int i = 0; i < numInitVec; i++)
-            {
-                V_expHt_e1[i].resize(systemSize);
-                device_keySimResult_tuples[i].resize(keyDirMatrix_w);
-
-                for (int k = 0; k < numIteration; k++)
-                {
-                    expHt_e1_col_i[k] = expHt_e1_tuples[i * numIteration + k];
-                }
-
-                // cusp::multiply(V_all_final[i], expHt_e1_col_i,V_expHt_e1[i]); // compute
-                // V*exp(H*t)*e1
-                // cusp::multiply(*keyDirMatrix,V_expHt_e1[i],device_keySimResult_tuples[i]); //
-                // compute keyDirMatrix * V * exp(H*t) * e1
-
-                cusp::convert(V_all_final[i], Vi);
-                cusp::multiply(Vi, expHt_e1_col_i, V_expHt_e1[i]);  // compute V*exp(H*t)*e1
-                cusp::multiply(
-                    *keyDirMatrix, V_expHt_e1[i],
-                    device_keySimResult_tuples[i]);  // compute keyDirMatrix * V * exp(H*t) * e1
-
-                // printf("the %d-th key simulation result corresponding to the %d-th initial vector
-                // is: \n", i, i );
-                // cusp::print(device_keySimResult_tuples[i]);
-            }
-
-            toc("Compute keySimResult in parallel");
-
-            // copy keySimulation Result to np.array
-
-            tic();
-
-            for (int i = 0; i < numInitVec; i++)
-                for (int j = 0; j < keyDirMatrix_w; j++)
-                    keySimResult_tuples[i * keyDirMatrix_w + j] = device_keySimResult_tuples[i][j];
-        }
-
-        }*/
 };
 
 CuspData<double, cusp::host_memory> cuspDataCpu(true);
@@ -505,16 +460,23 @@ void reset()
 }
 
 ////// CPU Version
-void loadATransposeCpu(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries,
-                       int nonZeroCount)
+void setUseProfilingCpu(int enabled)
 {
-    cuspDataCpu.loadATranspose(w, h, nonZeroRows, nonZeroCols, nonZeroEntries, nonZeroCount);
+    cuspDataCpu.setUseProfiling(enabled != 0);
 }
 
-void loadKeyDirMatrixCpu(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries,
-                         int nonZeroCount)
+void loadATransposeCpu(int dims, int* rowOffsets, int rowOffsetsLen, int* colInds, int colIndsLen,
+                       double* values, int valuesLen)
 {
-    cuspDataCpu.loadKeyDirMatrix(w, h, nonZeroRows, nonZeroCols, nonZeroEntries, nonZeroCount);
+    cuspDataCpu.loadATranspose(dims, rowOffsets, rowOffsetsLen, colInds, colIndsLen, values,
+                               valuesLen);
+}
+
+void loadKeyDirMatrixTransposeCpu(int numKeyDirs, int* rowOffsets, int rowOffsetsLen, int* colInds,
+                                  int colIndsLen, double* values, int valuesLen)
+{
+    cuspDataCpu.loadKeyDirMatrixTranspose(numKeyDirs, rowOffsets, rowOffsetsLen, colInds,
+                                          colIndsLen, values, valuesLen);
 }
 
 double getFreeMemoryMbCpu()
@@ -522,9 +484,9 @@ double getFreeMemoryMbCpu()
     return cuspDataCpu.getFreeMemoryMb();
 }
 
-int preallocateMemoryCpu(int arnoldiIt, int numTimeSteps, int numParallelInitVecs)
+int preallocateMemoryCpu(int arnoldiIt, int numParallelInitVecs)
 {
-    return cuspDataCpu.preallocateMemory(arnoldiIt, numTimeSteps, numParallelInitVecs) ? 1 : 0;
+    return cuspDataCpu.preallocateMemory(arnoldiIt, numParallelInitVecs) ? 1 : 0;
 }
 
 void arnoldiParallelCpu(int startDim, double* resultH)
@@ -532,22 +494,24 @@ void arnoldiParallelCpu(int startDim, double* resultH)
     cuspDataCpu.arnoldiParallel(startDim, resultH);
 }
 
-/*void getProjectedResultCpu(double* expHt_tuples, double* keySimResult_tuples)
-{
-    cuspDataCpu.getProjectedResult(expHt_tuples, keySimResult_tuples);
-    }*/
-
 ////// GPU Version
-void loadATransposeGpu(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries,
-                       int nonZeroCount)
+void setUseProfilingGpu(int enabled)
 {
-    cuspDataGpu.loadATranspose(w, h, nonZeroRows, nonZeroCols, nonZeroEntries, nonZeroCount);
+    cuspDataGpu.setUseProfiling(enabled != 0);
 }
 
-void loadKeyDirMatrixGpu(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries,
-                         int nonZeroCount)
+void loadATransposeGpu(int dims, int* rowOffsets, int rowOffsetsLen, int* colInds, int colIndsLen,
+                       double* values, int valuesLen)
 {
-    cuspDataGpu.loadKeyDirMatrix(w, h, nonZeroRows, nonZeroCols, nonZeroEntries, nonZeroCount);
+    cuspDataGpu.loadATranspose(dims, rowOffsets, rowOffsetsLen, colInds, colIndsLen, values,
+                               valuesLen);
+}
+
+void loadKeyDirMatrixTransposeGpu(int numKeyDirs, int* rowOffsets, int rowOffsetsLen, int* colInds,
+                                  int colIndsLen, double* values, int valuesLen)
+{
+    cuspDataGpu.loadKeyDirMatrixTranspose(numKeyDirs, rowOffsets, rowOffsetsLen, colInds,
+                                          colIndsLen, values, valuesLen);
 }
 
 double getFreeMemoryMbGpu()
@@ -555,26 +519,13 @@ double getFreeMemoryMbGpu()
     return cuspDataGpu.getFreeMemoryMb();
 }
 
-int preallocateMemoryGpu(int arnoldiIterations, int numTimeSteps, int numParallelInitVecs)
+int preallocateMemoryGpu(int arnoldiIterations, int numParallelInitVecs)
 {
-    return cuspDataGpu.preallocateMemory(arnoldiIterations, numTimeSteps, numParallelInitVecs) ? 1
-                                                                                               : 0;
+    return cuspDataGpu.preallocateMemory(arnoldiIterations, numParallelInitVecs) ? 1 : 0;
 }
 
 void arnoldiParallelGpu(int startDim, double* resultH)
 {
     cuspDataGpu.arnoldiParallel(startDim, resultH);
 }
-
-/*void getProjectedResultGpu(double* expHt_tuples, double* keySimResult_tuples)
-{
-    cuspDataGpu.getProjectedResult(expHt_tuples, keySimResult_tuples);
-    }*/
-}
-
-int main()
-{
-    printf("ran\n");
-
-    return 0;
 }

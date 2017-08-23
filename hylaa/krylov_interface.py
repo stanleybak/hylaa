@@ -18,8 +18,9 @@ class FuncPtrs(Freezable):
     'Function pointers container for gpu or cpu'
 
     def __init__(self):
+        self.set_use_profiling = None
         self.load_a_transpose = None
-        self.load_key_dir_matrix = None
+        self.load_key_dir_matrix_transpose = None
         self.get_free_memory_mb = None
         self.preallocate_memory = None
         self.arnoldi_parallel = None
@@ -60,29 +61,33 @@ class KrylovInterface(object):
             KrylovInterface._gpu = FuncPtrs()
             KrylovInterface._funcs = KrylovInterface._cpu # can be changed programatically
 
-            #void loadATransposeGpu(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries,
-            #           int nonZeroCount)
-            KrylovInterface._cpu.load_a_transpose = lib.loadATransposeCpu
+            #void setUseProfilingCpu(int enabled)
+            cpu_func = KrylovInterface._cpu.set_use_profiling = lib.setUseProfilingCpu
+            gpu_func = KrylovInterface._gpu.set_use_profiling = lib.setUseProfilingGpu
+            gpu_func.restype = cpu_func.restype = None
+            gpu_func.argtypes = cpu_func.argtypes = [ctypes.c_int]
 
+            #void loadATransposeCpu(int dims, int* rowOffsets, int rowOffsetsLen, int* colInds, int colIndsLen,
+            #           double* values, int valuesLen)
             cpu_func = KrylovInterface._cpu.load_a_transpose = lib.loadATransposeCpu
             gpu_func = KrylovInterface._gpu.load_a_transpose = lib.loadATransposeGpu
             gpu_func.restype = cpu_func.restype = None
             gpu_func.argtypes = cpu_func.argtypes = [
-                ctypes.c_int, ctypes.c_int,
-                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
-                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
+                ctypes.c_int,
+                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int,
+                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int,
                 ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int
             ]
 
-            # void loadKeyDirMatrixCpu(int w, int h, int* nonZeroRows, int* nonZeroCols, double* nonZeroEntries,
-            #             int nonZeroCount)
-            cpu_func = KrylovInterface._cpu.load_key_dir_matrix = lib.loadKeyDirMatrixCpu
-            gpu_func = KrylovInterface._gpu.load_key_dir_matrix = lib.loadKeyDirMatrixGpu
+            # void loadKeyDirMatrixGpu(int numKeyDirs, int* rowOffsets, int rowOffsetsLen, int* colInds,
+            #                          int colIndsLen, double* values, int valuesLen)
+            cpu_func = KrylovInterface._cpu.load_key_dir_matrix_transpose = lib.loadKeyDirMatrixTransposeCpu
+            gpu_func = KrylovInterface._gpu.load_key_dir_matrix_transpose = lib.loadKeyDirMatrixTransposeGpu
             gpu_func.restype = cpu_func.restype = None
             gpu_func.argtypes = cpu_func.argtypes = [
-                ctypes.c_int, ctypes.c_int,
-                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
-                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"),
+                ctypes.c_int,
+                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int,
+                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int,
                 ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int
             ]
 
@@ -92,12 +97,12 @@ class KrylovInterface(object):
             gpu_func.restype = cpu_func.restype = ctypes.c_float
             gpu_func.argtypes = cpu_func.argtypes = None
 
-            # int preallocateMemoryGpu(int arnoldiIterations, int numTimeSteps, int numParallelInitVecs)
+            # int preallocateMemoryGpu(int arnoldiIterations, int numParallel)
             cpu_func = KrylovInterface._cpu.preallocate_memory = lib.preallocateMemoryCpu
             gpu_func = KrylovInterface._gpu.preallocate_memory = lib.preallocateMemoryGpu
             gpu_func.restype = cpu_func.restype = ctypes.c_int
             gpu_func.argtypes = cpu_func.argtypes = [
-                ctypes.c_int, ctypes.c_int, ctypes.c_int
+                ctypes.c_int, ctypes.c_int
             ]
 
             # void arnoldiParallelCpu(int startDim, double* resultH)
@@ -146,8 +151,15 @@ class KrylovInterface(object):
         return KrylovInterface._funcs.get_free_memory_mb()
 
     @staticmethod
+    def set_use_profiling(use_profiling):
+        'set if timing profiling should be used'
+
+        KrylovInterface._init_static()
+        KrylovInterface._funcs.set_use_profiling(1 if use_profiling else 0)
+
+    @staticmethod
     def load_a_transpose(matrix):
-        'load a transpose (should be a sparse matrix)'
+        'load a transpose (should be a csr sparse matrix)'
 
         KrylovInterface._init_static()
         w, h = matrix.shape
@@ -156,36 +168,32 @@ class KrylovInterface(object):
         assert matrix.dtype == float
         assert w == h, "a matrix should be square"
 
-        rows, cols = matrix.nonzero()
-        entries = matrix[rows, cols].A1.copy()
+        values = matrix.data
+        row_offsets = matrix.indptr
+        col_inds = matrix.indices
 
-        KrylovInterface._funcs.load_a_transpose(w, h, rows, cols, entries, len(rows))
-
-        KrylovInterface._loaded_a = True
-        KrylovInterface._dims = h
+        KrylovInterface._funcs.load_a_transpose(w, row_offsets, len(row_offsets), col_inds, len(col_inds),
+                                                values, len(values))
 
     @staticmethod
-    def load_key_dir_matrix(matrix):
+    def load_key_dir_matrix_transpose(matrix):
         'load key direction sparse matrix'
 
         KrylovInterface._init_static()
-        w, h = matrix.shape
 
         assert isinstance(matrix, csr_matrix)
         assert matrix.dtype == float
-        assert KrylovInterface._loaded_a
-        assert KrylovInterface._dims == w
 
-        rows, cols = matrix.nonzero()
-        entries = matrix[rows, cols].A1.copy()
+        values = matrix.data
+        row_offsets = matrix.indptr
+        col_inds = matrix.indices
 
-        KrylovInterface._funcs.load_key_dir_matrix(w, h, rows, cols, entries, len(entries))
-
-        KrylovInterface._loaded_key = True
-        KrylovInterface._key_h = h
+        num_key_dirs = matrix.shape[1]
+        KrylovInterface._funcs.load_key_dir_matrix_transpose(num_key_dirs, row_offsets, len(row_offsets), 
+                                                             col_inds, len(col_inds), values, len(values))
 
     @staticmethod
-    def preallocate_memory(arnoldi_iterations, time_steps, parallel_init_vecs):
+    def preallocate_memory(arnoldi_iterations, parallel_init_vecs):
         '''
         preallocate memory used in the parallel arnoldi iteration
         returns True on sucess and False on (memory allocation) error
@@ -193,7 +201,7 @@ class KrylovInterface(object):
 
         KrylovInterface._init_static()
 
-        result = KrylovInterface._funcs.preallocate_memory(arnoldi_iterations, time_steps, parallel_init_vecs) != 0
+        result = KrylovInterface._funcs.preallocate_memory(arnoldi_iterations, parallel_init_vecs) != 0
 
         KrylovInterface._preallocated_memory = result
         KrylovInterface._arnoldi_iterations = arnoldi_iterations
@@ -205,7 +213,11 @@ class KrylovInterface(object):
     def arnoldi_parallel(start_dim):
         '''
         Run the arnoldi algorithm in parallel for a certain number of orthonormal vectors
-        Returns h_matrix, which is of size (arnoldi_iter * arnoldi_iter) * parallel_init_vecs
+        Returns a tuple: (h_matrix, projected_v_matrix)
+
+        h_matrix is of size (arnoldi_iter * (arnoldi_iter + 1)) * parallel_init_vecs
+        projected_v_matrix is of size (  ) * parallel_init_vecs
+
 
         The matrix may be partially assigned if start_dim + parallel_init_vecs > toal_dims
         '''

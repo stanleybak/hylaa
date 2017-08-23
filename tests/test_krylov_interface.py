@@ -5,6 +5,7 @@ August 2017
 '''
 
 import unittest
+import random
 
 from hylaa.krylov_interface import KrylovInterface
 import numpy as np
@@ -154,15 +155,29 @@ def random_sparse_matrix(dims, entries_per_row, random_cols=True):
 
     return csr_matrix(mat)
 
+def test_arnoldi(mat, vec, iterations):
+    'arnoldi for a single initial vector'
 
-def test_arnoldi_parallel(mat, vecs, iterations):
+    dims = mat.shape[0]
+    assert vec.shape == (dims, 1), "vec.shape was {}, expected (1, {})".format(vec.shape, dims)
+
+    vec = vec.transpose()
+
+    v_mat, h_mat = test_arnoldi_parallel(mat.T, vec, iterations)
+
+    v_mat.shape = (iterations + 1, dims)
+    h_mat.shape = (iterations, iterations + 1)
+
+    return v_mat.transpose(), h_mat.transpose()
+
+def test_arnoldi_parallel(mat_transpose, vecs, iterations):
     'arnoldi with split multiple initial vecs'
 
     num_init = vecs.shape[0]
     size = vecs.shape[1]
 
-    prev_v = np.zeros((num_init, iterations * size))
-    h_mat = np.zeros((num_init, (iterations) * (iterations)))
+    prev_v = np.zeros((num_init, (iterations + 1) * size))
+    h_mat = np.zeros((num_init, (iterations + 1) * (iterations)))
 
     for c in xrange(num_init):
         vec = vecs[c, :]
@@ -170,14 +185,16 @@ def test_arnoldi_parallel(mat, vecs, iterations):
         prev_v[c, 0:size] = vec
 
     # use a-transpose
-    a_transpose = mat.T.copy()
+    #a_transpose = mat.T.copy()
 
-    for cur_it in xrange(1, iterations):
-        print "cur_it = {}".format(cur_it)
+    for cur_it in xrange(1, iterations + 1):
+        #print "cur_it = {}".format(cur_it)
 
         # do all the multiplications up front
         for cur_vec in xrange(num_init):
-            vec = np.dot(prev_v[cur_vec, (cur_it-1)*size:cur_it*size], a_transpose)
+            #vec = np.dot(prev_v[cur_vec, (cur_it-1)*size:cur_it*size], a_transpose)
+
+            vec = prev_v[cur_vec, (cur_it-1)*size:cur_it*size] * mat_transpose
             prev_v[cur_vec, cur_it*size:(cur_it+1)*size] = vec
 
         for cur_vec in xrange(num_init):
@@ -185,12 +202,9 @@ def test_arnoldi_parallel(mat, vecs, iterations):
 
             prev_mat = prev_v[cur_vec, 0:cur_it*size]
             prev_mat.shape = (cur_it, size)
-            dots = np.dot(prev_mat, vec.T)
 
-            for j in xrange(0, cur_it):
-                dot_val = dots[j-1]
-                h_mat[cur_vec][j * iterations + cur_it] = dot_val
-                print "! dotval = {}".format(dot_val)
+            dots = h_mat[cur_vec][(iterations + 1) * (cur_it-1):(iterations + 1) * (cur_it-1) + cur_it]
+            dots[:] = np.dot(prev_mat, vec.T)
 
             sub_vecs = np.dot(np.diag(dots), prev_mat)
 
@@ -198,50 +212,53 @@ def test_arnoldi_parallel(mat, vecs, iterations):
                 vec -= sub_vecs[c]
 
             norm = np.linalg.norm(vec)
-            print "! norm = {}".format(norm)
+            #print "! norm = {}".format(norm)
+            h_mat[cur_vec][cur_it + (iterations+1) * (cur_it-1)] = norm
 
             if norm >= 1e-6:
                 vec = vec / norm
                 prev_v[cur_vec, cur_it*size:(cur_it+1)*size] = vec
-
-                k = cur_it + 1
-                h_mat[cur_vec][k * iterations + (k-1)] = norm
 
     return prev_v, h_mat
 
 class TestKrylovInterface(unittest.TestCase):
     'Unit tests for krylov utilities'
 
-    def test_arnoldi(self):
-        'compare test_arnoldi_parallel with test_arnoldi'
+    def test_arnoldi_single(self):
+        'compare test_arnoldi_parallel with test_arnoldi with expm'
 
-        dense_a = np.array([[0.1, 1.0], [-1.0, -0.5]], dtype=float)
+        random.seed(0)
+        KrylovInterface.set_use_profiling(True)
 
+        dims = 5
+        iterations = 3
+        a_matrix = random_sparse_matrix(dims, entries_per_row=3)
+        a_matrix_t = csr_matrix(a_matrix.transpose())
 
-        a_matrix_t = csr_matrix(dense_a.T)
-        key_dir_mat = csr_matrix(np.array([[1.0, 0], [0.0, 1.0]]), dtype=float)
-
-        num_iterations = 2
-        num_parallel = 1
-        num_steps = 4
+        key_dirs = 2
+        key_dir_mat = random_sparse_matrix(dims, entries_per_row=3)[:key_dirs, :]
+        key_dir_mat_t = csr_matrix(key_dir_mat.transpose())
 
         KrylovInterface.load_a_transpose(a_matrix_t)
-        KrylovInterface.load_key_dir_matrix(key_dir_mat)
-        KrylovInterface.preallocate_memory(num_iterations, num_steps, num_parallel)
+        KrylovInterface.load_key_dir_matrix_transpose(key_dir_mat_t)
+        num_parallel = 1
+        KrylovInterface.preallocate_memory(iterations, num_parallel)
 
-        result_h = KrylovInterface.arnoldi_parallel(0)
+        #result_h = KrylovInterface.arnoldi_parallel(0)
 
-        print "KrylovInterface - result_h:\n{}\n".format(result_h)
+        #print "KrylovInterface - result_h:\n{}\n".format(result_h)
+
+        # test with krypy
+        #vecs = np.array([[1.0, 0.0]], dtype=float)
+        #krypy_v, krypy_h = krypy.utils.arnoldi(dense_a, vecs.T, maxiter=2)
+
+        #print "krypy results, v:\n{}\n\nh:\n{}".format(krypy_v, krypy_h)
 
         # test with vanilla arnoldi
-        vecs = np.array([[1.0, 0.0]], dtype=float)
-        test_v, test_h = test_arnoldi_parallel(dense_a, vecs, num_iterations)
 
-        print "test_arnoldi v:\n{}\nh:\n{}\n".format(test_v, test_h)
+        #test_v, test_h = test_arnoldi_parallel(dense_a, vecs, num_iterations)
 
-        krypy_v, krypy_h = krypy.utils.arnoldi(dense_a, vecs.T, maxiter=2)
-
-        print "krypy results, v:\n{}\n\nh:\n{}".format(krypy_v, krypy_h)
+        #print "test_arnoldi v:\n{}\nh:\n{}\n".format(test_v, test_h)
 
 if __name__ == '__main__':
     unittest.main()
