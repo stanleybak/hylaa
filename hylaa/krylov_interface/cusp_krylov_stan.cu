@@ -19,6 +19,9 @@ class CuspData
     typedef cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> Array1d;
     typedef typename Array1d::view Array1dView;
 
+    typedef cusp::array2d<FLOAT_TYPE, MEMORY_TYPE> Array2d;
+    typedef typename Array2d::view Array2dView;
+
     typedef cusp::array1d<FLOAT_TYPE, cusp::host_memory> HostFloatArray1d;
     typedef typename HostFloatArray1d::view HostFloatArray1dView;
 
@@ -36,9 +39,9 @@ class CuspData
     CsrMatrix* aMatrix;
     CsrMatrix* keyDirMatrix;
 
-    Array1d* vMatrix;
-    Array1d* hMatrix;
-    Array1d* vProjected;
+    Array1d* vMatrix;     // p * [(i+1) * n]
+    Array1d* hMatrix;     // p * [(i+1) * i]
+    Array1d* vProjected;  // p * [k * (i+1)]
 
     int _n;  // number of dimensions in the system
     int _k;  // number of key directions
@@ -240,7 +243,7 @@ class CuspData
             vProjected = 0;
         }
 
-        unsigned long vProjectedSize = _p * _n * (_i + 1);
+        unsigned long vProjectedSize = _p * _k * (_i + 1);
         vProjected = new (std::nothrow) Array1d(vProjectedSize, 0);
 
         bool success = vMatrix != 0 && hMatrix != 0 && vProjected != 0;
@@ -281,16 +284,13 @@ class CuspData
     // reads/writes from/to vMatrix, writes to hMatrix
     void runArnoldi(int iterations, int numInitVecs)
     {
-        util.tic("arnoldi iteration");
+        util.tic("arnoldi");
 
         // Arnoldi parallel algorithm iteration
         for (int it = 1; it < iterations; it++)
         {
+            util.tic("sparse matrix vector multiply total");
             // do all the multiplications up front
-            // for cur_vec in xrange(num_init):
-            //    vec = np.dot(prev_v[cur_vec, (cur_it-1)*size:cur_it*size], a_transpose)
-            //    prev_v[cur_vec, cur_it*size:(cur_it+1)*size] = vec
-
             for (int curInitVec = 0; curInitVec < numInitVecs; ++curInitVec)
             {
                 unsigned long rowOffset = curInitVec * _n * iterations;
@@ -300,25 +300,42 @@ class CuspData
                 Array1dView vecView = vMatrix->subarray(rowOffset + prevColOffset, _n);
                 Array1dView resultView = vMatrix->subarray(rowOffset + curColOffset, _n);
 
-                printf("! multiplying with vec:");
+                util.tic("sparse matrix vector multiply");
+                cusp::multiply(*aMatrix, vecView, resultView);
+                util.toc("sparse matrix vector multiply", 2 * aMatrixNonzeros);
+            }
+            util.toc("sparse matrix vector multiply total", 2 * aMatrixNonzeros * numInitVecs);
+
+            util.tic("dots total");
+            // do all the dot products (using dense matrix multiplication with cusp::blas::gemv)
+            for (int curInitVec = 0; curInitVec < numInitVecs; ++curInitVec)
+            {
+                unsigned long rowOffset = curInitVec * _n * iterations;
+                unsigned long curColOffset = _n * it;
+
+                Array1dView vecView = vMatrix->subarray(rowOffset + curColOffset, _n);
+
+                printf("cur_vec:\n");
                 cusp::print(vecView);
 
-                // take each row of a transpose and multiply it by vecView
-                for (int row = 0; row < _n; ++row)
-                {
-                    Array1dView vecView = vMatrix->subarray(rowOffset + prevColOffset, _n);
-                }
+                Array1dView matView1d = vMatrix->subarray(rowOffset, curColOffset);
+                Array2dView matView2d = make_array2d_view(it, _n, _n, matView1d, cusp::row_major());
 
-                util.tic("arnoldi matrix vector multiply");
-                cusp::multiply(*aMatrix, vecView, resultView);
-                util.toc("arnoldi matrix vector multiply", 2 * aMatrixNonzeros);
+                printf("matView2d:\n");
+                cusp::print(matView2d);
 
-                printf("! new vec in arnoldi:");
+                rowOffset = curInitVec * (_i + 1) * _i;
+                curColOffset = (it - 1) * (_i + 1);
+                Array1dView resultView = hMatrix->subarray(rowOffset + curColOffset, it);
+
+                printf("result-view:\n");
                 cusp::print(resultView);
 
-                // cusp::blas::dot()
-                // v_1 = A * v_0
+                util.tic("dots");
+                cusp::blas::gemv(matView2d, vecView, resultView);
+                util.toc("dots", 2 * _n * it);
             }
+            util.toc("dots total", 2 * _n * it * numInitVecs);
 
             // multiply(a, b, c) -> c = a * b
             // cusp::multiply(*curMatrix, V_all[j], V_all[j + 1]);
@@ -387,7 +404,7 @@ class CuspData
                 }*/
         }
 
-        util.toc("arnoldi iteration");
+        util.toc("arnoldi");
     }
 
     void arnoldiParallel(int startDim, double* resultH, int sizeResultH, double* resultPV,

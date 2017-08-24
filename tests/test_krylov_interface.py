@@ -209,6 +209,9 @@ def test_arnoldi_parallel(mat_transpose, vecs, iterations):
             prev_mat = prev_v[cur_vec, 0:cur_it*size]
             prev_mat.shape = (cur_it, size)
 
+            print ". doing dots, vec = {}".format(vec)
+            print ". doing dots, mat = {}".format(prev_mat)
+
             dots = h_mat[cur_vec][(iterations + 1) * (cur_it-1):(iterations + 1) * (cur_it-1) + cur_it]
             dots[:] = np.dot(prev_mat, vec.T)
 

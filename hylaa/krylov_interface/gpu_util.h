@@ -278,10 +278,10 @@ class GpuUtil
                         double gigaFlops = ops / ms / 1000.0 / 1000.0;
 
                         if (gigaFlops > 1)
-                            snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls) (%f GFLOPS)", name,
+                            snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls) (%.3f GFLOPS)", name,
                                      ms, count, gigaFlops);
                         else
-                            snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls) (%f MegaFlops)",
+                            snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls) (%.3f MegaFlops)",
                                      name, ms, count, gigaFlops * 1000);
                     }
 
@@ -305,10 +305,10 @@ class GpuUtil
                         double gigaFlops = ops / ms / 1000.0 / 1000.0;
 
                         if (gigaFlops > 1)
-                            snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls) (%f GFLOPS)", name,
+                            snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls) (%.3f GFLOPS)", name,
                                      ms, count, gigaFlops);
                         else
-                            snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls) (%f MegaFlops)",
+                            snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls) (%.3f MegaFlops)",
                                      name, ms, count, gigaFlops * 1000);
                     }
 
