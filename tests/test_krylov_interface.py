@@ -245,6 +245,7 @@ class TestKrylovInterface(unittest.TestCase):
 
         random.seed(1)
         KrylovInterface.set_use_profiling(True)
+        #KrylovInterface.set_use_gpu(True)
 
         dims = 5
         iterations = 2

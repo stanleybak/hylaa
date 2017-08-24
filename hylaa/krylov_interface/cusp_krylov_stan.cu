@@ -286,7 +286,7 @@ class CuspData
 
         unsigned long rowWidth = _n * (_i + 1);
 
-        for (unsigned long rowNum = 0; rowNum < numInitVecs; ++rowNum)
+        for (unsigned long rowNum = 0; rowNum < (unsigned long)numInitVecs; ++rowNum)
         {
             // initialize the "1.0" in each row
             unsigned long rowOffset = rowNum * rowWidth;
