@@ -267,8 +267,8 @@ class GpuUtil
                      i != gpuTimers.end(); ++i)
                 {
                     const char* name = i->first.c_str();
-                    int count = i->second.getCount();
                     float ms = i->second.getTotalMs();
+                    int count = i->second.getCount();
                     unsigned long ops = i->second.getOps();
 
                     if (ops == 0)
@@ -276,8 +276,13 @@ class GpuUtil
                     else
                     {
                         double gigaFlops = ops / ms / 1000.0 / 1000.0;
-                        snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls) (%f GFLOPS)", name, ms,
-                                 count, gigaFlops);
+
+                        if (gigaFlops > 1)
+                            snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls) (%f GFLOPS)", name,
+                                     ms, count, gigaFlops);
+                        else
+                            snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls) (%f MegaFlops)",
+                                     name, ms, count, gigaFlops * 1000);
                     }
 
                     sorted.insert(make_pair(ms, buf));
@@ -289,8 +294,8 @@ class GpuUtil
                      i != cpuTimers.end(); ++i)
                 {
                     const char* name = i->first.c_str();
-                    int count = i->second.getCount();
                     float ms = i->second.getTotalMs();
+                    int count = i->second.getCount();
                     unsigned long ops = i->second.getOps();
 
                     if (ops == 0)
@@ -298,8 +303,13 @@ class GpuUtil
                     else
                     {
                         double gigaFlops = ops / ms / 1000.0 / 1000.0;
-                        snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls) (%f GFLOPS)", name, ms,
-                                 count, gigaFlops);
+
+                        if (gigaFlops > 1)
+                            snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls) (%f GFLOPS)", name,
+                                     ms, count, gigaFlops);
+                        else
+                            snprintf(buf, sizeof(buf), " %s: %.3fms (%d calls) (%f MegaFlops)",
+                                     name, ms, count, gigaFlops * 1000);
                     }
 
                     sorted.insert(make_pair(ms, buf));

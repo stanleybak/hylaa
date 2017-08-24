@@ -6,12 +6,11 @@ August 2017
 
 import unittest
 import random
+import math
 
 from hylaa.krylov_interface import KrylovInterface
 import numpy as np
 from scipy.sparse import coo_matrix, csr_matrix
-
-import krypy
 
 def make_iss_matrix(num_copies):
     'create a matrix from the international space station system model'
@@ -145,7 +144,9 @@ def random_sparse_matrix(dims, entries_per_row, random_cols=True):
             rows.append(row)
 
             if random_cols:
-                cols.append(int(random.random() * num_cols))
+                r = random.random() * num_cols
+                col = int(math.floor(r))
+                cols.append(col)
             else:
                 cols.append(entry_index)
 
@@ -184,17 +185,22 @@ def test_arnoldi_parallel(mat_transpose, vecs, iterations):
         vec = vec / np.linalg.norm(vec)
         prev_v[c, 0:size] = vec
 
+        print ". scaled init_vec = {}".format(vec)
+
     # use a-transpose
     #a_transpose = mat.T.copy()
 
     for cur_it in xrange(1, iterations + 1):
-        #print "cur_it = {}".format(cur_it)
+        print "\n. cur_it = {}".format(cur_it)
 
         # do all the multiplications up front
         for cur_vec in xrange(num_init):
             #vec = np.dot(prev_v[cur_vec, (cur_it-1)*size:cur_it*size], a_transpose)
 
             vec = prev_v[cur_vec, (cur_it-1)*size:cur_it*size] * mat_transpose
+
+            print ". multiplying with vec {}".format(prev_v[cur_vec, (cur_it-1)*size:cur_it*size])
+            print ". new vec in arnoldi = {}".format(vec)
             prev_v[cur_vec, cur_it*size:(cur_it+1)*size] = vec
 
         for cur_vec in xrange(num_init):
@@ -206,18 +212,25 @@ def test_arnoldi_parallel(mat_transpose, vecs, iterations):
             dots = h_mat[cur_vec][(iterations + 1) * (cur_it-1):(iterations + 1) * (cur_it-1) + cur_it]
             dots[:] = np.dot(prev_mat, vec.T)
 
+            print ". dots = {}".format(dots)
+
             sub_vecs = np.dot(np.diag(dots), prev_mat)
 
             for c in xrange(cur_it):
                 vec -= sub_vecs[c]
 
+            print ". vec = {}".format(vec)
+
             norm = np.linalg.norm(vec)
-            #print "! norm = {}".format(norm)
+
+            print ". norm = {}".format(norm)
             h_mat[cur_vec][cur_it + (iterations+1) * (cur_it-1)] = norm
 
             if norm >= 1e-6:
                 vec = vec / norm
                 prev_v[cur_vec, cur_it*size:(cur_it+1)*size] = vec
+
+                print ". scaled_vec = {}".format(vec)
 
     return prev_v, h_mat
 
@@ -227,38 +240,38 @@ class TestKrylovInterface(unittest.TestCase):
     def test_arnoldi_single(self):
         'compare test_arnoldi_parallel with test_arnoldi with expm'
 
-        random.seed(0)
+        random.seed(1)
         KrylovInterface.set_use_profiling(True)
 
         dims = 5
-        iterations = 3
-        a_matrix = random_sparse_matrix(dims, entries_per_row=3)
-        a_matrix_t = csr_matrix(a_matrix.transpose())
-
+        iterations = 2
         key_dirs = 2
-        key_dir_mat = random_sparse_matrix(dims, entries_per_row=3)[:key_dirs, :]
-        key_dir_mat_t = csr_matrix(key_dir_mat.transpose())
-
-        KrylovInterface.load_a_transpose(a_matrix_t)
-        KrylovInterface.load_key_dir_matrix_transpose(key_dir_mat_t)
         num_parallel = 1
+
+        a_matrix = random_sparse_matrix(dims, entries_per_row=2)
+
+        key_dir_mat = random_sparse_matrix(dims, entries_per_row=2)[:key_dirs, :]
+
+        # using python
+        init_vec = np.array([[1.0] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
+        v_mat, h_mat = test_arnoldi(a_matrix, init_vec, iterations)
+
+        print "v_mat:\n{}\n".format(v_mat)
+        print "h_mat:\n{}\n".format(h_mat)
+        print "------------\n"
+
+        print "a_matrix:\n{}".format(a_matrix.todense())
+
+        # using cusp
+
+        KrylovInterface.load_a_matrix(a_matrix)
+        KrylovInterface.load_key_dir_matrix(key_dir_mat)
         KrylovInterface.preallocate_memory(iterations, num_parallel)
 
-        #result_h = KrylovInterface.arnoldi_parallel(0)
+        result_h, result_pv = KrylovInterface.arnoldi_parallel(0)
 
         #print "KrylovInterface - result_h:\n{}\n".format(result_h)
-
-        # test with krypy
-        #vecs = np.array([[1.0, 0.0]], dtype=float)
-        #krypy_v, krypy_h = krypy.utils.arnoldi(dense_a, vecs.T, maxiter=2)
-
-        #print "krypy results, v:\n{}\n\nh:\n{}".format(krypy_v, krypy_h)
-
-        # test with vanilla arnoldi
-
-        #test_v, test_h = test_arnoldi_parallel(dense_a, vecs, num_iterations)
-
-        #print "test_arnoldi v:\n{}\nh:\n{}\n".format(test_v, test_h)
+        #print "KrylovInterface - result_pv:\n{}\n".format(result_pv)
 
 if __name__ == '__main__':
     unittest.main()
