@@ -13,7 +13,23 @@
 #include <sys/time.h>
 #include "gpu_util.h"
 
-template <class FLOAT_TYPE, class MEMORY_TYPE>
+typedef double FLOAT_TYPE;
+
+void dense_multiply(cusp::array2d<FLOAT_TYPE, cusp::host_memory>::view* mat,
+                    cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view* vec,
+                    cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view* result)
+{
+    cusp::multiply(*mat, *vec, *result);
+}
+
+void dense_multiply(cusp::array2d<FLOAT_TYPE, cusp::device_memory>::view* mat,
+                    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view* vec,
+                    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view* result)
+{
+    cusp::blas::gemv(*mat, *vec, *result);
+}
+
+template <class MEMORY_TYPE>
 class CuspData
 {
     typedef cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> Array1d;
@@ -328,12 +344,12 @@ class CuspData
                 curColOffset = (it - 1) * (_i + 1);
                 Array1dView resultView = hMatrix->subarray(rowOffset + curColOffset, it);
 
+                util.tic("dots");
+                dense_multiply(&matView2d, &vecView, &resultView);
+                util.toc("dots", 2 * _n * it);
+
                 printf("result-view:\n");
                 cusp::print(resultView);
-
-                util.tic("dots");
-                cusp::blas::gemv(matView2d, vecView, resultView);
-                util.toc("dots", 2 * _n * it);
             }
             util.toc("dots total", 2 * _n * it * numInitVecs);
 
@@ -481,8 +497,8 @@ class CuspData
     }
 };
 
-CuspData<double, cusp::host_memory> cuspDataCpu(true);
-CuspData<double, cusp::device_memory> cuspDataGpu(false);
+CuspData<cusp::host_memory> cuspDataCpu(true);
+CuspData<cusp::device_memory> cuspDataGpu(false);
 
 extern "C" {
 int hasGpu()

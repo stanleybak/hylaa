@@ -372,9 +372,10 @@ class GpuUtil
         return num > 0;
     }
 
+    bool useGpu;
+
    private:
     bool useProfiling;
-    bool useGpu;
 
     map<string, CpuTimingData> cpuTimers;
     map<string, GpuTimingData> gpuTimers;
