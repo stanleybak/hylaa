@@ -407,5 +407,39 @@ class TestKrylovInterface(unittest.TestCase):
         self.assertTrue(np.allclose(result_h[2], h_mat_testing3), "Correct h matrix init vec 102")
         self.assertTrue(np.allclose(result_pv[2], projected_v_mat_testing3), "Correct projV matrix for init vec 102")
 
+    def test_compare_gpu_cpu(self):
+        'compare the cusp implementation gpu vs cpu (if a gpu is detected)'
+
+        if KrylovInterface.has_gpu():
+            random.seed(1)
+            #KrylovInterface.set_use_profiling(True)
+            #KrylovInterface.set_use_gpu(True)
+
+            dims = 5
+            iterations = 2
+            key_dirs = 2
+            num_parallel = 2
+
+            a_matrix = random_sparse_matrix(dims, entries_per_row=2)
+            key_dir_mat = random_sparse_matrix(dims, entries_per_row=2)[:key_dirs, :]
+
+            result_h_list = []
+            result_pv_list = []
+
+            for use_gpu in [False, True]:
+                KrylovInterface.set_use_gpu(use_gpu)
+                
+                KrylovInterface.load_a_matrix(a_matrix)
+                KrylovInterface.load_key_dir_matrix(key_dir_mat)
+                KrylovInterface.preallocate_memory(iterations, num_parallel)
+                result_h, result_pv = KrylovInterface.arnoldi_parallel(2) # offset by 2 just because
+
+                result_h_list.append(result_h)
+                result_pv_list.append(result_pv)
+
+            for i in [0, 1]:
+                self.assertTrue(np.allclose(result_h_list[0][i], result_h_list[1][i]), "bad h-matrix i={}".format(i))
+                self.assertTrue(np.allclose(result_pv_list[0][i], result_pv_list[1][i]), "bad projV i={}".format(i))
+
 if __name__ == '__main__':
     unittest.main()
