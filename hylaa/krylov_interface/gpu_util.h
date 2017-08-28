@@ -53,12 +53,10 @@ class CpuTimingData
         startUs = now();
     }
 
-    void toc() { toc(0); }
-
-    void toc(unsigned long ops)
+    void toc(const char* clockName, unsigned long ops)
     {
         if (!started)
-            error("Cpu Timer stopped without being started: '%s'\n", name);
+            error("Cpu Timer stopped without being started: '%s'\n", clockName);
 
         started = false;
         long endUs = now();
@@ -135,12 +133,10 @@ class GpuTimingData
         startEvents.push_back(recordEvent());
     }
 
-    void toc() { toc(0); }
-
-    void toc(unsigned long ops)
+    void toc(const char* clockName, unsigned long ops)
     {
         if (startEvents.size() != 1 + stopEvents.size())
-            error("Gpu Timer stopped without being started: '%s'\n", name);
+            error("Gpu Timer stopped without being started: '%s'\n", clockName);
 
         totalOps += ops;
         stopEvents.push_back(recordEvent());
@@ -246,9 +242,9 @@ class GpuUtil
         if (useProfiling)
         {
             if (useGpu)
-                gpuTimers[clockName].toc(ops);
+                gpuTimers[clockName].toc(clockName, ops);
             else
-                cpuTimers[clockName].toc(ops);
+                cpuTimers[clockName].toc(clockName, ops);
         }
     }
 

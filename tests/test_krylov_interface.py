@@ -260,8 +260,12 @@ class TestKrylovInterface(unittest.TestCase):
         init_vec = np.array([[1.0] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
         v_mat, h_mat = test_arnoldi(a_matrix, init_vec, iterations)
 
-        print "v_mat:\n{}\n".format(v_mat)
         print "h_mat:\n{}\n".format(h_mat)
+        print "key_dir_mat:\n{}\n".format(key_dir_mat.todense())
+        print "v_mat:\n{}\n".format(v_mat)
+        print "projected v_mat:\n{}\n".format(key_dir_mat * v_mat)
+
+
         print "------------\n"
 
         print "a_matrix:\n{}".format(a_matrix.todense())
@@ -274,8 +278,9 @@ class TestKrylovInterface(unittest.TestCase):
 
         result_h, result_pv = KrylovInterface.arnoldi_parallel(0)
 
-        #print "KrylovInterface - result_h:\n{}\n".format(result_h)
-        #print "KrylovInterface - result_pv:\n{}\n".format(result_pv)
+        print ""
+        print "KrylovInterface - result_h:\n{}\n".format(result_h)
+        print "KrylovInterface - result_pv:\n{}\n".format(result_pv)
 
 if __name__ == '__main__':
     unittest.main()

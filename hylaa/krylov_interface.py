@@ -230,7 +230,7 @@ class KrylovInterface(object):
     def arnoldi_parallel(start_dim):
         '''
         Run the arnoldi algorithm in parallel for a certain number of orthonormal vectors
-        Returns a tuple: (h_matrix, projected_v_matrix)
+        Returns a list of tuples: [(h_matrix, projected_v_matrix), ... ], one for each parallel start dim
 
         h_matrix is of size (arnoldi_iter * (arnoldi_iter + 1)) x parallel_init_vecs
         projected_v_matrix is of size (init_vecs * parallel_init_vecs) x key_dirs
@@ -245,12 +245,25 @@ class KrylovInterface(object):
         k = KrylovInterface._cusp.k
         i = KrylovInterface._cusp.i
 
-        result_h = np.zeros((i * (i + 1)), dtype=float)
+        result_h = np.zeros((i * p * (i + 1)), dtype=float)
         result_pv = np.zeros((i * p * k), dtype=float)
 
         KrylovInterface._cusp.arnoldi_parallel(start_dim, result_h, len(result_h), result_pv, len(result_pv))
 
-        result_h.shape = (i, i+1)
+        result_h.shape = (i*p, i+1)
         result_pv.shape = (i*p, k)
 
-        return result_h, result_pv
+        print "KrylovInterface - result_h.T:\n{}\n".format(result_h)
+        print "KrylovInterface - result_pv.T:\n{}\n".format(result_pv)
+
+        result_h_list = []
+        result_pv_list = []
+
+        for p_index in xrange(p):
+            h_part = result_h[i*p_index:i*p_index+1, :]
+            pv_part = result_pv[i*p_index:i*p_index+1, :]
+
+            result_h_list.append(h_part.T)
+            result_pv_list.append(pv_part.T)
+
+        return result_h.T, result_pv.T

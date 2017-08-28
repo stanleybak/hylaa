@@ -15,20 +15,6 @@
 
 typedef double FLOAT_TYPE;
 
-void dense_multiply(cusp::array2d<FLOAT_TYPE, cusp::host_memory>::view* mat,
-                    cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view* vec,
-                    cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view* result)
-{
-    cusp::multiply(*mat, *vec, *result);
-}
-
-void dense_multiply(cusp::array2d<FLOAT_TYPE, cusp::device_memory>::view* mat,
-                    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view* vec,
-                    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view* result)
-{
-    cusp::blas::gemv(*mat, *vec, *result);
-}
-
 template <class MEMORY_TYPE>
 class CuspData
 {
@@ -273,7 +259,7 @@ class CuspData
         return success;
     }
 
-    void initParallelArnoldiV(int startDim, int numInitVecs)
+    void initParallelArnoldi(int startDim, int numInitVecs)
     {
         util.tic("init parallel");
 
@@ -294,20 +280,21 @@ class CuspData
             (*vMatrix)[rowOffset + startDim + rowNum] = 1.0;
         }
 
+        // also fill h with zeros
+        cusp::blas::fill(*hMatrix, 0.0);
+
         util.toc("init parallel");
     }
 
     // reads/writes from/to vMatrix, writes to hMatrix
     void runArnoldi(int iterations, int numInitVecs)
     {
-        util.tic("arnoldi");
-
         // Arnoldi parallel algorithm iteration
-        for (int it = 1; it < iterations; it++)
+        for (unsigned long it = 1; it <= iterations; it++)
         {
             util.tic("sparse matrix vector multiply total");
             // do all the multiplications up front
-            for (int curInitVec = 0; curInitVec < numInitVecs; ++curInitVec)
+            for (unsigned long curInitVec = 0; curInitVec < numInitVecs; ++curInitVec)
             {
                 unsigned long rowOffset = curInitVec * _n * iterations;
                 unsigned long prevColOffset = _n * (it - 1);
@@ -323,8 +310,8 @@ class CuspData
             util.toc("sparse matrix vector multiply total", 2 * aMatrixNonzeros * numInitVecs);
 
             util.tic("dots total");
-            // do all the dot products (using dense matrix multiplication with cusp::blas::gemv)
-            for (int curInitVec = 0; curInitVec < numInitVecs; ++curInitVec)
+            // do all the dot products
+            for (unsigned long curInitVec = 0; curInitVec < numInitVecs; ++curInitVec)
             {
                 unsigned long rowOffset = curInitVec * _n * iterations;
                 unsigned long curColOffset = _n * it;
@@ -344,84 +331,86 @@ class CuspData
                 curColOffset = (it - 1) * (_i + 1);
                 Array1dView resultView = hMatrix->subarray(rowOffset + curColOffset, it);
 
-                util.tic("dots");
+                util.tic("dense_multiply");
                 dense_multiply(&matView2d, &vecView, &resultView);
-                util.toc("dots", 2 * _n * it);
+                util.toc("dense_multiply", 2 * _n * it);
 
                 printf("result-view:\n");
                 cusp::print(resultView);
             }
             util.toc("dots total", 2 * _n * it * numInitVecs);
 
-            // multiply(a, b, c) -> c = a * b
-            // cusp::multiply(*curMatrix, V_all[j], V_all[j + 1]);
-
-            /*
-
-            for (int k = 0; k < numInitVec; k++)
+            util.tic("axpy total");
+            // now scale each of the vecs by the computed dot products and subtract from curvec
+            for (unsigned long prevVecIndex = 0; prevVecIndex < it; ++prevVecIndex)
             {
-                // compute Hm-k
+                printf("prevVecIndex = %lu\n", prevVecIndex);
 
-                tic();
-                cusp::copy(H_all[k], Hmat_k);  // Load k-th Hmat matrix
-                ioTime += toc();
-
-                for (int i = 0; i <= j; i++)
+                for (unsigned long curInitVec = 0; curInitVec < numInitVecs; ++curInitVec)
                 {
-                    tic();
-                    Hmat_k(i, j) = cusp::blas::dot(V_all[i].column(k), V_all[j + 1].column(k));
-                    dotTime += toc();
+                    unsigned long rowOffset = curInitVec * _n * iterations;
+                    unsigned long curColOffset = _n * it;
 
-                    tic();
-                    // axpy(a, b, c) computes b += c*a
-                    cusp::blas::axpy(V_all[i].column(k), V_all[j + 1].column(k), -Hmat_k(i, j));
-                    axpyTime += toc();
+                    Array1dView curVec = vMatrix->subarray(rowOffset + curColOffset, _n);
+
+                    printf("cur_vec before:\n");
+                    cusp::print(curVec);
+
+                    curColOffset = _n * prevVecIndex;
+                    Array1dView prevVec = vMatrix->subarray(rowOffset + curColOffset, _n);
+
+                    // get the dot result
+                    rowOffset = curInitVec * (_i + 1) * _i;
+                    curColOffset = (it - 1) * (_i + 1);
+                    double dotResult = (*hMatrix)[rowOffset + curColOffset + prevVecIndex];
+
+                    printf("prevVec (with dotResult = %f):\n", dotResult);
+                    cusp::print(prevVec);
+
+                    // subtract dots * prevVec from curVec
+                    cusp::blas::axpy(prevVec, curVec, -dotResult);
+
+                    printf("cur_vec after:\n");
+                    cusp::print(curVec);
                 }
+            }
+            util.toc("axpy total");
 
-                Hmat_k(j + 1, j) = cusp::blas::nrm2(V_all[j + 1].column(k));
+            util.tic("magnitude and scale");
+            for (unsigned long curInitVec = 0; curInitVec < numInitVecs; ++curInitVec)
+            {
+                unsigned long rowOffset = curInitVec * _n * iterations;
+                unsigned long curColOffset = _n * it;
 
-                if (Hmat_k(j + 1, j) < 1e-10)
-                {
-                    // an interesting problem: given a system matrix A, different initial vector can
-                    // produce
-                    // different number of iteration, i.e, the actual number of iteration
-                    // To do arnoldi in parallel, we neglect the break condition as in the function
-                    // arnoldi_initVectorPos
-                    // We make all vector has the same number of iteration and equal to maxiter
-                    // i.e., actual_numIter = maxiter (user input parameter)
+                Array1dView curVec = vMatrix->subarray(rowOffset + curColOffset, _n);
 
-                    if (mem == 1)
-                    {
-                        ;
-                    }
-                    else
-                    {
-                        printf(
-                            "***Notice***: break condition of Arnoldi algorithm is neglected for "
-                            "the initial vector V_%d \n",
-                            k);
-                        printf(
-                            "***Notice***: the actual number of iteration corresponding to initial "
-                            "vector V_%d is %d \n",
-                            k, j + 1);
-                        mem = 1;
-                    }
+                double magnitude = cusp::blas::nrm2(curVec);
 
-                    Hmat_k(j + 1, j) = 0;
-                    cusp::blas::scal(V_all[j + 1].column(k), float(0));
-                    // break;
-                }
+                // store magnitude in H
+                rowOffset = curInitVec * (_i + 1) * _i;
+                curColOffset = (it - 1) * (_i + 1);
+                (*hMatrix)[rowOffset + curColOffset + it] = magnitude;
+
+                printf("rowOffset = %lu, curColOffset = %lu, minorOffset = %lu\n", rowOffset,
+                       curColOffset, it);
+
+                // scale vector
+                if (magnitude < 1e-10)
+                    cusp::blas::scal(curVec, 0.0);
                 else
-                    cusp::blas::scal(V_all[j + 1].column(k), float(1) / Hmat_k(j + 1, j));
+                    cusp::blas::scal(curVec, 1.0 / magnitude);
 
-                tic();
-                cusp::copy(Hmat_k, H_all[k]);  // update the k-th Hmatrix
-                ioTime += toc();
-                }*/
+                printf("cur_vec after normalizing with its magnitude (%f):\n", magnitude);
+                cusp::print(curVec);
+            }
+            util.toc("magnitude and scale");
+
+            printf("after mag & scale, hMatrix:\n");
+            cusp::print(*hMatrix);
         }
-
-        util.toc("arnoldi");
     }
+
+    void projectV(int iterations, int numInitVecs) {}
 
     void arnoldiParallel(int startDim, double* resultH, int sizeResultH, double* resultPV,
                          int sizeResultPV)
@@ -436,7 +425,7 @@ class CuspData
             error("arnoldiParrallel() called before preallocate() (_i==0 or _p==0)\n");
 
         // check expected results sizes
-        int expectedH = _i * (_i + 1);
+        int expectedH = _p * _i * (_i + 1);
         int expectedPV = _i * _p * _k;
 
         if (sizeResultH != expectedH)
@@ -457,14 +446,24 @@ class CuspData
         if (startDim + parInitVecs > _n)
             parInitVecs = _n - startDim;
 
-        initParallelArnoldiV(startDim, parInitVecs);
+        initParallelArnoldi(startDim, parInitVecs);
 
+        util.tic("runArnoldi()");
         runArnoldi(_i, parInitVecs);
-        /*
+        util.toc("runArnoldi()");
+
+        // project v_matrix onto keyDirMatrix
+        util.tic("projectV()");
+        projectV(_i, parInitVecs);
+        util.toc("projectV()");
 
         // copying H matrix to np.ndarray
         util.tic("copying H matrix to np.ndarray");
+        HostFloatArray1dView hostHView(resultH, resultH + expectedH);
+        cusp::blas::copy(*hMatrix, hostHView);  // hostHView = *hMatrix
+        util.toc("copying H matrix to np.ndarray");
 
+        /*
         // TODO: create a view of the h array... first implement arnoldi_parallel to figure out how
         // H is laid out in memory
 
@@ -479,7 +478,7 @@ class CuspData
             }
         }
 
-        util.toc("copying H matrix to np.ndarray");
+
 
         // save all matrix Vm into V_all_final
         tic();
@@ -494,6 +493,33 @@ class CuspData
         util.toc("arnoldi parallel total");
         util.printTimers();
         util.clearTimers();
+    }
+
+   private:
+    void dense_multiply(Array2dView* mat, Array1dView* vec, Array1dView* result)
+    {
+        if (mat->pitch != vec->size())
+            error("in dense_multiply(), mat.width (%lu) != vec.size (%lu)", mat->pitch,
+                  vec->size());
+
+        if (mat->values.size() / mat->pitch != result->size())
+            error("in dense_multiply(), mat.height (%lu) != result.size (%lu)",
+                  mat->values.size() / mat->pitch, result->size());
+
+        int size = result->size();
+
+        for (int row = 0; row < size; ++row)
+        {
+            Array1dView rowView = mat->row(row);
+
+            (*result)[row] = cusp::blas::dot(rowView, *vec);
+        }
+
+        // only implemented on CPU:
+        // cusp::multiply(*mat, *vec, *result);
+
+        // not implemented anywhere in cusp 5.0.1:
+        // cusp::blas::gemv(*mat, *vec, *result);
     }
 };
 
