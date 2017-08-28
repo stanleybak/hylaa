@@ -246,24 +246,24 @@ class KrylovInterface(object):
         i = KrylovInterface._cusp.i
 
         result_h = np.zeros((i * p * (i + 1)), dtype=float)
-        result_pv = np.zeros((i * p * k), dtype=float)
+        result_pv = np.zeros(((i+1) * p * k), dtype=float)
 
         KrylovInterface._cusp.arnoldi_parallel(start_dim, result_h, len(result_h), result_pv, len(result_pv))
 
-        result_h.shape = (i*p, i+1)
-        result_pv.shape = (i*p, k)
+        result_h.shape = (p*i, i+1)
+        result_pv.shape = (p*(i+1), k)
 
-        print "KrylovInterface - result_h.T:\n{}\n".format(result_h)
-        print "KrylovInterface - result_pv.T:\n{}\n".format(result_pv)
+        #print "KrylovInterface - result_h.T:\n{}\n".format(result_h)
+        #print "KrylovInterface - result_pv.T:\n{}\n".format(result_pv)
 
         result_h_list = []
         result_pv_list = []
 
         for p_index in xrange(p):
-            h_part = result_h[i*p_index:i*p_index+1, :]
-            pv_part = result_pv[i*p_index:i*p_index+1, :]
+            h_part = result_h[i*p_index:i*(p_index+1), :]
+            pv_part = result_pv[(i+1)*p_index:(i+1)*(p_index+1), :]
 
             result_h_list.append(h_part.T)
             result_pv_list.append(pv_part.T)
 
-        return result_h.T, result_pv.T
+        return result_h_list, result_pv_list

@@ -171,6 +171,7 @@ def test_arnoldi(mat, vec, iterations):
 
     return v_mat.transpose(), h_mat.transpose()
 
+
 def test_arnoldi_parallel(mat_transpose, vecs, iterations):
     'arnoldi with split multiple initial vecs'
 
@@ -241,7 +242,7 @@ class TestKrylovInterface(unittest.TestCase):
     'Unit tests for krylov utilities'
 
     def test_arnoldi_single(self):
-        'compare test_arnoldi_parallel with test_arnoldi with expm'
+        'compare the python implementation with the cusp implementation with a single initial vector'
 
         random.seed(1)
         KrylovInterface.set_use_profiling(True)
@@ -258,29 +259,63 @@ class TestKrylovInterface(unittest.TestCase):
 
         # using python
         init_vec = np.array([[1.0] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
-        v_mat, h_mat = test_arnoldi(a_matrix, init_vec, iterations)
+        v_mat_testing, h_mat_testing = test_arnoldi(a_matrix, init_vec, iterations)
 
-        print "h_mat:\n{}\n".format(h_mat)
-        print "key_dir_mat:\n{}\n".format(key_dir_mat.todense())
-        print "v_mat:\n{}\n".format(v_mat)
-        print "projected v_mat:\n{}\n".format(key_dir_mat * v_mat)
-
-
-        print "------------\n"
-
-        print "a_matrix:\n{}".format(a_matrix.todense())
+        projected_v_mat_testing = key_dir_mat * v_mat_testing
 
         # using cusp
 
         KrylovInterface.load_a_matrix(a_matrix)
         KrylovInterface.load_key_dir_matrix(key_dir_mat)
         KrylovInterface.preallocate_memory(iterations, num_parallel)
-
         result_h, result_pv = KrylovInterface.arnoldi_parallel(0)
 
-        print ""
-        print "KrylovInterface - result_h:\n{}\n".format(result_h)
-        print "KrylovInterface - result_pv:\n{}\n".format(result_pv)
+        self.assertTrue(np.allclose(result_h[0], h_mat_testing), "Correct h matrix")
+        self.assertTrue(np.allclose(result_pv[0], projected_v_mat_testing), "Correct projected v matrix")
+
+    def test_arnoldi_double(self):
+        'compare the cusp implementation with a two initial vectors versus the python implementation'
+
+        random.seed(1)
+        KrylovInterface.set_use_profiling(True)
+        #KrylovInterface.set_use_gpu(True)
+
+        dims = 5
+        iterations = 2
+        key_dirs = 2
+        num_parallel = 2
+
+        a_matrix = random_sparse_matrix(dims, entries_per_row=2)
+        key_dir_mat = random_sparse_matrix(dims, entries_per_row=2)[:key_dirs, :]
+
+        # using python
+        init_vec1 = np.array([[1.0] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
+        init_vec2 = np.array([[1.0] if d == 1 else [0.0] for d in xrange(dims)], dtype=float)
+
+        v_mat_testing1, h_mat_testing1 = test_arnoldi(a_matrix, init_vec1, iterations)
+        projected_v_mat_testing1 = key_dir_mat * v_mat_testing1
+
+        v_mat_testing2, h_mat_testing2 = test_arnoldi(a_matrix, init_vec2, iterations)
+        projected_v_mat_testing2 = key_dir_mat * v_mat_testing2
+
+        print "python h_mat1:\n{}\nh_mat2:\n{}\n".format(h_mat_testing1, h_mat_testing2)
+        print "--------------------"
+
+        # using cusp
+        KrylovInterface.load_a_matrix(a_matrix)
+        KrylovInterface.load_key_dir_matrix(key_dir_mat)
+        KrylovInterface.preallocate_memory(iterations, num_parallel)
+        result_h, result_pv = KrylovInterface.arnoldi_parallel(0)
+
+        print "cusp h_mat1:\n{}\nh_mat2:\n{}\n".format(result_h[0], result_h[1])
+
+        self.assertTrue(np.allclose(result_h[0], h_mat_testing1), "Correct h matrix init vec 1")
+        self.assertTrue(np.allclose(result_pv[0], projected_v_mat_testing1), "Correct projV matrix for init vec 1")
+
+        self.assertTrue(np.allclose(result_h[1], h_mat_testing2), "Correct h matrix init vec 2")
+        self.assertTrue(np.allclose(result_pv[1], projected_v_mat_testing2), "Correct projV matrix for init vec 2")
+
+    # TODO: add testing with offset start vector
 
 if __name__ == '__main__':
     unittest.main()

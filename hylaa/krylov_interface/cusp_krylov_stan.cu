@@ -179,7 +179,7 @@ class CuspData
         HostIntArray1dView colIndsView(colInds, colInds + colIndsLen);
         HostFloatArray1dView valuesView(values, values + colIndsLen);
 
-        HostCsrMatrixView view(_n, _n, valuesLen, rowOffsetsView, colIndsView, valuesView);
+        HostCsrMatrixView view(h, w, valuesLen, rowOffsetsView, colIndsView, valuesView);
 
         if (keyDirMatrix != 0)
         {
@@ -282,6 +282,9 @@ class CuspData
 
         // also fill h with zeros
         cusp::blas::fill(*hMatrix, 0.0);
+
+        // also fill projected vMatrix with zeros
+        cusp::blas::fill(*vProjected, 0.0);
 
         util.toc("init parallel");
     }
@@ -410,7 +413,34 @@ class CuspData
         }
     }
 
-    void projectV(int iterations, int numInitVecs) {}
+    void projectV(int iterations, int numInitVecs)
+    {
+        // use vMatrix and keyDirMatrix to produce vProjected
+
+        for (unsigned long iteration = 0; iteration <= iterations; ++iteration)
+        {
+            for (unsigned long curInitVec = 0; curInitVec < numInitVecs; ++curInitVec)
+            {
+                unsigned long pageOffset = curInitVec * _n * iterations;
+                unsigned long rowOffset = _n * iteration;
+
+                Array1dView vecView = vMatrix->subarray(pageOffset + rowOffset, _n);
+
+                // result view is in vProjected
+                pageOffset = curInitVec * _k * (iterations + 1);
+                rowOffset = _k * iteration;
+
+                Array1dView resultView = vProjected->subarray(pageOffset + rowOffset, iterations);
+
+                util.tic("project-v sparse matrix vector multiply");
+                cusp::multiply(*keyDirMatrix, vecView, resultView);
+                util.toc("project-v sparse matrix vector multiply", 2 * keyDirMatrixNonzeros);
+            }
+        }
+
+        printf("projected V matrix onto key directions, result:\n");
+        cusp::print(*vProjected);
+    }
 
     void arnoldiParallel(int startDim, double* resultH, int sizeResultH, double* resultPV,
                          int sizeResultPV)
@@ -426,7 +456,7 @@ class CuspData
 
         // check expected results sizes
         int expectedH = _p * _i * (_i + 1);
-        int expectedPV = _i * _p * _k;
+        int expectedPV = _p * (_i + 1) * _k;
 
         if (sizeResultH != expectedH)
             error("Wrong size for resultH with i = %d. Got %d, expected %d.", _i, sizeResultH,
@@ -463,32 +493,13 @@ class CuspData
         cusp::blas::copy(*hMatrix, hostHView);  // hostHView = *hMatrix
         util.toc("copying H matrix to np.ndarray");
 
-        /*
-        // TODO: create a view of the h array... first implement arnoldi_parallel to figure out how
-        // H is laid out in memory
+        // copy vProjected to np.ndarray
+        printf("before copy, copying %d elements\n", expectedPV);
 
-        cusp::array2d<FLOAT_TYPE, cusp::host_memory> H(maxiter + 1, maxiter, 0);
-        for (int k = 0; k < numInitVec; ++k)
-        {
-            cusp::copy(H_all[k], H);
-            for (int i = 0; i < maxiter; ++i)
-            {
-                for (int l = 0; l < maxiter; ++l)
-                    result_H[i * maxiter + l + k * maxiter * maxiter] = H(i, l);
-            }
-        }
-
-
-
-        // save all matrix Vm into V_all_final
-        tic();
-        for (int k = 0; k < numInitVec; k++)
-            for (int i = 0; i < maxiter; i++)
-                cusp::blas::copy(V_all[i].column(k), V_all_final[k].column(i));
-
-        toc("save all matrix Vm into V_all_final");
-
-        */
+        util.tic("copying V-projected matrix to np.ndarray");
+        HostFloatArray1dView hostPVView(resultPV, resultPV + expectedPV);
+        cusp::blas::copy(*vProjected, hostPVView);  // hostPVView = *vProjected
+        util.toc("copying V-projected matrix to np.ndarray");
 
         util.toc("arnoldi parallel total");
         util.printTimers();
