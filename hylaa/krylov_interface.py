@@ -13,6 +13,7 @@ import numpy as np
 from numpy.ctypeslib import ndpointer
 from hylaa.util import Freezable, get_script_path
 from scipy.sparse import csr_matrix
+from hylaa.timerutil import Timers
 
 class CuspData(Freezable):
     'Function pointers / data for gpu or cpu'
@@ -182,8 +183,10 @@ class KrylovInterface(object):
 
         KrylovInterface._cusp.n = w
 
+        Timers.tic("load a matrix")
         KrylovInterface._cusp.load_a_matrix(w, h, row_offsets, len(row_offsets), col_inds, len(col_inds), values,
                                             len(values))
+        Timers.toc("load a matrix")
 
     @staticmethod
     def load_key_dir_matrix(matrix):
@@ -203,8 +206,11 @@ class KrylovInterface(object):
             w, KrylovInterface._cusp.n)
 
         KrylovInterface._cusp.k = h
+
+        Timers.tic("load key dir matrix")
         KrylovInterface._cusp.load_key_dir_matrix(w, h, row_offsets, len(row_offsets), col_inds, len(col_inds),
                                                   values, len(values))
+        Timers.toc("load key dir matrix")
 
     @staticmethod
     def preallocate_memory(arnoldi_iterations, parallel_init_vecs):
@@ -218,7 +224,9 @@ class KrylovInterface(object):
         KrylovInterface._cusp.i = arnoldi_iterations
         KrylovInterface._cusp.p = parallel_init_vecs
 
+        Timers.tic("preallocate memory")
         result = KrylovInterface._cusp.preallocate_memory(arnoldi_iterations, parallel_init_vecs) != 0
+        Timers.toc("preallocate memory")
 
         KrylovInterface._preallocated_memory = result
         KrylovInterface._arnoldi_iterations = arnoldi_iterations

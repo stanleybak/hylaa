@@ -156,7 +156,7 @@ def random_sparse_matrix(dims, entries_per_row, random_cols=True):
 
     return csr_matrix(mat)
 
-def test_arnoldi(mat, vec, iterations):
+def arnoldi(mat, vec, iterations):
     'arnoldi for a single initial vector'
 
     dims = mat.shape[0]
@@ -164,7 +164,7 @@ def test_arnoldi(mat, vec, iterations):
 
     vec = vec.transpose()
 
-    v_mat, h_mat = test_arnoldi_parallel(mat.T, vec, iterations)
+    v_mat, h_mat = arnoldi_parallel(mat.T, vec, iterations)
 
     v_mat.shape = (iterations + 1, dims)
     h_mat.shape = (iterations, iterations + 1)
@@ -172,7 +172,7 @@ def test_arnoldi(mat, vec, iterations):
     return v_mat.transpose(), h_mat.transpose()
 
 
-def test_arnoldi_parallel(mat_transpose, vecs, iterations):
+def arnoldi_parallel(mat_transpose, vecs, iterations):
     'arnoldi with split multiple initial vecs'
 
     num_init = vecs.shape[0]
@@ -225,10 +225,16 @@ def test_arnoldi_parallel(mat_transpose, vecs, iterations):
 class TestKrylovInterface(unittest.TestCase):
     'Unit tests for krylov utilities'
 
+    def setUp(self):
+        'test setup'
+
+        random.seed(1)
+        KrylovInterface.reset()
+        
+
     def test_arnoldi_single(self):
         'compare the python implementation with the cusp implementation with a single initial vector'
 
-        random.seed(1)
         #KrylovInterface.set_use_profiling(True)
         #KrylovInterface.set_use_gpu(True)
 
@@ -243,7 +249,7 @@ class TestKrylovInterface(unittest.TestCase):
 
         # using python
         init_vec = np.array([[1.0] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
-        v_mat_testing, h_mat_testing = test_arnoldi(a_matrix, init_vec, iterations)
+        v_mat_testing, h_mat_testing = arnoldi(a_matrix, init_vec, iterations)
 
         projected_v_mat_testing = key_dir_mat * v_mat_testing
 
@@ -260,7 +266,6 @@ class TestKrylovInterface(unittest.TestCase):
     def test_arnoldi_offset(self):
         'compare the python implementation with the cusp implementation with a single initial vector (2nd column)'
 
-        random.seed(1)
         #KrylovInterface.set_use_profiling(True)
         #KrylovInterface.set_use_gpu(True)
 
@@ -275,7 +280,7 @@ class TestKrylovInterface(unittest.TestCase):
 
         # using python
         init_vec = np.array([[1.0] if d == 1 else [0.0] for d in xrange(dims)], dtype=float)
-        v_mat_testing, h_mat_testing = test_arnoldi(a_matrix, init_vec, iterations)
+        v_mat_testing, h_mat_testing = arnoldi(a_matrix, init_vec, iterations)
 
         projected_v_mat_testing = key_dir_mat * v_mat_testing
 
@@ -292,7 +297,6 @@ class TestKrylovInterface(unittest.TestCase):
     def test_arnoldi_off_end(self):
         'test arnodli when doing 2 parallel vectors at a time when straddling the end (only 1 should be done)'
 
-        random.seed(1)
         #KrylovInterface.set_use_profiling(True)
         #KrylovInterface.set_use_gpu(True)
 
@@ -307,7 +311,7 @@ class TestKrylovInterface(unittest.TestCase):
         # using python
         init_vec4 = np.array([[1.0] if d == 4 else [0.0] for d in xrange(dims)], dtype=float)
 
-        v_mat_testing4, h_mat_testing4 = test_arnoldi(a_matrix, init_vec4, iterations)
+        v_mat_testing4, h_mat_testing4 = arnoldi(a_matrix, init_vec4, iterations)
         projected_v_mat_testing4 = key_dir_mat * v_mat_testing4
 
         # using cusp
@@ -325,7 +329,6 @@ class TestKrylovInterface(unittest.TestCase):
     def test_arnoldi_double(self):
         'compare the cusp implementation with a two initial vectors versus the python implementation'
 
-        random.seed(1)
         #KrylovInterface.set_use_profiling(True)
         #KrylovInterface.set_use_gpu(True)
 
@@ -341,10 +344,10 @@ class TestKrylovInterface(unittest.TestCase):
         init_vec1 = np.array([[1.0] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
         init_vec2 = np.array([[1.0] if d == 1 else [0.0] for d in xrange(dims)], dtype=float)
 
-        v_mat_testing1, h_mat_testing1 = test_arnoldi(a_matrix, init_vec1, iterations)
+        v_mat_testing1, h_mat_testing1 = arnoldi(a_matrix, init_vec1, iterations)
         projected_v_mat_testing1 = key_dir_mat * v_mat_testing1
 
-        v_mat_testing2, h_mat_testing2 = test_arnoldi(a_matrix, init_vec2, iterations)
+        v_mat_testing2, h_mat_testing2 = arnoldi(a_matrix, init_vec2, iterations)
         projected_v_mat_testing2 = key_dir_mat * v_mat_testing2
 
         # using cusp
@@ -383,13 +386,13 @@ class TestKrylovInterface(unittest.TestCase):
         init_vec2 = np.array([[1.0] if d == 101 else [0.0] for d in xrange(dims)], dtype=float)
         init_vec3 = np.array([[1.0] if d == 102 else [0.0] for d in xrange(dims)], dtype=float)
 
-        v_mat_testing1, h_mat_testing1 = test_arnoldi(a_matrix, init_vec1, iterations)
+        v_mat_testing1, h_mat_testing1 = arnoldi(a_matrix, init_vec1, iterations)
         projected_v_mat_testing1 = key_dir_mat * v_mat_testing1
 
-        v_mat_testing2, h_mat_testing2 = test_arnoldi(a_matrix, init_vec2, iterations)
+        v_mat_testing2, h_mat_testing2 = arnoldi(a_matrix, init_vec2, iterations)
         projected_v_mat_testing2 = key_dir_mat * v_mat_testing2
         
-        v_mat_testing3, h_mat_testing3 = test_arnoldi(a_matrix, init_vec3, iterations)
+        v_mat_testing3, h_mat_testing3 = arnoldi(a_matrix, init_vec3, iterations)
         projected_v_mat_testing3 = key_dir_mat * v_mat_testing3
 
         # using cusp
@@ -409,25 +412,23 @@ class TestKrylovInterface(unittest.TestCase):
 
     def test_compare_gpu_cpu(self):
         'compare the cusp implementation gpu vs cpu (if a gpu is detected)'
+        
+        dims = 5
+        iterations = 2
+        key_dirs = 2
+        num_parallel = 2
+
+        a_matrix = random_sparse_matrix(dims, entries_per_row=2)
+        key_dir_mat = random_sparse_matrix(dims, entries_per_row=2)[:key_dirs, :]
 
         if KrylovInterface.has_gpu():
-            random.seed(1)
-            #KrylovInterface.set_use_profiling(True)
-            #KrylovInterface.set_use_gpu(True)
-
-            dims = 5
-            iterations = 2
-            key_dirs = 2
-            num_parallel = 2
-
-            a_matrix = random_sparse_matrix(dims, entries_per_row=2)
-            key_dir_mat = random_sparse_matrix(dims, entries_per_row=2)[:key_dirs, :]
-
             result_h_list = []
             result_pv_list = []
 
             for use_gpu in [False, True]:
                 KrylovInterface.set_use_gpu(use_gpu)
+                #print "\n---------------\n"
+                #KrylovInterface.set_use_profiling(True)
                 
                 KrylovInterface.load_a_matrix(a_matrix)
                 KrylovInterface.load_key_dir_matrix(key_dir_mat)

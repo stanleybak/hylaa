@@ -108,7 +108,7 @@ class CuspData
         _i = 0;
         _p = 0;
 
-        useProfiling = false;
+        setUseProfiling(false);
         aMatrixNonzeros = 0;
         keyDirMatrixNonzeros = 0;
     }
@@ -130,8 +130,6 @@ class CuspData
             printf("loadAMatrix() with sparse matrix size: %.2f MB (%d nonzeros)\n",
                    valuesLen * (8 + 4 + 4) / 1024.0 / 1024.0, valuesLen);
 
-        util.tic("loadAMatrix()");
-
         _n = w;
         aMatrixNonzeros = valuesLen;
 
@@ -147,16 +145,10 @@ class CuspData
             aMatrix = 0;
         }
 
-        util.tic("copy a_mat to gpu");
         aMatrix = new (std::nothrow) CsrMatrix(view);
-        util.toc("copy a_mat to gpu");
 
         if (aMatrix == 0)
             error("memory allocation of aMatrix returned nullptr\n");
-
-        util.toc("loadAMatrix()");
-        util.printTimers();
-        util.clearTimers();
     }
 
     // load key dir matrix, passed in as a csr matrix
@@ -169,8 +161,6 @@ class CuspData
         if (useProfiling)
             printf("loadKeyDirMatrix() with dense matrix size: %.2f MB\n",
                    w * h * (8 + 4 + 4) / 1024.0 / 1024.0);
-
-        util.tic("loadKeyDirMatrix()");
 
         _k = h;
         keyDirMatrixNonzeros = valuesLen;
@@ -187,16 +177,10 @@ class CuspData
             keyDirMatrix = 0;
         }
 
-        util.tic("copy key_mat to gpu");
         keyDirMatrix = new (std::nothrow) CsrMatrix(view);
-        util.toc("copy key_mat to gpu");
 
         if (keyDirMatrix == 0)
             error("memory allocation of keyDirMatrix() returned nullptr\n");
-
-        util.toc("loadKeyDirMatrix()");
-        util.printTimers();
-        util.clearTimers();
     }
 
     double getFreeMemoryMb()
