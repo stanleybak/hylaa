@@ -289,6 +289,39 @@ class TestKrylovInterface(unittest.TestCase):
         self.assertTrue(np.allclose(result_h[0], h_mat_testing), "Correct h matrix")
         self.assertTrue(np.allclose(result_pv[0], projected_v_mat_testing), "Correct projected v matrix")
 
+    def test_arnoldi_off_end(self):
+        'test arnodli when doing 2 parallel vectors at a time when straddling the end (only 1 should be done)'
+
+        random.seed(1)
+        #KrylovInterface.set_use_profiling(True)
+        #KrylovInterface.set_use_gpu(True)
+
+        dims = 5
+        iterations = 2
+        key_dirs = 2
+        num_parallel = 2
+
+        a_matrix = random_sparse_matrix(dims, entries_per_row=2)
+        key_dir_mat = random_sparse_matrix(dims, entries_per_row=2)[:key_dirs, :]
+
+        # using python
+        init_vec4 = np.array([[1.0] if d == 4 else [0.0] for d in xrange(dims)], dtype=float)
+
+        v_mat_testing4, h_mat_testing4 = test_arnoldi(a_matrix, init_vec4, iterations)
+        projected_v_mat_testing4 = key_dir_mat * v_mat_testing4
+
+        # using cusp
+        KrylovInterface.load_a_matrix(a_matrix)
+        KrylovInterface.load_key_dir_matrix(key_dir_mat)
+        KrylovInterface.preallocate_memory(iterations, num_parallel)
+        result_h, result_pv = KrylovInterface.arnoldi_parallel(4)
+
+        self.assertEqual(len(result_h), len(result_pv))
+        self.assertEqual(len(result_h), 1)
+
+        self.assertTrue(np.allclose(result_h[0], h_mat_testing4), "Correct h matrix")
+        self.assertTrue(np.allclose(result_pv[0], projected_v_mat_testing4), "Correct projV matrix")
+
     def test_arnoldi_double(self):
         'compare the cusp implementation with a two initial vectors versus the python implementation'
 

@@ -235,7 +235,7 @@ class KrylovInterface(object):
         h_matrix is of size (arnoldi_iter * (arnoldi_iter + 1)) x parallel_init_vecs
         projected_v_matrix is of size (init_vecs * parallel_init_vecs) x key_dirs
 
-        The matrix may be partially assigned if start_dim + parallel_init_vecs > toal_dims
+        The matrix may be partially assigned if start_dim + parallel_init_vecs > total_dims
         '''
 
         KrylovInterface._init_static()
@@ -244,6 +244,7 @@ class KrylovInterface(object):
         p = KrylovInterface._cusp.p
         k = KrylovInterface._cusp.k
         i = KrylovInterface._cusp.i
+        n = KrylovInterface._cusp.n
 
         result_h = np.zeros((i * p * (i + 1)), dtype=float)
         result_pv = np.zeros(((i+1) * p * k), dtype=float)
@@ -258,6 +259,10 @@ class KrylovInterface(object):
 
         result_h_list = []
         result_pv_list = []
+
+        # trim result if only partially computed
+        if start_dim + p > n:
+            p = n - start_dim
 
         for p_index in xrange(p):
             h_part = result_h[i*p_index:i*(p_index+1), :]
