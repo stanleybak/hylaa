@@ -362,11 +362,11 @@ class TestKrylovInterface(unittest.TestCase):
     def test_iss(self):
         'test the cusp implementation using the iss model'
 
-        KrylovInterface.set_use_profiling(True)
+        #KrylovInterface.set_use_profiling(True)
         #KrylovInterface.set_use_gpu(True)
 
         iterations = 10
-        num_parallel = 2
+        num_parallel = 3
 
         a_matrix = make_iss_matrix(1)
         dims = a_matrix.shape[0]
@@ -376,17 +376,21 @@ class TestKrylovInterface(unittest.TestCase):
 
         key_dir_mat = csr_matrix([dir1, dir2])
 
-        # use initial dimensions 100 and 101
+        # use initial dimensions 100 and 101 and 102
 
         # using python
         init_vec1 = np.array([[1.0] if d == 100 else [0.0] for d in xrange(dims)], dtype=float)
         init_vec2 = np.array([[1.0] if d == 101 else [0.0] for d in xrange(dims)], dtype=float)
+        init_vec3 = np.array([[1.0] if d == 102 else [0.0] for d in xrange(dims)], dtype=float)
 
         v_mat_testing1, h_mat_testing1 = test_arnoldi(a_matrix, init_vec1, iterations)
         projected_v_mat_testing1 = key_dir_mat * v_mat_testing1
 
         v_mat_testing2, h_mat_testing2 = test_arnoldi(a_matrix, init_vec2, iterations)
         projected_v_mat_testing2 = key_dir_mat * v_mat_testing2
+        
+        v_mat_testing3, h_mat_testing3 = test_arnoldi(a_matrix, init_vec3, iterations)
+        projected_v_mat_testing3 = key_dir_mat * v_mat_testing3
 
         # using cusp
         KrylovInterface.load_a_matrix(a_matrix)
@@ -397,8 +401,11 @@ class TestKrylovInterface(unittest.TestCase):
         self.assertTrue(np.allclose(result_h[0], h_mat_testing1), "Correct h matrix init vec 100")
         self.assertTrue(np.allclose(result_pv[0], projected_v_mat_testing1), "Correct projV matrix for init vec 100")
 
-        self.assertTrue(np.allclose(result_h[1], h_mat_testing2), "Correct h matrix init vec 10")
+        self.assertTrue(np.allclose(result_h[1], h_mat_testing2), "Correct h matrix init vec 101")
         self.assertTrue(np.allclose(result_pv[1], projected_v_mat_testing2), "Correct projV matrix for init vec 101")
+
+        self.assertTrue(np.allclose(result_h[2], h_mat_testing3), "Correct h matrix init vec 102")
+        self.assertTrue(np.allclose(result_pv[2], projected_v_mat_testing3), "Correct projV matrix for init vec 102")
 
 if __name__ == '__main__':
     unittest.main()
