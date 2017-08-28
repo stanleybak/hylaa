@@ -160,11 +160,11 @@ class CuspData
     }
 
     // load key dir matrix, passed in as a csr matrix
-    void loadKeyDirMatrix(int w, int h, int* rowOffsets, int rowOffsetsLen, int* colInds,
+    void loadKeyDirMatrix(unsigned long w, unsigned long h, int* rowOffsets, int rowOffsetsLen, int* colInds,
                           int colIndsLen, FLOAT_TYPE* values, int valuesLen)
     {
         if (w != _n)
-            error("in loadKeyDirMatrix() width (%d) to equal dims (%d)", w, _n);
+            error("in loadKeyDirMatrix() width (%lu) to equal dims (%lu)", w, _n);
 
         if (useProfiling)
             printf("loadKeyDirMatrix() with dense matrix size: %.2f MB\n",
@@ -259,12 +259,12 @@ class CuspData
         return success;
     }
 
-    void initParallelArnoldi(int startDim, int numInitVecs)
+    void initParallelArnoldi(unsigned long startDim, unsigned long numInitVecs)
     {
         util.tic("init parallel");
 
         if (startDim + numInitVecs > _n)
-            error("initParallelArnoldiV called with startDim=%d, numInitVecs=%d, but dims=%d",
+            error("initParallelArnoldiV called with startDim=%lu, numInitVecs=%lu, but dims=%lu",
                   startDim, numInitVecs, _n);
 
         // fill with zeros
@@ -290,7 +290,7 @@ class CuspData
     }
 
     // reads/writes from/to vMatrix, writes to hMatrix
-    void runArnoldi(int iterations, int numInitVecs)
+    void runArnoldi(unsigned long iterations, unsigned long numInitVecs)
     {
         // Arnoldi parallel algorithm iteration
         for (unsigned long it = 1; it <= iterations; it++)
@@ -386,10 +386,9 @@ class CuspData
         }
     }
 
-    void projectV(int iterations, int numInitVecs)
+    void projectV(unsigned long iterations, unsigned long numInitVecs)
     {
         // use vMatrix and keyDirMatrix to produce vProjected
-
         for (unsigned long iteration = 0; iteration <= iterations; ++iteration)
         {
             for (unsigned long curInitVec = 0; curInitVec < numInitVecs; ++curInitVec)
@@ -412,8 +411,8 @@ class CuspData
         }
     }
 
-    void arnoldiParallel(int startDim, double* resultH, int sizeResultH, double* resultPV,
-                         int sizeResultPV)
+    void arnoldiParallel(unsigned long startDim, double* resultH, unsigned long sizeResultH, double* resultPV,
+                         unsigned long sizeResultPV)
     {
         if (_n == 0)
             error("arnoldiParallel() called before loadAMatrix() (_n==0)\n");
@@ -425,19 +424,19 @@ class CuspData
             error("arnoldiParrallel() called before preallocate() (_i==0 or _p==0)\n");
 
         // check expected results sizes
-        int expectedH = _p * _i * (_i + 1);
-        int expectedPV = _p * (_i + 1) * _k;
+        unsigned long expectedH = _p * _i * (_i + 1);
+        unsigned long expectedPV = _p * (_i + 1) * _k;
 
         if (sizeResultH != expectedH)
-            error("Wrong size for resultH with i = %d. Got %d, expected %d.", _i, sizeResultH,
+            error("Wrong size for resultH with i = %lu. Got %lu, expected %lu.", _i, sizeResultH,
                   expectedH);
 
         if (sizeResultPV != expectedPV)
-            error("Wrong size for resultPV with (i, p, k) = (%d, %d, %d). Got %d, expected %d.", _i,
+            error("Wrong size for resultPV with (i, p, k) = (%lu, %lu, %lu). Got %d, expected %d.", _i,
                   _p, _k, sizeResultPV, expectedPV);
 
-        if (startDim < 0 || startDim >= _n)
-            error("invalid startDim in arnoldi (%d dim system): %d", _n, startDim);
+        if (startDim >= _n)
+            error("invalid startDim in arnoldi (%lu dim system): %lu", _n, startDim);
 
         util.tic("arnoldi parallel total");
 
