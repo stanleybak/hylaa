@@ -45,10 +45,10 @@ class CuspData
     Array1d* hMatrix;     // p * [(i+1) * i]
     Array1d* vProjected;  // p * [k * (i+1)]
 
-    int _n;  // number of dimensions in the system
-    int _k;  // number of key directions
-    int _i;  // number of arnoldi iterations
-    int _p;  // number of parallel initial vectors in arnoldi
+    unsigned long _n;  // number of dimensions in the system
+    unsigned long _k;  // number of key directions
+    unsigned long _i;  // number of arnoldi iterations
+    unsigned long _p;  // number of parallel initial vectors in arnoldi
 
     // profiling variables
     bool useProfiling;
@@ -295,16 +295,17 @@ class CuspData
         // Arnoldi parallel algorithm iteration
         for (unsigned long it = 1; it <= iterations; it++)
         {
-            util.tic("sparse matrix vector multiply total");
             // do all the multiplications up front
+            util.tic("sparse matrix vector multiply total");
             for (unsigned long curInitVec = 0; curInitVec < numInitVecs; ++curInitVec)
             {
-                unsigned long rowOffset = curInitVec * _n * iterations;
-                unsigned long prevColOffset = _n * (it - 1);
-                unsigned long curColOffset = _n * it;
+                unsigned long pageOffset = curInitVec * _n * (iterations + 1);
 
-                Array1dView vecView = vMatrix->subarray(rowOffset + prevColOffset, _n);
-                Array1dView resultView = vMatrix->subarray(rowOffset + curColOffset, _n);
+                unsigned long prevRowOffset = _n * (it - 1);
+                unsigned long curRowOffset = _n * it;
+
+                Array1dView vecView = vMatrix->subarray(pageOffset + prevRowOffset, _n);
+                Array1dView resultView = vMatrix->subarray(pageOffset + curRowOffset, _n);
 
                 util.tic("sparse matrix vector multiply");
                 cusp::multiply(*aMatrix, vecView, resultView);
@@ -316,30 +317,20 @@ class CuspData
             // do all the dot products
             for (unsigned long curInitVec = 0; curInitVec < numInitVecs; ++curInitVec)
             {
-                unsigned long rowOffset = curInitVec * _n * iterations;
-                unsigned long curColOffset = _n * it;
+                unsigned long pageOffset = curInitVec * _n * (iterations + 1);
+                unsigned long rowOffset = _n * it;
 
-                Array1dView vecView = vMatrix->subarray(rowOffset + curColOffset, _n);
-
-                printf("cur_vec:\n");
-                cusp::print(vecView);
-
-                Array1dView matView1d = vMatrix->subarray(rowOffset, curColOffset);
+                Array1dView vecView = vMatrix->subarray(pageOffset + rowOffset, _n);
+                Array1dView matView1d = vMatrix->subarray(pageOffset, rowOffset);
                 Array2dView matView2d = make_array2d_view(it, _n, _n, matView1d, cusp::row_major());
 
-                printf("matView2d:\n");
-                cusp::print(matView2d);
-
-                rowOffset = curInitVec * (_i + 1) * _i;
-                curColOffset = (it - 1) * (_i + 1);
-                Array1dView resultView = hMatrix->subarray(rowOffset + curColOffset, it);
+                pageOffset = curInitVec * (_i + 1) * _i;
+                rowOffset = (it - 1) * (_i + 1);
+                Array1dView resultView = hMatrix->subarray(pageOffset + rowOffset, it);
 
                 util.tic("dense_multiply");
                 dense_multiply(&matView2d, &vecView, &resultView);
                 util.toc("dense_multiply", 2 * _n * it);
-
-                printf("result-view:\n");
-                cusp::print(resultView);
             }
             util.toc("dots total", 2 * _n * it * numInitVecs);
 
@@ -347,34 +338,25 @@ class CuspData
             // now scale each of the vecs by the computed dot products and subtract from curvec
             for (unsigned long prevVecIndex = 0; prevVecIndex < it; ++prevVecIndex)
             {
-                printf("prevVecIndex = %lu\n", prevVecIndex);
-
                 for (unsigned long curInitVec = 0; curInitVec < numInitVecs; ++curInitVec)
                 {
-                    unsigned long rowOffset = curInitVec * _n * iterations;
-                    unsigned long curColOffset = _n * it;
+                    unsigned long pageOffset = curInitVec * _n * (iterations + 1);
+                    unsigned long rowOffset = _n * it;
 
-                    Array1dView curVec = vMatrix->subarray(rowOffset + curColOffset, _n);
+                    Array1dView curVec = vMatrix->subarray(pageOffset + rowOffset, _n);
 
-                    printf("cur_vec before:\n");
-                    cusp::print(curVec);
-
-                    curColOffset = _n * prevVecIndex;
-                    Array1dView prevVec = vMatrix->subarray(rowOffset + curColOffset, _n);
+                    rowOffset = _n * prevVecIndex;
+                    Array1dView prevVec = vMatrix->subarray(pageOffset + rowOffset, _n);
 
                     // get the dot result
-                    rowOffset = curInitVec * (_i + 1) * _i;
-                    curColOffset = (it - 1) * (_i + 1);
-                    double dotResult = (*hMatrix)[rowOffset + curColOffset + prevVecIndex];
-
-                    printf("prevVec (with dotResult = %f):\n", dotResult);
-                    cusp::print(prevVec);
+                    pageOffset = curInitVec * (_i + 1) * _i;
+                    rowOffset = (it - 1) * (_i + 1);
+                    double dotResult = (*hMatrix)[pageOffset + rowOffset + prevVecIndex];
 
                     // subtract dots * prevVec from curVec
+                    util.tic("axpy");
                     cusp::blas::axpy(prevVec, curVec, -dotResult);
-
-                    printf("cur_vec after:\n");
-                    cusp::print(curVec);
+                    util.toc("axpy", 2 * _n);
                 }
             }
             util.toc("axpy total");
@@ -382,34 +364,25 @@ class CuspData
             util.tic("magnitude and scale");
             for (unsigned long curInitVec = 0; curInitVec < numInitVecs; ++curInitVec)
             {
-                unsigned long rowOffset = curInitVec * _n * iterations;
-                unsigned long curColOffset = _n * it;
+                unsigned long pageOffset = curInitVec * _n * (iterations + 1);
+                unsigned long rowOffset = _n * it;
 
-                Array1dView curVec = vMatrix->subarray(rowOffset + curColOffset, _n);
+                Array1dView curVec = vMatrix->subarray(pageOffset + rowOffset, _n);
 
                 double magnitude = cusp::blas::nrm2(curVec);
 
                 // store magnitude in H
-                rowOffset = curInitVec * (_i + 1) * _i;
-                curColOffset = (it - 1) * (_i + 1);
-                (*hMatrix)[rowOffset + curColOffset + it] = magnitude;
-
-                printf("rowOffset = %lu, curColOffset = %lu, minorOffset = %lu\n", rowOffset,
-                       curColOffset, it);
+                pageOffset = curInitVec * (_i + 1) * _i;
+                rowOffset = (it - 1) * (_i + 1);
+                (*hMatrix)[pageOffset + rowOffset + it] = magnitude;
 
                 // scale vector
                 if (magnitude < 1e-10)
                     cusp::blas::scal(curVec, 0.0);
                 else
                     cusp::blas::scal(curVec, 1.0 / magnitude);
-
-                printf("cur_vec after normalizing with its magnitude (%f):\n", magnitude);
-                cusp::print(curVec);
             }
             util.toc("magnitude and scale");
-
-            printf("after mag & scale, hMatrix:\n");
-            cusp::print(*hMatrix);
         }
     }
 
@@ -421,8 +394,8 @@ class CuspData
         {
             for (unsigned long curInitVec = 0; curInitVec < numInitVecs; ++curInitVec)
             {
-                unsigned long pageOffset = curInitVec * _n * iterations;
-                unsigned long rowOffset = _n * iteration;
+                unsigned long pageOffset = curInitVec * _n * (iterations + 1);
+                unsigned long rowOffset = _n * (iteration);
 
                 Array1dView vecView = vMatrix->subarray(pageOffset + rowOffset, _n);
 
@@ -437,9 +410,6 @@ class CuspData
                 util.toc("project-v sparse matrix vector multiply", 2 * keyDirMatrixNonzeros);
             }
         }
-
-        printf("projected V matrix onto key directions, result:\n");
-        cusp::print(*vProjected);
     }
 
     void arnoldiParallel(int startDim, double* resultH, int sizeResultH, double* resultPV,
@@ -494,7 +464,6 @@ class CuspData
         util.toc("copying H matrix to np.ndarray");
 
         // copy vProjected to np.ndarray
-        printf("before copy, copying %d elements\n", expectedPV);
 
         util.tic("copying V-projected matrix to np.ndarray");
         HostFloatArray1dView hostPVView(resultPV, resultPV + expectedPV);
@@ -531,6 +500,22 @@ class CuspData
 
         // not implemented anywhere in cusp 5.0.1:
         // cusp::blas::gemv(*mat, *vec, *result);
+    }
+
+    void printV()
+    {
+        unsigned long h = _p * (_i + 1);
+        unsigned long w = _n;
+
+        cusp::print(make_array2d_view(h, w, w, Array1dView(*vMatrix), cusp::row_major()));
+    }
+
+    void printH()
+    {
+        unsigned long h = _p * (_i + 1);
+        unsigned long w = _i;
+
+        cusp::print(make_array2d_view(h, w, w, Array1dView(*hMatrix), cusp::row_major()));
     }
 };
 

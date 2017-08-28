@@ -186,22 +186,16 @@ def test_arnoldi_parallel(mat_transpose, vecs, iterations):
         vec = vec / np.linalg.norm(vec)
         prev_v[c, 0:size] = vec
 
-        print ". scaled init_vec = {}".format(vec)
-
     # use a-transpose
     #a_transpose = mat.T.copy()
 
     for cur_it in xrange(1, iterations + 1):
-        print "\n. cur_it = {}".format(cur_it)
-
         # do all the multiplications up front
         for cur_vec in xrange(num_init):
             #vec = np.dot(prev_v[cur_vec, (cur_it-1)*size:cur_it*size], a_transpose)
 
             vec = prev_v[cur_vec, (cur_it-1)*size:cur_it*size] * mat_transpose
 
-            print ". multiplying with vec {}".format(prev_v[cur_vec, (cur_it-1)*size:cur_it*size])
-            print ". new vec in arnoldi = {}".format(vec)
             prev_v[cur_vec, cur_it*size:(cur_it+1)*size] = vec
 
         for cur_vec in xrange(num_init):
@@ -210,31 +204,21 @@ def test_arnoldi_parallel(mat_transpose, vecs, iterations):
             prev_mat = prev_v[cur_vec, 0:cur_it*size]
             prev_mat.shape = (cur_it, size)
 
-            print ". doing dots, vec = {}".format(vec)
-            print ". doing dots, mat = {}".format(prev_mat)
-
             dots = h_mat[cur_vec][(iterations + 1) * (cur_it-1):(iterations + 1) * (cur_it-1) + cur_it]
             dots[:] = np.dot(prev_mat, vec.T)
-
-            print ". dots = {}".format(dots)
 
             sub_vecs = np.dot(np.diag(dots), prev_mat)
 
             for c in xrange(cur_it):
                 vec -= sub_vecs[c]
 
-            print ". vec = {}".format(vec)
-
             norm = np.linalg.norm(vec)
 
-            print ". norm = {}".format(norm)
             h_mat[cur_vec][cur_it + (iterations+1) * (cur_it-1)] = norm
 
             if norm >= 1e-6:
                 vec = vec / norm
                 prev_v[cur_vec, cur_it*size:(cur_it+1)*size] = vec
-
-                print ". scaled_vec = {}".format(vec)
 
     return prev_v, h_mat
 
@@ -245,7 +229,7 @@ class TestKrylovInterface(unittest.TestCase):
         'compare the python implementation with the cusp implementation with a single initial vector'
 
         random.seed(1)
-        KrylovInterface.set_use_profiling(True)
+        #KrylovInterface.set_use_profiling(True)
         #KrylovInterface.set_use_gpu(True)
 
         dims = 5
@@ -273,11 +257,43 @@ class TestKrylovInterface(unittest.TestCase):
         self.assertTrue(np.allclose(result_h[0], h_mat_testing), "Correct h matrix")
         self.assertTrue(np.allclose(result_pv[0], projected_v_mat_testing), "Correct projected v matrix")
 
+    def test_arnoldi_offset(self):
+        'compare the python implementation with the cusp implementation with a single initial vector (2nd column)'
+
+        random.seed(1)
+        #KrylovInterface.set_use_profiling(True)
+        #KrylovInterface.set_use_gpu(True)
+
+        dims = 5
+        iterations = 2
+        key_dirs = 2
+        num_parallel = 1
+
+        a_matrix = random_sparse_matrix(dims, entries_per_row=2)
+
+        key_dir_mat = random_sparse_matrix(dims, entries_per_row=2)[:key_dirs, :]
+
+        # using python
+        init_vec = np.array([[1.0] if d == 1 else [0.0] for d in xrange(dims)], dtype=float)
+        v_mat_testing, h_mat_testing = test_arnoldi(a_matrix, init_vec, iterations)
+
+        projected_v_mat_testing = key_dir_mat * v_mat_testing
+
+        # using cusp
+
+        KrylovInterface.load_a_matrix(a_matrix)
+        KrylovInterface.load_key_dir_matrix(key_dir_mat)
+        KrylovInterface.preallocate_memory(iterations, num_parallel)
+        result_h, result_pv = KrylovInterface.arnoldi_parallel(1)
+
+        self.assertTrue(np.allclose(result_h[0], h_mat_testing), "Correct h matrix")
+        self.assertTrue(np.allclose(result_pv[0], projected_v_mat_testing), "Correct projected v matrix")
+
     def test_arnoldi_double(self):
         'compare the cusp implementation with a two initial vectors versus the python implementation'
 
         random.seed(1)
-        KrylovInterface.set_use_profiling(True)
+        #KrylovInterface.set_use_profiling(True)
         #KrylovInterface.set_use_gpu(True)
 
         dims = 5
@@ -298,24 +314,17 @@ class TestKrylovInterface(unittest.TestCase):
         v_mat_testing2, h_mat_testing2 = test_arnoldi(a_matrix, init_vec2, iterations)
         projected_v_mat_testing2 = key_dir_mat * v_mat_testing2
 
-        print "python h_mat1:\n{}\nh_mat2:\n{}\n".format(h_mat_testing1, h_mat_testing2)
-        print "--------------------"
-
         # using cusp
         KrylovInterface.load_a_matrix(a_matrix)
         KrylovInterface.load_key_dir_matrix(key_dir_mat)
         KrylovInterface.preallocate_memory(iterations, num_parallel)
         result_h, result_pv = KrylovInterface.arnoldi_parallel(0)
 
-        print "cusp h_mat1:\n{}\nh_mat2:\n{}\n".format(result_h[0], result_h[1])
-
         self.assertTrue(np.allclose(result_h[0], h_mat_testing1), "Correct h matrix init vec 1")
         self.assertTrue(np.allclose(result_pv[0], projected_v_mat_testing1), "Correct projV matrix for init vec 1")
 
         self.assertTrue(np.allclose(result_h[1], h_mat_testing2), "Correct h matrix init vec 2")
         self.assertTrue(np.allclose(result_pv[1], projected_v_mat_testing2), "Correct projV matrix for init vec 2")
-
-    # TODO: add testing with offset start vector
 
 if __name__ == '__main__':
     unittest.main()
