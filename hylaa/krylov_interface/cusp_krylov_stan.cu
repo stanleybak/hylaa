@@ -2,15 +2,15 @@
 // Krylov subspace - based simulation using Gpu- Cusp / Cuda for sparse ode
 // June 2017
 
-#include <new>
-#include <stdio.h>
-#include <stdlib.h>
 #include <cusp/array1d.h>
 #include <cusp/coo_matrix.h>
 #include <cusp/csr_matrix.h>
 #include <cusp/multiply.h>
 #include <cusp/print.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <sys/time.h>
+#include <new>
 #include "gpu_util.h"
 
 typedef double FLOAT_TYPE;
@@ -52,8 +52,8 @@ class CuspData
 
     // profiling variables
     bool useProfiling;
-    int aMatrixNonzeros;
-    int keyDirMatrixNonzeros;
+    unsigned long aMatrixNonzeros;
+    unsigned long keyDirMatrixNonzeros;
 
     CuspData(bool useCpu) : util(useCpu)
     {
@@ -68,7 +68,6 @@ class CuspData
     }
 
     ~CuspData() { reset(); }
-
     void reset()
     {
         if (aMatrix != 0)
@@ -120,17 +119,31 @@ class CuspData
     }
 
     // load A matrix, passed in as a csr matrix
-    void loadAMatrix(int w, int h, int* rowOffsets, int rowOffsetsLen, int* colInds, int colIndsLen,
-                     FLOAT_TYPE* values, int valuesLen)
+    void loadAMatrix(unsigned long w, unsigned long h, int* rowOffsets, unsigned long rowOffsetsLen,
+                     int* colInds, unsigned long colIndsLen, FLOAT_TYPE* values,
+                     unsigned long valuesLen)
     {
+        if (_n == 0)
+            error("loadKeyDirMatrix() called before preallocate() (_n==0)\n");
+
         if (w != h)
-            error("loadAMatrix() expected square A matrix, got w=%d, h=%d", w, h);
+            error("loadAMatrix() expected square A matrix, got w=%lu, h=%lu", w, h);
+
+        if (w != _n)
+            error("in loadAMatrix() size (%lu) not to equal dims from preallocate() (%lu)", w, _n);
 
         if (useProfiling)
-            printf("loadAMatrix() with sparse matrix size: %.2f MB (%d nonzeros)\n",
-                   valuesLen * (8 + 4 + 4) / 1024.0 / 1024.0, valuesLen);
+        {
+            double size = rowOffsetsLen * sizeof(int);
+            size += colIndsLen * sizeof(int);
+            size += valuesLen * sizeof(FLOAT_TYPE);
 
-        _n = w;
+            printf(
+                "loadAMatrix() with sparse matrix size: %.2f MB (%lu nonzeros). Memory on device: "
+                "%.2f MB\n",
+                size / 1024.0 / 1024.0, valuesLen, getFreeMemoryMb());
+        }
+
         aMatrixNonzeros = valuesLen;
 
         HostIntArray1dView rowOffsetsView(rowOffsets, rowOffsets + rowOffsetsLen);
@@ -145,24 +158,45 @@ class CuspData
             aMatrix = 0;
         }
 
-        aMatrix = new (std::nothrow) CsrMatrix(view);
-
-        if (aMatrix == 0)
-            error("memory allocation of aMatrix returned nullptr\n");
+        try
+        {
+            aMatrix = new CsrMatrix(view);
+        }
+        catch (std::bad_alloc)
+        {
+            error("memory allocation of aMatrix failed\n");
+        }
     }
 
     // load key dir matrix, passed in as a csr matrix
-    void loadKeyDirMatrix(unsigned long w, unsigned long h, int* rowOffsets, int rowOffsetsLen, int* colInds,
-                          int colIndsLen, FLOAT_TYPE* values, int valuesLen)
+    void loadKeyDirMatrix(unsigned long w, unsigned long h, int* rowOffsets,
+                          unsigned long rowOffsetsLen, int* colInds, unsigned long colIndsLen,
+                          FLOAT_TYPE* values, unsigned long valuesLen)
     {
+        if (_n == 0)
+            error("loadKeyDirMatrix() called before preallocate() (_n==0)\n");
+
         if (w != _n)
-            error("in loadKeyDirMatrix() width (%lu) to equal dims (%lu)", w, _n);
+            error("in loadKeyDirMatrix() width (%lu) to equal dims from preallocate() (%lu)", w,
+                  _n);
+
+        if (w != _n)
+            error(
+                "in loadKeyDirMatrix() height (%lu) to equal keyDirMatSize from preallocate() "
+                "(%lu)",
+                h, _k);
 
         if (useProfiling)
-            printf("loadKeyDirMatrix() with dense matrix size: %.2f MB\n",
-                   w * h * (8 + 4 + 4) / 1024.0 / 1024.0);
+        {
+            double size = rowOffsetsLen * sizeof(int);
+            size += colIndsLen * sizeof(int);
+            size += valuesLen * sizeof(FLOAT_TYPE);
 
-        _k = h;
+            printf(
+                "loadKeyDirMatrix() with dense matrix size: %.2f MB, Memory on device: %.2f MB\n",
+                size / 1024.0 / 1024.0, getFreeMemoryMb());
+        }
+
         keyDirMatrixNonzeros = valuesLen;
 
         HostIntArray1dView rowOffsetsView(rowOffsets, rowOffsets + rowOffsetsLen);
@@ -177,10 +211,14 @@ class CuspData
             keyDirMatrix = 0;
         }
 
-        keyDirMatrix = new (std::nothrow) CsrMatrix(view);
-
-        if (keyDirMatrix == 0)
-            error("memory allocation of keyDirMatrix() returned nullptr\n");
+        try
+        {
+            keyDirMatrix = new (std::nothrow) CsrMatrix(view);
+        }
+        catch (std::bad_alloc)
+        {
+            error("memory allocation of keyDirMatrix() failed\n");
+        }
     }
 
     double getFreeMemoryMb()
@@ -191,16 +229,17 @@ class CuspData
     }
 
     // frees memory if it was previously allocated, returns false if memory error occurs
-    bool preallocateMemory(int arnoldiIt, int numParallelInit)
+    bool preallocateMemory(unsigned long arnoldiIt, unsigned long numParallelInit,
+                           unsigned int dims, unsigned int keyDirMatSize)
     {
-        if (_n == 0)
-            error("preallocateMemory() called before loadAMatrix() (_n==0)\n");
-
-        if (_k == 0)
-            error("preallocateMemory() called before loadKeyDirMatrix() (_k==0)\n");
-
+        _n = dims;
         _i = arnoldiIt;
         _p = numParallelInit;
+        _k = keyDirMatSize;
+
+        if (useProfiling)
+            printf("preallocateMemory() called with profiling, Free memory on device: %.2f MB\n",
+                   getFreeMemoryMb());
 
         // preallocate vMatrix, width = dims * iterations, height = numParInit
         if (vMatrix != 0)
@@ -210,7 +249,16 @@ class CuspData
         }
 
         unsigned long vMatrixSize = _p * _n * (_i + 1);
-        vMatrix = new (std::nothrow) Array1d(vMatrixSize, 0);
+
+        try
+        {
+            vMatrix = new Array1d(vMatrixSize, 0);
+        }
+        catch (std::bad_alloc)
+        {
+            printf("allocation failed, tried %.2f MB, remaining memory = %.2f MB\n",
+                   vMatrixSize / 1024.0 / 1024.0, getFreeMemoryMb());
+        }
 
         // preallocate hMatrix, numParInit * iterations * iterations
         if (hMatrix != 0)
@@ -220,7 +268,14 @@ class CuspData
         }
 
         unsigned long hMatrixSize = _p * _i * (_i + 1);
-        hMatrix = new (std::nothrow) Array1d(hMatrixSize, 0);
+
+        try
+        {
+            hMatrix = new Array1d(hMatrixSize, 0);
+        }
+        catch (std::bad_alloc)
+        {
+        }
 
         // preallocate vProjected
         if (vProjected != 0)
@@ -230,7 +285,14 @@ class CuspData
         }
 
         unsigned long vProjectedSize = _p * _k * (_i + 1);
-        vProjected = new (std::nothrow) Array1d(vProjectedSize, 0);
+
+        try
+        {
+            vProjected = new Array1d(vProjectedSize, 0);
+        }
+        catch (std::bad_alloc)
+        {
+        }
 
         bool success = vMatrix != 0 && hMatrix != 0 && vProjected != 0;
 
@@ -238,6 +300,8 @@ class CuspData
         {
             _i = 0;
             _p = 0;
+            _n = 0;
+            _k = 0;
         }
 
         return success;
@@ -395,8 +459,8 @@ class CuspData
         }
     }
 
-    void arnoldiParallel(unsigned long startDim, double* resultH, unsigned long sizeResultH, double* resultPV,
-                         unsigned long sizeResultPV)
+    void arnoldiParallel(unsigned long startDim, double* resultH, unsigned long sizeResultH,
+                         double* resultPV, unsigned long sizeResultPV)
     {
         if (_n == 0)
             error("arnoldiParallel() called before loadAMatrix() (_n==0)\n");
@@ -416,15 +480,16 @@ class CuspData
                   expectedH);
 
         if (sizeResultPV != expectedPV)
-            error("Wrong size for resultPV with (i, p, k) = (%lu, %lu, %lu). Got %d, expected %d.", _i,
-                  _p, _k, sizeResultPV, expectedPV);
+            error(
+                "Wrong size for resultPV with (i, p, k) = (%lu, %lu, %lu). Got %lu, expected %lu.",
+                _i, _p, _k, sizeResultPV, expectedPV);
 
         if (startDim >= _n)
             error("invalid startDim in arnoldi (%lu dim system): %lu", _n, startDim);
 
         util.tic("arnoldi parallel total");
 
-        int parInitVecs = _p;
+        unsigned long parInitVecs = _p;
 
         if (startDim + parInitVecs > _n)
             parInitVecs = _n - startDim;
@@ -469,9 +534,9 @@ class CuspData
             error("in dense_multiply(), mat.height (%lu) != result.size (%lu)",
                   mat->values.size() / mat->pitch, result->size());
 
-        int size = result->size();
+        unsigned long size = result->size();
 
-        for (int row = 0; row < size; ++row)
+        for (unsigned long row = 0; row < size; ++row)
         {
             Array1dView rowView = mat->row(row);
 
@@ -506,7 +571,7 @@ CuspData<cusp::host_memory> cuspDataCpu(true);
 CuspData<cusp::device_memory> cuspDataGpu(false);
 
 extern "C" {
-int hasGpu()
+unsigned long hasGpu()
 {
     return cuspDataGpu.util.hasGpu();
 }
@@ -518,21 +583,22 @@ void reset()
 }
 
 ////// CPU Version
-void setUseProfilingCpu(int enabled)
+void setUseProfilingCpu(unsigned long enabled)
 {
     cuspDataCpu.setUseProfiling(enabled != 0);
 }
 
 // as csr matrix
-void loadAMatrixCpu(int w, int h, int* rowOffsets, int rowOffsetsLen, int* colInds, int colIndsLen,
-                    double* values, int valuesLen)
+void loadAMatrixCpu(unsigned long w, unsigned long h, int* rowOffsets, unsigned long rowOffsetsLen,
+                    int* colInds, unsigned long colIndsLen, double* values, unsigned long valuesLen)
 {
     cuspDataCpu.loadAMatrix(w, h, rowOffsets, rowOffsetsLen, colInds, colIndsLen, values,
                             valuesLen);
 }
 
-void loadKeyDirMatrixCpu(int w, int h, int* rowOffsets, int rowOffsetsLen, int* colInds,
-                         int colIndsLen, double* values, int valuesLen)
+void loadKeyDirMatrixCpu(unsigned long w, unsigned long h, int* rowOffsets,
+                         unsigned long rowOffsetsLen, int* colInds, unsigned long colIndsLen,
+                         double* values, unsigned long valuesLen)
 {
     cuspDataCpu.loadKeyDirMatrix(w, h, rowOffsets, rowOffsetsLen, colInds, colIndsLen, values,
                                  valuesLen);
@@ -543,34 +609,37 @@ double getFreeMemoryMbCpu()
     return cuspDataCpu.getFreeMemoryMb();
 }
 
-int preallocateMemoryCpu(int arnoldiIt, int numParallelInitVecs)
+unsigned long preallocateMemoryCpu(unsigned long arnoldiIt, unsigned long numParallelInitVecs,
+                                   unsigned long dims, unsigned long keyDirMatSize)
 {
-    return cuspDataCpu.preallocateMemory(arnoldiIt, numParallelInitVecs) ? 1 : 0;
+    return cuspDataCpu.preallocateMemory(arnoldiIt, numParallelInitVecs, dims, keyDirMatSize) ? 1
+                                                                                              : 0;
 }
 
-void arnoldiParallelCpu(int startDim, double* resultH, int sizeResultH, double* resultPV,
-                        int sizeResultPV)
+void arnoldiParallelCpu(unsigned long startDim, double* resultH, unsigned long sizeResultH,
+                        double* resultPV, unsigned long sizeResultPV)
 {
     cuspDataCpu.arnoldiParallel(startDim, resultH, sizeResultH, resultPV, sizeResultPV);
 }
 
 ////// GPU Version
-void setUseProfilingGpu(int enabled)
+void setUseProfilingGpu(unsigned long enabled)
 {
     cuspDataGpu.setUseProfiling(enabled != 0);
 }
 
 // as csr matrix
-void loadAMatrixGpu(int w, int h, int* rowOffsets, int rowOffsetsLen, int* colInds, int colIndsLen,
-                    double* values, int valuesLen)
+void loadAMatrixGpu(unsigned long w, unsigned long h, int* rowOffsets, unsigned long rowOffsetsLen,
+                    int* colInds, unsigned long colIndsLen, double* values, unsigned long valuesLen)
 {
     cuspDataGpu.loadAMatrix(w, h, rowOffsets, rowOffsetsLen, colInds, colIndsLen, values,
                             valuesLen);
 }
 
 // as csr matrix
-void loadKeyDirMatrixGpu(int w, int h, int* rowOffsets, int rowOffsetsLen, int* colInds,
-                         int colIndsLen, double* values, int valuesLen)
+void loadKeyDirMatrixGpu(unsigned long w, unsigned long h, int* rowOffsets,
+                         unsigned long rowOffsetsLen, int* colInds, unsigned long colIndsLen,
+                         double* values, unsigned long valuesLen)
 {
     cuspDataGpu.loadKeyDirMatrix(w, h, rowOffsets, rowOffsetsLen, colInds, colIndsLen, values,
                                  valuesLen);
@@ -581,13 +650,18 @@ double getFreeMemoryMbGpu()
     return cuspDataGpu.getFreeMemoryMb();
 }
 
-int preallocateMemoryGpu(int arnoldiIterations, int numParallelInitVecs)
+unsigned long preallocateMemoryGpu(unsigned long arnoldiIterations,
+                                   unsigned long numParallelInitVecs, unsigned long dims,
+                                   unsigned long keyDirMatSize)
 {
-    return cuspDataGpu.preallocateMemory(arnoldiIterations, numParallelInitVecs) ? 1 : 0;
+    return cuspDataGpu.preallocateMemory(arnoldiIterations, numParallelInitVecs, dims,
+                                         keyDirMatSize)
+               ? 1
+               : 0;
 }
 
-void arnoldiParallelGpu(int startDim, double* resultH, int sizeResultH, double* resultPV,
-                        int sizeResultPV)
+void arnoldiParallelGpu(unsigned long startDim, double* resultH, unsigned long sizeResultH,
+                        double* resultPV, unsigned long sizeResultPV)
 {
     cuspDataGpu.arnoldiParallel(startDim, resultH, sizeResultH, resultPV, sizeResultPV);
 }

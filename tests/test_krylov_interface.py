@@ -7,6 +7,7 @@ August 2017
 import unittest
 import random
 import math
+import time
 
 from hylaa.krylov_interface import KrylovInterface
 import numpy as np
@@ -129,22 +130,27 @@ def make_iss_matrix(num_copies):
     return csr_matrix(mat)
 
 
-def random_sparse_matrix(dims, entries_per_row, random_cols=True):
+def random_sparse_matrix(dims, entries_per_row, random_cols=True, print_progress=False):
     'make a random sparse matrix with the given number of entries per row'
 
-    num_rows = num_cols = dims
-
-    rows = []
+    row_inds = []
     cols = []
     vals = []
 
-    for row in xrange(num_rows):
+    start = last_print = time.time()
+
+    for row in xrange(dims):
+        row_inds.append(len(vals))
+
+        if print_progress and row % 10000 == 0 and time.time() - last_print > 1.0:
+            last_print = time.time()
+            elapsed = last_print - start
+            print "Row {} / {} ({:.2f}%). Elapsed: {:.1f}s".format(row, dims, 100.0 * row / dims, elapsed)
 
         for entry_index in xrange(entries_per_row):
-            rows.append(row)
 
             if random_cols:
-                r = random.random() * num_cols
+                r = random.random() * dims
                 col = int(math.floor(r))
                 cols.append(col)
             else:
@@ -152,9 +158,19 @@ def random_sparse_matrix(dims, entries_per_row, random_cols=True):
 
             vals.append(random.random())
 
-    mat = coo_matrix((vals, (rows, cols)), shape=(num_rows, num_cols))
+    row_inds.append(len(vals))
 
-    return csr_matrix(mat)
+    if print_progress:
+        elapsed = last_print - start
+        print "Row {} / {} ({:.2f}%). Elapsed: {:.1f}s".format(dims, dims, 100.0, elapsed)
+
+    start = time.time()
+    rv = csr_matrix((vals, cols, row_inds), shape=(dims, dims))
+
+    if print_progress:
+        print "making csr_matrix time {:.1f}s".format(time.time() - start)
+
+    return rv
 
 def arnoldi(mat, vec, iterations):
     'arnoldi for a single initial vector'
@@ -255,9 +271,10 @@ class TestKrylovInterface(unittest.TestCase):
 
         # using cusp
 
+        KrylovInterface.preallocate_memory(iterations, num_parallel, dims, key_dirs)
         KrylovInterface.load_a_matrix(a_matrix)
         KrylovInterface.load_key_dir_matrix(key_dir_mat)
-        KrylovInterface.preallocate_memory(iterations, num_parallel)
+        
         result_h, result_pv = KrylovInterface.arnoldi_parallel(0)
 
         self.assertTrue(np.allclose(result_h[0], h_mat_testing), "Correct h matrix")
@@ -286,9 +303,10 @@ class TestKrylovInterface(unittest.TestCase):
 
         # using cusp
 
+        KrylovInterface.preallocate_memory(iterations, num_parallel, dims, key_dirs)
         KrylovInterface.load_a_matrix(a_matrix)
         KrylovInterface.load_key_dir_matrix(key_dir_mat)
-        KrylovInterface.preallocate_memory(iterations, num_parallel)
+        
         result_h, result_pv = KrylovInterface.arnoldi_parallel(1)
 
         self.assertTrue(np.allclose(result_h[0], h_mat_testing), "Correct h matrix")
@@ -315,9 +333,10 @@ class TestKrylovInterface(unittest.TestCase):
         projected_v_mat_testing4 = key_dir_mat * v_mat_testing4
 
         # using cusp
+        KrylovInterface.preallocate_memory(iterations, num_parallel, dims, key_dirs)
         KrylovInterface.load_a_matrix(a_matrix)
         KrylovInterface.load_key_dir_matrix(key_dir_mat)
-        KrylovInterface.preallocate_memory(iterations, num_parallel)
+        
         result_h, result_pv = KrylovInterface.arnoldi_parallel(4)
 
         self.assertEqual(len(result_h), len(result_pv))
@@ -351,9 +370,10 @@ class TestKrylovInterface(unittest.TestCase):
         projected_v_mat_testing2 = key_dir_mat * v_mat_testing2
 
         # using cusp
+        KrylovInterface.preallocate_memory(iterations, num_parallel, dims, key_dirs)
         KrylovInterface.load_a_matrix(a_matrix)
         KrylovInterface.load_key_dir_matrix(key_dir_mat)
-        KrylovInterface.preallocate_memory(iterations, num_parallel)
+        
         result_h, result_pv = KrylovInterface.arnoldi_parallel(0)
 
         self.assertTrue(np.allclose(result_h[0], h_mat_testing1), "Correct h matrix init vec 1")
@@ -376,7 +396,6 @@ class TestKrylovInterface(unittest.TestCase):
 
         dir1 = np.array([float(n) if n % 2 == 0 else 0.0 for n in xrange(dims)], dtype=float)
         dir2 = np.array([float(n) if n % 2 == 1 else 0.0 for n in xrange(dims)], dtype=float)
-
         key_dir_mat = csr_matrix([dir1, dir2])
 
         # use initial dimensions 100 and 101 and 102
@@ -396,9 +415,10 @@ class TestKrylovInterface(unittest.TestCase):
         projected_v_mat_testing3 = key_dir_mat * v_mat_testing3
 
         # using cusp
+        KrylovInterface.preallocate_memory(iterations, num_parallel, dims, 2)
         KrylovInterface.load_a_matrix(a_matrix)
         KrylovInterface.load_key_dir_matrix(key_dir_mat)
-        KrylovInterface.preallocate_memory(iterations, num_parallel)
+        
         result_h, result_pv = KrylovInterface.arnoldi_parallel(100)
 
         self.assertTrue(np.allclose(result_h[0], h_mat_testing1), "Correct h matrix init vec 100")
@@ -429,10 +449,10 @@ class TestKrylovInterface(unittest.TestCase):
                 KrylovInterface.set_use_gpu(use_gpu)
                 #print "\n---------------\n"
                 #KrylovInterface.set_use_profiling(True)
-                
+
+                KrylovInterface.preallocate_memory(iterations, num_parallel, dims, key_dirs)
                 KrylovInterface.load_a_matrix(a_matrix)
                 KrylovInterface.load_key_dir_matrix(key_dir_mat)
-                KrylovInterface.preallocate_memory(iterations, num_parallel)
                 result_h, result_pv = KrylovInterface.arnoldi_parallel(2) # offset by 2 just because
 
                 result_h_list.append(result_h)
@@ -441,6 +461,51 @@ class TestKrylovInterface(unittest.TestCase):
             for i in [0, 1]:
                 self.assertTrue(np.allclose(result_h_list[0][i], result_h_list[1][i]), "bad h-matrix i={}".format(i))
                 self.assertTrue(np.allclose(result_pv_list[0][i], result_pv_list[1][i]), "bad projV i={}".format(i))
+
+    def test_compare_gpu_cpu_large(self):
+        'compare the cusp implementation gpu vs cpu (if a gpu is detected) on a large example'
+
+        # this test is manually enabled, since it can take a long time
+        test_enabled = True
+        
+        if test_enabled:
+            print "running cpu / gpu timing comparison on large random matrix"
+            
+            dims = 10 * 1000 * 1000
+            iterations = 10
+
+            print "making random matrix..."
+            a_matrix = random_sparse_matrix(dims, entries_per_row=6, print_progress=True)
+            print "done"
+
+            dir1 = np.array([float(n) if n % 2 == 0 else 0.0 for n in xrange(dims)], dtype=float)
+            dir2 = np.array([float(n) if n % 2 == 1 else 0.0 for n in xrange(dims)], dtype=float)
+            key_dir_mat = csr_matrix([dir1, dir2])
+
+            result_h_list = []
+            result_pv_list = []
+
+            for use_gpu in [False, True]:
+                if use_gpu and not KrylovInterface.has_gpu():
+                    break
+
+                print "\n---------------\n"
+                print "running with use_gpu = {}".format(use_gpu)
+                
+                KrylovInterface.set_use_gpu(use_gpu)
+                KrylovInterface.set_use_profiling(True)
+
+                KrylovInterface.preallocate_memory(iterations, 1, dims, 2)
+                KrylovInterface.load_a_matrix(a_matrix)
+                KrylovInterface.load_key_dir_matrix(key_dir_mat)
+                result_h, result_pv = KrylovInterface.arnoldi_parallel(2) # offset by 2 just because
+
+                result_h_list.append(result_h)
+                result_pv_list.append(result_pv)
+
+            if len(result_h_list) == 2:
+                self.assertTrue(np.allclose(result_h_list[0][0], result_h_list[1][0]), "h-mat mismatch")
+                self.assertTrue(np.allclose(result_pv_list[0][0], result_pv_list[1][0]), "mismatch projV")
 
 if __name__ == '__main__':
     unittest.main()

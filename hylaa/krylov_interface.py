@@ -54,7 +54,7 @@ class KrylovInterface(object):
 
             # int hasGpu()
             KrylovInterface._has_gpu = lib.hasGpu
-            KrylovInterface._has_gpu.restype = ctypes.c_int
+            KrylovInterface._has_gpu.restype = ctypes.c_ulong
             KrylovInterface._has_gpu.argtypes = None
 
             # void reset()
@@ -71,7 +71,7 @@ class KrylovInterface(object):
             cpu_func = KrylovInterface._cpu.set_use_profiling = lib.setUseProfilingCpu
             gpu_func = KrylovInterface._gpu.set_use_profiling = lib.setUseProfilingGpu
             gpu_func.restype = cpu_func.restype = None
-            gpu_func.argtypes = cpu_func.argtypes = [ctypes.c_int]
+            gpu_func.argtypes = cpu_func.argtypes = [ctypes.c_ulong]
 
             #void loadAMatrixGpu(int w, int h, int* rowOffsets, int rowOffsetsLen, int* colInds, int colIndsLen,
             #        double* values, int valuesLen)
@@ -79,10 +79,10 @@ class KrylovInterface(object):
             gpu_func = KrylovInterface._gpu.load_a_matrix = lib.loadAMatrixGpu
             gpu_func.restype = cpu_func.restype = None
             gpu_func.argtypes = cpu_func.argtypes = [
-                ctypes.c_int, ctypes.c_int,
-                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int,
-                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int,
-                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int
+                ctypes.c_ulong, ctypes.c_ulong,
+                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_ulong,
+                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_ulong,
+                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_ulong
             ]
 
             # void loadKeyDirMatrixGpu(int w, int h, int* rowOffsets, int rowOffsetsLen, int* colInds,
@@ -91,10 +91,10 @@ class KrylovInterface(object):
             gpu_func = KrylovInterface._gpu.load_key_dir_matrix = lib.loadKeyDirMatrixGpu
             gpu_func.restype = cpu_func.restype = None
             gpu_func.argtypes = cpu_func.argtypes = [
-                ctypes.c_int, ctypes.c_int,
-                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int,
-                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int,
-                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int
+                ctypes.c_ulong, ctypes.c_ulong,
+                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_ulong,
+                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_ulong,
+                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_ulong
             ]
 
             # double getFreeMemoryMbCpu()
@@ -103,12 +103,12 @@ class KrylovInterface(object):
             gpu_func.restype = cpu_func.restype = ctypes.c_float
             gpu_func.argtypes = cpu_func.argtypes = None
 
-            # int preallocateMemoryGpu(int arnoldiIterations, int numParallel)
+            # int preallocateMemoryGpu(int arnoldiIterations, int numParallel, int numDims)
             cpu_func = KrylovInterface._cpu.preallocate_memory = lib.preallocateMemoryCpu
             gpu_func = KrylovInterface._gpu.preallocate_memory = lib.preallocateMemoryGpu
-            gpu_func.restype = cpu_func.restype = ctypes.c_int
+            gpu_func.restype = cpu_func.restype = ctypes.c_ulong
             gpu_func.argtypes = cpu_func.argtypes = [
-                ctypes.c_int, ctypes.c_int
+                ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong
             ]
 
             # void arnoldiParallelGpu(int startDim, double* resultH, int sizeResultH, double* resultPV,
@@ -117,9 +117,9 @@ class KrylovInterface(object):
             gpu_func = KrylovInterface._gpu.arnoldi_parallel = lib.arnoldiParallelGpu
             gpu_func.restype = cpu_func.restype = None
             gpu_func.argtypes = cpu_func.argtypes = [
-                ctypes.c_int, 
-                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int,
-                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int
+                ctypes.c_ulong, 
+                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_ulong,
+                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_ulong
             ]
 
             # initialize GPU ?
@@ -176,12 +176,13 @@ class KrylovInterface(object):
         assert isinstance(matrix, csr_matrix), "expected a_matrix to be csr_matrix, got {}".format(type(matrix))
         assert matrix.dtype == float
         assert w == h, "a matrix should be square"
+        assert KrylovInterface._cusp.n != 0, "call preallocate() before load_a_matrix()"
+        assert w == KrylovInterface._cusp.n, "a_matrix dims ({}) differs from preallocate dims ({})".format(
+            w, KrylovInterface._cusp.n)
 
         values = matrix.data
         row_offsets = matrix.indptr
         col_inds = matrix.indices
-
-        KrylovInterface._cusp.n = w
 
         Timers.tic("load a matrix")
         KrylovInterface._cusp.load_a_matrix(w, h, row_offsets, len(row_offsets), col_inds, len(col_inds), values,
@@ -204,8 +205,8 @@ class KrylovInterface(object):
         h, w = matrix.shape
         assert w == KrylovInterface._cusp.n, "key dir matrix width ({}) should equal number of dimensions ({})".format(
             w, KrylovInterface._cusp.n)
-
-        KrylovInterface._cusp.k = h
+        assert h == KrylovInterface._cusp.k, "key dir matrix height ({}) should equal keyDirMatSize ({})".format(
+            h, KrylovInterface._cusp.k)
 
         Timers.tic("load key dir matrix")
         KrylovInterface._cusp.load_key_dir_matrix(w, h, row_offsets, len(row_offsets), col_inds, len(col_inds),
@@ -213,7 +214,7 @@ class KrylovInterface(object):
         Timers.toc("load key dir matrix")
 
     @staticmethod
-    def preallocate_memory(arnoldi_iterations, parallel_init_vecs):
+    def preallocate_memory(arnoldi_iterations, parallel_init_vecs, dims, keyDirMatSize):
         '''
         preallocate memory used in the parallel arnoldi iteration
         returns True on sucess and False on (memory allocation) error
@@ -223,9 +224,12 @@ class KrylovInterface(object):
 
         KrylovInterface._cusp.i = arnoldi_iterations
         KrylovInterface._cusp.p = parallel_init_vecs
+        KrylovInterface._cusp.n = dims
+        KrylovInterface._cusp.k = keyDirMatSize
 
         Timers.tic("preallocate memory")
-        result = KrylovInterface._cusp.preallocate_memory(arnoldi_iterations, parallel_init_vecs) != 0
+        result = KrylovInterface._cusp.preallocate_memory(arnoldi_iterations, parallel_init_vecs, dims,
+                                                          keyDirMatSize) != 0
         Timers.toc("preallocate memory")
 
         KrylovInterface._preallocated_memory = result
