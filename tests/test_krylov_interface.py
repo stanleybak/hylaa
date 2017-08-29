@@ -11,7 +11,43 @@ import time
 
 from hylaa.krylov_interface import KrylovInterface
 import numpy as np
-from scipy.sparse import coo_matrix, csr_matrix
+from scipy.sparse import coo_matrix, csr_matrix, csc_matrix
+
+def make_spring_mass_matrix(num_dims):
+    '''get the A matrix corresponding to the dynamics for the spring mass system'''
+
+    # construct as a csr_matrix
+    values = []
+    indices = []
+    indptr = []
+
+    assert num_dims % 2 == 0
+    num_masses = num_dims / 2
+
+    for mass in xrange(num_masses):
+        dim = 2*mass
+
+        indptr.append(len(values))
+
+        if dim - 1 >= 0:
+            indices.append(dim-1)
+            values.append(1.0)
+
+        indices.append(dim+1)
+        values.append(-2.0)
+
+        if dim + 3 < num_dims:
+            indices.append(dim + 3)
+            values.append(1.0)
+
+        indptr.append(len(values))
+
+        indices.append(dim)
+        values.append(1.0)
+
+    indptr.append(len(values))
+
+    return csr_matrix(csc_matrix((values, indices, indptr), shape=(num_dims, num_dims), dtype=float))
 
 def make_iss_matrix(num_copies):
     'create a matrix from the international space station system model'
@@ -127,7 +163,7 @@ def make_iss_matrix(num_copies):
 
     mat = coo_matrix((vals, (rows, cols)), shape=(total_dims, total_dims))
 
-    return csr_matrix(mat)
+    return csr_matrix(mat, dtype=float)
 
 
 def random_sparse_matrix(dims, entries_per_row, random_cols=True, print_progress=False):
@@ -165,7 +201,7 @@ def random_sparse_matrix(dims, entries_per_row, random_cols=True, print_progress
         print "Row {} / {} ({:.2f}%). Elapsed: {:.1f}s".format(dims, dims, 100.0, elapsed)
 
     start = time.time()
-    rv = csr_matrix((vals, cols, row_inds), shape=(dims, dims))
+    rv = csr_matrix((vals, cols, row_inds), shape=(dims, dims), dtype=float)
 
     if print_progress:
         print "making csr_matrix time {:.1f}s".format(time.time() - start)
@@ -396,7 +432,7 @@ class TestKrylovInterface(unittest.TestCase):
 
         dir1 = np.array([float(n) if n % 2 == 0 else 0.0 for n in xrange(dims)], dtype=float)
         dir2 = np.array([float(n) if n % 2 == 1 else 0.0 for n in xrange(dims)], dtype=float)
-        key_dir_mat = csr_matrix([dir1, dir2])
+        key_dir_mat = csr_matrix([dir1, dir2], dtype=float)
 
         # use initial dimensions 100 and 101 and 102
 
@@ -462,7 +498,7 @@ class TestKrylovInterface(unittest.TestCase):
                 self.assertTrue(np.allclose(result_h_list[0][i], result_h_list[1][i]), "bad h-matrix i={}".format(i))
                 self.assertTrue(np.allclose(result_pv_list[0][i], result_pv_list[1][i]), "bad projV i={}".format(i))
 
-    def test_compare_gpu_cpu_large(self):
+    def test_compare_gpu_cpu_large_random(self):
         'compare the cusp implementation gpu vs cpu (if a gpu is detected) on a large example'
 
         # this test is manually enabled, since it can take a long time
@@ -471,7 +507,7 @@ class TestKrylovInterface(unittest.TestCase):
         if test_enabled:
             print "running cpu / gpu timing comparison on large random matrix"
             
-            dims = 1 * 1000 * 1000
+            dims = 10 * 1000 * 1000
             iterations = 10
 
             print "making random matrix..."
@@ -498,16 +534,78 @@ class TestKrylovInterface(unittest.TestCase):
                 KrylovInterface.set_use_gpu(use_gpu)
                 KrylovInterface.set_use_profiling(True)
 
-                num_parallel = 10 if use_gpu else 1
-                KrylovInterface.preallocate_memory(iterations, num_parallel, dims, len(dir_list))
+                num_parallel = 2 if use_gpu else 1
+                num_parallel_preallocate = num_parallel
+
+                KrylovInterface.preallocate_memory(iterations, num_parallel_preallocate, dims, len(dir_list))
+
+
                 KrylovInterface.load_a_matrix(a_matrix)
                 KrylovInterface.load_key_dir_matrix(key_dir_mat)
-                result_h, result_pv = KrylovInterface.arnoldi_parallel(2) # offset by 2 just because
+                result_h, result_pv = KrylovInterface.arnoldi_parallel(0, num_parallel)
 
                 result_h_list.append(result_h)
                 result_pv_list.append(result_pv)
 
             if len(result_h_list) == 2:
+                #diff = result_h_list[0][0] - result_h_list[1][0]
+                #print "norm difference = {}".format(np.linalg.norm(diff))
+                self.assertTrue(np.allclose(result_h_list[0][0], result_h_list[1][0]), "h-mat mismatch")
+                self.assertTrue(np.allclose(result_pv_list[0][0], result_pv_list[1][0]), "mismatch projV")
+
+    def test_compare_gpu_cpu_large_spring(self):
+        'compare the cusp implementation gpu vs cpu (if a gpu is detected) on a large spring example'
+
+        # this test is manually enabled, since it can take a long time
+        test_enabled = True
+        
+        if test_enabled:
+            print "running cpu / gpu timing comparison on large random matrix"
+            
+            dims = 1 * 1000
+            iterations = 10
+
+            print "making spring matrix..."
+            a_matrix = make_spring_mass_matrix(dims)
+            print "done"
+
+
+            #dir1 = np.array([float(n) if n % 2 == 0 else 0.0 for n in xrange(dims)], dtype=float)
+            #dir2 = np.array([float(n) if n % 2 == 1 else 0.0 for n in xrange(dims)], dtype=float)
+            #dir_list = [dir1, dir2]
+            dir1 = np.array([1.0 if n == 0 else 0.0 for n in xrange(dims)], dtype=float)
+            dir_list = [dir1]
+            key_dir_mat = csr_matrix(dir_list)
+
+            result_h_list = []
+            result_pv_list = []
+
+            for use_gpu in [False, True]:
+                if use_gpu and not KrylovInterface.has_gpu():
+                    break
+
+                print "\n---------------\n"
+                print "running with use_gpu = {}".format(use_gpu)
+                
+                KrylovInterface.set_use_gpu(use_gpu)
+                KrylovInterface.set_use_profiling(True)
+
+                num_parallel = 1 if use_gpu else 1
+                num_parallel_preallocate = num_parallel
+
+                KrylovInterface.preallocate_memory(iterations, num_parallel_preallocate, dims, len(dir_list))
+
+
+                KrylovInterface.load_a_matrix(a_matrix)
+                KrylovInterface.load_key_dir_matrix(key_dir_mat)
+                result_h, result_pv = KrylovInterface.arnoldi_parallel(0, num_parallel)
+
+                result_h_list.append(result_h)
+                result_pv_list.append(result_pv)
+
+            if len(result_h_list) == 2:
+                #diff = result_h_list[0][0] - result_h_list[1][0]
+                #print "norm difference = {}".format(np.linalg.norm(diff))
                 self.assertTrue(np.allclose(result_h_list[0][0], result_h_list[1][0]), "h-mat mismatch")
                 self.assertTrue(np.allclose(result_pv_list[0][0], result_pv_list[1][0]), "mismatch projV")
 

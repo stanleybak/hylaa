@@ -5,7 +5,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
-#include <new>
 
 #include <cusp/array1d.h>
 #include <cusp/hyb_matrix.h>
@@ -131,7 +130,7 @@ public:
             w, _n);
 
     if (useProfiling) {
-      double size = rowOffsetsLen * sizeof(int);
+      FLOAT_TYPE size = rowOffsetsLen * sizeof(int);
       size += colIndsLen * sizeof(int);
       size += valuesLen * sizeof(FLOAT_TYPE);
 
@@ -182,7 +181,7 @@ public:
             h, _k);
 
     if (useProfiling) {
-      double size = rowOffsetsLen * sizeof(int);
+      FLOAT_TYPE size = rowOffsetsLen * sizeof(int);
       size += colIndsLen * sizeof(int);
       size += valuesLen * sizeof(FLOAT_TYPE);
 
@@ -212,7 +211,7 @@ public:
     }
   }
 
-  double getFreeMemoryMb() {
+  FLOAT_TYPE getFreeMemoryMb() {
     unsigned long bytes = util.getFreeMemory();
 
     return bytes / 1024.0 / 1024.0;
@@ -373,54 +372,50 @@ public:
       util.toc("sparse matrix vector multiply total",
                2 * aMatrixNonzeros * numInitVecs);
 
-      util.tic("dots total");
+      util.tic("dots & axpy");
+
       // do all the dot products
       for (unsigned long curInitVec = 0; curInitVec < numInitVecs;
            ++curInitVec) {
         unsigned long pageOffset = curInitVec * _n * (iterations + 1);
         unsigned long rowOffset = _n * it;
 
-        Array1dView vecView = vMatrix->subarray(pageOffset + rowOffset, _n);
+        Array1dView curVec = vMatrix->subarray(pageOffset + rowOffset, _n);
         Array1dView matView1d = vMatrix->subarray(pageOffset, rowOffset);
-        Array2dView matView2d =
-            make_array2d_view(it, _n, _n, matView1d, cusp::row_major());
 
         pageOffset = curInitVec * (_i + 1) * _i;
         rowOffset = (it - 1) * (_i + 1);
         Array1dView resultView = hMatrix->subarray(pageOffset + rowOffset, it);
 
-        dense_multiply(&matView2d, &vecView, &resultView);
-      }
-      util.toc("dots total", 2 * _n * it * numInitVecs);
-
-      util.tic("axpy total");
-      // now scale each of the vecs by the computed dot products and subtract
-      // from curvec
-      for (unsigned long curInitVec = 0; curInitVec < numInitVecs;
-           ++curInitVec) {
         for (unsigned long prevVecIndex = 0; prevVecIndex < it;
              ++prevVecIndex) {
 
-          unsigned long pageOffset = curInitVec * _n * (iterations + 1);
-          unsigned long rowOffset = _n * it;
-
-          Array1dView curVec = vMatrix->subarray(pageOffset + rowOffset, _n);
-
+          pageOffset = curInitVec * _n * (iterations + 1);
           rowOffset = _n * prevVecIndex;
           Array1dView prevVec = vMatrix->subarray(pageOffset + rowOffset, _n);
 
-          // get the dot result
-          pageOffset = curInitVec * (_i + 1) * _i;
-          rowOffset = (it - 1) * (_i + 1);
-          double dotResult = (*hMatrix)[pageOffset + rowOffset + prevVecIndex];
+          // Array2dView matView2d =
+          //  make_array2d_view(it, _n, _n, matView1d, cusp::row_major());
+
+          // dense_multiply(&matView2d, &vecView, &resultView);
+          util.tic("dot");
+          FLOAT_TYPE dot = cusp::blas::dot(curVec, prevVec);
+          util.toc("dot", 2 * _n);
+
+          resultView[prevVecIndex] = dot;
+
+          // now scale each of the vecs by the computed dot products and
+          // subtract
+          // from curvec
 
           // subtract dots * prevVec from curVec
           util.tic("axpy");
-          cusp::blas::axpy(prevVec, curVec, -dotResult);
+          cusp::blas::axpy(prevVec, curVec, -dot);
           util.toc("axpy", 2 * _n);
         }
       }
-      util.toc("axpy total");
+
+      util.toc("dots & axpy");
 
       util.tic("magnitude and scale");
       for (unsigned long curInitVec = 0; curInitVec < numInitVecs;
@@ -430,7 +425,7 @@ public:
 
         Array1dView curVec = vMatrix->subarray(pageOffset + rowOffset, _n);
 
-        double magnitude = cusp::blas::nrm2(curVec);
+        FLOAT_TYPE magnitude = cusp::blas::nrm2(curVec);
 
         // store magnitude in H
         pageOffset = curInitVec * (_i + 1) * _i;
@@ -475,9 +470,9 @@ public:
     }
   }
 
-  void arnoldiParallel(unsigned long startDim, double *resultH,
-                       unsigned long sizeResultH, double *resultPV,
-                       unsigned long sizeResultPV) {
+  void arnoldiParallel(unsigned long startDim, unsigned long parInitVecs,
+                       FLOAT_TYPE *resultH, unsigned long sizeResultH,
+                       FLOAT_TYPE *resultPV, unsigned long sizeResultPV) {
     if (aMatrix == 0)
       error("arnoldiParallel() called before loadAMatrix()\n");
 
@@ -506,7 +501,10 @@ public:
 
     util.tic("arnoldi parallel total");
 
-    unsigned long parInitVecs = _p;
+    if (parInitVecs > _p)
+      error("requested parallel init vecs (%lu) > preallocated max parallel "
+            "init vecs (%lu)",
+            parInitVecs, _p);
 
     if (startDim + parInitVecs > _n)
       parInitVecs = _n - startDim;
@@ -616,7 +614,7 @@ void setUseProfilingCpu(unsigned long enabled) {
 // as csr matrix
 void loadAMatrixCpu(unsigned long w, unsigned long h, int *rowOffsets,
                     unsigned long rowOffsetsLen, int *colInds,
-                    unsigned long colIndsLen, double *values,
+                    unsigned long colIndsLen, FLOAT_TYPE *values,
                     unsigned long valuesLen) {
   cuspDataCpu.loadAMatrix(w, h, rowOffsets, rowOffsetsLen, colInds, colIndsLen,
                           values, valuesLen);
@@ -624,13 +622,13 @@ void loadAMatrixCpu(unsigned long w, unsigned long h, int *rowOffsets,
 
 void loadKeyDirMatrixCpu(unsigned long w, unsigned long h, int *rowOffsets,
                          unsigned long rowOffsetsLen, int *colInds,
-                         unsigned long colIndsLen, double *values,
+                         unsigned long colIndsLen, FLOAT_TYPE *values,
                          unsigned long valuesLen) {
   cuspDataCpu.loadKeyDirMatrix(w, h, rowOffsets, rowOffsetsLen, colInds,
                                colIndsLen, values, valuesLen);
 }
 
-double getFreeMemoryMbCpu() { return cuspDataCpu.getFreeMemoryMb(); }
+FLOAT_TYPE getFreeMemoryMbCpu() { return cuspDataCpu.getFreeMemoryMb(); }
 
 unsigned long preallocateMemoryCpu(unsigned long arnoldiIt,
                                    unsigned long numParallelInitVecs,
@@ -642,11 +640,11 @@ unsigned long preallocateMemoryCpu(unsigned long arnoldiIt,
              : 0;
 }
 
-void arnoldiParallelCpu(unsigned long startDim, double *resultH,
-                        unsigned long sizeResultH, double *resultPV,
-                        unsigned long sizeResultPV) {
-  cuspDataCpu.arnoldiParallel(startDim, resultH, sizeResultH, resultPV,
-                              sizeResultPV);
+void arnoldiParallelCpu(unsigned long startDim, unsigned long parInitVecs,
+                        FLOAT_TYPE *resultH, unsigned long sizeResultH,
+                        FLOAT_TYPE *resultPV, unsigned long sizeResultPV) {
+  cuspDataCpu.arnoldiParallel(startDim, parInitVecs, resultH, sizeResultH,
+                              resultPV, sizeResultPV);
 }
 
 ////// GPU Version
@@ -657,7 +655,7 @@ void setUseProfilingGpu(unsigned long enabled) {
 // as csr matrix
 void loadAMatrixGpu(unsigned long w, unsigned long h, int *rowOffsets,
                     unsigned long rowOffsetsLen, int *colInds,
-                    unsigned long colIndsLen, double *values,
+                    unsigned long colIndsLen, FLOAT_TYPE *values,
                     unsigned long valuesLen) {
   cuspDataGpu.loadAMatrix(w, h, rowOffsets, rowOffsetsLen, colInds, colIndsLen,
                           values, valuesLen);
@@ -666,13 +664,13 @@ void loadAMatrixGpu(unsigned long w, unsigned long h, int *rowOffsets,
 // as csr matrix
 void loadKeyDirMatrixGpu(unsigned long w, unsigned long h, int *rowOffsets,
                          unsigned long rowOffsetsLen, int *colInds,
-                         unsigned long colIndsLen, double *values,
+                         unsigned long colIndsLen, FLOAT_TYPE *values,
                          unsigned long valuesLen) {
   cuspDataGpu.loadKeyDirMatrix(w, h, rowOffsets, rowOffsetsLen, colInds,
                                colIndsLen, values, valuesLen);
 }
 
-double getFreeMemoryMbGpu() { return cuspDataGpu.getFreeMemoryMb(); }
+FLOAT_TYPE getFreeMemoryMbGpu() { return cuspDataGpu.getFreeMemoryMb(); }
 
 unsigned long preallocateMemoryGpu(unsigned long arnoldiIterations,
                                    unsigned long numParallelInitVecs,
@@ -684,10 +682,11 @@ unsigned long preallocateMemoryGpu(unsigned long arnoldiIterations,
              : 0;
 }
 
-void arnoldiParallelGpu(unsigned long startDim, double *resultH,
-                        unsigned long sizeResultH, double *resultPV,
-                        unsigned long sizeResultPV) {
-  cuspDataGpu.arnoldiParallel(startDim, resultH, sizeResultH, resultPV,
-                              sizeResultPV);
+void arnoldiParallelGpu(unsigned long startDim, unsigned long parInitVecs,
+                        FLOAT_TYPE *resultH, unsigned long sizeResultH,
+                        FLOAT_TYPE *resultPV, unsigned long sizeResultPV) {
+
+  cuspDataGpu.arnoldiParallel(startDim, parInitVecs, resultH, sizeResultH,
+                              resultPV, sizeResultPV);
 }
 }

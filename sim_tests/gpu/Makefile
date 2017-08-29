@@ -3,7 +3,7 @@
 CC=nvcc
 
 CFLAGS_SHARED = --compiler-options '-fPIC -Wall -Werror' -O2 -D_FORCE_INLINES -Icusplibrary-0.5.1 -shared
-CFLAGS = -O2 -D_FORCE_INLINES -Icusplibrary-0.5.1
+CFLAGS = -O2 -D_FORCE_INLINES -Icusplibrary-0.5.1 -std=c++11 -D_MWAITXINTRIN_H_INCLUDED
 
 all: gpu_mult.so gpu_arnoldi.so gpu_krylov_sim.so gpu_arnoldi_test gpu_flops
 

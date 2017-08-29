@@ -40,6 +40,8 @@ class KrylovInterface(object):
     _lib = None
     _lib_path = os.path.join(get_script_path(__file__), 'krylov_interface', 'cusp_krylov_stan.so')
 
+    float_type = float
+
     def __init__(self):
         raise RuntimeError(
             'KrylovInterface is a static class and should not be instantiated')
@@ -48,9 +50,9 @@ class KrylovInterface(object):
     def _init_static():
         'open the library (if not opened already) and initialize the static members'
 
-        if KrylovInterface._lib is None:
-
+        if KrylovInterface._lib is None:            
             KrylovInterface._lib = lib = ctypes.CDLL(KrylovInterface._lib_path)
+            float_type = KrylovInterface.float_type
 
             # int hasGpu()
             KrylovInterface._has_gpu = lib.hasGpu
@@ -82,7 +84,7 @@ class KrylovInterface(object):
                 ctypes.c_ulong, ctypes.c_ulong,
                 ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_ulong,
                 ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_ulong,
-                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_ulong
+                ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong
             ]
 
             # void loadKeyDirMatrixGpu(int w, int h, int* rowOffsets, int rowOffsetsLen, int* colInds,
@@ -94,7 +96,7 @@ class KrylovInterface(object):
                 ctypes.c_ulong, ctypes.c_ulong,
                 ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_ulong,
                 ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_ulong,
-                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_ulong
+                ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong
             ]
 
             # double getFreeMemoryMbCpu()
@@ -111,15 +113,15 @@ class KrylovInterface(object):
                 ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong
             ]
 
-            # void arnoldiParallelGpu(int startDim, double* resultH, int sizeResultH, double* resultPV,
+            # void arnoldiParallelGpu(int startDim, int parInitVecs, double* resultH, int sizeResultH, double* resultPV,
             #            int sizeResultPV)
             cpu_func = KrylovInterface._cpu.arnoldi_parallel = lib.arnoldiParallelCpu
             gpu_func = KrylovInterface._gpu.arnoldi_parallel = lib.arnoldiParallelGpu
             gpu_func.restype = cpu_func.restype = None
             gpu_func.argtypes = cpu_func.argtypes = [
-                ctypes.c_ulong, 
-                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_ulong,
-                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_ulong
+                ctypes.c_ulong, ctypes.c_ulong, 
+                ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong,
+                ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong
             ]
 
             # initialize GPU ?
@@ -174,7 +176,7 @@ class KrylovInterface(object):
         h, w = matrix.shape
 
         assert isinstance(matrix, csr_matrix), "expected a_matrix to be csr_matrix, got {}".format(type(matrix))
-        assert matrix.dtype == float
+        assert matrix.dtype == KrylovInterface.float_type, "expected matrix dtype {}".format(type(KrylovInterface.float_type))
         assert w == h, "a matrix should be square"
         assert KrylovInterface._cusp.n != 0, "call preallocate() before load_a_matrix()"
         assert w == KrylovInterface._cusp.n, "a_matrix dims ({}) differs from preallocate dims ({})".format(
@@ -196,7 +198,8 @@ class KrylovInterface(object):
         KrylovInterface._init_static()
 
         assert isinstance(matrix, csr_matrix)
-        assert matrix.dtype == float
+        assert matrix.dtype == KrylovInterface.float_type, "expected matrix dtype {}".format(
+            type(KrylovInterface.float_type))
 
         values = matrix.data
         row_offsets = matrix.indptr
@@ -239,7 +242,7 @@ class KrylovInterface(object):
         return result
 
     @staticmethod
-    def arnoldi_parallel(start_dim):
+    def arnoldi_parallel(start_dim, par_init_vecs):
         '''
         Run the arnoldi algorithm in parallel for a certain number of orthonormal vectors
         Returns a list of tuples: [(h_matrix, projected_v_matrix), ... ], one for each parallel start dim
@@ -258,10 +261,12 @@ class KrylovInterface(object):
         i = KrylovInterface._cusp.i
         n = KrylovInterface._cusp.n
 
-        result_h = np.zeros((i * p * (i + 1)), dtype=float)
-        result_pv = np.zeros(((i+1) * p * k), dtype=float)
+        assert p >= par_init_vecs, "requested parallel init vecs more than was preallocated"
 
-        KrylovInterface._cusp.arnoldi_parallel(start_dim, result_h, len(result_h), result_pv, len(result_pv))
+        result_h = np.zeros((i * p * (i + 1)), dtype=KrylovInterface.float_type)
+        result_pv = np.zeros(((i+1) * p * k), dtype=KrylovInterface.float_type)
+
+        KrylovInterface._cusp.arnoldi_parallel(start_dim, par_init_vecs, result_h, len(result_h), result_pv, len(result_pv))
 
         result_h.shape = (p*i, i+1)
         result_pv.shape = (p*(i+1), k)

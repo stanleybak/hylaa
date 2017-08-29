@@ -5,11 +5,15 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/time.h>
+#include <thread>
+#include <vector>
 
 #include <cusp/hyb_matrix.h>
 #include <cusp/coo_matrix.h>
 #include <cusp/multiply.h>
 #include <cusp/print.h>
+
+using namespace std;
 
 long now() {
   struct timeval nowUs;
@@ -23,8 +27,15 @@ long now() {
 }
 
 typedef float FLOAT_TYPE;
+typedef cusp::device_memory MEMORY_TYPE;
 
-template <class MEMORY_TYPE>
+typedef cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> Array1d;
+typedef typename Array1d::view Array1dView;
+
+void task(Array1dView result, int y, Array1dView matRow, Array1dView vecView) {
+  result[y] = cusp::blas::dot(matRow, vecView);
+}
+
 void measure(const char *label, int height, int width) {
   printf("making...\n");
 
@@ -42,16 +53,25 @@ void measure(const char *label, int height, int width) {
   cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> vec(hostVec);
   cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> result(height);
 
-  typedef cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> Array1d;
-  typedef typename Array1d::view Array1dView;
+  Array1dView resultView(result);
+  Array1dView vecView(vec);
 
   printf("starting...\n");
   long start = now();
 
+  vector<thread> threads;
+
   for (int y = 0; y < height; ++y) {
     Array1dView matRow = mat.subarray(y * width, width);
-    result[y] = cusp::blas::dot(matRow, vec);
+
+    // threads.push_back(thread(task, resultView, y, matRow, vecView));
+    task(resultView, y, matRow, vecView);
+
+    // result[y] = cusp::blas::dot(matRow, vec);
   }
+
+  for (int i = 0; i < (int)threads.size(); ++i)
+    threads[i].join();
 
   long elapsed = now() - start;
 
@@ -75,9 +95,9 @@ int main(int argc, char **argv) {
 
   printf("Running with h=%d, w=%d\n", h, w);
 
-  measure<cusp::host_memory>("CPU", h, w);
+  measure("CPU", h, w);
 
-  measure<cusp::device_memory>("GPU", h, w);
+  // measure<cusp::device_memory>("GPU", h, w);
 
   return 0;
 }
