@@ -232,6 +232,20 @@ class CuspData
     bool preallocateMemory(unsigned long arnoldiIt, unsigned long numParallelInit,
                            unsigned int dims, unsigned int keyDirMatSize)
     {
+        if (_n != 0 && dims != _n && aMatrix != 0)
+        {
+            // num dimensions changed... free aMatrix
+            delete aMatrix;
+            aMatrix = 0;
+        }
+
+        if (_k != 0 && keyDirMatSize != _k && keyDirMatrix != 0)
+        {
+            // num key directions changed
+            delete keyDirMatrix;
+            keyDirMatrix = 0;
+        }
+
         _n = dims;
         _i = arnoldiIt;
         _p = numParallelInit;
@@ -250,14 +264,18 @@ class CuspData
 
         unsigned long vMatrixSize = _p * _n * (_i + 1);
 
+        if (useProfiling)
+            printf("Trying to allocate %.2f MB for vMatrix (remaining memory %.2f MB)...\n",
+                   sizeof(FLOAT_TYPE) * vMatrixSize / 1024.0 / 1024.0, getFreeMemoryMb());
+
         try
         {
             vMatrix = new Array1d(vMatrixSize, 0);
         }
         catch (std::bad_alloc)
         {
-            printf("allocation failed, tried %.2f MB, remaining memory = %.2f MB\n",
-                   vMatrixSize / 1024.0 / 1024.0, getFreeMemoryMb());
+            if (useProfiling)
+                printf("vMatrix allocation failed\n");
         }
 
         // preallocate hMatrix, numParInit * iterations * iterations
@@ -269,12 +287,18 @@ class CuspData
 
         unsigned long hMatrixSize = _p * _i * (_i + 1);
 
+        if (useProfiling)
+            printf("Trying to allocate %.2f MB for hMatrix (remaining memory %.2f MB)...\n",
+                   sizeof(FLOAT_TYPE) * hMatrixSize / 1024.0 / 1024.0, getFreeMemoryMb());
+
         try
         {
             hMatrix = new Array1d(hMatrixSize, 0);
         }
         catch (std::bad_alloc)
         {
+            if (useProfiling)
+                printf("hMatrix allocation failed\n");
         }
 
         // preallocate vProjected
@@ -286,12 +310,18 @@ class CuspData
 
         unsigned long vProjectedSize = _p * _k * (_i + 1);
 
+        if (useProfiling)
+            printf("Trying to allocate %.2f MB for vProjected (remaining memory %.2f MB)...\n",
+                   sizeof(FLOAT_TYPE) * vProjectedSize / 1024.0 / 1024.0, getFreeMemoryMb());
+
         try
         {
             vProjected = new Array1d(vProjectedSize, 0);
         }
         catch (std::bad_alloc)
         {
+            if (useProfiling)
+                printf("vProjected allocation failed\n");
         }
 
         bool success = vMatrix != 0 && hMatrix != 0 && vProjected != 0;
@@ -462,11 +492,11 @@ class CuspData
     void arnoldiParallel(unsigned long startDim, double* resultH, unsigned long sizeResultH,
                          double* resultPV, unsigned long sizeResultPV)
     {
-        if (_n == 0)
-            error("arnoldiParallel() called before loadAMatrix() (_n==0)\n");
+        if (aMatrix == 0)
+            error("arnoldiParallel() called before loadAMatrix()\n");
 
-        if (_k == 0)
-            error("arnoldiParrallel() called before loadKeyDirMatrix() (_k==0)\n");
+        if (keyDirMatrix == 0)
+            error("arnoldiParrallel() called before loadKeyDirMatrix()\n");
 
         if (_i == 0 || _p == 0)
             error("arnoldiParrallel() called before preallocate() (_i==0 or _p==0)\n");
