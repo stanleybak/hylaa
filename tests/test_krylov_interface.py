@@ -471,16 +471,19 @@ class TestKrylovInterface(unittest.TestCase):
         if test_enabled:
             print "running cpu / gpu timing comparison on large random matrix"
             
-            dims = 10 * 1000 * 1000
+            dims = 1 * 1000 * 1000
             iterations = 10
 
             print "making random matrix..."
-            a_matrix = random_sparse_matrix(dims, entries_per_row=6, print_progress=True)
+            a_matrix = random_sparse_matrix(dims, entries_per_row=6, random_cols=False, print_progress=True)
             print "done"
 
             dir1 = np.array([float(n) if n % 2 == 0 else 0.0 for n in xrange(dims)], dtype=float)
             dir2 = np.array([float(n) if n % 2 == 1 else 0.0 for n in xrange(dims)], dtype=float)
-            key_dir_mat = csr_matrix([dir1, dir2])
+            dir_list = [dir1, dir2]
+            #dir1 = np.array([float(n) if n == 0 else 0.0 for n in xrange(dims)], dtype=float)
+            #dir_list = [dir1]
+            key_dir_mat = csr_matrix(dir_list)
 
             result_h_list = []
             result_pv_list = []
@@ -495,7 +498,8 @@ class TestKrylovInterface(unittest.TestCase):
                 KrylovInterface.set_use_gpu(use_gpu)
                 KrylovInterface.set_use_profiling(True)
 
-                KrylovInterface.preallocate_memory(iterations, 1, dims, 2)
+                num_parallel = 10 if use_gpu else 1
+                KrylovInterface.preallocate_memory(iterations, num_parallel, dims, len(dir_list))
                 KrylovInterface.load_a_matrix(a_matrix)
                 KrylovInterface.load_key_dir_matrix(key_dir_mat)
                 result_h, result_pv = KrylovInterface.arnoldi_parallel(2) # offset by 2 just because

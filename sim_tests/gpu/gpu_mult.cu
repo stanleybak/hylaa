@@ -151,7 +151,7 @@ void _dot1(double* matrix, double* vector, int num_rows, int num_cols, double* r
     cusp::array2d<FLOAT_TYPE, cusp::host_memory>::view host_matrix = make_array2d_view(
         num_rows, num_cols, num_cols, host_matrix_1d, cusp::row_major());
 
-    cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view host_vector(vector, vector + num_cols);
+    cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view host_vector(vector, vector + num_rows);
 
     cudaEventRecord(stopEvents[curEvent++]);
     cudaEventRecord(startEvents[curEvent]);
@@ -167,15 +167,17 @@ void _dot1(double* matrix, double* vector, int num_rows, int num_cols, double* r
     cudaEventRecord(stopEvents[curEvent++]);
     cudaEventRecord(startEvents[curEvent]);
 
-    cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> device_result(num_cols, 0);
+    cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> device_result(num_rows, 0);
 
     cudaEventRecord(stopEvents[curEvent++]);
 
     // compute dot product of two matrices using cusp::blas::dot
     //tic();
     cudaEventRecord(startEvents[curEvent]);
-    
-    for (int j = 0; j < num_cols; j++)
+
+    printf("performing %d dot products, each with %lu operations\n", num_rows, device_vector.size());   
+ 
+    for (int j = 0; j < num_rows; j++)
     {
         device_result[j] = cusp::blas::dot(device_matrix.row(j), device_vector);
     }

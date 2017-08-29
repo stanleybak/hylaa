@@ -118,7 +118,7 @@ class GpuMult(object):
         if num_cols != matrix_b.shape[1]:
             raise RuntimeError("matrix a and matrix b has inconsitent dimension")
         else:
-            result = np.zeros((num_cols,))
+            result = np.zeros((num_rows,))
 
             start = time.time()
             GpuMult._dot1(matrix_a, matrix_b, num_rows, num_cols, result)
@@ -291,8 +291,12 @@ def test():
 def test_dot_product():
     'test dot product of two matrices using two different approaches'
 
-    num_rows = 100000000
-    num_cols = 13
+    #num_rows = 100000
+    #num_cols = 13
+
+    num_rows = 10
+    num_cols = 1000
+
     matrix = np.random.rand(num_rows, num_cols)
     vector = np.random.rand(1, num_cols)
 
