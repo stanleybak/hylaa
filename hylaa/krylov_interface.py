@@ -114,13 +114,13 @@ class KrylovInterface(object):
                 ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong
             ]
 
-            # void arnoldiParallelGpu(int startDim, int parInitVecs, double* resultH, int sizeResultH, double* resultPV,
+            # void arnoldiParallelGpu(int startDim, double* resultH, int sizeResultH, double* resultPV,
             #            int sizeResultPV)
             cpu_func = KrylovInterface._cpu.arnoldi_parallel = lib.arnoldiParallelCpu
             gpu_func = KrylovInterface._gpu.arnoldi_parallel = lib.arnoldiParallelGpu
             gpu_func.restype = cpu_func.restype = None
             gpu_func.argtypes = cpu_func.argtypes = [
-                ctypes.c_ulong, ctypes.c_ulong, 
+                ctypes.c_ulong,
                 ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong,
                 ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong
             ]
@@ -243,7 +243,7 @@ class KrylovInterface(object):
         return result
 
     @staticmethod
-    def arnoldi_parallel(start_dim, par_init_vecs):
+    def arnoldi_parallel(start_dim):
         '''
         Run the arnoldi algorithm in parallel for a certain number of orthonormal vectors
         Returns a list of tuples: [(h_matrix, projected_v_matrix), ... ], one for each parallel start dim
@@ -262,12 +262,10 @@ class KrylovInterface(object):
         i = KrylovInterface._cusp.i
         n = KrylovInterface._cusp.n
 
-        assert p >= par_init_vecs, "requested parallel init vecs more than was preallocated"
-
         result_h = np.zeros((i * p * (i + 1)), dtype=KrylovInterface.float_type)
         result_pv = np.zeros(((i+1) * p * k), dtype=KrylovInterface.float_type)
 
-        KrylovInterface._cusp.arnoldi_parallel(start_dim, par_init_vecs, result_h, len(result_h), result_pv, len(result_pv))
+        KrylovInterface._cusp.arnoldi_parallel(start_dim, result_h, len(result_h), result_pv, len(result_pv))
 
         result_h.shape = (p*i, i+1)
         result_pv.shape = (p*(i+1), k)

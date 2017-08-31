@@ -512,9 +512,8 @@ class CuspData
         }
     }
 
-    void arnoldiParallel(unsigned long startDim, unsigned long parInitVecs, FLOAT_TYPE *resultH,
-                         unsigned long sizeResultH, FLOAT_TYPE *resultPV,
-                         unsigned long sizeResultPV)
+    void arnoldiParallel(unsigned long startDim, FLOAT_TYPE *resultH, unsigned long sizeResultH,
+                         FLOAT_TYPE *resultPV, unsigned long sizeResultPV)
     {
         if (aMatrix == 0)
             error("arnoldiParallel() called before loadAMatrix()\n");
@@ -544,11 +543,7 @@ class CuspData
 
         util.tic("arnoldi parallel total");
 
-        if (parInitVecs > _p)
-            error(
-                "requested parallel init vecs (%lu) > preallocated max parallel "
-                "init vecs (%lu)",
-                parInitVecs, _p);
+        unsigned long parInitVecs = _p;
 
         if (startDim + parInitVecs > _n)
             parInitVecs = _n - startDim;
@@ -691,11 +686,10 @@ unsigned long preallocateMemoryCpu(unsigned long arnoldiIt, unsigned long numPar
                                                                                               : 0;
 }
 
-void arnoldiParallelCpu(unsigned long startDim, unsigned long parInitVecs, FLOAT_TYPE *resultH,
-                        unsigned long sizeResultH, FLOAT_TYPE *resultPV, unsigned long sizeResultPV)
+void arnoldiParallelCpu(unsigned long startDim, FLOAT_TYPE *resultH, unsigned long sizeResultH,
+                        FLOAT_TYPE *resultPV, unsigned long sizeResultPV)
 {
-    cuspDataCpu.arnoldiParallel(startDim, parInitVecs, resultH, sizeResultH, resultPV,
-                                sizeResultPV);
+    cuspDataCpu.arnoldiParallel(startDim, resultH, sizeResultH, resultPV, sizeResultPV);
 }
 
 ////// GPU Version
@@ -737,10 +731,9 @@ unsigned long preallocateMemoryGpu(unsigned long arnoldiIterations,
                : 0;
 }
 
-void arnoldiParallelGpu(unsigned long startDim, unsigned long parInitVecs, FLOAT_TYPE *resultH,
-                        unsigned long sizeResultH, FLOAT_TYPE *resultPV, unsigned long sizeResultPV)
+void arnoldiParallelGpu(unsigned long startDim, FLOAT_TYPE *resultH, unsigned long sizeResultH,
+                        FLOAT_TYPE *resultPV, unsigned long sizeResultPV)
 {
-    cuspDataGpu.arnoldiParallel(startDim, parInitVecs, resultH, sizeResultH, resultPV,
-                                sizeResultPV);
+    cuspDataGpu.arnoldiParallel(startDim, resultH, sizeResultH, resultPV, sizeResultPV);
 }
 }

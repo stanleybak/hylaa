@@ -23,6 +23,8 @@ def make_cur_time_elapse_mat_list(time_elapser):
     dims = time_elapser.dims
     step_time = settings.step
     a_matrix = time_elapser.a_matrix
+
+
     krylov_iter = min(time_elapser.settings.simulation.krylov_dimension, a_matrix.shape[0])
 
     # Choose using CPU (host_memory) or GPU (device_memory)

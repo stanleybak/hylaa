@@ -282,7 +282,6 @@ class TestKrylovInterface(unittest.TestCase):
 
         random.seed(1)
         KrylovInterface.reset()
-        
 
     def test_arnoldi_single(self):
         'compare the python implementation with the cusp implementation with a single initial vector'
@@ -310,7 +309,7 @@ class TestKrylovInterface(unittest.TestCase):
         KrylovInterface.preallocate_memory(iterations, num_parallel, dims, key_dirs)
         KrylovInterface.load_a_matrix(a_matrix)
         KrylovInterface.load_key_dir_matrix(key_dir_mat)
-        
+
         result_h, result_pv = KrylovInterface.arnoldi_parallel(0)
 
         self.assertTrue(np.allclose(result_h[0], h_mat_testing), "Correct h matrix")
@@ -498,15 +497,15 @@ class TestKrylovInterface(unittest.TestCase):
                 self.assertTrue(np.allclose(result_h_list[0][i], result_h_list[1][i]), "bad h-matrix i={}".format(i))
                 self.assertTrue(np.allclose(result_pv_list[0][i], result_pv_list[1][i]), "bad projV i={}".format(i))
 
-    def test_compare_gpu_cpu_large_random(self):
+    def test_time_large_random(self):
         'compare the cusp implementation gpu vs cpu (if a gpu is detected) on a large example'
 
         # this test is manually enabled, since it can take a long time
         test_enabled = True
-        
+
         if test_enabled:
             print "running cpu / gpu timing comparison on large random matrix"
-            
+
             dims = 10 * 1000 * 1000
             iterations = 10
 
@@ -542,7 +541,7 @@ class TestKrylovInterface(unittest.TestCase):
 
                 KrylovInterface.load_a_matrix(a_matrix)
                 KrylovInterface.load_key_dir_matrix(key_dir_mat)
-                result_h, result_pv = KrylovInterface.arnoldi_parallel(0, num_parallel)
+                result_h, result_pv = KrylovInterface.arnoldi_parallel(0)
 
                 result_h_list.append(result_h)
                 result_pv_list.append(result_pv)
@@ -557,18 +556,17 @@ class TestKrylovInterface(unittest.TestCase):
         'compare the cusp implementation gpu vs cpu (if a gpu is detected) on a large spring example'
 
         # this test is manually enabled, since it can take a long time
-        test_enabled = True
-        
+        test_enabled = False
+
         if test_enabled:
             print "running cpu / gpu timing comparison on large random matrix"
-            
+
             dims = 1 * 1000
             iterations = 10
 
             print "making spring matrix..."
             a_matrix = make_spring_mass_matrix(dims)
             print "done"
-
 
             #dir1 = np.array([float(n) if n % 2 == 0 else 0.0 for n in xrange(dims)], dtype=float)
             #dir2 = np.array([float(n) if n % 2 == 1 else 0.0 for n in xrange(dims)], dtype=float)
@@ -586,7 +584,7 @@ class TestKrylovInterface(unittest.TestCase):
 
                 print "\n---------------\n"
                 print "running with use_gpu = {}".format(use_gpu)
-                
+
                 KrylovInterface.set_use_gpu(use_gpu)
                 KrylovInterface.set_use_profiling(True)
 
@@ -598,7 +596,7 @@ class TestKrylovInterface(unittest.TestCase):
 
                 KrylovInterface.load_a_matrix(a_matrix)
                 KrylovInterface.load_key_dir_matrix(key_dir_mat)
-                result_h, result_pv = KrylovInterface.arnoldi_parallel(0, num_parallel)
+                result_h, result_pv = KrylovInterface.arnoldi_parallel(0)
 
                 result_h_list.append(result_h)
                 result_pv_list.append(result_pv)

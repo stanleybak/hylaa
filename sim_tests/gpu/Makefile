@@ -3,12 +3,12 @@
 CC=nvcc
 
 CFLAGS_SHARED = --compiler-options '-fPIC -Wall -Werror' -O2 -D_FORCE_INLINES -Icusplibrary-0.5.1 -shared
-CFLAGS = -O2 -D_FORCE_INLINES -Icusplibrary-0.5.1 -std=c++11 -D_MWAITXINTRIN_H_INCLUDED
+CFLAGS = -O2 -D_FORCE_INLINES -Icusplibrary-0.5.1 -std=c++11 -D_MWAITXINTRIN_H_INCLUDED -Wno-deprecated-gpu-targets
 
 all: gpu_mult.so gpu_arnoldi.so gpu_krylov_sim.so gpu_arnoldi_test gpu_flops
 
 gpu_flops: gpu_flops.cu 
-	$(CC) $(CFLAGS) gpu_flops.cu -o gpu_flops
+	$(CC) $(CFLAGS) gpu_flops.cu -lcblas -o gpu_flops
 
 gpu_mult.so: gpu_mult.cu 
 	$(CC) $(CFLAGS_SHARED) gpu_mult.cu -o gpu_mult.so
