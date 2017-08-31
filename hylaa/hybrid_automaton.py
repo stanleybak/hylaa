@@ -4,56 +4,9 @@ Stanley Bak (Sept 2016)
 '''
 
 import numpy as np
-from scipy.sparse import csc_matrix, csr_matrix
+from scipy.sparse import csr_matrix
 
 from hylaa.util import Freezable
-
-def add_time_var(a_matrix, b_matrix=None):
-    '''
-    modify the matrix and init state to add a time variable (this adds two rows and cols)
-
-    if both a_matrix and b_matrix are passed in, this returns a tuple (a_matrix, b_matrix)
-    else, if only a_matrix is passed in, this simply returns a_matrix
-    '''
-
-    rv = None
-    n = a_matrix.shape[0]
-    assert a_matrix.shape[1] == n
-    assert isinstance(a_matrix, csc_matrix)
-
-    nnz = len(a_matrix.data)
-    data = np.concatenate((a_matrix.data, [1]))
-    indptr = np.concatenate((a_matrix.indptr, [nnz, nnz + 1]))
-    indices = np.concatenate((a_matrix.indices, [n]))
-    a_matrix = csc_matrix((data, indices, indptr), shape=(n + 2, n + 2))
-
-    if b_matrix is None:
-        rv = a_matrix
-    else:
-        assert b_matrix.shape[0] == n
-        assert isinstance(b_matrix, csc_matrix)
-
-        # add two rows of zeros to b_matrix
-        b_matrix = csc_matrix((b_matrix.data, b_matrix.indices, b_matrix.indptr), shape=(n+2, b_matrix.shape[1]))
-
-        rv = (a_matrix, b_matrix)
-
-    return rv
-
-def add_zero_cols(mat, num_new_cols):
-    '''
-    return a modified csc_matrix by adding a certain number of nonzero columns
-    '''
-
-    mat = csc_matrix(mat)
-    nnz = len(mat.data)
-
-    rows = mat.shape[0]
-    cols = mat.shape[1]
-
-    indptr = np.concatenate((mat.indptr, [nnz, nnz]))
-
-    return csc_matrix((mat.data, mat.indices, indptr), shape=(rows, cols + num_new_cols))
 
 class HyperRectangle(object):
     'An n-dimensional box'
@@ -146,12 +99,12 @@ class LinearAutomatonMode(Freezable):
     def set_dynamics(self, a_matrix, b_matrix=None):
         'sets the autonomous system dynamics'
 
-        assert isinstance(a_matrix, csc_matrix)
+        assert isinstance(a_matrix, csr_matrix)
         assert len(a_matrix.shape) == 2
         assert a_matrix.shape[0] == a_matrix.shape[1]
 
         if b_matrix is not None:
-            assert isinstance(b_matrix, csc_matrix)
+            assert isinstance(b_matrix, csr_matrix)
             assert b_matrix.shape[0] == a_matrix.shape[0], "B-mat shape {} incompatible with A-mat shape {}".format(
                 b_matrix.shape, a_matrix.shape)
 

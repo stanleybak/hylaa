@@ -7,12 +7,16 @@ import math
 import numpy as np
 from scipy.sparse.linalg import expm
 
-from hylaa.gpu_krylov_sim import GpuKrylovSim
+from hylaa.krylov_interface import KrylovInterface
 from hylaa.containers import SimulationSettings
 from hylaa.timerutil import Timers
 
 def make_cur_time_elapse_mat_list(time_elapser):
-    'get the cur_time_elapse matrix at every step'
+    '''
+    Get the cur_time_elapse matrix at every step.
+
+    This is called one time, and returns a list, element N is the time_elapse_mat at step N
+    '''
 
     settings = time_elapser.settings
     key_dir_mat = time_elapser.key_dir_mat

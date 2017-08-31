@@ -11,8 +11,9 @@ import os
 
 import numpy as np
 from numpy.ctypeslib import ndpointer
-from hylaa.util import Freezable, get_script_path
 from scipy.sparse import csr_matrix
+
+from hylaa.util import Freezable, get_script_path
 from hylaa.timerutil import Timers
 
 class CuspData(Freezable):

@@ -36,8 +36,7 @@ class SimulationSettings(Freezable):
     # simulation mode (matrix-exp)
     MATRIX_EXP = 0 # matrix exp every step
     EXP_MULT = 1 # first step matrix exp, remaining steps matrix-vector multiplication
-    KRYLOV_CPU = 2 # krylov method using CPU
-    KRYLOV_GPU = 3 # krylov method using GPU
+    KRYLOV = 2 # krylov method
 
     # guard optimization mode
     GUARD_DECOMPOSED = 0
@@ -47,10 +46,11 @@ class SimulationSettings(Freezable):
         self.step = step
         self.sim_mode = SimulationSettings.EXP_MULT
         self.guard_mode = SimulationSettings.GUARD_DECOMPOSED
-        self.krylov_dimension = 15 # number of basis vectors of the krylov subspace (iterations of arnoldi)
-        self.gpu_mem_vmatrix_mb = 1024 # megabytes used in GPU to store V matrices
 
-        self.check_answer = False # double-check the expm answer at each step (slow!)
+        self.krylov_use_gpu = False # use GPU with krylov method? (False = CPU)
+        self.krylov_sim_rel_error = 1e-7 # desired relative error for each simulation
+
+        self.check_answer = False # double-check answer using MATRIX_EXP at each step (slow!)
 
         self.freeze_attrs()
 

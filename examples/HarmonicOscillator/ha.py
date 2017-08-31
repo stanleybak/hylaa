@@ -4,9 +4,9 @@ Harmonic Oscillator (with time) Example in Hylaa-Continuous
 import math
 
 import numpy as np
-from scipy.sparse import csc_matrix, csr_matrix
+from scipy.sparse import csr_matrix
 
-from hylaa.hybrid_automaton import LinearHybridAutomaton, add_time_var
+from hylaa.hybrid_automaton import LinearHybridAutomaton
 from hylaa.engine import HylaaSettings
 from hylaa.engine import HylaaEngine
 from hylaa.containers import PlotSettings, SimulationSettings
@@ -18,7 +18,7 @@ def define_ha():
     ha = LinearHybridAutomaton()
 
     a_matrix = np.array([[0, 1], [-1, 0]], dtype=float)
-    a_matrix = csc_matrix(a_matrix, dtype=float)
+    a_matrix = csr_matrix(a_matrix, dtype=float)
 
     #b_matrix = np.array([[1, 0], [0, 1]], dtype=float)
     #b_matrix = csc_matrix(b_matrix, dtype=float)

@@ -14,7 +14,7 @@ from hylaa.hybrid_automaton import LinearAutomatonMode
 from hylaa.containers import HylaaSettings, PlotSettings, SimulationSettings
 from hylaa.timerutil import Timers
 from hylaa.time_elapse_krylov import make_cur_time_elapse_mat_list
-from hylaa.gpu_krylov_sim import GpuKrylovSim
+from hylaa.krylov_interface import KrylovInterface
 
 class TimeElapser(Freezable):
     'Object which computes the time-elapse function for a single mode at multiples of the time step'
@@ -24,8 +24,22 @@ class TimeElapser(Freezable):
         assert isinstance(hylaa_settings, HylaaSettings)
 
         self.settings = hylaa_settings
-        self.a_matrix = mode.a_matrix
-        self.b_matrix = mode.b_matrix
+
+        if self.settings.simulation.sim_mode == SimulationSettings.MATRIX_EXP:
+            if self.a_matrix.shape[0] > 1000 and self.settings.print_output:
+                print "Converting dynamics to csc matrix..."
+
+            Timers.tic("converting to csc matrix")
+            self.a_matrix = csc_matrix(mode.a_matrix)
+            self.b_matrix = None if mode.b_matrix is None else csc_matrix(mode.b_matrix)
+            Timers.toc("converting to csc matrix")
+
+            if self.a_matrix.shape[0] > 1000 and self.settings.print_output:
+                print "csc matrix conversion complete"
+        else:
+            self.a_matrix = mode.a_matrix
+            self.b_matrix = mode.b_matrix
+
         self.dims = self.a_matrix.shape[0]
         self.inputs = 0 if mode.b_matrix is None else mode.b_matrix.shape[1]
 
@@ -46,7 +60,7 @@ class TimeElapser(Freezable):
         self.freeze_attrs()
 
     def __del__(self):
-        GpuKrylovSim.reset()
+        KrylovInterface.reset()
 
     def _extract_key_directions(self, mode):
         'extract the key directions for lp solving'
