@@ -2,6 +2,21 @@
 #include <cublas_v2.h>
 #include <iostream>
 #include <stdio.h>
+#include <stdlib.h>
+#include <sys/time.h>
+
+long now()
+{
+    struct timeval nowUs;
+
+    if (gettimeofday(&nowUs, 0))
+    {
+        perror("gettimeofday");
+        exit(1);
+    }
+
+    return 1000000l * nowUs.tv_sec + nowUs.tv_usec;
+}
 
 // Fill the array A(nr_rows_A, nr_cols_A) with random numbers on GPU
 void GPU_fill_rand(float *A, int nr_rows_A, int nr_cols_A) {
@@ -53,7 +68,8 @@ int main() {
      int nr_rows_A, nr_cols_A, nr_rows_B, nr_cols_B, nr_rows_C, nr_cols_C;
  
      // for simplicity we are going to use square arrays
-     nr_rows_A = nr_cols_A = nr_rows_B = nr_cols_B = nr_rows_C = nr_cols_C = 3;
+     int size = 5000;
+     nr_rows_A = nr_cols_A = nr_rows_B = nr_cols_B = nr_rows_C = nr_cols_C = size;
      
      float *h_A = (float *)malloc(nr_rows_A * nr_cols_A * sizeof(float));
      float *h_B = (float *)malloc(nr_rows_B * nr_cols_B * sizeof(float));
@@ -81,18 +97,26 @@ int main() {
      cudaMemcpy(h_A,d_A,nr_rows_A * nr_cols_A * sizeof(float),cudaMemcpyDeviceToHost);
      cudaMemcpy(h_B,d_B,nr_rows_B * nr_cols_B * sizeof(float),cudaMemcpyDeviceToHost);
 
-     std::cout << "A =" << std::endl;
-     print_matrix(h_A, nr_rows_A, nr_cols_A);
-     std::cout << "B =" << std::endl;
-     print_matrix(h_B, nr_rows_B, nr_cols_B);
+     //std::cout << "A =" << std::endl;
+     //print_matrix(h_A, nr_rows_A, nr_cols_A);
+     //std::cout << "B =" << std::endl;
+     //print_matrix(h_B, nr_rows_B, nr_cols_B);
+
+     long start = now();
  
      // Multiply A and B on GPU
      gpu_blas_mmul(d_A, d_B, d_C, nr_rows_A, nr_cols_A, nr_cols_B);
- 
+
+     long diff = now() - start;
+
+         float ops = size * size * size * 2;
+
+         printf("diff = %fms, mflops = %f\n", diff / 1000.0, ops / diff);
+     
      // Copy (and print) the result on host memory
-     cudaMemcpy(h_C,d_C,nr_rows_C * nr_cols_C * sizeof(float),cudaMemcpyDeviceToHost);
-     std::cout << "C =" << std::endl;
-     print_matrix(h_C, nr_rows_C, nr_cols_C);
+     //cudaMemcpy(h_C,d_C,nr_rows_C * nr_cols_C * sizeof(float),cudaMemcpyDeviceToHost);
+     //std::cout << "C =" << std::endl;
+     //print_matrix(h_C, nr_rows_C, nr_cols_C);
  
      //Free GPU memory
      cudaFree(d_A);

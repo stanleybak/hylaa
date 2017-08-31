@@ -3,7 +3,7 @@
 all: test
 
 test: test.cu
-	nvcc -O3 test.cu -lcublas -lcurand -Wno-deprecated-gpu-targets -o test
+	nvcc -D_FORCE_INLINES -O3 test.cu -lcublas -lcurand -Wno-deprecated-gpu-targets -o test
 
 clean:
 	rm -fv test
