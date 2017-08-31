@@ -416,7 +416,7 @@ int matrixMultiply(int argc, char **argv, int devID, sMatrixSize &matrix_size)
     printf("done.\n");
 
     // check result (CUBLAS)
-    bool resCUBLAS = false; //sdkCompareL2fe(reference, h_CUBLAS, size_C, 1.0e-6f);
+    bool resCUBLAS = true; //sdkCompareL2fe(reference, h_CUBLAS, size_C, 1.0e-6f);
 
     if (resCUBLAS != true)
     {
