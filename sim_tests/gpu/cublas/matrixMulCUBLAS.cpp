@@ -418,7 +418,7 @@ int matrixMultiply(int argc, char **argv, int devID, sMatrixSize &matrix_size)
     // check result (CUBLAS)
     bool resCUBLAS = true; //sdkCompareL2fe(reference, h_CUBLAS, size_C, 1.0e-6f);
 
-    if (resCUBLAS != true)
+    //if (resCUBLAS != true)
     {
         printDiff(reference, h_CUBLAS, matrix_size.uiWC, matrix_size.uiHC, 100, 1.0e-5f);
     }
