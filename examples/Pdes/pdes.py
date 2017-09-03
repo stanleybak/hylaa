@@ -189,7 +189,6 @@ class HeatEquationTwoDimensions(object):
         c = -2*(a+b)
         k = self.heat_lost_const
         step_x = disc_step_x
-
         # fill matrix_a
 
         for i in xrange(0, num_var):
@@ -219,6 +218,86 @@ class HeatEquationTwoDimensions(object):
                 matrix_b[i, 1] = 1
 
         return matrix_a.tocsr(), matrix_b.tocsr()
+
+class Heat_2d_benchmark1(object):
+    """Generate ODEs from 2-dimensional heat-flow problem inside a copper plate"""
+    # this benchmark is from the book: "Partial differential equations for scientists and engineers"
+    # S. J. Farlow, Courier Corporation, 1993, Page 40, 
+
+    def __init__(self, diffusity_const, heat_exchange_coeff, thermal_cond, \
+                         len_x, len_y):
+        self.diffusity_const = diffusity_const if diffusity_const > 0 else 0 # diffusity constant
+        self.heat_exchange_coeff = heat_exchange_coeff if heat_exchange_coeff > 0 else 0 # heat exchange coefficient
+        self.thermal_cond = thermal_cond if thermal_cond > 0 else 0 # thermal conductivity
+        self.len_x = len_x if len_x > 0 else 0 # length x
+        self.len_y = len_y if len_y > 0 else 0 # length y
+
+        if self.diffusity_const == 0 or self.heat_exchange_coeff == 0 or \
+          self.thermal_cond == 0 or  self.len_x == 0 or self.len_y == 0:
+            raise ValueError("inappropriate parameters")
+        self.heat_lost_const = self.heat_exchange_coeff/self.thermal_cond
+
+    def get_odes(self, num_x, num_y):
+        'obtain linear model of the benchmark'
+        assert isinstance(num_x, int), "number of mesh point should be an integer"
+        assert isinstance(num_y, int), "number of messh point should be an integer"
+
+        if num_x <= 0 or num_y <= 0:
+            raise ValueError('number of mesh points should be larger than zero')
+
+        disc_step_x = self.len_x/(num_x+1) # dicrezation step along x axis
+        print "\ndiscretization step along x-axis is: {} cm".format(disc_step_x)
+        disc_step_y = self.len_y/(num_y+1) # discrezation step along y axis
+        print "\ndiscretization step along y-axis is: {} cm\n".format(disc_step_y)
+
+        num_var = num_x*num_y # number of discrezation state variables
+        # changing the sparsity structure of a csr_matrix is expensive. lil_matrix is more efficient
+        matrix_a = sparse.lil_matrix((num_var, num_var))
+        matrix_b = sparse.lil_matrix((num_var, 3))
+
+        a = 1/disc_step_x**2
+        b = 1/disc_step_y**2
+        c = -2*(a+b)
+        k = self.heat_lost_const
+        step_x = disc_step_x
+
+        #a = 1
+        #b = 2
+        #c = -2*(a+b)
+        #k = 1
+        #step_x = 1
+
+        # fill matrix_a
+
+        for i in xrange(0, num_var):
+            matrix_a[i, i] = c # filling diagonal
+            x_pos = i%num_x # x-position corresponding to i-th state variable
+            y_pos = int((i - x_pos)/num_x)
+            print "the {}th variable is the temperature at the mesh point ({},{})".format(i, x_pos, y_pos)
+            # fill along x - axis
+            if x_pos - 1 >= 0:
+                matrix_a[i, i-1] = a
+            else:
+                matrix_a[i, i] = matrix_a[i, i] + a
+                matrix_b[i, 0] = math.sqrt(a)
+            if x_pos + 1 <= num_x -1:
+                matrix_a[i, i+1] = a
+            else:
+                # fill diffusion term
+                matrix_a[i, i] = matrix_a[i, i] + a/(1+k*step_x)
+                matrix_b[i, 2] = a*(k*step_x)/(1+k*step_x)
+            # fill along y-axis
+            if y_pos - 1 >= 0:
+                matrix_a[i, (y_pos-1)*num_x + x_pos] = b
+            else:
+                matrix_b[i, 1] = b
+
+            if y_pos + 1 <= num_y - 1:
+                matrix_a[i, (y_pos+1)*num_x + x_pos] = b
+            else:
+                matrix_a[i, i] = matrix_a[i, i] + b
+
+        return self.diffusity_const*(matrix_a.tocsr()), self.diffusity_const*(matrix_b.tocsr())
 
 def sim_odeint_sparse(sparse_a_matrix, init_vec, input_vec, step, num_steps):
     'use odeint and keep the A matrix sparse'
@@ -287,10 +366,10 @@ def test_2d():
     print "\input vector v = matrix_b*inputs is: \n{}".format(input_vec)
 
     init_vec = np.zeros((matrix_a.shape[0]),)
-    step = 0.3
+    final_time = 2
     num_steps = 1000000
-    times = np.linspace(0, step, num_steps)
-    runtime, result = sim_odeint_sparse(matrix_a, init_vec, input_vec, step, num_steps)
+    times = np.linspace(0, final_time, num_steps)
+    runtime, result = sim_odeint_sparse(matrix_a, init_vec, input_vec, final_time, num_steps)
 
     print "\n the result is: \n{}".format(result)
     print "\n result shape is: \n{}".format(result.shape)
@@ -313,10 +392,60 @@ def test_2d():
 
     # plot all points in 3-d
     
-    
-    
-    
-    
+def test_heat_2d_benchmark1():
+    'test 2-dimensional heat-flow benchmark'
+    # parameters
+    diffusity_const = 1.16 # cm^2/sec
+    heat_exchange_coeff = 1
+    thermal_cond = 0.93  # cal/cm-sec-degree
+    len_x = 100 # cm
+    len_y = 100 # cm
+    he = Heat_2d_benchmark1(diffusity_const, heat_exchange_coeff, thermal_cond, len_x, len_y)
+     # get linear ode model of 2-d heat equation
+    num_x = 3 # number of discretized step points between 0 and len_x
+    num_y = 3 # number of discretized step points between 0 and len_y
+    matrix_a, matrix_b = he.get_odes(num_x, num_y)
+    print "\nmatrix_a :\n{}".format(matrix_a.todense())
+    print "\nmatrix_b :\n{}".format(matrix_b.todense())
+
+    # simulate linear ode model of 2-d heat equation
+    n = matrix_a.shape[0]
+    init_vec = np.zeros((n,))
+    # Initial condition IC: u(x,y,0) = sin(pi*x/100), 0 <= x <= 100
+    for i in xrange(0, n):
+        pos_x = i%num_x
+        init_vec[i] = math.sin(math.pi*float((pos_x+1)/(num_x+1)))
+    print "\ninitial vector v = {}".format(init_vec)
+
+    # input vector: f1 = 1, g1 = 1, g2 = 10
+    f1 = 1
+    g1 = 1
+    g2 = 10
+    v_vec = np.array([f1, g1, g2])
+    input_vec = matrix_b*v_vec
+    final_time = 10000
+    num_steps = 1000000
+    times = np.linspace(0, final_time, num_steps)
+    runtime, result = sim_odeint_sparse(matrix_a, init_vec, input_vec, final_time, num_steps)
+
+    print "\n the result is: \n{}".format(result)
+    print "\n result shape is: \n{}".format(result.shape)
+
+    # plot the center point temperature
+    center_point_pos_x = int(math.ceil(num_x/2)) - 1
+    center_point_pos_y = int(math.ceil(num_y/2)) - 1
+
+    center_point_state_pos = center_point_pos_y*num_x + center_point_pos_x
+    print "\ncenter_point corresponds to the {}-th state variable".format(center_point_state_pos)
+
+    center_point_temp = result[:, center_point_state_pos]
+    plt.plot(times, center_point_temp, 'b', label='center_point')
+    plt.legend(loc='best')
+    plt.xlabel('t')
+    plt.grid()
+    plt.show()
+
 if __name__ == '__main__':
     #test_1d()
-    test_2d()
+    #test_2d()
+    test_heat_2d_benchmark1()
