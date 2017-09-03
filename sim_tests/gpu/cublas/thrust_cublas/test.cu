@@ -107,11 +107,11 @@ int main() {
      // Multiply A and B on GPU
      gpu_blas_mmul(d_A, d_B, d_C, nr_rows_A, nr_cols_A, nr_cols_B);
 
-     long diff = now() - start;
+     float diff = now() - start;
 
-         float ops = size * size * size * 2;
+     float ops = (float)size * (float)size * (float)size * 2;
 
-         printf("diff = %fms, mflops = %f\n", diff / 1000.0, ops / diff);
+     printf("diff = %fms, gflops = %f\n", diff / 1000.0, ops / diff / 1000.0);
      
      // Copy (and print) the result on host memory
      //cudaMemcpy(h_C,d_C,nr_rows_C * nr_cols_C * sizeof(float),cudaMemcpyDeviceToHost);
