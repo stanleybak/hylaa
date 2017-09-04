@@ -116,112 +116,10 @@ class HeatEquationOneDimension(object):
 
             return matrix_a, matrix_b
 
-class HeatEquationTwoDimensions(object):
-    """Generate ODEs from 2-d Heat equation"""
-
-    # We consider the 2-d heat diffusion equation on a rectangle metal plate with the form:
-    # u_t = alpha*(u_xx + u_yy) + q(t)
-    # q(t) is the heat source
-    # we assume the following boundary conditions (BCs):
-    # BC1: u(x,0,t) = 0, BC2: u(x, len_y, t) = 0, BC3: u(0,y,t) = 0
-    # In the right side of the metal plate, the heat is exchanged with the environment
-    # The boundary condition for the right hand side is: BC4:  u_x(len_x,y,t) = -k*[u(len_x,y,t) - g(t)]
-    # k is the heat_lost_constant and g(t) is environment temperature, c1 <= g(t) <= c2
-    # The BC4 shows that the metal plate lost its heat linearly to the environment
-
-    # we assume the following initial condition (IC): u(x,y,0) = 0
-
-    def __init__(self, diffusity_const, heat_exchange_coeff, thermal_cond, \
-                     len_x, len_y, has_heat_source, heat_source_pos):
-        self.diffusity_const = diffusity_const if diffusity_const > 0 else 0 # diffusity constant
-        self.heat_exchange_coeff = heat_exchange_coeff if heat_exchange_coeff > 0 else 0 # heat exchange coefficient
-        self.thermal_cond = thermal_cond if thermal_cond > 0 else 0 # thermal conductivity
-        self.len_x = len_x if len_x > 0 else 0 # length x
-        self.len_y = len_y if len_y > 0 else 0 # length y
-
-        if self.diffusity_const == 0 or self.heat_exchange_coeff == 0 or \
-          self.thermal_cond == 0 or  self.len_x == 0 or self.len_y == 0:
-            raise ValueError("inappropriate parameters")
-        self.heat_lost_const = self.thermal_cond/self.heat_exchange_coeff
-
-        self.has_heat_source = has_heat_source
-        assert isinstance(heat_source_pos, np.ndarray), "heat source pos is not an ndarray"
-        if heat_source_pos.shape != (2, 2):
-            raise ValueError("heat source position is not 2x2 array")
-        if heat_source_pos[0, 0] < 0 or heat_source_pos[0, 1] > self.len_x or \
-                heat_source_pos[1, 0] < 0 or heat_source_pos[1, 1] > self.len_y:
-            raise ValueError("Heat source position value error")
-        self.heat_source_pos = heat_source_pos # an array to indicate the position of heat source
-        # heat_source_pos = ([[x_start, x_end], [y_start, y_end]])
-
-    def get_odes(self, num_x, num_y):
-        'obtain the linear model of 2-d heat equation'
-
-        assert isinstance(num_x, int), "number of mesh point should be an integer"
-        assert isinstance(num_y, int), "number of messh point should be an integer"
-
-        if num_x <= 0 or num_y <= 0:
-            raise ValueError('number of mesh points should be larger than zero')
-
-        disc_step_x = self.len_x/num_x # dicrezation step along x axis
-        disc_step_y = self.len_y/num_y # discrezation step along y axis
-
-        if self.has_heat_source:
-            heat_start_pos_x = int(math.ceil(self.heat_source_pos[0, 0]/disc_step_x))
-            heat_end_pos_x = int(math.ceil(self.heat_source_pos[0, 1]/disc_step_x))
-            heat_start_pos_y = int(math.ceil(self.heat_source_pos[1, 0]/disc_step_y))
-            heat_end_pos_y = int(math.ceil(self.heat_source_pos[1, 1]/disc_step_y))
-
-            print "\nheat source is from point {} to point {} on x-axis".\
-              format(heat_start_pos_x, heat_end_pos_x)
-            print "\nheat source is from point {} to point {} on y-axis".\
-              format(heat_start_pos_y, heat_end_pos_y)
-
-        # we use explicit semi- finite-difference method to obtain the
-        # linear model of heat equation
-
-        num_var = num_x*num_y # number of discrezation variables
-        # changing the sparsity structure of a csr_matrix is expensive. lil_matrix is more efficient
-        matrix_a = sparse.lil_matrix((num_var, num_var))
-        matrix_b = sparse.lil_matrix((num_var, 2))
-        a = 1/disc_step_x**2
-        b = 1/disc_step_y**2
-        c = -2*(a+b)
-        k = self.heat_lost_const
-        step_x = disc_step_x
-        # fill matrix_a
-
-        for i in xrange(0, num_var):
-            matrix_a[i, i] = c # filling diagonal
-            x_pos = i%num_x # x-position corresponding to i-th state variable
-            y_pos = int((i - x_pos)/num_x) # y-position corresponding to i-th variable
-
-            # fill along x - axis
-            if x_pos - 1 >= 0:
-                matrix_a[i, i-1] = a
-            if x_pos + 1 <= num_x -1:
-                matrix_a[i, i+1] = a
-            else:
-                # fill diffusion term
-                matrix_a[i, i] = matrix_a[i, i] + 1/(1+k*step_x)
-                matrix_b[i, 0] = (k*step_x)/(1+k*step_x)
-            # fill along y-axis
-            if y_pos - 1 >= 0:
-                matrix_a[i, (y_pos-1)*num_x + x_pos] = b
-
-            if y_pos + 1 <= num_y - 1:
-                matrix_a[i, (y_pos+1)*num_x + x_pos] = b
-
-            # fill heat source
-            if x_pos >= heat_start_pos_x and x_pos <= heat_end_pos_x and y_pos >= heat_start_pos_y and \
-                y_pos <= heat_end_pos_y:
-                matrix_b[i, 1] = 1
-
-        return matrix_a.tocsr(), matrix_b.tocsr()
 
 class Heat_2d_benchmark1(object):
     """Generate ODEs from 2-dimensional heat-flow problem inside a copper plate"""
-    # this benchmark is from the book: "Partial differential equations for scientists and engineers"
+    # This benchmark is from the book: "Partial differential equations for scientists and engineers"
     # S. J. Farlow, Courier Corporation, 1993, Page 40, 
 
     def __init__(self, diffusity_const, heat_exchange_coeff, thermal_cond, \
@@ -299,6 +197,120 @@ class Heat_2d_benchmark1(object):
 
         return self.diffusity_const*(matrix_a.tocsr()), self.diffusity_const*(matrix_b.tocsr())
 
+class Heat_2d_benchmark2(object):
+    """Generate ODEs from 2-d Heat equation"""
+
+    # We consider the 2-d heat diffusion equation on a rectangle metal plate with the form:
+    # u_t = alpha*(u_xx + u_yy) 
+    # we assume the following boundary conditions (BCs):
+    # BC1:u(x, len_y, t) = 0 (the top), BC2: u(0,y,t) = 0 (the left),
+    # BC3_1: u(x,0,t) = f(t), 0 <= x <= (1/k)len_x (the bottom 1)
+    # BC3_2: u(x,0,t) = 0, (1/k) len_x < x <= len_x (the bottom 2)
+    
+    # In the right side of the metal plate, the heat is exchanged with the environment
+    # The boundary condition for the right hand side is: BC4:  u_x(len_x,y,t) = -k*[u(len_x,y,t) - g(t)]
+    # k is the heat_lost_constant and g(t) is environment temperature, c1 <= g(t) <= c2
+    # The BC4 shows that the metal plate lost its heat linearly to the environment
+
+    # we assume the following initial condition (IC): u(x,y,0) = 0
+
+    # This is a generation of ZhiHan benchmark in his thesis
+    # "Formal verification of hybrid systems using model order reduction and decomposition"
+    # 2005, page 68
+
+    def __init__(self, diffusity_const, heat_exchange_coeff, thermal_cond, \
+                     len_x, len_y, has_heat_source, heat_source_pos):
+        self.diffusity_const = diffusity_const if diffusity_const > 0 else 0 # diffusity constant
+        self.heat_exchange_coeff = heat_exchange_coeff if heat_exchange_coeff > 0 else 0 # heat exchange coefficient
+        self.thermal_cond = thermal_cond if thermal_cond > 0 else 0 # thermal conductivity
+        self.len_x = len_x if len_x > 0 else 0 # length x
+        self.len_y = len_y if len_y > 0 else 0 # length y
+
+        if self.diffusity_const == 0 or self.heat_exchange_coeff == 0 or \
+          self.thermal_cond == 0 or  self.len_x == 0 or self.len_y == 0:
+            raise ValueError("inappropriate parameters")
+        self.heat_lost_const = self.thermal_cond/self.heat_exchange_coeff
+
+        self.has_heat_source = has_heat_source
+        assert isinstance(heat_source_pos, np.ndarray), "heat source pos is not an ndarray"
+        if heat_source_pos.shape != (2,):
+            raise ValueError("heat source position is not 2x1 array")
+        if heat_source_pos[0] < 0 or heat_source_pos[1] > self.len_x:
+            raise ValueError("Heat source position value error")
+        self.heat_source_pos = heat_source_pos # an array to indicate the position of heat source
+        # heat_source_pos = ([[x_start, x_end])
+
+    def get_odes(self, num_x, num_y):
+        'obtain the linear model of 2-d heat equation'
+
+        assert isinstance(num_x, int), "number of mesh point should be an integer"
+        assert isinstance(num_y, int), "number of messh point should be an integer"
+
+        if num_x <= 0 or num_y <= 0:
+            raise ValueError('number of mesh points should be larger than zero')
+
+        disc_step_x = self.len_x/(num_x+1) # dicrezation step along x axis
+        print "\ndiscretization step along x-axis:{} cm".format(disc_step_x)
+        disc_step_y = self.len_y/(num_y+1) # discrezation step along y axis
+        print "\ndiscretization step along y-axis:{} cm".format(disc_step_y)
+
+        if self.has_heat_source:
+            heat_start_pos_x = int(math.ceil(self.heat_source_pos[0]/disc_step_x))
+            heat_end_pos_x = int(math.ceil(self.heat_source_pos[1]/disc_step_x))
+
+            print "\nheat source is from point {} to point {} on x-axis\n".\
+              format(heat_start_pos_x, heat_end_pos_x)
+
+        # we use explicit semi- finite-difference method to obtain the
+        # linear model of heat equation
+
+        num_var = num_x*num_y # number of discrezation variables
+        # changing the sparsity structure of a csr_matrix is expensive. lil_matrix is more efficient
+        matrix_a = sparse.lil_matrix((num_var, num_var))
+        matrix_b = sparse.lil_matrix((num_var, 2))
+        a = 1/disc_step_x**2
+        b = 1/disc_step_y**2
+        c = -2*(a+b)
+        k = self.heat_lost_const
+        step_x = disc_step_x
+
+        #a = 1
+        #b = 2
+        #c = -2*(a+b)
+        #k = 1
+        #step_x = 1
+        
+        # fill matrix_a
+
+        for i in xrange(0, num_var):
+            matrix_a[i, i] = c # filling diagonal
+            x_pos = i%num_x # x-position corresponding to i-th state variable
+            y_pos = int((i - x_pos)/num_x) # y-position corresponding to i-th variable
+            print "the {}-th state variable is the temperature at the point ({},{})".format(i, x_pos, y_pos)
+
+            # fill along x - axis
+            if x_pos - 1 >= 0:
+                matrix_a[i, i-1] = a
+            if x_pos + 1 <= num_x -1:
+                matrix_a[i, i+1] = a
+            else:
+                # fill diffusion term
+                matrix_a[i, i] = matrix_a[i, i] + a/(1+k*step_x)
+                matrix_b[i, 1] = a*(k*step_x)/(1+k*step_x)
+            # fill along y-axis
+            if y_pos - 1 >= 0:
+                matrix_a[i, (y_pos-1)*num_x + x_pos] = b
+            else:
+                if self.has_heat_source and x_pos >= heat_start_pos_x and x_pos <= heat_end_pos_x:
+                    matrix_b[i, 0] = b
+
+            if y_pos + 1 <= num_y - 1:
+                matrix_a[i, (y_pos+1)*num_x + x_pos] = b
+
+
+        return self.diffusity_const*(matrix_a.tocsr()), self.diffusity_const*(matrix_b.tocsr())
+
+
 def sim_odeint_sparse(sparse_a_matrix, init_vec, input_vec, step, num_steps):
     'use odeint and keep the A matrix sparse'
 
@@ -326,71 +338,11 @@ def test_1d():
     diffusity_const = 0.1
     has_heat_source = True
     heat_source_pos = np.array([0.3, 0.5])
+   
     he = HeatEquationOneDimension(diffusity_const, len_x, has_heat_source, heat_source_pos)
     matrix_a, matrix_b = he.get_odes(10)
     print "\nmatrix_a:\n{}".format(matrix_a.toarray())
     print "\nmatrix_b:\n{}".format(matrix_b.toarray())
-
-def test_2d():
-    'test 2-d heat equation'
-
-    # parameters
-    diffusity_const = 0.1
-    heat_exchange_coeff = 1
-    thermal_cond = 1
-    len_x = 1
-    len_y = 1
-    has_heat_source = True
-    heat_source_pos = np.array([[0, 0.4], [0, 1]])
-
-    he = HeatEquationTwoDimensions(diffusity_const, heat_exchange_coeff, thermal_cond,\
-                                   len_x, len_y, has_heat_source, heat_source_pos)
-
-    # get linear ode model of 2-d heat equation
-    num_x = 10 # number of discretized steps between 0 and len_x
-    num_y = 10 # number of discretized steps between 0 and len_y
-    matrix_a, matrix_b = he.get_odes(num_x, num_y)
-    print "\nmatrix_a :\n{}".format(matrix_a.todense())
-    print "\nmatrix_b :\n{}".format(matrix_b.todense())
-
-    # simulate the linear ode model of 2-d heat equation
-    
-    heat_source = 1 # the value of heat source is 1 degree celcius 
-    envi_temp = 0   # environment temperature is 0 degree celcius
-    inputs = np.array([envi_temp, heat_source]) # input to linear ode model
-
-    print "\ninputs to the odes including heat_source = {} and environment temperature = {}".\
-      format(heat_source, envi_temp)
-
-    input_vec = matrix_b*inputs
-    print "\input vector v = matrix_b*inputs is: \n{}".format(input_vec)
-
-    init_vec = np.zeros((matrix_a.shape[0]),)
-    final_time = 2
-    num_steps = 1000000
-    times = np.linspace(0, final_time, num_steps)
-    runtime, result = sim_odeint_sparse(matrix_a, init_vec, input_vec, final_time, num_steps)
-
-    print "\n the result is: \n{}".format(result)
-    print "\n result shape is: \n{}".format(result.shape)
-    
-    # plot the result
-
-    # plot the center point temperature
-    center_point_pos_x = int(math.ceil(num_x/2)) - 1
-    center_point_pos_y = int(math.ceil(num_y/2)) - 1
-
-    center_point_state_pos = center_point_pos_y*num_x + center_point_pos_x
-    print "\ncenter_point corresponds to the {}-th state variable".format(center_point_state_pos)
-
-    center_point_temp = result[:, center_point_state_pos]
-    plt.plot(times, center_point_temp, 'b', label = 'center_point')
-    plt.legend(loc = 'best')
-    plt.xlabel('t')
-    plt.grid()
-    plt.show()
-
-    # plot all points in 3-d
     
 def test_heat_2d_benchmark1():
     'test 2-dimensional heat-flow benchmark'
@@ -445,7 +397,68 @@ def test_heat_2d_benchmark1():
     plt.grid()
     plt.show()
 
+
+def test_heat_2d_benchmark2():
+    'test 2-d heat equation'
+
+    # parameters
+    diffusity_const = 1
+    heat_exchange_coeff = 1
+    thermal_cond = 0.5
+    len_x = 100
+    len_y = 100
+    has_heat_source = True
+    heat_source_pos = np.array([0, 40])
+    he = Heat_2d_benchmark2(diffusity_const, heat_exchange_coeff, thermal_cond,\
+                                   len_x, len_y, has_heat_source, heat_source_pos)
+
+    # get linear ode model of 2-d heat equation
+    num_x = 20 # number of discretized steps between 0 and len_x
+    num_y = 20 # number of discretized steps between 0 and len_y
+    matrix_a, matrix_b = he.get_odes(num_x, num_y)
+    print "\nmatrix_a :\n{}".format(matrix_a.todense())
+    print "\nmatrix_b :\n{}".format(matrix_b.todense())
+
+    # simulate the linear ode model of 2-d heat equation
+    
+    heat_source = 1 # the value of heat source is 1 degree celcius 
+    envi_temp = 0   # environment temperature is 0 degree celcius
+    inputs = np.array([heat_source, envi_temp]) # input to linear ode model
+
+    print "\ninputs to the odes including heat_source = {} and environment temperature = {}".\
+      format(heat_source, envi_temp)
+
+    input_vec = matrix_b*inputs
+    print "\input vector v = matrix_b*inputs is: \n{}".format(input_vec)
+
+    init_vec = np.zeros((matrix_a.shape[0]),)
+    final_time = 1000
+    num_steps = 1000000
+    times = np.linspace(0, final_time, num_steps)
+    runtime, result = sim_odeint_sparse(matrix_a, init_vec, input_vec, final_time, num_steps)
+
+    print "\n the result is: \n{}".format(result)
+    print "\n result shape is: \n{}".format(result.shape)
+    
+    # plot the result
+
+    #plot the center point temperature
+    center_point_pos_x = int(math.ceil(num_x/2)) - 1
+    center_point_pos_y = int(math.ceil(num_y/2)) - 1
+
+    center_point_state_pos = center_point_pos_y*num_x + center_point_pos_x
+    print "\ncenter_point corresponds to the {}-th state variable".format(center_point_state_pos)
+
+    center_point_temp = result[:, center_point_state_pos]
+    plt.plot(times, center_point_temp, 'b', label = 'center_point')
+    plt.legend(loc = 'best')
+    plt.xlabel('t')
+    plt.grid()
+    plt.show()
+
+    # plot all points in 3-d
+    
 if __name__ == '__main__':
-    #test_1d()
-    #test_2d()
-    test_heat_2d_benchmark1()
+    #test_1d()  # benchmark from the book: "Partial differential equations for scientists and engineers", page 39 
+    #test_heat_2d_benchmark1() # benchmark from the same book, page 40.
+    test_heat_2d_benchmark2() # Zhi Han benchmark in his thesis, page 68.
