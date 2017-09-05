@@ -8,14 +8,48 @@ from pdes import HeatOneDimension, HeatTwoDimension1, HeatTwoDimension2, sim_ode
 
 def heat_1d():
     'test 1-d heat equation'
-    len_x = 1
+    len_x = 200
     diffusity_const = 1.16 # cm2/sec 
     thermal_cond = 0.93  #cal/cm-sec-degree
     heat_exchange_coeff = 1 
     he = HeatOneDimension(diffusity_const, diffusity_const, heat_exchange_coeff, len_x)
-    matrix_a, matrix_b = he.get_odes(4)
+    num_x = 50 # number of meshpoint between 0 and len_x
+    matrix_a, matrix_b = he.get_odes(num_x)
     print "\nmatrix_a:\n{}".format(matrix_a.toarray())
     print "\nmatrix_b:\n{}".format(matrix_b.toarray())
+
+    init_vec = np.zeros((matrix_a.shape[0],))    
+    input_g = 20 #
+
+    input_vec = matrix_b*[input_g]
+    final_time = 200
+    num_steps = 100000
+    time_step = float(final_time)/float(num_steps)
+    discretization_step = float(len_x)/float(num_x + 1)
+
+    # stability condition for numerical method
+    
+    print "\nsimulation time step is: {}".format(time_step)
+    print "\ndiscrezation step is: {}".format(discretization_step)
+
+    print "\nthe stability condition for numberical method is satisfied: time_step <= 0.5*discrezation_step^2"
+    if (time_step > discretization_step**2/2):
+        raise ValueError("\nThe stability condition for numerical method is not satisfied")
+
+    times = np.linspace(0, final_time, num_steps)
+    runtime, result = sim_odeint_sparse(matrix_a, init_vec, input_vec, final_time, num_steps)
+
+    # central point temperature
+    center_point_index = int(math.ceil(num_x/2))
+    center_point_temp = result[:, center_point_index]
+
+    plt.plot(times, center_point_temp, 'b', label='center_point')
+    plt.legend(loc='best')
+    plt.xlabel('t')
+    plt.grid()
+    plt.show()
+
+    
 
 def heat_2d1():
     'test 2-dimensional heat-flow benchmark'
