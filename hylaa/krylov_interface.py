@@ -26,6 +26,7 @@ class CuspData(Freezable):
         self.get_free_memory_mb = None
         self.preallocate_memory = None
         self.arnoldi_parallel = None
+        self.print_profiling_data = None
 
         self.n = 0 # dimensions of a matrix
         self.k = 0 # number of key directions
@@ -125,7 +126,11 @@ class KrylovInterface(object):
                 ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong
             ]
 
-            # initialize GPU ?
+            # void printProfilingDataGpu()
+            cpu_func = KrylovInterface._cpu.print_profiling_data = lib.printProfilingDataCpu
+            gpu_func = KrylovInterface._gpu.print_profiling_data = lib.printProfilingDataGpu
+            gpu_func.restype = cpu_func.restype = None
+            gpu_func.argtypes = cpu_func.argtypes = None
 
     @staticmethod
     def set_use_gpu(use_gpu):
@@ -168,6 +173,13 @@ class KrylovInterface(object):
 
         KrylovInterface._init_static()
         KrylovInterface._cusp.set_use_profiling(1 if use_profiling else 0)
+
+    @staticmethod
+    def print_profiling_data():
+        'print cached profiling data to stdout and reset. Use with set_use_profiling(True)'
+
+        KrylovInterface._init_static()
+        KrylovInterface._cusp.print_profiling_data()
 
     @staticmethod
     def load_a_matrix(matrix):
@@ -219,7 +231,7 @@ class KrylovInterface(object):
         Timers.toc("load key dir matrix")
 
     @staticmethod
-    def preallocate_memory(arnoldi_iterations, parallel_init_vecs, dims, key_dir_mat_size):
+    def preallocate_memory(arnoldi_iterations, parallel_init_vecs, dims, key_dir_mat_size, error_on_fail=False):
         '''
         preallocate memory used in the parallel arnoldi iteration
         returns True on sucess and False on (memory allocation) error
@@ -240,6 +252,9 @@ class KrylovInterface(object):
         KrylovInterface._preallocated_memory = result
         KrylovInterface._arnoldi_iterations = arnoldi_iterations
         KrylovInterface._parallel_init_vecs = parallel_init_vecs
+
+        assert not error_on_fail or result, "Memory allocation for krylov computation failed. " + \
+                                            "Try running with krylov_profiling = True"
 
         return result
 

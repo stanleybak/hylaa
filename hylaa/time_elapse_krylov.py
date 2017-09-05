@@ -2,11 +2,29 @@
 Time Elapse for the Krylov method using CPU or GPU
 '''
 
+import time
+
 import numpy as np
 from scipy.sparse.linalg import expm
 
 from hylaa.krylov_interface import KrylovInterface
 from hylaa.timerutil import Timers
+
+def format_secs(sec):
+    'convert seconds (float) to a human-readable string'
+
+    rv = ""
+
+    if sec < 60:
+        rv = "{:.2f} secs".format(sec)
+    elif sec < 60 * 60:
+        rv = "{:.2f} mins".format(sec / 60.0)
+    elif sec < 60 * 60 * 48:
+        rv = "{:.2f} hours".format(sec / 60.0 / 60.0)
+    else:
+        rv = "{:.2f} days".format(sec / 60.0 / 60.0 / 24.0)
+
+    return rv
 
 def make_cur_time_elapse_mat_list(time_elapser):
     '''
@@ -22,7 +40,7 @@ def make_cur_time_elapse_mat_list(time_elapser):
     a_matrix = time_elapser.a_matrix
 
     # todo: compute the number of krylov iterations...
-    krylov_dimension = 10
+    krylov_dimension = 15
 
     print "TODO: compute arnoldi iter based on error after matrix exp and multiplication"
     arnoldi_iter = min(krylov_dimension, a_matrix.shape[0])
@@ -31,10 +49,14 @@ def make_cur_time_elapse_mat_list(time_elapser):
         if settings.print_output:
             print "Initializing GPU (use 'sudo nvidia-smi -pm 1' if slow)"
 
+        Timers.tic("initialize gpu")
         KrylovInterface.set_use_gpu(True)
+        Timers.toc("initialize gpu")
 
         if settings.print_output:
             print "Initialized\n"
+
+    KrylovInterface.set_use_profiling(settings.simulation.krylov_profiling)
 
     rv = []
     rv.append(np.array(key_dir_mat.todense(), dtype=float)) # step zero
@@ -43,15 +65,29 @@ def make_cur_time_elapse_mat_list(time_elapser):
     for step in xrange(0, time_elapser.settings.num_steps):
         rv.append(np.zeros(key_dir_mat.shape, dtype=float))
 
-    print "TODO: compute stride dynamically"
-    stride = 1
-
-    print ".time_elapse_krylov key_dir_mat_shape = {}".format(key_dir_mat.shape)
-
     Timers.tic("krylov preallocate and load dynamics")
-    KrylovInterface.preallocate_memory(arnoldi_iter, stride, a_matrix.shape[0], key_dir_mat.shape[0])
+
+    # make sure we can allocated a single initial vector (stride = 1)
+    KrylovInterface.preallocate_memory(arnoldi_iter, 1, a_matrix.shape[0], key_dir_mat.shape[0], error_on_fail=True)
     KrylovInterface.load_a_matrix(a_matrix) # load a_matrix into device memory
     KrylovInterface.load_key_dir_matrix(key_dir_mat) # load key direction matrix into device memory
+
+    # try to allocate multiple initial vectors (larger stride)
+    stride = 32
+
+    while stride >= 1:
+        error_on_fail = (stride == 1)
+
+        print "Trying to allocate stride = {}".format(stride)
+        success = KrylovInterface.preallocate_memory(arnoldi_iter, stride, a_matrix.shape[0],
+                                                     key_dir_mat.shape[0], error_on_fail=error_on_fail)
+
+        if success:
+            break
+
+        # memory didn't fit on device... try a smaller number of parallel initial vectors
+        stride = stride / 2
+
     Timers.toc("krylov preallocate and load dynamics")
 
     if settings.print_output:
@@ -60,10 +96,30 @@ def make_cur_time_elapse_mat_list(time_elapser):
         else:
             print "\nComputing arnoldi for all {} dims in parallel".format(dims)
 
+    start = last_print = time.time()
+
     for start_vec in xrange(0, dims, stride):
         end_vec = min(start_vec + stride, dims)
 
         num_vec = end_vec - start_vec
+
+        if settings.print_output:
+            now = time.time()
+
+            if now - last_print > 1.0: # print every second
+                last_print = now
+
+                frac = float(start_vec) / dims
+
+                if frac > 1e-9:
+                    elapsed_sec = now - start
+                    total_sec = elapsed_sec / frac
+                    eta_sec = total_sec - elapsed_sec
+
+                    eta = format_secs(eta_sec)
+
+                    print "Arnoldi Parallel {} / {} ({:.2f}%, ETA: {})".format(start_vec, dims, 100.0 * frac, eta)
+
 
         Timers.tic('krylov arnoldi_parallel')
         h_list, pv_list = KrylovInterface.arnoldi_parallel(start_vec)
@@ -100,5 +156,12 @@ def make_cur_time_elapse_mat_list(time_elapser):
                 Timers.toc('multiply by pv_mat')
 
             Timers.toc('krylov expm (other steps)')
+
+    if settings.simulation.krylov_profiling:
+        KrylovInterface.print_profiling_data()
+
+    if settings.print_output:
+        elapsed = format_secs(time.time() - start)
+        print "Krylov Computation Total Time: {}\n".format(elapsed)
 
     return rv

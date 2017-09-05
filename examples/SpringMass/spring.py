@@ -26,13 +26,14 @@ def define_ha():
     mode = ha.new_mode('mode')
 
     # each mass will add 2 dimensions to the system
-    num_masses = 200
+    #num_masses = 200
     #num_masses = 500 # 1 thousand dims
-    #num_masses = 5000 # 10 thousand dims -> 800 MB
+    #num_masses =  2500 # 5 thousand dims
+    num_masses = 5000 # 10 thousand dims -> 800 MB
     #num_masses = 50000 # 100 thousand dims -> memory error (80 GB mem needed)
     #num_masses = 500000 # one million dims (8 TB mem needed)
     a_matrix = make_a_matrix(num_masses)
-    mode.set_dynamics(a_matrix)
+    mode.set_dynamics(csr_matrix(a_matrix))
 
     error = ha.new_mode('error')
 
@@ -145,8 +146,9 @@ def define_settings(_):
     settings = HylaaSettings(step=0.1, max_time=2.0, plot_settings=plot_settings)
 
 
-    settings.simulation.sim_mode = SimulationSettings.KRYLOV_GPU
-    settings.simulation.check_answer = True
+    settings.simulation.sim_mode = SimulationSettings.KRYLOV
+    settings.simulation.krylov_profiling = True
+    #settings.simulation.check_answer = True
 
     #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
 

@@ -49,6 +49,7 @@ class SimulationSettings(Freezable):
 
         self.krylov_use_gpu = False # use GPU with krylov method? (False = CPU)
         self.krylov_sim_rel_error = 1e-7 # desired relative error for each simulation
+        self.krylov_profiling = False # print krylov profiling data?
 
         self.check_answer = False # double-check answer using MATRIX_EXP at each step (slow!)
 

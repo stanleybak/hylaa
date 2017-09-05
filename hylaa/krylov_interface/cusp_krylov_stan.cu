@@ -512,6 +512,12 @@ class CuspData
         }
     }
 
+    void printProfilingData()
+    {
+        util.printTimers();
+        util.clearTimers();
+    }
+
     void arnoldiParallel(unsigned long startDim, FLOAT_TYPE *resultH, unsigned long sizeResultH,
                          FLOAT_TYPE *resultPV, unsigned long sizeResultPV)
     {
@@ -573,8 +579,6 @@ class CuspData
         util.toc("copying V-projected matrix to np.ndarray");
 
         util.toc("arnoldi parallel total");
-        util.printTimers();
-        util.clearTimers();
     }
 
    private:
@@ -692,6 +696,11 @@ void arnoldiParallelCpu(unsigned long startDim, FLOAT_TYPE *resultH, unsigned lo
     cuspDataCpu.arnoldiParallel(startDim, resultH, sizeResultH, resultPV, sizeResultPV);
 }
 
+void printProfilingDataCpu()
+{
+    cuspDataCpu.printProfilingData();
+}
+
 ////// GPU Version
 void setUseProfilingGpu(unsigned long enabled)
 {
@@ -736,4 +745,10 @@ void arnoldiParallelGpu(unsigned long startDim, FLOAT_TYPE *resultH, unsigned lo
 {
     cuspDataGpu.arnoldiParallel(startDim, resultH, sizeResultH, resultPV, sizeResultPV);
 }
+
+void printProfilingDataGpu()
+{
+    cuspDataGpu.printProfilingData();
 }
+
+}  // end extern "C"
