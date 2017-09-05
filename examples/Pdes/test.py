@@ -103,8 +103,8 @@ def heat_2d2():
     print "\input vector v = matrix_b*inputs is: \n{}".format(input_vec)
 
     init_vec = np.zeros((matrix_a.shape[0]),)
-    final_time = 300
-    num_steps = 1000
+    final_time = 20000
+    num_steps = 100000
     times = np.linspace(0, final_time, num_steps)
     runtime, result = sim_odeint_sparse(matrix_a, init_vec, input_vec, final_time, num_steps)
 

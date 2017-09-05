@@ -268,17 +268,17 @@ class HeatTwoDimension2(object):
         # changing the sparsity structure of a csr_matrix is expensive. lil_matrix is more efficient
         matrix_a = sparse.lil_matrix((num_var, num_var))
         matrix_b = sparse.lil_matrix((num_var, 2))
-        #a = 1/disc_step_x**2
-        #b = 1/disc_step_y**2
-        #c = -2*(a+b)
-        #k = self.heat_lost_const
-        #step_x = disc_step_x
-
-        a = 1
-        b = 2
+        a = 1/disc_step_x**2
+        b = 1/disc_step_y**2
         c = -2*(a+b)
-        k = 1
-        step_x = 1
+        k = self.heat_lost_const
+        step_x = disc_step_x
+
+        #a = 1
+        #b = 2
+        #c = -2*(a+b)
+        #k = 1
+        #step_x = 1
         
         # fill matrix_a
 
