@@ -9,11 +9,11 @@ from pdes import HeatOneDimension, HeatTwoDimension1, HeatTwoDimension2, sim_ode
 def heat_1d():
     'test 1-d heat equation'
     len_x = 1
-    diffusity_const = 0.1
-    has_heat_source = True
-    heat_source_pos = np.array([0.3, 0.5])
-    he = HeatOneDimension(diffusity_const, len_x, has_heat_source, heat_source_pos)
-    matrix_a, matrix_b = he.get_odes(10)
+    diffusity_const = 1.16 # cm2/sec 
+    thermal_cond = 0.93  #cal/cm-sec-degree
+    heat_exchange_coeff = 1 
+    he = HeatOneDimension(diffusity_const, diffusity_const, heat_exchange_coeff, len_x)
+    matrix_a, matrix_b = he.get_odes(4)
     print "\nmatrix_a:\n{}".format(matrix_a.toarray())
     print "\nmatrix_b:\n{}".format(matrix_b.toarray())
 
@@ -129,6 +129,6 @@ def heat_2d2():
 
     # plot all points in 3-d
 if __name__ == '__main__':
-    #heat_1d()  # benchmark from the book: "Partial differential equations for scientists and engineers", page 39 
+    heat_1d()  # benchmark from the book: "Partial differential equations for scientists and engineers", page 39 
     #heat_2d1() # benchmark from the same book, page 40.
-    heat_2d2() # Zhi Han benchmark in his thesis, page 68.
+    #heat_2d2() # Zhi Han benchmark in his thesis, page 68.
