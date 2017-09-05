@@ -268,17 +268,17 @@ class HeatTwoDimension2(object):
         # changing the sparsity structure of a csr_matrix is expensive. lil_matrix is more efficient
         matrix_a = sparse.lil_matrix((num_var, num_var))
         matrix_b = sparse.lil_matrix((num_var, 2))
-        a = 1/disc_step_x**2
-        b = 1/disc_step_y**2
-        c = -2*(a+b)
-        k = self.heat_lost_const
-        step_x = disc_step_x
-
-        #a = 1
-        #b = 2
+        #a = 1/disc_step_x**2
+        #b = 1/disc_step_y**2
         #c = -2*(a+b)
-        #k = 1
-        #step_x = 1
+        #k = self.heat_lost_const
+        #step_x = disc_step_x
+
+        a = 1
+        b = 2
+        c = -2*(a+b)
+        k = 1
+        step_x = 1
         
         # fill matrix_a
 
@@ -291,21 +291,31 @@ class HeatTwoDimension2(object):
             # fill along x - axis
             if x_pos - 1 >= 0:
                 matrix_a[i, i-1] = a
+            else:
+                matrix_a[i, i] = matrix_a[i, i] + a
+                
             if x_pos + 1 <= num_x -1:
                 matrix_a[i, i+1] = a
             else:
                 # fill diffusion term
                 matrix_a[i, i] = matrix_a[i, i] + a/(1+k*step_x)
                 matrix_b[i, 1] = a*(k*step_x)/(1+k*step_x)
+                
             # fill along y-axis
             if y_pos - 1 >= 0:
                 matrix_a[i, (y_pos-1)*num_x + x_pos] = b
             else:
+                
                 if self.has_heat_source and x_pos >= heat_start_pos_x and x_pos <= heat_end_pos_x:
                     matrix_b[i, 0] = b
+                else:
+                    matrix_a[i, i] = matrix_a[i, i] + b
+                    
 
             if y_pos + 1 <= num_y - 1:
                 matrix_a[i, (y_pos+1)*num_x + x_pos] = b
+            else:
+                matrix_a[i, i] = matrix_a[i, i] + b
 
 
         return self.diffusity_const*(matrix_a.tocsr()), self.diffusity_const*(matrix_b.tocsr())
