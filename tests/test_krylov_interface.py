@@ -341,7 +341,7 @@ class TestKrylovInterface(unittest.TestCase):
         KrylovInterface.preallocate_memory(iterations, num_parallel, dims, key_dirs)
         KrylovInterface.load_a_matrix(a_matrix)
         KrylovInterface.load_key_dir_matrix(key_dir_mat)
-        
+
         result_h, result_pv = KrylovInterface.arnoldi_parallel(1)
 
         self.assertTrue(np.allclose(result_h[0], h_mat_testing), "Correct h matrix")

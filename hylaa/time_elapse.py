@@ -25,20 +25,14 @@ class TimeElapser(Freezable):
 
         self.settings = hylaa_settings
 
-        if self.settings.simulation.sim_mode == SimulationSettings.MATRIX_EXP:
-            if self.a_matrix.shape[0] > 1000 and self.settings.print_output:
-                print "Converting dynamics to csc matrix..."
+        if self.settings.simulation.sim_mode == SimulationSettings.MATRIX_EXP or self.settings.simulation.check_answer:
+            Timers.tic("convert a_matrix and b_matrix to csc matrix")
+            self.a_matrix_csc = csc_matrix(mode.a_matrix)
+            self.b_matrix_csc = None if mode.b_matrix is None else csc_matrix(mode.b_matrix)
+            Timers.toc("convert a_matrix and b_matrix to csc matrix")
 
-            Timers.tic("converting to csc matrix")
-            self.a_matrix = csc_matrix(mode.a_matrix)
-            self.b_matrix = None if mode.b_matrix is None else csc_matrix(mode.b_matrix)
-            Timers.toc("converting to csc matrix")
-
-            if self.a_matrix.shape[0] > 1000 and self.settings.print_output:
-                print "csc matrix conversion complete"
-        else:
-            self.a_matrix = mode.a_matrix
-            self.b_matrix = mode.b_matrix
+        self.a_matrix = mode.a_matrix
+        self.b_matrix = mode.b_matrix
 
         self.dims = self.a_matrix.shape[0]
         self.inputs = 0 if mode.b_matrix is None else mode.b_matrix.shape[1]
@@ -52,7 +46,10 @@ class TimeElapser(Freezable):
         # used for certain simulation modes
         self.one_step_matrix_exp = None # one step matrix exponential
         self.one_step_input_effects_matrix = None # one step input effects matrix, if inputs exist
+
+        Timers.tic("extract key directions")
         self._extract_key_directions(mode)
+        Timers.toc("extract key directions")
 
         # used for Krylov method
         self.cur_time_elapse_mat_list = None
@@ -173,7 +170,7 @@ class TimeElapser(Freezable):
         'matrix exp every step'
 
         cur_time = self.settings.step * self.next_step
-        time_mat = self.a_matrix * cur_time
+        time_mat = self.a_matrix_csc * cur_time
         exp = expm(time_mat)
 
         self.cur_time_elapse_mat = np.array((self.key_dir_mat * exp).todense(), dtype=float)
@@ -183,8 +180,8 @@ class TimeElapser(Freezable):
 
             for c in xrange(self.inputs):
                 # create the a_matrix augmented with a column of the b_matrix as an affine term
-                a = self.a_matrix
-                b = self.b_matrix
+                a = self.a_matrix_csc
+                b = self.b_matrix_csc
 
                 indptr = b.indptr
 
@@ -201,7 +198,7 @@ class TimeElapser(Freezable):
 
                 input_effects_matrix[:, c] = col[:self.dims]
 
-            prev_exp = expm(self.a_matrix * (self.settings.step * (self.next_step - 1)))
+            prev_exp = expm(self.a_matrix_csc * (self.settings.step * (self.next_step - 1)))
             full_input_effects = (prev_exp * input_effects_matrix)
             self.cur_input_effects_matrix = self.key_dir_mat * full_input_effects
 
@@ -222,8 +219,7 @@ class TimeElapser(Freezable):
             self.step_matrix_exp()
         elif self.settings.simulation.sim_mode == SimulationSettings.EXP_MULT:
             self.step_exp_mult()
-        elif self.settings.simulation.sim_mode == SimulationSettings.KRYLOV_CPU or \
-            self.settings.simulation.sim_mode == SimulationSettings.KRYLOV_GPU:
+        elif self.settings.simulation.sim_mode == SimulationSettings.KRYLOV:
             self.step_krylov()
         else:
             raise RuntimeError('Unimplemented sim_mode {}'.format(self.settings.simulation.sim_mode))
@@ -250,7 +246,7 @@ class TimeElapser(Freezable):
             assert self.a_matrix.shape[0] <= 1000, "settings.simulation.check_answer == True with large matrix"
 
             t = self.settings.step * (self.next_step - 1)
-            exp = expm(self.a_matrix * t)
+            exp = expm(self.a_matrix_csc * t)
             expected = np.array((self.key_dir_mat * exp).todense(), dtype=float)
             diff = np.linalg.norm(expected - self.cur_time_elapse_mat, ord=np.inf)
             tol = 1e-4

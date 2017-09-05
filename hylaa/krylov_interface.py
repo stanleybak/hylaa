@@ -177,7 +177,8 @@ class KrylovInterface(object):
         h, w = matrix.shape
 
         assert isinstance(matrix, csr_matrix), "expected a_matrix to be csr_matrix, got {}".format(type(matrix))
-        assert matrix.dtype == KrylovInterface.float_type, "expected matrix dtype {}".format(type(KrylovInterface.float_type))
+        assert matrix.dtype == KrylovInterface.float_type, \
+            "expected matrix dtype {}".format(type(KrylovInterface.float_type))
         assert w == h, "a matrix should be square"
         assert KrylovInterface._cusp.n != 0, "call preallocate() before load_a_matrix()"
         assert w == KrylovInterface._cusp.n, "a_matrix dims ({}) differs from preallocate dims ({})".format(
@@ -218,7 +219,7 @@ class KrylovInterface(object):
         Timers.toc("load key dir matrix")
 
     @staticmethod
-    def preallocate_memory(arnoldi_iterations, parallel_init_vecs, dims, keyDirMatSize):
+    def preallocate_memory(arnoldi_iterations, parallel_init_vecs, dims, key_dir_mat_size):
         '''
         preallocate memory used in the parallel arnoldi iteration
         returns True on sucess and False on (memory allocation) error
@@ -229,11 +230,11 @@ class KrylovInterface(object):
         KrylovInterface._cusp.i = arnoldi_iterations
         KrylovInterface._cusp.p = parallel_init_vecs
         KrylovInterface._cusp.n = dims
-        KrylovInterface._cusp.k = keyDirMatSize
+        KrylovInterface._cusp.k = key_dir_mat_size
 
         Timers.tic("preallocate memory")
         result = KrylovInterface._cusp.preallocate_memory(arnoldi_iterations, parallel_init_vecs, dims,
-                                                          keyDirMatSize) != 0
+                                                          key_dir_mat_size) != 0
         Timers.toc("preallocate memory")
 
         KrylovInterface._preallocated_memory = result
@@ -246,7 +247,7 @@ class KrylovInterface(object):
     def arnoldi_parallel(start_dim):
         '''
         Run the arnoldi algorithm in parallel for a certain number of orthonormal vectors
-        Returns a list of tuples: [(h_matrix, projected_v_matrix), ... ], one for each parallel start dim
+        Returns two lists, one of h matrices and one of projected-v matrices
 
         h_matrix is of size (arnoldi_iter * (arnoldi_iter + 1)) x parallel_init_vecs
         projected_v_matrix is of size (init_vecs * parallel_init_vecs) x key_dirs
