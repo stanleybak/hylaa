@@ -1,15 +1,15 @@
 """This module contains methods for producing ODEs from PDEs"""
 from __future__ import division
 import copy
+import time
+import math
 from scipy.sparse import csr_matrix
 from scipy import sparse
 from scipy.integrate import odeint
-import matplotlib.pyplot as plt
-import time
 import numpy as np
-import math
 
-class HeatEquationOneDimension(object):
+
+class HeatOneDimension(object):
     """Generate ODEs from 1-d diffusion heat equation"""
 
     # consider 1-d diffusion problem
@@ -117,9 +117,9 @@ class HeatEquationOneDimension(object):
             return matrix_a, matrix_b
 
 
-class Heat_2d_benchmark1(object):
+class HeatTwoDimension1(object):
     """Generate ODEs from 2-dimensional heat-flow problem inside a copper plate"""
-    # This benchmark is from the book: "Partial differential equations for scientists and engineers"
+    # This benchmark is from the book: "Partial differential equations for scientists and engineers
     # S. J. Farlow, Courier Corporation, 1993, Page 40, 
 
     def __init__(self, diffusity_const, heat_exchange_coeff, thermal_cond, \
@@ -197,11 +197,11 @@ class Heat_2d_benchmark1(object):
 
         return self.diffusity_const*(matrix_a.tocsr()), self.diffusity_const*(matrix_b.tocsr())
 
-class Heat_2d_benchmark2(object):
+class HeatTwoDimension2(object):
     """Generate ODEs from 2-d Heat equation"""
 
     # We consider the 2-d heat diffusion equation on a rectangle metal plate with the form:
-    # u_t = alpha*(u_xx + u_yy) 
+    # u_t = alpha*(u_xx + u_yy)
     # we assume the following boundary conditions (BCs):
     # BC1:u(x, len_y, t) = 0 (the top), BC2: u(0,y,t) = 0 (the left),
     # BC3_1: u(x,0,t) = f(t), 0 <= x <= (1/k)len_x (the bottom 1)
@@ -331,134 +331,3 @@ def sim_odeint_sparse(sparse_a_matrix, init_vec, input_vec, step, num_steps):
 
     return runtime, result
 
-
-def test_1d():
-    'test 1-d heat equation'
-    len_x = 1
-    diffusity_const = 0.1
-    has_heat_source = True
-    heat_source_pos = np.array([0.3, 0.5])
-   
-    he = HeatEquationOneDimension(diffusity_const, len_x, has_heat_source, heat_source_pos)
-    matrix_a, matrix_b = he.get_odes(10)
-    print "\nmatrix_a:\n{}".format(matrix_a.toarray())
-    print "\nmatrix_b:\n{}".format(matrix_b.toarray())
-    
-def test_heat_2d_benchmark1():
-    'test 2-dimensional heat-flow benchmark'
-    # parameters
-    diffusity_const = 1.16 # cm^2/sec
-    heat_exchange_coeff = 1
-    thermal_cond = 0.93  # cal/cm-sec-degree
-    len_x = 100 # cm
-    len_y = 100 # cm
-    he = Heat_2d_benchmark1(diffusity_const, heat_exchange_coeff, thermal_cond, len_x, len_y)
-     # get linear ode model of 2-d heat equation
-    num_x = 3 # number of discretized step points between 0 and len_x
-    num_y = 3 # number of discretized step points between 0 and len_y
-    matrix_a, matrix_b = he.get_odes(num_x, num_y)
-    print "\nmatrix_a :\n{}".format(matrix_a.todense())
-    print "\nmatrix_b :\n{}".format(matrix_b.todense())
-
-    # simulate linear ode model of 2-d heat equation
-    n = matrix_a.shape[0]
-    init_vec = np.zeros((n,))
-    # Initial condition IC: u(x,y,0) = sin(pi*x/100), 0 <= x <= 100
-    for i in xrange(0, n):
-        pos_x = i%num_x
-        init_vec[i] = math.sin(math.pi*float((pos_x+1)/(num_x+1)))
-    print "\ninitial vector v = {}".format(init_vec)
-
-    # input vector: f1 = 1, g1 = 1, g2 = 10
-    f1 = 1
-    g1 = 1
-    g2 = 10
-    v_vec = np.array([f1, g1, g2])
-    input_vec = matrix_b*v_vec
-    final_time = 10000
-    num_steps = 1000000
-    times = np.linspace(0, final_time, num_steps)
-    runtime, result = sim_odeint_sparse(matrix_a, init_vec, input_vec, final_time, num_steps)
-
-    print "\n the result is: \n{}".format(result)
-    print "\n result shape is: \n{}".format(result.shape)
-
-    # plot the center point temperature
-    center_point_pos_x = int(math.ceil(num_x/2)) - 1
-    center_point_pos_y = int(math.ceil(num_y/2)) - 1
-
-    center_point_state_pos = center_point_pos_y*num_x + center_point_pos_x
-    print "\ncenter_point corresponds to the {}-th state variable".format(center_point_state_pos)
-
-    center_point_temp = result[:, center_point_state_pos]
-    plt.plot(times, center_point_temp, 'b', label='center_point')
-    plt.legend(loc='best')
-    plt.xlabel('t')
-    plt.grid()
-    plt.show()
-
-
-def test_heat_2d_benchmark2():
-    'test 2-d heat equation'
-
-    # parameters
-    diffusity_const = 1
-    heat_exchange_coeff = 1
-    thermal_cond = 0.5
-    len_x = 100
-    len_y = 100
-    has_heat_source = True
-    heat_source_pos = np.array([0, 40])
-    he = Heat_2d_benchmark2(diffusity_const, heat_exchange_coeff, thermal_cond,\
-                                   len_x, len_y, has_heat_source, heat_source_pos)
-
-    # get linear ode model of 2-d heat equation
-    num_x = 20 # number of discretized steps between 0 and len_x
-    num_y = 20 # number of discretized steps between 0 and len_y
-    matrix_a, matrix_b = he.get_odes(num_x, num_y)
-    print "\nmatrix_a :\n{}".format(matrix_a.todense())
-    print "\nmatrix_b :\n{}".format(matrix_b.todense())
-
-    # simulate the linear ode model of 2-d heat equation
-    
-    heat_source = 1 # the value of heat source is 1 degree celcius 
-    envi_temp = 0   # environment temperature is 0 degree celcius
-    inputs = np.array([heat_source, envi_temp]) # input to linear ode model
-
-    print "\ninputs to the odes including heat_source = {} and environment temperature = {}".\
-      format(heat_source, envi_temp)
-
-    input_vec = matrix_b*inputs
-    print "\input vector v = matrix_b*inputs is: \n{}".format(input_vec)
-
-    init_vec = np.zeros((matrix_a.shape[0]),)
-    final_time = 1000
-    num_steps = 1000000
-    times = np.linspace(0, final_time, num_steps)
-    runtime, result = sim_odeint_sparse(matrix_a, init_vec, input_vec, final_time, num_steps)
-
-    print "\n the result is: \n{}".format(result)
-    print "\n result shape is: \n{}".format(result.shape)
-    
-    # plot the result
-
-    #plot the center point temperature
-    center_point_pos_x = int(math.ceil(num_x/2)) - 1
-    center_point_pos_y = int(math.ceil(num_y/2)) - 1
-
-    center_point_state_pos = center_point_pos_y*num_x + center_point_pos_x
-    print "\ncenter_point corresponds to the {}-th state variable".format(center_point_state_pos)
-
-    center_point_temp = result[:, center_point_state_pos]
-    plt.plot(times, center_point_temp, 'b', label = 'center_point')
-    plt.legend(loc = 'best')
-    plt.xlabel('t')
-    plt.grid()
-    plt.show()
-
-    # plot all points in 3-d
-    
-if __name__ == '__main__':
-    #test_1d()  # benchmark from the book: "Partial differential equations for scientists and engineers", page 39 
-    #test_heat_2d_benchmark1() # benchmark from the same book, page 40.
-    test_heat_2d_benchmark2() # Zhi Han benchmark in his thesis, page 68.
