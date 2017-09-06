@@ -105,6 +105,44 @@ void matrixMultCPU(Matrix *A, Matrix *B, Matrix *C) {
   }
 }
 
+void gpuMatrixVecDots(cublasHandle_t handle, Matrix *dA, Matrix *dB,
+                      Matrix *dC) {
+  const double alpha = 1.0f;
+  const double beta = 0.0f;
+
+  cublasSetPointerMode(handle, CUBLAS_POINTER_MODE_DEVICE);
+
+  if (dA->h != 1) {
+    printf("error: expected a.height == 1\n");
+    exit(1);
+  }
+
+  // compute dot produce of a (single row) with each column of B
+
+  // m = width of B
+  // k = height of B
+  // n = height of A
+  /*cublasStatus_t cublasDdot (cublasHandle_t handle, int n,
+                           const double          *x, int incx,
+                           const double          *y, int incy,
+                           double          *result)*/
+
+  for (int col = 0; col < dB->w; ++col) {
+    int count = dA->w;
+
+    double *x = dA->data;
+    double *y = dB->data + count * col;
+    double *result = dC->data + col;
+
+    cublasStatus_t ret = cublasDdot(handle, count, x, 1, y, 1, result);
+
+    if (ret != CUBLAS_STATUS_SUCCESS) {
+      printf("cublasSgemm returned error code %d, line(%d)\n", ret, __LINE__);
+      exit(EXIT_FAILURE);
+    }
+  }
+}
+
 void gpuMatrixVecMult(cublasHandle_t handle, Matrix *dA, Matrix *dB,
                       Matrix *dC) {
   const double alpha = 1.0f;
@@ -181,6 +219,59 @@ void gpuMatrixMult(cublasHandle_t handle, Matrix *dA, Matrix *dB, Matrix *dC) {
                   dB->data, ldb,  // second term
                   &beta,          // 0.0
                   dC->data, ldc); // result
+
+  if (ret != CUBLAS_STATUS_SUCCESS) {
+    printf("cublasSgemm returned error code %d, line(%d)\n", ret, __LINE__);
+    exit(EXIT_FAILURE);
+  }
+}
+
+void gpuMatrixMultBatched(cublasHandle_t handle, Matrix *dA, Matrix *dB,
+                          Matrix *dC, double **da_array, double **db_array,
+                          double **dc_array, int numBatches) {
+  const double alpha = 1.0f;
+  const double beta = 0.0f;
+
+  // assume a is a single row
+  if (dA->h != 1) {
+    printf("error: expected a.height == 1\n");
+    exit(1);
+  }
+
+  // m = width of B
+  // k = height of B
+  // n = height of A
+  int m = dA->h;
+  int n = dB->w;
+  int k = dA->w;
+
+  int lda = m;
+  int ldb = k;
+  int ldc = m;
+
+  printf("m, n, k = %d, %d, %d\n", m, n, k);
+  printf("lda, ldb, ldc = %d, %d, %d\n", lda, ldb, ldc);
+
+  /*  cublasStatus_t cublasDgemmBatched(cublasHandle_t handle,
+                                    cublasOperation_t transa,
+                                    cublasOperation_t transb,
+                                    int m, int n, int k,
+                                    const double          *alpha,
+                                    const double          *Aarray[], int lda,
+                                    const double          *Barray[], int ldb,
+                                    const double          *beta,
+                                    double          *Carray[], int ldc,
+                                    int batchCount)*/
+
+  cublasStatus_t ret =
+      cublasDgemmBatched(handle, CUBLAS_OP_N, CUBLAS_OP_N, // tranpose
+                         m, n, k,                          // m n k
+                         &alpha,                           // alpha
+                         (const double **)da_array, lda,   // a array
+                         (const double **)db_array, ldb,   // b array
+                         &beta,                            // beta
+                         dc_array, ldc,                    // c array
+                         numBatches);
 
   if (ret != CUBLAS_STATUS_SUCCESS) {
     printf("cublasSgemm returned error code %d, line(%d)\n", ret, __LINE__);
@@ -338,11 +429,11 @@ int matrixMultiply(int argc, char **argv, int devID) {
 
   Matrix A, B, C, C2;
 
-  A.h = 10;
-  A.w = 1000 * 1000;
+  A.h = 1;
+  A.w = 10 * 1000 * 1000;
 
   B.h = A.w;
-  B.w = 1;
+  B.w = 10;
 
   C.h = A.h;
   C.w = B.w;
@@ -360,21 +451,24 @@ int matrixMultiply(int argc, char **argv, int devID) {
   C2.h = C.h;
 
   // allocate host memory for matrices A and B
-  unsigned int size_A = A.w * A.h;
+  int numBatches = 1;
+
+  unsigned int size_A = A.w * A.h * numBatches;
   unsigned int mem_size_A = sizeof(double) * size_A;
   A.data = (double *)malloc(mem_size_A);
 
-  unsigned int size_B = B.w * B.h;
+  unsigned int size_B = B.w * B.h * numBatches;
   unsigned int mem_size_B = sizeof(double) * size_B;
   B.data = (double *)malloc(mem_size_B);
 
-  unsigned int size_C = C.w * C.h;
+  unsigned int size_C = C.w * C.h * numBatches;
   unsigned int mem_size_C = sizeof(double) * size_C;
   C.data = (double *)malloc(mem_size_C);
 
   C2.data = (double *)malloc(mem_size_C);
 
-  double flopsPerMatrixMul = 2.0 * (double)A.w * (double)A.h * (double)B.w;
+  double flopsPerMatrixMul =
+      2.0 * (double)A.w * (double)A.h * (double)B.w * numBatches;
 
   // set seed for rand()
   srand(2006);
@@ -394,11 +488,11 @@ int matrixMultiply(int argc, char **argv, int devID) {
   B.data[1] = 2;
   B.data[2] = 3;*/
 
-  for (int y = 0; y < C.h; ++y)
+  /*for (int y = 0; y < C.h; ++y)
     for (int x = 0; x < C.w; ++x) {
       int i = x + C.w * y;
       C.data[i] = C2.data[i] = 0;
-    }
+      }*/
 
   // compute reference solution
   /*printf("Computing result using host CPU...\n");
@@ -539,9 +633,34 @@ int matrixMultiply(int argc, char **argv, int devID) {
 
     int nIter = 10;
 
+    // allocated batch holders
+    double *a_array[numBatches];
+    double *b_array[numBatches];
+    double *c_array[numBatches];
+
+    for (int batch = 0; batch < numBatches; ++batch) {
+      a_array[batch] = dA.data + batch * dA.w * dA.h;
+      b_array[batch] = dB.data + batch * dB.w * dB.h;
+      c_array[batch] = dC.data + batch * dC.w * dC.h;
+    }
+
+    double **da_array, **db_array, **dc_array;
+    cudaMalloc((void **)&da_array, numBatches);
+    cudaMemcpy(da_array, a_array, numBatches, cudaMemcpyHostToDevice);
+
+    cudaMalloc((void **)&db_array, numBatches);
+    cudaMemcpy(db_array, b_array, numBatches, cudaMemcpyHostToDevice);
+
+    cudaMalloc((void **)&dc_array, numBatches);
+    cudaMemcpy(dc_array, c_array, numBatches, cudaMemcpyHostToDevice);
+
     for (int i = 0; i < nIter; ++i) {
-      gpuMatrixVecMult(handle, &dA, &dB, &dC);
-      //      gpuMatrixMult(handle, &dA, &dB, &dC);
+      // gpuMatrixVecDots(handle, &dA, &dB, &dC);
+      // gpuMatrixVecMult(handle, &dA, &dB, &dC);
+      // gpuMatrixMult(handle, &dA, &dB, &dC);
+
+      gpuMatrixMultBatched(handle, &dA, &dB, &dC, da_array, db_array, dc_array,
+                           numBatches);
     }
 
     // Record the stop event

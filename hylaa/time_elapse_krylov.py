@@ -308,6 +308,11 @@ def make_cur_time_elapse_mat_list(time_elapser):
     pool_res = None
 
     for start_vec in xrange(0, dims, stride):
+
+        if start_vec > 500:
+            print "TODO: remove debug quit loop early"
+            break
+
         if settings.print_output:
             now = time.time()
 
