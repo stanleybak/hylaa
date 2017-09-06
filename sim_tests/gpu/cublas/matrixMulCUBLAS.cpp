@@ -655,12 +655,12 @@ int matrixMultiply(int argc, char **argv, int devID) {
     cudaMemcpy(dc_array, c_array, numBatches, cudaMemcpyHostToDevice);
 
     for (int i = 0; i < nIter; ++i) {
-      // gpuMatrixVecDots(handle, &dA, &dB, &dC);
+      gpuMatrixVecDots(handle, &dA, &dB, &dC);
       // gpuMatrixVecMult(handle, &dA, &dB, &dC);
       // gpuMatrixMult(handle, &dA, &dB, &dC);
 
-      gpuMatrixMultBatched(handle, &dA, &dB, &dC, da_array, db_array, dc_array,
-                           numBatches);
+      //gpuMatrixMultBatched(handle, &dA, &dB, &dC, da_array, db_array, dc_array,
+      //                     numBatches);
     }
 
     // Record the stop event

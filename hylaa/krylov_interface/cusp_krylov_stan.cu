@@ -7,16 +7,49 @@
 #include <sys/time.h>
 
 #include <cusp/array1d.h>
-#include <cusp/hyb_matrix.h>
-#include <cusp/csr_matrix.h>
 #include <cusp/coo_matrix.h>
+#include <cusp/csr_matrix.h>
+#include <cusp/hyb_matrix.h>
+#include <cusp/multiply.h>
 #include <cusp/multiply.h>
 #include <cusp/print.h>
-#include <cusp/multiply.h>
+
+// CUDA runtime
+//#include <cuda_runtime.h>
+#include <cublas_v2.h>
 
 #include "gpu_util.h"
 
 typedef double FLOAT_TYPE;
+
+// typedef cusp::array1d<FLOAT_TYPE, MEMORY_TYPE>
+void dot_product(cublasHandle_t cublasHandle, cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view a,
+                 cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view b,
+                 cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view resultView, int resultIndex)
+{
+    FLOAT_TYPE d = cusp::blas::dot(a, b);
+
+    resultView[resultIndex] = d;
+}
+
+// typedef cusp::array1d<FLOAT_TYPE, MEMORY_TYPE>
+void dot_product(cublasHandle_t cublasHandle,
+                 cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view a,
+                 cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view b,
+                 cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view resultView, int resultIndex)
+{
+    // FLOAT_TYPE d = cusp::blas::dot(a, b);
+
+    // resultView[resultIndex] = d;
+    int count = a.size();
+
+    double *x = thrust::raw_pointer_cast(&a[0]);
+    double *y = thrust::raw_pointer_cast(&b[0]);
+    double *result = thrust::raw_pointer_cast(&resultView[resultIndex]);
+
+    if (cublasDdot(cublasHandle, count, x, 1, y, 1, result) != CUBLAS_STATUS_SUCCESS)
+        error("cublasDdot() failed");
+}
 
 template <class MEMORY_TYPE>
 class CuspData
@@ -40,9 +73,7 @@ class CuspData
     typedef cusp::csr_matrix<int, FLOAT_TYPE, cusp::host_memory> HostCsrMatrix;
     typedef typename HostCsrMatrix::view HostCsrMatrixView;
 
-   public:
-    GpuUtil util;  // timers and other utility functions
-
+   private:
     HybMatrix *aMatrix;
     HybMatrix *keyDirMatrix;
 
@@ -60,7 +91,13 @@ class CuspData
     unsigned long aMatrixNonzeros;
     unsigned long keyDirMatrixNonzeros;
 
-    CuspData(bool useCpu) : util(useCpu)
+    // cublas variables
+    cublasHandle_t cublasHandle;
+
+   public:
+    GpuUtil util;  // timers and other utility functions
+
+    CuspData(bool useCpu) : util(useCpu), cublasHandle(0)
     {
         aMatrix = 0;
         keyDirMatrix = 0;
@@ -69,10 +106,20 @@ class CuspData
         hMatrix = 0;
         vProjected = 0;
 
+        if (cublasCreate(&cublasHandle) != CUBLAS_STATUS_SUCCESS)
+            error("cublasCreate() failed");
+
+        cublasSetPointerMode(cublasHandle, CUBLAS_POINTER_MODE_DEVICE);
+
         reset();  // this resets all variables
     }
 
-    ~CuspData() { reset(); }
+    ~CuspData()
+    {
+        reset();
+        cudaDeviceReset();
+    }
+
     void reset()
     {
         if (aMatrix != 0)
@@ -441,10 +488,11 @@ class CuspData
 
                     // dense_multiply(&matView2d, &vecView, &resultView);
                     util.tic("dot");
-                    FLOAT_TYPE dot = cusp::blas::dot(curVec, prevVec);
-                    util.toc("dot", 2 * _n);
+                    // FLOAT_TYPE dot = cusp::blas::dot(curVec, prevVec);
+                    // resultView[prevVecIndex] = dot;
 
-                    resultView[prevVecIndex] = dot;
+                    dot_product(cublasHandle, curVec, prevVec, resultView, prevVecIndex);
+                    util.toc("dot", 2 * _n);
 
                     // now scale each of the vecs by the computed dot products and
                     // subtract
@@ -452,7 +500,7 @@ class CuspData
 
                     // subtract dots * prevVec from curVec
                     util.tic("axpy");
-                    cusp::blas::axpy(prevVec, curVec, -dot);
+                    cusp::blas::axpy(prevVec, curVec, -resultView[prevVecIndex]);
                     util.toc("axpy", 2 * _n);
                 }
             }

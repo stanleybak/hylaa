@@ -14,7 +14,7 @@ cusp_krylov_tran.so: cusp_krylov_tran.cu
 	$(CC) $(CFLAGS_SHARED) cusp_krylov_tran.cu -o cusp_krylov_tran.so
 
 cusp_krylov_stan.so: cusp_krylov_stan.cu gpu_util.h
-	$(CC) $(CFLAGS_SHARED) cusp_krylov_stan.cu -o cusp_krylov_stan.so
+	$(CC) $(CFLAGS_SHARED) -lcublas cusp_krylov_stan.cu -o cusp_krylov_stan.so
 
 clean:
 	rm -fv  cusp_krylov_tran.so cusp_krylov_stan.so test_cusp_krylov_stan
