@@ -48,8 +48,11 @@ class SimulationSettings(Freezable):
         self.guard_mode = SimulationSettings.GUARD_DECOMPOSED
 
         self.krylov_use_gpu = False # use GPU with krylov method? (False = CPU)
-        self.krylov_sim_rel_error = 1e-7 # desired relative error for each simulation
         self.krylov_profiling = False # print krylov profiling data?
+
+        # accuracy settings. If you don't have enough accuracy, decrease rel error and increase samples
+        self.krylov_rel_error_expm_h = 1e-7 # desired relative error of exmp(H * end_time)
+        self.krylov_rel_error_samples = 9 # number of samples for checking rel_error
 
         self.check_answer = False # double-check answer using MATRIX_EXP at each step (slow!)
 

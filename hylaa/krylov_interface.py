@@ -52,7 +52,7 @@ class KrylovInterface(object):
     def _init_static():
         'open the library (if not opened already) and initialize the static members'
 
-        if KrylovInterface._lib is None:            
+        if KrylovInterface._lib is None:
             KrylovInterface._lib = lib = ctypes.CDLL(KrylovInterface._lib_path)
             float_type = KrylovInterface.float_type
 

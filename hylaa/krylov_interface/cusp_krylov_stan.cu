@@ -244,7 +244,7 @@ class CuspData
     // frees memory if it was previously allocated, returns false if memory error
     // occurs
     bool preallocateMemory(unsigned long arnoldiIt, unsigned long numParallelInit,
-                           unsigned int dims, unsigned int keyDirMatSize)
+                           unsigned long dims, unsigned long keyDirMatSize)
     {
         if (_n != 0 && dims != _n && aMatrix != 0)
         {
@@ -525,10 +525,10 @@ class CuspData
             error("arnoldiParallel() called before loadAMatrix()\n");
 
         if (keyDirMatrix == 0)
-            error("arnoldiParrallel() called before loadKeyDirMatrix()\n");
+            error("arnoldiParallel() called before loadKeyDirMatrix()\n");
 
         if (_i == 0 || _p == 0)
-            error("arnoldiParrallel() called before preallocate() (_i==0 or _p==0)\n");
+            error("arnoldiParallel() called before preallocate() (_i==0 or _p==0)\n");
 
         // check expected results sizes
         unsigned long expectedH = _p * _i * (_i + 1);
