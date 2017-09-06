@@ -22,25 +22,22 @@
 
 typedef double FLOAT_TYPE;
 
-// typedef cusp::array1d<FLOAT_TYPE, MEMORY_TYPE>
 void dot_product(cublasHandle_t cublasHandle, cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view a,
                  cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view b,
                  cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view resultView, int resultIndex)
 {
+    // cpu implementation
     FLOAT_TYPE d = cusp::blas::dot(a, b);
 
     resultView[resultIndex] = d;
 }
 
-// typedef cusp::array1d<FLOAT_TYPE, MEMORY_TYPE>
 void dot_product(cublasHandle_t cublasHandle,
                  cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view a,
                  cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view b,
                  cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view resultView, int resultIndex)
 {
-    // FLOAT_TYPE d = cusp::blas::dot(a, b);
-
-    // resultView[resultIndex] = d;
+    // gpu implementation
     int count = a.size();
 
     double *x = thrust::raw_pointer_cast(&a[0]);
@@ -49,6 +46,50 @@ void dot_product(cublasHandle_t cublasHandle,
 
     if (cublasDdot(cublasHandle, count, x, 1, y, 1, result) != CUBLAS_STATUS_SUCCESS)
         error("cublasDdot() failed");
+}
+
+// subtract dots * prevVec from curVec
+void do_axpy(cublasHandle_t cublasHandle,
+             cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view numsView,  // [-1, 0, temp storage]
+             cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view a,
+             cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view resView,
+             cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view hView, int hIndex)
+{
+    // cpu implementation
+    cusp::blas::axpy(a, resView, -hView[hIndex]);
+}
+
+// subtract dots * prevVec from curVec
+void do_axpy(
+    cublasHandle_t cublasHandle,
+    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view numsView,  // [-1, 0, temp storage]
+    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view a,
+    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view resView,
+    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view hView, int hIndex)
+{
+    // gpu implementation
+    // cusp::blas::axpy(a, b, -hView[hIndex]);
+
+    int count = a.size();
+
+    double *minusOne = thrust::raw_pointer_cast(&numsView[0]);
+    double *zero = thrust::raw_pointer_cast(&numsView[1]);
+    double *temp = thrust::raw_pointer_cast(&numsView[2]);
+    double *x = thrust::raw_pointer_cast(&a[0]);
+    double *res = thrust::raw_pointer_cast(&resView[0]);
+    double *h = thrust::raw_pointer_cast(&hView[hIndex]);
+
+    // copy h to temp
+    if (cublasDcopy(cublasHandle, 1, h, 1, temp, 1) != CUBLAS_STATUS_SUCCESS)
+        error("cublasDcopy() failed");
+
+    // scale temp by -1
+    if (cublasDscal(cublasHandle, 1, minusOne, temp, 1) != CUBLAS_STATUS_SUCCESS)
+        error("cublasDscal() failed");
+
+    // do the axpy (alpha = temp)
+    if (cublasDaxpy(cublasHandle, count, temp, x, 1, res, 1) != CUBLAS_STATUS_SUCCESS)
+        error("cublasDaxpy() failed");
 }
 
 template <class MEMORY_TYPE>
@@ -93,6 +134,7 @@ class CuspData
 
     // cublas variables
     cublasHandle_t cublasHandle;
+    Array1d *cuspNums;  // [-1, 0, temp_val]
 
    public:
     GpuUtil util;  // timers and other utility functions
@@ -105,6 +147,8 @@ class CuspData
         vMatrix = 0;
         hMatrix = 0;
         vProjected = 0;
+
+        cuspNums = 0;
 
         if (cublasCreate(&cublasHandle) != CUBLAS_STATUS_SUCCESS)
             error("cublasCreate() failed");
@@ -150,6 +194,12 @@ class CuspData
         {
             delete vProjected;
             vProjected = 0;
+        }
+
+        if (cuspNums != 0)
+        {
+            delete cuspNums;
+            cuspNums = 0;
         }
 
         util.clearTimers();
@@ -293,6 +343,27 @@ class CuspData
     bool preallocateMemory(unsigned long arnoldiIt, unsigned long numParallelInit,
                            unsigned long dims, unsigned long keyDirMatSize)
     {
+        // one-time preallocate cusp_nums (shouldn't fail)
+
+        if (cuspNums == 0)
+        {
+            try
+            {
+                HostFloatArray1d temp(3);
+                temp[0] = -1;
+                temp[1] = 0;
+                temp[2] = 0;
+                cuspNums = new Array1d(temp);
+            }
+            catch (std::bad_alloc)
+            {
+                if (useProfiling)
+                    printf("cuspNums memory allocation failed\n");
+
+                cuspNums = 0;
+            }
+        }
+
         if (_n != 0 && dims != _n && aMatrix != 0)
         {
             // num dimensions changed... free aMatrix
@@ -393,7 +464,7 @@ class CuspData
                 printf("vProjected allocation failed\n");
         }
 
-        bool success = vMatrix != 0 && hMatrix != 0 && vProjected != 0;
+        bool success = vMatrix != 0 && hMatrix != 0 && vProjected != 0 && cuspNums != 0;
 
         if (!success)
         {
@@ -477,6 +548,8 @@ class CuspData
                 rowOffset = (it - 1) * (_i + 1);
                 Array1dView resultView = hMatrix->subarray(pageOffset + rowOffset, it);
 
+                Array1dView cuspNumsView = cuspNums->subarray(0, 3);
+
                 for (unsigned long prevVecIndex = 0; prevVecIndex < it; ++prevVecIndex)
                 {
                     pageOffset = curInitVec * _n * (iterations + 1);
@@ -500,7 +573,8 @@ class CuspData
 
                     // subtract dots * prevVec from curVec
                     util.tic("axpy");
-                    cusp::blas::axpy(prevVec, curVec, -resultView[prevVecIndex]);
+                    do_axpy(cublasHandle, cuspNumsView, prevVec, curVec, resultView, prevVecIndex);
+                    // cusp::blas::axpy(prevVec, curVec, -resultView[prevVecIndex]);
                     util.toc("axpy", 2 * _n);
                 }
             }
