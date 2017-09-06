@@ -372,4 +372,7 @@ def make_cur_time_elapse_mat_list(time_elapser):
         elapsed = format_secs(time.time() - start)
         print "Krylov Computation Total Time: {}\n".format(elapsed)
 
+    print "TODO: remove exit() in time_elapse_krylov"
+    exit()
+
     return rv
