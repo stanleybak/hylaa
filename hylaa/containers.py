@@ -49,6 +49,7 @@ class SimulationSettings(Freezable):
 
         self.krylov_use_gpu = False # use GPU with krylov method? (False = CPU)
         self.krylov_profiling = False # print krylov profiling data?
+        self.krylov_max_stride = 32
 
         # accuracy settings. If you don't have enough accuracy, decrease rel error and increase samples
         self.krylov_rel_error_expm_h = 1e-7 # desired relative error of exmp(H * end_time)

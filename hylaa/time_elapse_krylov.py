@@ -29,7 +29,7 @@ def format_secs(sec):
 
     return rv
 
-def reallocate_memory(arnoldi_iter, dims, key_dirs, start_stride=32):
+def reallocate_memory(arnoldi_iter, dims, key_dirs, start_stride):
     'try to allocate multiple initial vectors (larger stride). returns the new stride'
     Timers.tic("reallocate memory")
 
@@ -301,7 +301,7 @@ def make_cur_time_elapse_mat_list(time_elapser):
         print "\nUsing {} Arnoldi Iterations".format(arnoldi_iter)
 
     # re-allocate with correct number of arnoldi iterations and larger stride
-    stride = reallocate_memory(arnoldi_iter, dims, key_dirs)
+    stride = reallocate_memory(arnoldi_iter, dims, key_dirs, start_stride=settings.simulation.krylov_max_stride)
 
     start = last_print = time.time()
     start_vec = 0
@@ -372,7 +372,7 @@ def make_cur_time_elapse_mat_list(time_elapser):
         elapsed = format_secs(time.time() - start)
         print "Krylov Computation Total Time: {}\n".format(elapsed)
 
-    print "TODO: remove exit() in time_elapse_krylov"
+    print "TODO: get rid of time_elapse_krylov exit"
     exit()
 
     return rv

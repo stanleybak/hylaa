@@ -146,10 +146,10 @@ def define_settings(_):
 
     settings = HylaaSettings(step=0.01, max_time=10.0, plot_settings=plot_settings)
 
-
     settings.simulation.sim_mode = SimulationSettings.KRYLOV
     settings.simulation.krylov_use_gpu = True
     settings.simulation.krylov_profiling = True
+    #settings.simulation.krylov_max_stride = 8
     #settings.simulation.check_answer = True
 
     #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
