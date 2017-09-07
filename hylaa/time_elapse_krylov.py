@@ -293,7 +293,6 @@ def make_cur_time_elapse_mat_list(time_elapser):
 
     print "TODO: restore choose_arnoldi_iter"
     arnoldi_iter = 31
-    settings.simulation.krylov_max_stride
 
     #Timers.tic("choose arnoldi iterations")
     #arnoldi_iter = choose_arnoldi_iter(settings, dims, key_dirs, arnoldi_iter)
