@@ -13,7 +13,7 @@ def heat_1d():
     thermal_cond = 0.93  #cal/cm-sec-degree
     heat_exchange_coeff = 1 
     he = HeatOneDimension(diffusity_const, diffusity_const, heat_exchange_coeff, len_x)
-    num_x = 50 # number of meshpoint between 0 and len_x
+    num_x = 59 # number of meshpoint between 0 and len_x
     matrix_a, matrix_b = he.get_odes(num_x)
     print "\nmatrix_a:\n{}".format(matrix_a.toarray())
     print "\nmatrix_b:\n{}".format(matrix_b.toarray())
@@ -22,7 +22,7 @@ def heat_1d():
     input_g = 20 #
 
     input_vec = matrix_b*[input_g]
-    final_time = 200
+    final_time = 2000
     num_steps = 100000
     time_step = float(final_time)/float(num_steps)
     discretization_step = float(len_x)/float(num_x + 1)
@@ -40,8 +40,11 @@ def heat_1d():
     runtime, result = sim_odeint_sparse(matrix_a, init_vec, input_vec, final_time, num_steps)
 
     # central point temperature
+    #center_point_index = int(math.ceil((len_x/2)/discretization_step))
     center_point_index = int(math.ceil(num_x/2))
     center_point_temp = result[:, center_point_index]
+    print "\n the central point index is: {}".format(center_point_index)
+    print "\nthe center point position is: x = {}cm".format((center_point_index + 1)*discretization_step)
 
     plt.plot(times, center_point_temp, 'b', label='center_point')
     plt.legend(loc='best')
