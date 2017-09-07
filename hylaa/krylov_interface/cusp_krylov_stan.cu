@@ -22,10 +22,10 @@
 
 typedef double FLOAT_TYPE;
 
-void dot_product(cublasHandle_t cublasHandle,
-                 cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view a,
-                 cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view b,
-                 cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view resultView,
+void dot_product(cublasHandle_t &cublasHandle,
+                 cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view &a,
+                 cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view &b,
+                 cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view &resultView,
                  int resultIndex) {
   // cpu implementation
   FLOAT_TYPE d = cusp::blas::dot(a, b);
@@ -34,10 +34,10 @@ void dot_product(cublasHandle_t cublasHandle,
 }
 
 void dot_product(
-    cublasHandle_t cublasHandle,
-    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view a,
-    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view b,
-    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view resultView,
+    cublasHandle_t &cublasHandle,
+    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view &a,
+    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view &b,
+    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view &resultView,
     int resultIndex) {
   // gpu implementation
   int count = a.size();
@@ -51,25 +51,25 @@ void dot_product(
     error("cublasDdot() failed");
 }
 
-// subtract dots * prevVec from curVec
-void do_axpy(cublasHandle_t cublasHandle,
-             cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view
-                 numsView, // [-1, 0, temp storage]
-             cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view a,
-             cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view resView,
-             cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view hView,
+// subtract dots * prevVec from curVec using axpy
+void do_axpy(cublasHandle_t &cublasHandle,
+             // numsView: [-1, 0, 1, temp storage]
+             cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view &numsView,
+             cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view &a,
+             cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view &resView,
+             cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view &hView,
              int hIndex) {
   // cpu implementation
   cusp::blas::axpy(a, resView, -hView[hIndex]);
 }
 
-// subtract dots * prevVec from curVec
-void do_axpy(cublasHandle_t cublasHandle,
-             cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view
-                 numsView, // [-1, 0, temp storage]
-             cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view a,
-             cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view resView,
-             cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view hView,
+// subtract dots * prevVec from curVec using axpy
+void do_axpy(cublasHandle_t &cublasHandle,
+             // numsView: [-1, 0, 1, temp storage]
+             cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view &numsView,
+             cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view &a,
+             cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view &resView,
+             cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view &hView,
              int hIndex) {
   // gpu implementation
   // cusp::blas::axpy(a, b, -hView[hIndex]);
@@ -78,7 +78,7 @@ void do_axpy(cublasHandle_t cublasHandle,
 
   double *minusOne = thrust::raw_pointer_cast(&numsView[0]);
   double *zero = thrust::raw_pointer_cast(&numsView[1]);
-  double *temp = thrust::raw_pointer_cast(&numsView[2]);
+  double *temp = thrust::raw_pointer_cast(&numsView[3]);
   double *x = thrust::raw_pointer_cast(&a[0]);
   double *res = thrust::raw_pointer_cast(&resView[0]);
   double *h = thrust::raw_pointer_cast(&hView[hIndex]);
@@ -97,6 +97,143 @@ void do_axpy(cublasHandle_t cublasHandle,
     error("cublasDaxpy() failed");
 }
 
+void mat_vec_mult(cublasHandle_t &cublasHandle,
+                  // numsView: [-1, 0, 1, temp]
+                  cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view &numsView,
+                  cusp::array2d<FLOAT_TYPE, cusp::host_memory>::view &mat,
+                  cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view &vec,
+                  cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view &result) {
+  unsigned long size = result.size();
+  for (unsigned long row = 0; row < size; ++row) {
+    cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view curRow = mat.row(row);
+    dot_product(cublasHandle, vec, curRow, result, row);
+  }
+}
+
+void mat_vec_mult(
+    cublasHandle_t &cublasHandle,
+    // numsView: [-1, 0, 1, temp]
+    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view &numsView,
+    cusp::array2d<FLOAT_TYPE, cusp::device_memory>::view &matView,
+    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view &vecView,
+    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view &resultView) {
+
+  for (unsigned long row = 0; row < resultView.size(); ++row) {
+    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view curRow =
+        matView.row(row);
+    dot_product(cublasHandle, vecView, curRow, resultView, row);
+  }
+}
+
+void batched_mat_vec_mult(
+    cublasHandle_t &cublasHandle,
+    // numsView: [-1, 0, 1, temp]
+    cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view &numsView,
+    unsigned long iterations, unsigned long numInitVecs, unsigned long _n,
+    unsigned long _i, unsigned long it,
+    cusp::array1d<FLOAT_TYPE, cusp::host_memory> *vMatrix,
+    cusp::array1d<FLOAT_TYPE, cusp::host_memory> *hMatrix,
+    cusp::array1d<FLOAT_TYPE *, cusp::host_memory> *matPointers,
+    cusp::array1d<FLOAT_TYPE *, cusp::host_memory> *vecPointers,
+    cusp::array1d<FLOAT_TYPE *, cusp::host_memory> *resPointers) {
+  // a series of mat-vec multiplications
+
+  for (unsigned long curInitVec = 0; curInitVec < numInitVecs; ++curInitVec) {
+    unsigned long pageOffset = curInitVec * _n * (iterations + 1);
+    unsigned long rowOffset = _n * it;
+
+    cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view curVec =
+        vMatrix->subarray(pageOffset + rowOffset, _n);
+    cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view matView1d =
+        vMatrix->subarray(pageOffset, rowOffset);
+
+    pageOffset = curInitVec * (_i + 1) * _i;
+    rowOffset = (it - 1) * (_i + 1);
+    cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view resultView =
+        hMatrix->subarray(pageOffset + rowOffset, it);
+
+    cusp::array2d<FLOAT_TYPE, cusp::host_memory>::view matView2d =
+        make_array2d_view(it, _n, _n, matView1d, cusp::row_major());
+
+    mat_vec_mult(cublasHandle, numsView, matView2d, curVec, resultView);
+  }
+}
+
+void batched_mat_vec_mult(
+    cublasHandle_t &cublasHandle,
+    // numsView: [-1, 0, 1, temp]
+    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view &numsView,
+    unsigned long iterations, unsigned long numInitVecs, unsigned long _n,
+    unsigned long _i, unsigned long it,
+    cusp::array1d<FLOAT_TYPE, cusp::device_memory> *vMatrix,
+    cusp::array1d<FLOAT_TYPE, cusp::device_memory> *hMatrix,
+    cusp::array1d<FLOAT_TYPE *, cusp::device_memory> *matPointers,
+    cusp::array1d<FLOAT_TYPE *, cusp::device_memory> *vecPointers,
+    cusp::array1d<FLOAT_TYPE *, cusp::device_memory> *resPointers) {
+  // a series of mat-vec multiplications
+
+  unsigned long _p = numInitVecs;
+  unsigned long _m = it;
+
+  int m = 1;  // dA->h
+  int n = _m; // dB->w
+  int k = _n; // dA->w
+
+  int lda = m;
+  int ldb = k;
+  int ldc = m;
+
+  double *zero = thrust::raw_pointer_cast(&numsView[1]);
+  double *one = thrust::raw_pointer_cast(&numsView[2]);
+
+  double **mats = thrust::raw_pointer_cast(&(*matPointers)[0]);
+  double **vecs = thrust::raw_pointer_cast(&(*vecPointers)[(it - 1) * _p]);
+  double **results = thrust::raw_pointer_cast(&(*resPointers)[(it - 1) * _p]);
+
+  // cublasStatus_t cublasDgemmBatched(cublasHandle_t handle,
+  //                                  cublasOperation_t transa,
+  //                                  cublasOperation_t transb,
+  //                                  int m, int n, int k,
+  //                                  const double          *alpha,
+  //                                  const double          *Aarray[], int lda,
+  //                                  const double          *Barray[], int ldb,
+  //                                  const double          *beta,
+  //                                  double          *Carray[], int ldc,
+  //                                  int batchCount)
+
+  cublasStatus_t res =
+      cublasDgemmBatched(cublasHandle,                    // cublas handle
+                         CUBLAS_OP_N, CUBLAS_OP_N,        // transposes
+                         m, n, k,                         // sizes
+                         one, (const double **)vecs, lda, // vec
+                         (const double **)mats, ldb,      // mat
+                         zero, results, ldc,              // result
+                         _p);                             // num_init_vecs (_p)
+
+  if (res != CUBLAS_STATUS_SUCCESS)
+    error("cublasDgemmBatched() failed");
+
+  /*for (unsigned long curInitVec = 0; curInitVec < numInitVecs; ++curInitVec) {
+    unsigned long pageOffset = curInitVec * _n * (iterations + 1);
+    unsigned long rowOffset = _n * it;
+
+    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view curVec =
+        vMatrix->subarray(pageOffset + rowOffset, _n);
+    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view matView1d =
+        vMatrix->subarray(pageOffset, rowOffset);
+
+    pageOffset = curInitVec * (_i + 1) * _i;
+    rowOffset = (it - 1) * (_i + 1);
+    cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view resultView =
+        hMatrix->subarray(pageOffset + rowOffset, it);
+
+    cusp::array2d<FLOAT_TYPE, cusp::device_memory>::view matView2d =
+        make_array2d_view(it, _n, _n, matView1d, cusp::row_major());
+
+    mat_vec_mult(cublasHandle, numsView, matView2d, curVec, resultView);
+    }*/
+}
+
 template <class MEMORY_TYPE> class CuspData {
   typedef cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> Array1d;
   typedef typename Array1d::view Array1dView;
@@ -106,6 +243,9 @@ template <class MEMORY_TYPE> class CuspData {
 
   typedef cusp::array1d<FLOAT_TYPE, cusp::host_memory> HostFloatArray1d;
   typedef typename HostFloatArray1d::view HostFloatArray1dView;
+
+  typedef cusp::array1d<FLOAT_TYPE *, cusp::host_memory> HostPointerArray1d;
+  typedef cusp::array1d<FLOAT_TYPE *, MEMORY_TYPE> PointerArray1d;
 
   typedef cusp::array1d<int, cusp::host_memory> HostIntArray1d;
   typedef typename HostIntArray1d::view HostIntArray1dView;
@@ -137,7 +277,10 @@ private:
 
   // cublas variables
   cublasHandle_t cublasHandle;
-  Array1d *cuspNums; // [-1, 0, temp_val]
+  Array1d *cuspNums; // [-1, 0, 1, temp_val]
+  PointerArray1d *matPointers;
+  PointerArray1d *vecPointers;
+  PointerArray1d *resPointers;
 
 public:
   GpuUtil util; // timers and other utility functions
@@ -151,6 +294,9 @@ public:
     vProjected = 0;
 
     cuspNums = 0;
+    matPointers = 0;
+    vecPointers = 0;
+    resPointers = 0;
 
     if (cublasCreate(&cublasHandle) != CUBLAS_STATUS_SUCCESS)
       error("cublasCreate() failed");
@@ -194,6 +340,21 @@ public:
     if (cuspNums != 0) {
       delete cuspNums;
       cuspNums = 0;
+    }
+
+    if (matPointers != 0) {
+      delete matPointers;
+      matPointers = 0;
+    }
+
+    if (vecPointers != 0) {
+      delete vecPointers;
+      vecPointers = 0;
+    }
+
+    if (resPointers != 0) {
+      delete resPointers;
+      resPointers = 0;
     }
 
     util.clearTimers();
@@ -259,6 +420,20 @@ public:
     } catch (std::bad_alloc) {
       error("memory allocation of aMatrix failed\n");
     }
+
+    // one-time preallocate cusp_nums (shouldn't fail)
+    if (cuspNums == 0) {
+      try {
+        HostFloatArray1d temp(4);
+        temp[0] = -1;
+        temp[1] = 0;
+        temp[2] = 1;
+        temp[3] = 0;
+        cuspNums = new Array1d(temp);
+      } catch (std::bad_alloc) {
+        error("cuspNums memory allocation failed\n");
+      }
+    }
   }
 
   // load key dir matrix, passed in as a csr matrix
@@ -321,22 +496,7 @@ public:
   // occurs
   bool preallocateMemory(unsigned long arnoldiIt, unsigned long numParallelInit,
                          unsigned long dims, unsigned long keyDirMatSize) {
-    // one-time preallocate cusp_nums (shouldn't fail)
-
-    if (cuspNums == 0) {
-      try {
-        HostFloatArray1d temp(3);
-        temp[0] = -1;
-        temp[1] = 0;
-        temp[2] = 0;
-        cuspNums = new Array1d(temp);
-      } catch (std::bad_alloc) {
-        if (useProfiling)
-          printf("cuspNums memory allocation failed\n");
-
-        cuspNums = 0;
-      }
-    }
+    bool success = true;
 
     if (_n != 0 && dims != _n && aMatrix != 0) {
       // num dimensions changed... free aMatrix
@@ -360,77 +520,128 @@ public:
              "device: %.2f MB\n",
              getFreeMemoryMb());
 
-    // preallocate hMatrix, numParInit * iterations * iterations
+    // free memory which we will newly allocate
+
     if (hMatrix != 0) {
       delete hMatrix;
       hMatrix = 0;
     }
 
-    unsigned long hMatrixSize = _p * _i * (_i + 1);
-
-    if (useProfiling)
-      printf("Trying to allocate %.2f MB for hMatrix (remaining memory %.2f "
-             "MB)...\n",
-             sizeof(FLOAT_TYPE) * hMatrixSize / 1024.0 / 1024.0,
-             getFreeMemoryMb());
-
-    try {
-      hMatrix = new Array1d(hMatrixSize, 0);
-    } catch (std::bad_alloc) {
-      if (useProfiling)
-        printf("hMatrix allocation failed\n");
-    }
-
-    // preallocate vMatrix, width = dims * iterations, height = numParInit
     if (vMatrix != 0) {
       delete vMatrix;
       vMatrix = 0;
     }
 
-    unsigned long vMatrixSize = _p * _n * (_i + 1);
-
-    if (useProfiling)
-      printf("Trying to allocate %.2f MB for vMatrix (remaining memory %.2f "
-             "MB)...\n",
-             sizeof(FLOAT_TYPE) * vMatrixSize / 1024.0 / 1024.0,
-             getFreeMemoryMb());
-
-    try {
-      vMatrix = new Array1d(vMatrixSize, 0);
-    } catch (std::bad_alloc) {
-      if (useProfiling)
-        printf("vMatrix allocation failed\n");
-    }
-
-    // preallocate vProjected
     if (vProjected != 0) {
       delete vProjected;
       vProjected = 0;
     }
 
-    unsigned long vProjectedSize = _p * _k * (_i + 1);
-
-    if (useProfiling)
-      printf("Trying to allocate %.2f MB for vProjected (remaining memory %.2f "
-             "MB)...\n",
-             sizeof(FLOAT_TYPE) * vProjectedSize / 1024.0 / 1024.0,
-             getFreeMemoryMb());
-
-    try {
-      vProjected = new Array1d(vProjectedSize, 0);
-    } catch (std::bad_alloc) {
-      if (useProfiling)
-        printf("vProjected allocation failed\n");
+    if (matPointers != 0) {
+      delete matPointers;
+      matPointers = 0;
     }
 
-    bool success =
-        vMatrix != 0 && hMatrix != 0 && vProjected != 0 && cuspNums != 0;
+    if (vecPointers != 0) {
+      delete vecPointers;
+      vecPointers = 0;
+    }
 
-    if (!success) {
+    if (resPointers != 0) {
+      delete resPointers;
+      resPointers = 0;
+    }
+
+    try {
+      // preallocate hMatrix, numParInit * iterations * iterations
+      unsigned long hMatrixSize = _p * _i * (_i + 1);
+
+      if (useProfiling)
+        printf("Trying to allocate %.2f MB for hMatrix (remaining memory %.2f "
+               "MB)...\n",
+               sizeof(FLOAT_TYPE) * hMatrixSize / 1024.0 / 1024.0,
+               getFreeMemoryMb());
+
+      hMatrix = new Array1d(hMatrixSize, 0);
+
+      // preallocate vMatrix, width = dims * iterations, height = numParInit
+      unsigned long vMatrixSize = _p * _n * (_i + 1);
+
+      if (useProfiling)
+        printf("Trying to allocate %.2f MB for vMatrix (remaining memory %.2f "
+               "MB)...\n",
+               sizeof(FLOAT_TYPE) * vMatrixSize / 1024.0 / 1024.0,
+               getFreeMemoryMb());
+
+      vMatrix = new Array1d(vMatrixSize, 0);
+
+      // preallocate vProjected
+      unsigned long vProjectedSize = _p * _k * (_i + 1);
+
+      if (useProfiling)
+        printf(
+            "Trying to allocate %.2f MB for vProjected (remaining memory %.2f "
+            "MB)...\n",
+            sizeof(FLOAT_TYPE) * vProjectedSize / 1024.0 / 1024.0,
+            getFreeMemoryMb());
+
+      vProjected = new Array1d(vProjectedSize, 0);
+
+      if (useProfiling)
+        printf("Trying to allocate batch mat-vec pointers\n");
+
+      // preallocate batch mat-vec pointers
+      // for resultH and curVec, we will have one set of pointers for every
+      // arnoldi iteration
+      // for matrixV, we only need a single set of pointers (same for all
+      // arnoldi iterations)
+      // PointerArray1d *matPointers = 0;
+      // PointerArray1d *vecPointers = 0;
+      // PointerArray1d *resPointers = 0;
+
+      HostPointerArray1d hostMatPointers(_p);
+      HostPointerArray1d hostVecPointers(_i * _p);
+      HostPointerArray1d hostResPointers(_i * _p);
+
+      double *v = thrust::raw_pointer_cast(&((*vMatrix)[0]));
+      double *h = thrust::raw_pointer_cast(&((*hMatrix)[0]));
+
+      unsigned long oneVMatSize = _n * (_i + 1);
+
+      for (unsigned long curInitVec = 0; curInitVec < _p; ++curInitVec)
+        hostMatPointers[curInitVec] = v + oneVMatSize * curInitVec;
+
+      int index = 0;
+
+      for (unsigned long it = 1; it <= _i; it++) {
+        for (unsigned long curInitVec = 0; curInitVec < _p; ++curInitVec) {
+          // cur_vec in v-mat
+          unsigned long pageOffset = oneVMatSize * curInitVec;
+          unsigned long rowOffset = it * _n;
+          hostVecPointers[index] = v + pageOffset + rowOffset;
+
+          // result in h-mat
+          pageOffset = curInitVec * (_i + 1) * _i;
+          rowOffset = (it - 1) * (_i + 1);
+          hostResPointers[index] = h + pageOffset + rowOffset;
+
+          ++index;
+        }
+      }
+
+      matPointers = new PointerArray1d(hostMatPointers);
+      vecPointers = new PointerArray1d(hostVecPointers);
+      resPointers = new PointerArray1d(hostResPointers);
+
+    } catch (std::bad_alloc) {
+      if (useProfiling)
+        printf("memory allocation failed\n");
+
       _i = 0;
       _p = 0;
       _n = 0;
       _k = 0;
+      success = false;
     }
 
     return success;
@@ -468,8 +679,11 @@ public:
 
   // reads/writes from/to vMatrix, writes to hMatrix
   void runArnoldi(unsigned long iterations, unsigned long numInitVecs) {
+    Array1dView cuspNumsView = cuspNums->subarray(0, 4);
+
     // Arnoldi parallel algorithm iteration
     for (unsigned long it = 1; it <= iterations; it++) {
+
       // do all the multiplications up front
       util.tic("sparse matrix vector multiply total");
       for (unsigned long curInitVec = 0; curInitVec < numInitVecs;
@@ -493,40 +707,29 @@ public:
       util.tic("dots & axpy");
 
       // do all the dot products
+      util.tic("dot");
+      batched_mat_vec_mult(cublasHandle, cuspNumsView, iterations, numInitVecs,
+                           _n, _i, it, vMatrix, hMatrix, matPointers,
+                           vecPointers, resPointers);
+      util.toc("dot", 2 * _n * it * numInitVecs);
+
       for (unsigned long curInitVec = 0; curInitVec < numInitVecs;
            ++curInitVec) {
-        unsigned long pageOffset = curInitVec * _n * (iterations + 1);
-        unsigned long rowOffset = _n * it;
 
-        Array1dView curVec = vMatrix->subarray(pageOffset + rowOffset, _n);
-        Array1dView matView1d = vMatrix->subarray(pageOffset, rowOffset);
-
-        pageOffset = curInitVec * (_i + 1) * _i;
-        rowOffset = (it - 1) * (_i + 1);
-        Array1dView resultView = hMatrix->subarray(pageOffset + rowOffset, it);
-
-        Array1dView cuspNumsView = cuspNums->subarray(0, 3);
-
+        util.tic("axpy");
         for (unsigned long prevVecIndex = 0; prevVecIndex < it;
              ++prevVecIndex) {
-          pageOffset = curInitVec * _n * (iterations + 1);
-          rowOffset = _n * prevVecIndex;
-          Array1dView prevVec = vMatrix->subarray(pageOffset + rowOffset, _n);
 
-          // Array2dView matView2d =
-          //  make_array2d_view(it, _n, _n, matView1d, cusp::row_major());
-          // dense_multiply(&matView2d, &vecView, &resultView);
+          unsigned long pageOffset = curInitVec * _n * (iterations + 1);
+          unsigned long rowOffset = _n * it;
 
-          util.tic("dot");
-          // FLOAT_TYPE dot = cusp::blas::dot(curVec, prevVec);
-          // resultView[prevVecIndex] = dot;
+          Array1dView curVec = vMatrix->subarray(pageOffset + rowOffset, _n);
 
-          dot_product(cublasHandle, curVec, prevVec, resultView, prevVecIndex);
-          util.toc("dot", 2 * _n);
-        }
+          pageOffset = curInitVec * (_i + 1) * _i;
+          rowOffset = (it - 1) * (_i + 1);
+          Array1dView resultView =
+              hMatrix->subarray(pageOffset + rowOffset, it);
 
-        for (unsigned long prevVecIndex = 0; prevVecIndex < it;
-             ++prevVecIndex) {
           pageOffset = curInitVec * _n * (iterations + 1);
           rowOffset = _n * prevVecIndex;
           Array1dView prevVec = vMatrix->subarray(pageOffset + rowOffset, _n);
@@ -535,12 +738,12 @@ public:
           // from curvec
 
           // subtract dots * prevVec from curVec
-          util.tic("axpy");
+
           do_axpy(cublasHandle, cuspNumsView, prevVec, curVec, resultView,
                   prevVecIndex);
           // cusp::blas::axpy(prevVec, curVec, -resultView[prevVecIndex]);
-          util.toc("axpy", 2 * _n);
         }
+        util.toc("axpy", 2 * _n * it);
       }
 
       util.toc("dots & axpy");
@@ -666,45 +869,6 @@ public:
   }
 
 private:
-  void dense_multiply(Array2dView *mat, Array1dView *vec, Array1dView *result) {
-    if (mat->pitch != vec->size())
-      error("in dense_multiply(), mat.width (%lu) != vec.size (%lu)",
-            mat->pitch, vec->size());
-
-    if (mat->values.size() / mat->pitch != result->size())
-      error("in dense_multiply(), mat.height (%lu) != result.size (%lu)",
-            mat->values.size() / mat->pitch, result->size());
-
-    // util.tic("making SparseMat");
-    // HostFloatArray2d hostMat(*mat);
-
-    // HostHybMatrix hostHybMat(hostMat);
-
-    /*CooMatrix sparseMat(*mat);
-
-    util.toc("making SparseMat");
-
-    util.tic("sparseMat Multiply");
-    cusp::multiply(sparseMat, *vec, *result);
-    util.toc("sparseMat Multiply");*/
-
-    unsigned long size = result->size();
-
-    for (unsigned long row = 0; row < size; ++row) {
-      Array1dView rowView = mat->row(row);
-
-      util.tic("dense_multiply");
-      (*result)[row] = cusp::blas::dot(rowView, *vec);
-      util.toc("dense_multiply", 2 * rowView.size());
-    }
-
-    // broken gpu implementation in new version of cusp :(
-    // cusp::multiply(*mat, *vec, *result);
-
-    // not implemented anywhere in cusp 5.0.1:
-    // cusp::blas::gemv(*mat, *vec, *result);
-  }
-
   void printV() {
     unsigned long h = _p * (_i + 1);
     unsigned long w = _n;

@@ -448,6 +448,44 @@ class TestKrylovInterface(unittest.TestCase):
         self.assertTrue(np.allclose(result_h[1], h_mat_testing2), "Correct h matrix init vec 2")
         self.assertTrue(np.allclose(result_pv[1], projected_v_mat_testing2), "Correct projV matrix for init vec 2")
 
+    def test_arnoldi_double_gpu(self):
+        'compare the gpu cusp implementation with a two initial vectors versus the python implementation'
+
+        if KrylovInterface.has_gpu():
+            #KrylovInterface.set_use_profiling(True)
+            KrylovInterface.set_use_gpu(False)
+
+            dims = 5
+            iterations = 2
+            key_dirs = 2
+            num_parallel = 2
+
+            a_matrix = random_sparse_matrix(dims, entries_per_row=2)
+            key_dir_mat = random_sparse_matrix(dims, entries_per_row=2)[:key_dirs, :]
+
+            # using python
+            init_vec1 = np.array([[1.0] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
+            init_vec2 = np.array([[1.0] if d == 1 else [0.0] for d in xrange(dims)], dtype=float)
+
+            v_mat_testing1, h_mat_testing1 = arnoldi(a_matrix, init_vec1, iterations)
+            projected_v_mat_testing1 = key_dir_mat * v_mat_testing1
+
+            v_mat_testing2, h_mat_testing2 = arnoldi(a_matrix, init_vec2, iterations)
+            projected_v_mat_testing2 = key_dir_mat * v_mat_testing2
+
+            # using cusp
+            KrylovInterface.preallocate_memory(iterations, num_parallel, dims, key_dirs)
+            KrylovInterface.load_a_matrix(a_matrix)
+            KrylovInterface.load_key_dir_matrix(key_dir_mat)
+
+            result_h, result_pv = KrylovInterface.arnoldi_parallel(0)
+
+            self.assertTrue(np.allclose(result_h[0], h_mat_testing1), "Correct h matrix init vec 1")
+            self.assertTrue(np.allclose(result_pv[0], projected_v_mat_testing1), "Correct projV matrix for init vec 1")
+
+            self.assertTrue(np.allclose(result_h[1], h_mat_testing2), "Correct h matrix init vec 2")
+            self.assertTrue(np.allclose(result_pv[1], projected_v_mat_testing2), "Correct projV matrix for init vec 2")
+
     def test_iss(self):
         'test the cusp implementation using the iss model'
 

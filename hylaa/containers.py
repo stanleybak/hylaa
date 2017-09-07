@@ -52,7 +52,7 @@ class SimulationSettings(Freezable):
         self.krylov_max_stride = 32
 
         # accuracy settings. If you don't have enough accuracy, decrease rel error and increase samples
-        self.krylov_rel_error_expm_h = 1e-7 # desired relative error of exmp(H * end_time)
+        self.krylov_rel_error_expm_h = 1e-5 # desired relative error of exmp(H * end_time)
         self.krylov_rel_error_samples = 9 # number of samples for checking rel_error
 
         self.check_answer = False # double-check answer using MATRIX_EXP at each step (slow!)

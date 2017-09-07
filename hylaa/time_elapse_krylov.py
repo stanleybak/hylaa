@@ -291,9 +291,13 @@ def make_cur_time_elapse_mat_list(time_elapser):
         print "Determining number of arnoldi iterations for desired accuracy...",
         sys.stdout.flush()
 
-    Timers.tic("choose arnoldi iterations")
-    arnoldi_iter = choose_arnoldi_iter(settings, dims, key_dirs, arnoldi_iter)
-    Timers.toc("choose arnoldi iterations")
+    print "TODO: restore choose_arnoldi_iter"
+    arnoldi_iter = 31
+    settings.simulation.krylov_max_stride
+
+    #Timers.tic("choose arnoldi iterations")
+    #arnoldi_iter = choose_arnoldi_iter(settings, dims, key_dirs, arnoldi_iter)
+    #Timers.toc("choose arnoldi iterations")
 
     pool = Pool()
 
@@ -309,7 +313,7 @@ def make_cur_time_elapse_mat_list(time_elapser):
 
     for start_vec in xrange(0, dims, stride):
 
-        if start_vec > 500:
+        if start_vec > 100:
             print "TODO: remove debug quit loop early"
             break
 
