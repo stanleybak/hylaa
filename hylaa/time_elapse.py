@@ -252,9 +252,10 @@ class TimeElapser(Freezable):
             tol = 1e-4
 
             if diff >= tol:
-                print "\nself.cur_time_elapse_mat:\n{}\n".format(matrix_to_string(self.cur_time_elapse_mat))
-                print "expected result:\n{}\n".format(matrix_to_string(expected))
+                if self.a_matrix.shape <= 10:
+                    print "\nself.cur_time_elapse_mat:\n{}\n".format(matrix_to_string(self.cur_time_elapse_mat))
+                    print "expected result:\n{}\n".format(matrix_to_string(expected))
 
-                assert diff < tol, "EXPM answer was incorrect. L-inf norm of difference was {}".format(diff)
+                assert diff < tol, "answer was incorrect. L-inf norm of difference was {}".format(diff)
 
             Timers.toc('expm check answer')

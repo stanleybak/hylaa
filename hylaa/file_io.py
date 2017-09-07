@@ -81,7 +81,7 @@ end
 def write_counter_example(filename, mode, step_size, total_steps, start_pt, inputs, normal_vec, normal_val, end_val):
     'write a counter-example to a file which can be run using the HyLAA trace generator'
 
-    assert isinstance(mode.a_matrix, csc_matrix)
+    a_matrix_csc = csc_matrix(mode.a_matrix)
     assert isinstance(normal_vec, np.ndarray)
 
     with open(filename, 'w') as f:
@@ -97,11 +97,11 @@ def check_instance():
 
 ''')
 
-        dims = mode.a_matrix.shape[0]
+        dims = a_matrix_csc.shape[0]
 
-        f.write('    data = {}\n'.format([n for n in mode.a_matrix.data]))
-        f.write('    indices = {}\n'.format([n for n in mode.a_matrix.indices]))
-        f.write('    indptr = {}\n'.format([n for n in mode.a_matrix.indptr]))
+        f.write('    data = {}\n'.format([n for n in a_matrix_csc.data]))
+        f.write('    indices = {}\n'.format([n for n in a_matrix_csc.indices]))
+        f.write('    indptr = {}\n'.format([n for n in a_matrix_csc.indptr]))
         f.write('    a_matrix = csc_matrix((data, indices, indptr), dtype=float, shape=({}, {}))\n'.format(dims, dims))
 
         ###
