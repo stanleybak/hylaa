@@ -23,6 +23,9 @@ def define_ha():
     a_matrix = dynamics['A']
     b_matrix = dynamics['B']
 
+    print b_matrix.shape
+    exit()
+
     a_matrix, b_matrix = add_time_var(a_matrix, b_matrix)
     mode.set_dynamics(a_matrix, b_matrix)
 
