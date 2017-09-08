@@ -181,7 +181,7 @@ class HeatTwoDimension2(object):
         if self.diffusity_const == 0 or self.heat_exchange_coeff == 0 or \
           self.thermal_cond == 0 or  self.len_x == 0 or self.len_y == 0:
             raise ValueError("inappropriate parameters")
-        self.heat_lost_const = self.thermal_cond/self.heat_exchange_coeff
+        self.heat_lost_const = self.heat_exchange_coeff/self.thermal_cond
 
         self.has_heat_source = has_heat_source
         assert isinstance(heat_source_pos, np.ndarray), "heat source pos is not an ndarray"

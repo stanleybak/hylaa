@@ -112,19 +112,19 @@ def heat_2d2():
     'test 2-d heat equation ZhiHan benchmark'
 
     # parameters
-    diffusity_const = 1
-    heat_exchange_coeff = 1
-    thermal_cond = 0.5
-    len_x = 100
-    len_y = 100
+    diffusity_const = 0.01
+    heat_exchange_coeff = 0.5
+    thermal_cond = 1
+    len_x = 1
+    len_y = 1
     has_heat_source = True
-    heat_source_pos = np.array([0, 40])
+    heat_source_pos = np.array([0, 0.4])
     he = HeatTwoDimension2(diffusity_const, heat_exchange_coeff, thermal_cond,\
                                    len_x, len_y, has_heat_source, heat_source_pos)
 
     # get linear ode model of 2-d heat equation
-    num_x = 20 # number of discretized steps between 0 and len_x
-    num_y = 20 # number of discretized steps between 0 and len_y
+    num_x = 2 # number of discretized steps between 0 and len_x
+    num_y = 2 # number of discretized steps between 0 and len_y
     matrix_a, matrix_b = he.get_odes(num_x, num_y)
     print "\nmatrix_a :\n{}".format(matrix_a.todense())
     print "\nmatrix_b :\n{}".format(matrix_b.todense())
@@ -140,7 +140,7 @@ def heat_2d2():
     print "\input vector v = matrix_b*inputs is: \n{}".format(input_vec)
 
     init_vec = np.zeros((matrix_a.shape[0]),)
-    final_time = 20000
+    final_time = 2000
     num_steps = 100000
     times = np.linspace(0, final_time, num_steps)
     runtime, result = sim_odeint_sparse(matrix_a, init_vec, input_vec, final_time, num_steps)
@@ -166,6 +166,6 @@ def heat_2d2():
 
     # plot all points in 3-d
 if __name__ == '__main__':
-    heat_1d()  # benchmark from the book: "Partial differential equations for scientists and engineers", page 39 
+    #heat_1d()  # benchmark from the book: "Partial differential equations for scientists and engineers", page 39 
     #heat_2d1() # benchmark from the same book, page 40.
-    #heat_2d2() # Zhi Han benchmark in his thesis, page 68.
+    heat_2d2() # Zhi Han benchmark in his thesis, page 68.
