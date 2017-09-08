@@ -6,7 +6,7 @@ import numpy as np
 from scipy.io import loadmat
 from scipy.sparse import csr_matrix
 
-from hylaa.hybrid_automaton import LinearHybridAutomaton, add_time_var, add_zero_cols
+from hylaa.hybrid_automaton import LinearHybridAutomaton
 from hylaa.engine import HylaaSettings
 from hylaa.engine import HylaaEngine
 from hylaa.containers import PlotSettings, SimulationSettings
@@ -21,6 +21,10 @@ def define_ha():
     dynamics = loadmat('iss.mat')
     a_matrix = dynamics['A']
     b_matrix = dynamics['B']
+
+    # append b_matrix to a_matrix, by adding a column to A for each input (the extra row is all zeros)
+    print b_matrix.shape
+    exit()
 
     a_matrix, b_matrix = add_time_var(a_matrix, b_matrix)
 
