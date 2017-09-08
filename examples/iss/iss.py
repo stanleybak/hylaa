@@ -4,7 +4,7 @@ International Space Station Example in Hylaa-Continuous
 
 import numpy as np
 from scipy.io import loadmat
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, csc_matrix
 
 from hylaa.hybrid_automaton import LinearHybridAutomaton
 from hylaa.engine import HylaaSettings
@@ -20,10 +20,36 @@ def define_ha():
     mode = ha.new_mode('mode')
     dynamics = loadmat('iss.mat')
     a_matrix = dynamics['A']
+
+    # a is a csc_matrix
+    col_ptr = [n for n in a_matrix.indptr]
+    rows = [n for n in a_matrix.indices]
+    data = [n for n in a_matrix.data]
+
     b_matrix = dynamics['B']
 
+    for u in xrange(3):
+        rows += [n for n in b_matrix[:, u].indices]
+        data += [n for n in b_matrix[:, u].data]
+        col_ptr.append(len(data))
+
+    combined_mat = csc_matrix((data, rows, col_ptr), shape=(a_matrix.shape[0], a_matrix.shape[1] + 3))
+
+    combined_col = np.array(combined_mat[:, -3].todense())
+    b_col = np.array(b_matrix[:, 0].todense())
+
+    for i in xrange(b_col.shape[0]):
+        a = combined_col[i]
+        b = b_col[i]
+
+        tol = 1e-9
+
+        if abs(a - b) > tol:
+            print "mismatch in entry {}, a = {}, b = {}".format(i, a, b)
+
+    print np.allclose(np.array(combined_col), np.array(b_col))
+
     # append b_matrix to a_matrix, by adding a column to A for each input (the extra row is all zeros)
-    print b_matrix.shape
     exit()
 
     a_matrix, b_matrix = add_time_var(a_matrix, b_matrix)
