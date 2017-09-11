@@ -2,6 +2,7 @@
 Time Elapse for the Krylov method using CPU or GPU
 '''
 
+import math
 import time
 import sys
 
@@ -9,6 +10,7 @@ from multiprocessing import Pool
 
 import numpy as np
 from scipy.sparse.linalg import expm
+from scipy.sparse import csr_matrix, csc_matrix
 
 from hylaa.krylov_interface import KrylovInterface
 from hylaa.timerutil import Timers
@@ -55,14 +57,14 @@ def get_krylov_result(arg_tuple):
     Compute the krylov result and return a list of tuples (step, dim, col_vec)
     '''
 
-    step_size, num_steps, dim, h_mat, pv_mat = arg_tuple
+    num_steps, dim, h_mat, pv_mat = arg_tuple
 
     rv = []
 
     h_mat = h_mat[:-1, :].copy()
     pv_mat = pv_mat[:, :-1].copy()
 
-    matrix_exp = expm(h_mat * step_size)
+    matrix_exp = expm(h_mat) # loaded a-mat already takes step-time into account
     cur_col = matrix_exp[:, 0]
     cur_result = np.dot(pv_mat, cur_col)
     rv.append((1, dim, cur_result))
@@ -109,7 +111,7 @@ def init_krylov(time_elapser, arnoldi_iter):
 
     # make sure we can allocated a single initial vector (stride = 1, arnoldi_iter = 2)
     KrylovInterface.preallocate_memory(arnoldi_iter, 1, a_matrix.shape[0], key_dir_mat.shape[0], error_on_fail=True)
-    KrylovInterface.load_a_matrix(a_matrix) # load a_matrix into device memory
+    KrylovInterface.load_a_matrix(a_matrix * settings.step) # load a_matrix into device memory
     KrylovInterface.load_key_dir_matrix(key_dir_mat) # load key direction matrix into device memory
 
     Timers.toc("krylov preallocate and load dynamics")
@@ -122,6 +124,9 @@ def relative_error(correct, estimate):
     rel_error = 0
     norm = np.linalg.norm(correct)
 
+    assert not math.isinf(norm) and not math.isnan(norm), "Simulation resulted in NaN or Inf. This can happen if " + \
+        "the Krylov simulation method is not converging. Try reducing the step size."
+
     if norm > 1e-9:
         diff = correct - estimate
         err = np.linalg.norm(diff)
@@ -129,7 +134,7 @@ def relative_error(correct, estimate):
 
     return rel_error
 
-def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None):
+def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None, debug_a_matrix=None):
     '''
     Get the relative error given the h and pv matrices, for the given number of arnoldi_iterations.
     If arnoldi_iter is None, then use the full passed-in matrices.
@@ -143,11 +148,11 @@ def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None):
     small_h_mat = h_mat[:-1, :-1].copy()
     small_pv_mat = pv_mat[:, :-1].copy()
 
-    matrix_exp = expm(h_mat * settings.step)
+    matrix_exp = expm(h_mat) # step time is already included in loaded a_mat
     cur_col = matrix_exp[:, 0]
 
     # for accuracy check
-    small_matrix_exp = expm(small_h_mat * settings.step)
+    small_matrix_exp = expm(small_h_mat) # step time is already included in loaded a_mat
     small_col = small_matrix_exp[:, 0]
 
     for _ in xrange(2, settings.num_steps + 1):
@@ -163,7 +168,7 @@ def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None):
 
     return rel_error
 
-def get_max_rel_error(settings, dim_list, limit):
+def get_max_rel_error(settings, dim_list, limit, debug_a_matrix=None):
     '''
     Get the maximum relative error of the passed-in number of arnoldi iterations.
 
@@ -242,6 +247,12 @@ def choose_arnoldi_iter(settings, dims, key_dirs, arnoldi_iter):
     sampling of a number of vectors and using cauchy error.
     '''
 
+    if settings.print_output:
+        print "Determining number of arnoldi iterations for desired accuracy...",
+        sys.stdout.flush()
+
+    Timers.tic("choose arnoldi iterations")
+
     error_limit = settings.simulation.krylov_rel_error_expm_h
 
     # sample accuracy in a small number of dimensions
@@ -270,6 +281,11 @@ def choose_arnoldi_iter(settings, dims, key_dirs, arnoldi_iter):
     # find the exact value of iterations that makes this work for all the samples
     arnoldi_iter = find_iter_with_accuracy(settings, h_list, pv_list)
 
+    if settings.print_output:
+        print "\nUsing {} Arnoldi Iterations".format(arnoldi_iter)
+
+    Timers.toc("choose arnoldi iterations")
+
     return arnoldi_iter
 
 def make_cur_time_elapse_mat_list(time_elapser):
@@ -287,18 +303,8 @@ def make_cur_time_elapse_mat_list(time_elapser):
 
     rv = init_krylov(time_elapser, arnoldi_iter)
 
-    if settings.print_output:
-        print "Determining number of arnoldi iterations for desired accuracy...",
-        sys.stdout.flush()
-
-    Timers.tic("choose arnoldi iterations")
     arnoldi_iter = choose_arnoldi_iter(settings, dims, key_dirs, arnoldi_iter)
-    Timers.toc("choose arnoldi iterations")
-
     pool = Pool()
-
-    if settings.print_output:
-        print "\nUsing {} Arnoldi Iterations".format(arnoldi_iter)
 
     # re-allocate with correct number of arnoldi iterations and larger stride
     stride = reallocate_memory(arnoldi_iter, dims, key_dirs, start_stride=settings.simulation.krylov_max_stride)
@@ -341,7 +347,7 @@ def make_cur_time_elapse_mat_list(time_elapser):
 
         # push the computation of the (small) matrix exponential to another thread
         Timers.tic('krylov send expm to another thread')
-        args = [(settings.step, settings.num_steps, start_vec + i, h_list[i], pv_list[i]) for i in xrange(len(pv_list))]
+        args = [(settings.num_steps, start_vec + i, h_list[i], pv_list[i]) for i in xrange(len(pv_list))]
         pool_res = pool.map_async(get_krylov_result, args)
         Timers.toc('krylov send expm to another thread')
 

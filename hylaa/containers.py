@@ -70,7 +70,7 @@ class PlotSettings(Freezable):
     PLOT_MATLAB = 5 # create a matlab script which visualizes the reachable region
 
     def __init__(self):
-        self.plot_mode = PlotSettings.PLOT_FULL
+        self.plot_mode = PlotSettings.PLOT_NONE
 
         self.xdim_dir = 0 # plotting x dimension direction
         self.ydim_dir = 1 # plotting y dimension direction

@@ -242,20 +242,35 @@ class TimeElapser(Freezable):
 
         # answer accuracy check (optional)
         if self.settings.simulation.check_answer:
-            Timers.tic('expm check answer')
-            assert self.a_matrix.shape[0] <= 1000, "settings.simulation.check_answer == True with large matrix"
+            self.check_answer()
 
-            t = self.settings.step * (self.next_step - 1)
-            exp = expm(self.a_matrix_csc * t)
-            expected = np.array((self.key_dir_mat * exp).todense(), dtype=float)
-            diff = np.linalg.norm(expected - self.cur_time_elapse_mat, ord=np.inf)
-            tol = 1e-4
+    def check_answer(self):
+        'check the correctness of the answer versus expm'
 
-            if diff >= tol:
-                if self.a_matrix.shape <= 10:
-                    print "\nself.cur_time_elapse_mat:\n{}\n".format(matrix_to_string(self.cur_time_elapse_mat))
-                    print "expected result:\n{}\n".format(matrix_to_string(expected))
+        Timers.tic('expm check answer')
+        assert self.a_matrix.shape[0] <= 1000, "settings.simulation.check_answer == True with large matrix"
+        tol = 1e-4
 
-                assert diff < tol, "answer was incorrect. L-inf norm of difference was {}".format(diff)
+        t = self.settings.step * (self.next_step - 1)
+        exp = expm(self.a_matrix_csc * t)
+        expected = np.array((self.key_dir_mat * exp).todense(), dtype=float)
 
-            Timers.toc('expm check answer')
+        for dim in xrange(expected.shape[1]):
+            col_expected = expected[:, dim]
+            col_got = self.cur_time_elapse_mat[:, dim]
+
+            same = True
+
+            for a, b in zip(col_expected, col_got):
+                if abs(a - b) > tol:
+                    same = False
+                    break
+
+            if not same:
+                print "Answer was incorrect in column {}".format(dim)
+                print "Expected {}".format(col_expected)
+                print "Got {}".format(col_got)
+
+                assert False, "answer was incorrect"
+
+        Timers.toc('expm check answer')

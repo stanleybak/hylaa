@@ -33,39 +33,30 @@ def define_ha():
         data += [n for n in b_matrix[:, u].data]
         col_ptr.append(len(data))
 
-    combined_mat = csc_matrix((data, rows, col_ptr), shape=(a_matrix.shape[0], a_matrix.shape[1] + 3))
+    combined_mat = csc_matrix((data, rows, col_ptr), shape=(a_matrix.shape[0] + 3, a_matrix.shape[1] + 3))
 
-    combined_col = np.array(combined_mat[:, -3].todense())
-    b_col = np.array(b_matrix[:, 0].todense())
-
-    for i in xrange(b_col.shape[0]):
-        a = combined_col[i]
-        b = b_col[i]
-
-        tol = 1e-9
-
-        if abs(a - b) > tol:
-            print "mismatch in entry {}, a = {}, b = {}".format(i, a, b)
-
-    print np.allclose(np.array(combined_col), np.array(b_col))
-
-    # append b_matrix to a_matrix, by adding a column to A for each input (the extra row is all zeros)
-    exit()
-
-    a_matrix, b_matrix = add_time_var(a_matrix, b_matrix)
-
-    mode.set_dynamics(a_matrix, b_matrix)
+    mode.set_dynamics(csr_matrix(combined_mat))
 
     error = ha.new_mode('error')
 
-    # add two more variables due to the time term
-    guard_matrix = csr_matrix(add_zero_cols(dynamics['C'][2], 2)) # extract y3
+    # need to add three more variables to y3 due to the input terms
+    y3 = dynamics['C'][2]
 
-    #trans1 = ha.new_transition(mode, error)
-    #trans1.set_guard(guard_matrix, np.array([-0.0005], dtype=float)) # y3 <= -0.0005
+    col_ptr = [n for n in y3.indptr]
+    col_ptr.append(y3.data.shape[0])
+    col_ptr.append(y3.data.shape[0])
+    col_ptr.append(y3.data.shape[0])
+
+    y3 = csc_matrix((y3.data, y3.indices, col_ptr), shape=(1, y3.shape[1] + 3))
+    guard_matrix = csr_matrix(y3)
+
+    limit = 0.0005
+    #limit = 0.00017
+    trans1 = ha.new_transition(mode, error)
+    trans1.set_guard(guard_matrix, np.array([-limit], dtype=float)) # y3 <= -0.0005
 
     trans2 = ha.new_transition(mode, error)
-    trans2.set_guard(-guard_matrix, np.array([-0.0005], dtype=float)) # y3 >= 0.0005
+    trans2.set_guard(-guard_matrix, np.array([-limit], dtype=float)) # y3 >= 0.0005
 
     return ha
 
@@ -78,17 +69,19 @@ def make_init_constraints(ha):
 
     constraint_rhs = []
 
-    time_var = ha.dims - 2
-    affine_var = ha.dims - 1
-
     for dim in xrange(ha.dims):
-        if dim < time_var:
+        if dim == 270: # input 1
+            lb = 0
+            ub = 0.1
+        elif dim == 271: # input 2
+            lb = 0.8
+            ub = 1.0
+        elif dim == 272: # input 3
+            lb = 0.9
+            ub = 1.0
+        elif dim < 270:
             lb = -0.0001
             ub = 0.0001
-        elif dim == time_var:
-            lb = ub = 0 # time variable
-        elif dim == affine_var:
-            lb = ub = 1 # affine variable
         else:
             raise RuntimeError('Unknown dimension: {}'.format(dim))
 
@@ -111,78 +104,29 @@ def make_init_constraints(ha):
 
     return (init_mat, init_rhs)
 
-def make_input_constraints(ha):
-    '''return (input_mat, input_rhs)'''
-
-    values = []
-    indices = []
-    indptr = []
-
-    constraint_rhs = []
-
-    for i in xrange(ha.inputs):
-        if i == 0:
-            lb = 0.0
-            ub = 0.1
-        elif i == 1:
-            lb = 0.8
-            ub = 1.0
-        elif i == 2:
-            lb = 0.9
-            ub = 1.0
-        else:
-            raise RuntimeError('Unknown input: {}'.format(i))
-
-        # upper bound
-        values.append(1)
-        indices.append(i)
-        indptr.append(2*i)
-        constraint_rhs.append(ub)
-
-        # lower bound
-        values.append(-1)
-        indices.append(i)
-        indptr.append(2*i+1)
-        constraint_rhs.append(-lb)
-
-    indptr.append(len(values))
-
-    input_mat = csr_matrix((values, indices, indptr), shape=(2*ha.inputs, ha.inputs), dtype=float)
-    input_rhs = np.array(constraint_rhs, dtype=float)
-
-    return (input_mat, input_rhs)
-
 def make_init_star(ha, hylaa_settings):
     '''returns a star'''
 
     init_mat, init_rhs = make_init_constraints(ha)
-    input_mat, input_rhs = make_input_constraints(ha)
 
-    return Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs, input_mat, input_rhs)
+    return Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs)
 
-def define_settings(ha):
+def define_settings(_):
     'get the hylaa settings object'
     plot_settings = PlotSettings()
     plot_settings.plot_mode = PlotSettings.PLOT_NONE
 
-    plot_settings.xdim_dir = (ha.dims - 2)
-    plot_settings.ydim_dir = ha.transitions[0].guard_matrix[0]
+    step_size = 0.01
+    max_time = 1.0
 
-    # save a video file instead
-    # plot_settings.make_video("vid.mp4", frames=220, fps=40)
-
-    plot_settings.num_angles = 3
-    plot_settings.max_shown_polys = 2048
-    plot_settings.label.y_label = '$y_{3}$'
-    plot_settings.label.x_label = 'Time'
-    plot_settings.label.title = ''
-    #plot_settings.label.axes_limits = (0, 1, -0.007, 0.006)
-    plot_settings.plot_size = (12, 10)
-    plot_settings.label.big(size=40)
-
-    settings = HylaaSettings(step=0.005, max_time=20.0, plot_settings=plot_settings)
-    settings.simulation.sim_mode = SimulationSettings.EXP_MULT
+    #max_time = 20.0
+    #step_size = 0.001
+    settings = HylaaSettings(step=step_size, max_time=max_time, plot_settings=plot_settings)
     settings.simulation.guard_mode = SimulationSettings.GUARD_DECOMPOSED
+
+    #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
+    settings.simulation.sim_mode = SimulationSettings.KRYLOV
+    settings.simulation.check_answer = True
 
     return settings
 
