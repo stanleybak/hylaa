@@ -17,7 +17,60 @@ from scipy.sparse.linalg import expm, expm_multiply
 from hylaa.krylov_interface import KrylovInterface
 from hylaa.containers import HylaaSettings
 
-from my_krypy_utils import arnoldi as krypy_arnoldi
+#from my_krypy_utils import arnoldi as krypy_arnoldi
+
+def krypy_arnoldi(A, v, maxiter):
+    'krypy arnoldi'
+
+    numpy = np
+
+    def inner(X, Y, ip_B=None):
+        '''inner product
+        '''
+
+        return numpy.dot(X.T, Y)
+
+    def norm(x, y=None, ip_B=None):
+        '''Compute norm (Euclidean and non-Euclidean).
+        :param x: a 2-dimensional ``numpy.array``.
+        :param y: a 2-dimensional ``numpy.array``.
+        :param ip_B: see :py:meth:`inner`.
+        Compute :math:`\sqrt{\langle x,y\rangle}` where the inner product is
+        defined via ``ip_B``.
+        '''
+
+        return numpy.linalg.norm(x)
+
+
+    V = numpy.zeros((v.shape[0], maxiter+1), dtype=float)
+    H = numpy.zeros((maxiter+1, maxiter), dtype=float)
+
+    V[:, [0]] = v / numpy.linalg.norm(v)
+
+    for k in xrange(maxiter):
+        N = V.shape[0]
+
+        # the matrix-vector multiplication
+        Av = A * V[:, [k]]
+
+        # determine vectors for orthogonalization
+        start = 0
+
+        # orthogonalize
+        for j in range(start, k+1):
+            alpha = inner(V[:, [j]], Av)[0, 0]
+            H[j, k] += alpha
+            Av -= alpha * V[:, [j]]
+
+        norm_val = norm(Av)
+        H[k+1, k] = norm_val
+
+        if norm_val > 1e-9:
+            V[:, [k+1]] = Av / norm_val
+
+
+    return V, H
+
 
 def get_projected_simulation(settings, dim, use_mult=False):
     '''
