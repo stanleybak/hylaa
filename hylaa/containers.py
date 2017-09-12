@@ -56,6 +56,7 @@ class SimulationSettings(Freezable):
         self.krylov_rel_error_samples = 9 # number of samples for checking rel_error
 
         self.check_answer = False # double-check answer using MATRIX_EXP at each step (slow!)
+        self.check_answer_abs_tol = 1e-6 # absolute tolerance when checking answer
 
         self.freeze_attrs()
 

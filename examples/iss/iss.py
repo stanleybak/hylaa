@@ -27,13 +27,15 @@ def define_ha():
     data = [n for n in a_matrix.data]
 
     b_matrix = dynamics['B']
+    num_inputs = b_matrix.shape[1]
 
-    for u in xrange(3):
+    for u in xrange(num_inputs):
         rows += [n for n in b_matrix[:, u].indices]
         data += [n for n in b_matrix[:, u].data]
         col_ptr.append(len(data))
 
-    combined_mat = csc_matrix((data, rows, col_ptr), shape=(a_matrix.shape[0] + 3, a_matrix.shape[1] + 3))
+    combined_mat = csc_matrix((data, rows, col_ptr), \
+        shape=(a_matrix.shape[0] + num_inputs, a_matrix.shape[1] + num_inputs))
 
     mode.set_dynamics(csr_matrix(combined_mat))
 
@@ -42,12 +44,9 @@ def define_ha():
     # need to add three more variables to y3 due to the input terms
     y3 = dynamics['C'][2]
 
-    col_ptr = [n for n in y3.indptr]
-    col_ptr.append(y3.data.shape[0])
-    col_ptr.append(y3.data.shape[0])
-    col_ptr.append(y3.data.shape[0])
+    col_ptr = [n for n in y3.indptr] + num_inputs * [y3.data.shape[0]]
 
-    y3 = csc_matrix((y3.data, y3.indices, col_ptr), shape=(1, y3.shape[1] + 3))
+    y3 = csc_matrix((y3.data, y3.indices, col_ptr), shape=(1, y3.shape[1] + num_inputs))
     guard_matrix = csr_matrix(y3)
 
     #limit = 0.0005

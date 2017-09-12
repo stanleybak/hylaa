@@ -275,6 +275,9 @@ def choose_arnoldi_iter(settings, dims, key_dirs, arnoldi_iter):
 
     dim_list = [int(d) for d in np.linspace(0, dims-1, num=samples)]
 
+    # optimization: evaluate the last dimension first (since it's often the highest error one)
+    dim_list = [dim_list[-1]] + dim_list[0:-1]
+
     if settings.print_output:
         print "{}".format(arnoldi_iter),
         sys.stdout.flush()

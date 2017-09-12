@@ -249,7 +249,7 @@ class TimeElapser(Freezable):
 
         Timers.tic('expm check answer')
         assert self.a_matrix.shape[0] <= 1000, "settings.simulation.check_answer == True with large matrix"
-        tol = 1e-4
+        tol = self.settings.simulation.check_answer_abs_tol
 
         t = self.settings.step * (self.next_step - 1)
         exp = expm(self.a_matrix_csc * t)

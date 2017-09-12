@@ -4,9 +4,9 @@ MNA5 Example in Hylaa-Continuous
 
 import numpy as np
 from scipy.io import loadmat
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, csc_matrix
 
-from hylaa.hybrid_automaton import LinearHybridAutomaton, add_time_var
+from hylaa.hybrid_automaton import LinearHybridAutomaton
 from hylaa.engine import HylaaSettings
 from hylaa.engine import HylaaEngine
 from hylaa.containers import PlotSettings, SimulationSettings
@@ -21,22 +21,31 @@ def define_ha():
     dynamics = loadmat('MNA_5.mat')
 
     a_matrix = dynamics['A']
+    col_ptr = [n for n in a_matrix.indptr]
+    rows = [n for n in a_matrix.indices]
+    data = [n for n in a_matrix.data]
+
     b_matrix = dynamics['B']
 
-    print b_matrix.shape
-    exit()
+    num_inputs = b_matrix.shape[1]
 
-    a_matrix, b_matrix = add_time_var(a_matrix, b_matrix)
-    mode.set_dynamics(a_matrix, b_matrix)
+    for u in xrange(num_inputs):
+        rows += [n for n in b_matrix[:, u].indices]
+        data += [n for n in b_matrix[:, u].data]
+        col_ptr.append(len(data))
+
+    combined_mat = csc_matrix((data, rows, col_ptr), \
+    shape=(a_matrix.shape[0] + num_inputs, a_matrix.shape[1] + num_inputs))
+
+    mode.set_dynamics(csr_matrix(combined_mat))
 
     error = ha.new_mode('error')
-
-    dims = a_matrix.shape[0]
+    dims = combined_mat.shape[0]
 
     # x1 >= 0.2
     mat = csr_matrix(([-1], [0], [0, 1]), dtype=float, shape=(1, dims))
-    rhs = np.array([-0.2], dtype=float) # safe
-    #rhs = np.array([-0.1], dtype=float) # unsafe
+    #rhs = np.array([-0.2], dtype=float) # safe
+    rhs = np.array([-0.1], dtype=float) # unsafe
     trans1 = ha.new_transition(mode, error)
     trans1.set_guard(mat, rhs)
 
@@ -57,20 +66,22 @@ def make_init_constraints(ha):
     constraint_rhs = []
 
     n = ha.dims
-
-    time_var = n - 2
-    affine_var = n - 1
+    input_start_dim = 10913
 
     for dim in xrange(n):
         if dim < 10:
             lb = 0.0002
             ub = 0.00025
-        elif dim < time_var:
+        elif dim < input_start_dim:
             lb = ub = 0
-        elif dim == time_var:
-            lb = ub = 0 # time variable
-        elif dim == affine_var:
-            lb = ub = 1 # affine variable
+        elif dim >= input_start_dim and dim < input_start_dim + 5:
+            # first 5 inputs
+            lb = ub = 0.1
+        elif dim >= input_start_dim + 5 and dim < input_start_dim + 9:
+            # second 4 inputs
+            lb = ub = 0.2
+        else:
+            raise RuntimeError('Unknown dimension: {}'.format(dim))
 
         # upper bound
         values.append(1)
@@ -91,72 +102,20 @@ def make_init_constraints(ha):
 
     return (init_mat, init_rhs)
 
-def make_input_constraints(ha):
-    '''return (input_mat, input_rhs)'''
-
-    values = []
-    indices = []
-    indptr = []
-
-    constraint_rhs = []
-
-    for i in xrange(ha.inputs):
-        if i < 5:
-            ub = lb = 0.1
-        elif i < 9:
-            ub = lb = 0.2
-        else:
-            raise RuntimeError('Unknown input: {}'.format(i))
-
-        # upper bound
-        values.append(1)
-        indices.append(i)
-        indptr.append(2*i)
-        constraint_rhs.append(ub)
-
-        # lower bound
-        values.append(-1)
-        indices.append(i)
-        indptr.append(2*i+1)
-        constraint_rhs.append(-lb)
-
-    indptr.append(len(values))
-
-    input_mat = csr_matrix((values, indices, indptr), shape=(2*ha.inputs, ha.inputs), dtype=float)
-    input_rhs = np.array(constraint_rhs, dtype=float)
-
-    return (input_mat, input_rhs)
-
 def make_init_star(ha, hylaa_settings):
     '''returns a star'''
 
     init_mat, init_rhs = make_init_constraints(ha)
-    input_mat, input_rhs = make_input_constraints(ha)
 
-    return Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs, input_mat, input_rhs)
+    return Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs)
 
 def define_settings(ha):
     'get the hylaa settings object'
     plot_settings = PlotSettings()
     plot_settings.plot_mode = PlotSettings.PLOT_NONE
 
-    plot_settings.xdim_dir = (ha.dims - 2)
-    plot_settings.ydim_dir = ha.transitions[0].guard_matrix[0]
-
-    # save a video file instead
-    # plot_settings.make_video("vid.mp4", frames=220, fps=40)
-
-    plot_settings.num_angles = 3
-    plot_settings.max_shown_polys = 2048
-    plot_settings.label.y_label = '$y_{1}$'
-    plot_settings.label.x_label = 'Time'
-    plot_settings.label.title = ''
-    #plot_settings.label.axes_limits = (0, 1, -0.007, 0.006)
-    plot_settings.plot_size = (12, 10)
-    plot_settings.label.big(size=40)
-
-    settings = HylaaSettings(step=0.1, max_time=1.0, plot_settings=plot_settings)
-    settings.simulation.sim_mode = SimulationSettings.EXP_MULT
+    settings = HylaaSettings(step=0.1, max_time=2.5, plot_settings=plot_settings)
+    settings.simulation.sim_mode = SimulationSettings.KRYLOV
 
     return settings
 
