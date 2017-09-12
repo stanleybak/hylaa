@@ -50,8 +50,8 @@ def define_ha():
     y3 = csc_matrix((y3.data, y3.indices, col_ptr), shape=(1, y3.shape[1] + 3))
     guard_matrix = csr_matrix(y3)
 
-    limit = 0.0005
-    #limit = 0.00017
+    #limit = 0.0005
+    limit = 0.00017
     trans1 = ha.new_transition(mode, error)
     trans1.set_guard(guard_matrix, np.array([-limit], dtype=float)) # y3 <= -0.0005
 
@@ -116,11 +116,8 @@ def define_settings(_):
     plot_settings = PlotSettings()
     plot_settings.plot_mode = PlotSettings.PLOT_NONE
 
-    step_size = 0.01
-    max_time = 1.0
-
-    #max_time = 20.0
-    #step_size = 0.001
+    max_time = 20.0
+    step_size = 0.001
     settings = HylaaSettings(step=step_size, max_time=max_time, plot_settings=plot_settings)
     settings.simulation.guard_mode = SimulationSettings.GUARD_DECOMPOSED
 
