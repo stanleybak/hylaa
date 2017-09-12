@@ -17,61 +17,6 @@ from scipy.sparse.linalg import expm, expm_multiply
 from hylaa.krylov_interface import KrylovInterface
 from hylaa.containers import HylaaSettings
 
-#from my_krypy_utils import arnoldi as krypy_arnoldi
-
-def krypy_arnoldi(A, v, maxiter):
-    'krypy arnoldi'
-
-    numpy = np
-
-    def inner(X, Y, ip_B=None):
-        '''inner product
-        '''
-
-        return numpy.dot(X.T, Y)
-
-    def norm(x, y=None, ip_B=None):
-        '''Compute norm (Euclidean and non-Euclidean).
-        :param x: a 2-dimensional ``numpy.array``.
-        :param y: a 2-dimensional ``numpy.array``.
-        :param ip_B: see :py:meth:`inner`.
-        Compute :math:`\sqrt{\langle x,y\rangle}` where the inner product is
-        defined via ``ip_B``.
-        '''
-
-        return numpy.linalg.norm(x)
-
-
-    V = numpy.zeros((v.shape[0], maxiter+1), dtype=float)
-    H = numpy.zeros((maxiter+1, maxiter), dtype=float)
-
-    V[:, [0]] = v / numpy.linalg.norm(v)
-
-    for k in xrange(maxiter):
-        N = V.shape[0]
-
-        # the matrix-vector multiplication
-        Av = A * V[:, [k]]
-
-        # determine vectors for orthogonalization
-        start = 0
-
-        # orthogonalize
-        for j in range(start, k+1):
-            alpha = inner(V[:, [j]], Av)[0, 0]
-            H[j, k] += alpha
-            Av -= alpha * V[:, [j]]
-
-        norm_val = norm(Av)
-        H[k+1, k] = norm_val
-
-        if norm_val > 1e-9:
-            V[:, [k+1]] = Av / norm_val
-
-
-    return V, H
-
-
 def get_projected_simulation(settings, dim, use_mult=False):
     '''
     Get the projected simulation using the current settings.
@@ -178,7 +123,7 @@ def random_sparse_matrix(dims, entries_per_row, random_cols=True, print_progress
 
     return rv
 
-def arnoldi(mat, vec, iterations):
+def python_arnoldi(mat, vec, iterations):
     'arnoldi for a single initial vector'
 
     dims = mat.shape[0]
@@ -214,33 +159,31 @@ def arnoldi_parallel(mat_transpose, vecs, iterations):
     for cur_it in xrange(1, iterations + 1):
 
         # do all the multiplications up front
-        for cur_vec in xrange(num_init):
+        for init_index in xrange(num_init):
             #vec = np.dot(prev_v[cur_vec, (cur_it-1)*size:cur_it*size], a_transpose)
 
-            vec = prev_v[cur_vec, (cur_it-1)*size:cur_it*size] * mat_transpose
+            vec = prev_v[init_index, (cur_it-1)*size:cur_it*size] * mat_transpose
 
-            prev_v[cur_vec, cur_it*size:(cur_it+1)*size] = vec
+            prev_v[init_index, cur_it*size:(cur_it+1)*size] = vec
 
-        for cur_vec in xrange(num_init):
-            vec = prev_v[cur_vec, cur_it*size:(cur_it+1)*size]
-
-            prev_mat = prev_v[cur_vec, 0:cur_it*size]
-            prev_mat.shape = (cur_it, size)
-
-            dots = h_mat[cur_vec][(iterations + 1) * (cur_it-1):(iterations + 1) * (cur_it-1) + cur_it]
-            dots[:] = np.dot(prev_mat, vec.T)
-
-            sub_vecs = np.dot(np.diag(dots), prev_mat)
+        for init_index in xrange(num_init):
+            cur_vec = prev_v[init_index, cur_it*size:(cur_it+1)*size]
 
             for c in xrange(cur_it):
-                vec -= sub_vecs[c]
+                prev_vec = prev_v[init_index, c*size:(c+1)*size]
 
-            norm = np.linalg.norm(vec)
-            h_mat[cur_vec][cur_it + (iterations+1) * (cur_it-1)] = norm
+                dot_val = np.dot(prev_vec, cur_vec)
+                h_mat[init_index][(iterations + 1) * (cur_it-1) + c] = dot_val
+
+                sub_vec = prev_v[init_index, c*size:(c+1)*size]
+                cur_vec -= sub_vec * dot_val
+
+            norm = np.linalg.norm(cur_vec)
+            h_mat[init_index][cur_it + (iterations+1) * (cur_it-1)] = norm
 
             if norm >= 1e-6:
-                vec = vec / norm
-                prev_v[cur_vec, cur_it*size:(cur_it+1)*size] = vec
+                cur_vec = cur_vec / norm
+                prev_v[init_index, cur_it*size:(cur_it+1)*size] = cur_vec
 
     return prev_v, h_mat
 
@@ -270,7 +213,7 @@ class TestKrylovInterface(unittest.TestCase):
 
         # using python
         init_vec = np.array([[1.0] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
-        v_mat_testing, h_mat_testing = arnoldi(a_matrix, init_vec, iterations)
+        v_mat_testing, h_mat_testing = python_arnoldi(a_matrix, init_vec, iterations)
 
         projected_v_mat_testing = key_dir_mat * v_mat_testing
 
@@ -302,7 +245,7 @@ class TestKrylovInterface(unittest.TestCase):
 
         # using python
         init_vec = np.array([[1.0] if d == 1 else [0.0] for d in xrange(dims)], dtype=float)
-        v_mat_testing, h_mat_testing = arnoldi(a_matrix, init_vec, iterations)
+        v_mat_testing, h_mat_testing = python_arnoldi(a_matrix, init_vec, iterations)
 
         projected_v_mat_testing = key_dir_mat * v_mat_testing
 
@@ -334,7 +277,7 @@ class TestKrylovInterface(unittest.TestCase):
         # using python
         init_vec4 = np.array([[1.0] if d == 4 else [0.0] for d in xrange(dims)], dtype=float)
 
-        v_mat_testing4, h_mat_testing4 = arnoldi(a_matrix, init_vec4, iterations)
+        v_mat_testing4, h_mat_testing4 = python_arnoldi(a_matrix, init_vec4, iterations)
         projected_v_mat_testing4 = key_dir_mat * v_mat_testing4
 
         # using cusp
@@ -368,10 +311,10 @@ class TestKrylovInterface(unittest.TestCase):
         init_vec1 = np.array([[1.0] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
         init_vec2 = np.array([[1.0] if d == 1 else [0.0] for d in xrange(dims)], dtype=float)
 
-        v_mat_testing1, h_mat_testing1 = arnoldi(a_matrix, init_vec1, iterations)
+        v_mat_testing1, h_mat_testing1 = python_arnoldi(a_matrix, init_vec1, iterations)
         projected_v_mat_testing1 = key_dir_mat * v_mat_testing1
 
-        v_mat_testing2, h_mat_testing2 = arnoldi(a_matrix, init_vec2, iterations)
+        v_mat_testing2, h_mat_testing2 = python_arnoldi(a_matrix, init_vec2, iterations)
         projected_v_mat_testing2 = key_dir_mat * v_mat_testing2
 
         # using cusp
@@ -406,10 +349,10 @@ class TestKrylovInterface(unittest.TestCase):
             init_vec1 = np.array([[1.0] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
             init_vec2 = np.array([[1.0] if d == 1 else [0.0] for d in xrange(dims)], dtype=float)
 
-            v_mat_testing1, h_mat_testing1 = arnoldi(a_matrix, init_vec1, iterations)
+            v_mat_testing1, h_mat_testing1 = python_arnoldi(a_matrix, init_vec1, iterations)
             projected_v_mat_testing1 = key_dir_mat * v_mat_testing1
 
-            v_mat_testing2, h_mat_testing2 = arnoldi(a_matrix, init_vec2, iterations)
+            v_mat_testing2, h_mat_testing2 = python_arnoldi(a_matrix, init_vec2, iterations)
             projected_v_mat_testing2 = key_dir_mat * v_mat_testing2
 
             # using cusp
@@ -450,13 +393,13 @@ class TestKrylovInterface(unittest.TestCase):
         init_vec2 = np.array([[1.0] if d == 101 else [0.0] for d in xrange(dims)], dtype=float)
         init_vec3 = np.array([[1.0] if d == 102 else [0.0] for d in xrange(dims)], dtype=float)
 
-        v_mat_testing1, h_mat_testing1 = arnoldi(a_matrix, init_vec1, iterations)
+        v_mat_testing1, h_mat_testing1 = python_arnoldi(a_matrix, init_vec1, iterations)
         projected_v_mat_testing1 = key_dir_mat * v_mat_testing1
 
-        v_mat_testing2, h_mat_testing2 = arnoldi(a_matrix, init_vec2, iterations)
+        v_mat_testing2, h_mat_testing2 = python_arnoldi(a_matrix, init_vec2, iterations)
         projected_v_mat_testing2 = key_dir_mat * v_mat_testing2
 
-        v_mat_testing3, h_mat_testing3 = arnoldi(a_matrix, init_vec3, iterations)
+        v_mat_testing3, h_mat_testing3 = python_arnoldi(a_matrix, init_vec3, iterations)
         projected_v_mat_testing3 = key_dir_mat * v_mat_testing3
 
         # using cusp
@@ -673,17 +616,15 @@ class TestKrylovInterface(unittest.TestCase):
     def test_iss_inputs(self):
         'test with iss example with forcing inputs'
 
-        compare_time = 1.0
-
         dims = 273
-        iterations = 96 ####### 96 works okay!
+        iterations = 90
         initial_vec_index = dims-1
         init_vec = np.array([[1.0] if d == initial_vec_index else [0.0] for d in xrange(dims)], dtype=float)
 
         dynamics = loadmat('iss.mat')
         raw_a_matrix = dynamics['A']
 
-        raw_a_matrix = compare_time * raw_a_matrix
+        raw_a_matrix = raw_a_matrix
 
         # raw_a_matrix is a csc_matrix
         col_ptr = [n for n in raw_a_matrix.indptr]
@@ -701,86 +642,39 @@ class TestKrylovInterface(unittest.TestCase):
         a_matrix = csr_matrix(a_matrix_csc)
         self.assertEqual(dims, a_matrix.shape[0])
 
-        print "a_mat norm = {}".format(np.linalg.norm(a_matrix.todense()))
-
         ############
 
-        #key_dir_mat = csr_matrix(np.identity(dims, dtype=float))
-        #dir1 = np.array([1.0 if d == 0 else 0.0 for d in xrange(dims)], dtype=float)
-        #key_dir_mat = csr_matrix([dir1])
-        key_dir_mat = csr_matrix(np.identity(dims))
+        key_dir_mat = csr_matrix(np.identity(dims, dtype=float))
+        # key dir is identity (no projection needed)
 
-        v_mat_testing, h_mat_testing = arnoldi(a_matrix, init_vec, iterations)
-        projected_v_mat_testing = key_dir_mat * v_mat_testing
+        # real answer
+        real_answer = expm_multiply(a_matrix_csc, init_vec)
+        real_answer.shape = (dims,)
 
-        # using krypy
-        k_v, k_h = krypy_arnoldi(a_matrix, init_vec, maxiter=iterations)
+        # python comparison
+        python_v, python_h = python_arnoldi(a_matrix, init_vec, iterations)
+        h_mat = python_h[:-1, :].copy()
+        v_mat = python_v[:, :-1].copy()
+        exp = expm(h_mat)[:, 0]
+        python_answer = np.dot(v_mat, exp)
 
-        # using cusp
+        for d in xrange(dims):
+            self.assertLess(abs(real_answer[d] - python_answer[d]), 1e-4, \
+                "Mismatch in dimension {}, {} (real) vs {} (python)".format(d, real_answer[d], python_answer[d]))
+
+        # cusp comparison
         KrylovInterface.preallocate_memory(iterations, 1, dims, key_dir_mat.shape[0])
         KrylovInterface.load_a_matrix(a_matrix)
         KrylovInterface.load_key_dir_matrix(key_dir_mat)
-
-        result_h, result_pv = KrylovInterface.arnoldi_parallel(initial_vec_index)
-
-        #self.compare_matrices("h-matrix", "krypy", k_h, "cusp", result_h[0])
-        #print result_h - h_mat_testing
-
-        # check vs real answer with total_time = 1.0
-        real_answer = expm_multiply(a_matrix_csc * (1.0 / compare_time), init_vec)
-        real_proj = np.dot(np.array(key_dir_mat.todense()), real_answer)
-        real_proj.shape = (dims,)
-
-
-        #h_mat = result_h[0][:-1, :].copy()
-        #pv_mat = result_pv[0][:, :-1].copy()
-
-        # here, substituted for krypy result
-
-        if k_h.shape[0] == k_h.shape[1]:
-            h_mat = k_h
-            pv_mat = k_v
-        else:
-            h_mat = k_h[:-1, :].copy()
-            pv_mat = k_v[:, :-1].copy()
-
-        h_mat = h_mat * (1.0 / compare_time)
-        #h_mat = h_mat * (1.0 / compare_time)
-        print "h_mat shape = {}".format(h_mat.shape)
+        result_h, _ = KrylovInterface.arnoldi_parallel(initial_vec_index)
+        h_mat = result_h[0][:-1, :].copy()
 
         exp = expm(h_mat)[:, 0]
-        print "h_mat exp = {}".format(exp)
-
-        krylov_proj = np.dot(pv_mat, exp)
+        cusp_answer = np.dot(v_mat, exp)
 
         for d in xrange(dims):
-            self.assertLess(abs(real_proj[d] - krylov_proj[d]), 1e-4, \
-                "Mismatch in dimension {}, {} (real) vs {} (krylov)".format(d, real_proj[d], krylov_proj[d]))
-
-    def compare_matrices(self, compare_name, mat1_name, mat1, mat2_name, mat2, tol=1e-6):
-        'compare two matrices with labels, printing errors if found'
-
-        max_dif = 0
-        max_x = -1
-        max_y = -1
-
-        self.assertEqual(mat1.shape[0], mat2.shape[0], "matrix number of rows mismatch {} ({}) vs {} ({})".format(
-            mat1.shape[0], mat1_name, mat2.shape[0], mat2_name))
-
-        self.assertEqual(mat1.shape[1], mat2.shape[1], "matrix number of rows mismatch {} ({}) vs {} ({})".format(
-            mat1.shape[1], mat1_name, mat2.shape[1], mat2_name))
-
-        for y in xrange(mat1.shape[0]):
-            for x in xrange(mat1.shape[1]):
-                dif = abs(mat1[y, x] - mat2[y, x])
-
-                if dif > max_dif:
-                    max_dif = dif
-                    max_x = x
-                    max_y = y
-
-        self.assertLess(max_dif, tol, "{} mismatch in index ({}, {}), dif = {}, {} ({}) vs {} ({})".format(\
-            compare_name, max_y, max_x, max_dif, mat1[max_y, max_x], mat1_name, mat2[max_y, max_x], mat2_name))
+            self.assertLess(abs(real_answer[d] - cusp_answer[d]), 1e-4, \
+                "Mismatch in dimension {}, {} (real) vs {} (cusp)".format(d, real_answer[d], cusp_answer[d]))
 
 if __name__ == '__main__':
     unittest.main()
