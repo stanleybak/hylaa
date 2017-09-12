@@ -353,14 +353,16 @@ def make_cur_time_elapse_mat_list(time_elapser):
     dims = time_elapser.a_matrix.shape[0]
     key_dirs = time_elapser.key_dir_mat.shape[0]
 
+    if settings.simulation.pipeline_arnoldi_expm:
+        pool = Pool()
+
     arnoldi_iter = min(2, dims)
 
     rv = init_krylov(time_elapser, arnoldi_iter)
 
-    arnoldi_iter = choose_arnoldi_iter(settings, dims, key_dirs, arnoldi_iter)
-
-    if settings.simulation.pipeline_arnoldi_expm:
-        pool = Pool()
+    #arnoldi_iter = choose_arnoldi_iter(settings, dims, key_dirs, arnoldi_iter)
+    print "debug fixed arnoldi_iter=37"
+    arnoldi_iter = 37
 
     # re-allocate with correct number of arnoldi iterations and larger stride
     stride = reallocate_memory(arnoldi_iter, dims, key_dirs, start_stride=settings.simulation.krylov_max_stride)
@@ -370,6 +372,13 @@ def make_cur_time_elapse_mat_list(time_elapser):
     pool_res = None
 
     for start_vec in xrange(0, dims, stride):
+
+        print "start_vec = {}".format(start_vec)
+
+        if start_vec == 64:
+            print "debug break at 64"
+            break
+
         if settings.print_output:
             now = time.time()
 
@@ -430,15 +439,17 @@ def make_cur_time_elapse_mat_list(time_elapser):
                 rv[step][:, dim] = col_vec
 
         Timers.toc('krylov update result list')
+        pool.close()
+        pool.join()
 
     if settings.simulation.krylov_profiling:
         KrylovInterface.print_profiling_data()
 
-    pool.close()
-    pool.join()
-
     if settings.print_output:
         elapsed = format_secs(time.time() - start)
         print "Krylov Computation Total Time: {}\n".format(elapsed)
+
+    print "debug exit"
+    exit(1)
 
     return rv

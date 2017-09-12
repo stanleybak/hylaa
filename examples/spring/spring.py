@@ -26,13 +26,14 @@ def define_ha():
     mode = ha.new_mode('mode')
 
     # each mass will add 2 dimensions to the system
-    num_masses = 5
+    #num_masses = 5
     #num_masses = 100
     #num_masses = 500 # 1 thousand dims
     #num_masses =  2500 # 5 thousand dims
     #num_masses = 5000 # 10 thousand dims -> 800 MB
     #num_masses = 50000 # 100 thousand dims -> memory error (80 GB mem needed)
-    #num_masses = 500000 # one million dims (8 TB mem needed)
+    num_masses = 500000 # one million dims (8 TB mem needed)
+    #num_masses = 5000000 # ten million dims (800 TB mem needed)
     a_matrix = make_a_matrix(num_masses)
     mode.set_dynamics(csr_matrix(a_matrix))
 
@@ -147,13 +148,14 @@ def define_settings(_):
     settings = HylaaSettings(step=0.01, max_time=10.0, plot_settings=plot_settings)
 
     settings.simulation.sim_mode = SimulationSettings.KRYLOV
-    settings.simulation.krylov_use_gpu = False
-    #settings.simulation.krylov_profiling = True
-    #settings.simulation.krylov_max_stride = 8
+    settings.simulation.krylov_use_gpu = True
+    settings.simulation.krylov_profiling = True
+    settings.simulation.krylov_max_stride = 1
     #settings.simulation.check_answer = True
 
     #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
 
+    #settings.simulation.pipeline_arnoldi_expm = False
     settings.simulation.seperate_constant_vars = False
     settings.simulation.guard_mode = SimulationSettings.GUARD_DECOMPOSED
 
@@ -162,12 +164,16 @@ def define_settings(_):
 def run_hylaa():
     'Runs hylaa with the given settings, returning the HylaaResult object.'
 
+    print "Creating automaton..."
     ha = define_ha()
     settings = define_settings(ha)
 
+    print "Defining initial states..."
     init = make_init_star(ha, settings)
 
     engine = HylaaEngine(ha, settings)
+
+    print "Starting computation..."
     engine.run(init)
 
     return engine.result
