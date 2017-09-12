@@ -532,28 +532,25 @@ class CuspData
 
                 Array1dView curVec = vMatrix->subarray(pageOffset + rowOffset, _n);
 
-                util.tic("dot");
+                // combined dot/axpy to have modified gram-schmidt orthogonalization (more stable)
                 for (unsigned long row = 0; row < it; ++row)
                 {
                     Array1dView curRow = vMatrix->subarray(pageOffset + row * _n, _n);
-                    dot_product(cublasHandle, _n, curVec, curRow, resultView, row);
-                }
-                util.toc("dot", 2 * _n * it);
 
-                util.tic("axpy");
-                for (unsigned long row = 0; row < it; ++row)
-                {
-                    pageOffset = curInitVec * _n * (iterations + 1);
+                    util.tic("dot");
+                    dot_product(cublasHandle, _n, curVec, curRow, resultView, row);
+                    util.toc("dot", 2 * _n);
+
                     rowOffset = _n * row;
                     Array1dView prevVec = vMatrix->subarray(pageOffset + rowOffset, _n);
 
-                    // now scale each vec by computed dot prod and subtract
+                    util.tic("axpy");
                     do_axpy(cublasHandle, cuspNumsView, prevVec, curVec, resultView, row);
+                    util.toc("axpy", 2 * _n);
                 }
-                util.toc("axpy", 2 * _n * it);
             }
 
-            util.toc("dots & axpy");
+            util.toc("dots & axpy", 2 * _n * it * numInitVecs);
 
             util.tic("magnitude and scale");
             for (unsigned long curInitVec = 0; curInitVec < numInitVecs; ++curInitVec)
