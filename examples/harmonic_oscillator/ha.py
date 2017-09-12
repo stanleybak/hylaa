@@ -6,7 +6,7 @@ import math
 import numpy as np
 from scipy.sparse import csr_matrix
 
-from hylaa.hybrid_automaton import LinearHybridAutomaton
+from hylaa.hybrid_automaton import LinearHybridAutomaton, make_constraint_matrix, make_seperated_constraints
 from hylaa.engine import HylaaSettings
 from hylaa.engine import HylaaEngine
 from hylaa.containers import PlotSettings, SimulationSettings
@@ -20,118 +20,40 @@ def define_ha():
     a_matrix = np.array([[0, 1], [-1, 0]], dtype=float)
     a_matrix = csr_matrix(a_matrix, dtype=float)
 
-    #b_matrix = np.array([[1, 0], [0, 1]], dtype=float)
-    #b_matrix = csc_matrix(b_matrix, dtype=float)
-
-    #a_matrix, b_matrix = add_time_var(a_matrix, b_matrix)
-
     mode = ha.new_mode('mode')
 
-    #mode.set_dynamics(a_matrix, b_matrix)
     mode.set_dynamics(a_matrix)
 
-    # error if x >= 7.5
-    #error = ha.new_mode('error')
-    #trans = ha.new_transition(mode, error)
-    #guard_matrix = np.array([-1, 0, 0, 0], dtype=float)
-    #trans.set_guard(csr_matrix(guard_matrix, dtype=float), np.array([-7.5], dtype=float))
-
     return ha
-
-def make_init_constraints(ha):
-    '''return (init_mat, init_rhs)'''
-
-    values = []
-    indices = []
-    indptr = []
-
-    constraint_rhs = []
-
-    #affine_var = ha.dims - 1
-    affine_var = 3
-    time_var = affine_var - 1
-
-    for dim in xrange(ha.dims):
-        if dim == 0:
-            lb = -6
-            ub = -5
-        elif dim == 1:
-            lb = 0
-            ub = 1
-        elif dim < time_var:
-            lb = ub = 0
-        elif dim == time_var:
-            lb = ub = 0 # time variable
-        elif dim == affine_var:
-            lb = ub = 1 # affine variable
-        else:
-            raise RuntimeError('Unknown dimension: {}'.format(dim))
-
-        # upper bound
-        values.append(1)
-        indices.append(dim)
-        indptr.append(2*dim)
-        constraint_rhs.append(ub)
-
-        # lower bound
-        values.append(-1)
-        indices.append(dim)
-        indptr.append(2*dim+1)
-        constraint_rhs.append(-lb)
-
-    indptr.append(len(values))
-
-    init_mat = csr_matrix((values, indices, indptr), shape=(2*ha.dims, ha.dims), dtype=float)
-    init_rhs = np.array(constraint_rhs, dtype=float)
-
-    return (init_mat, init_rhs)
-
-def make_input_constraints(ha):
-    '''return (input_mat, input_rhs)'''
-
-    values = []
-    indices = []
-    indptr = []
-
-    constraint_rhs = []
-
-    for i in xrange(ha.inputs):
-        if i == 0:
-            lb = -0.5
-            ub = 0.5
-        elif i == 1:
-            lb = -0.5
-            ub = 0.5
-        else:
-            raise RuntimeError('Unknown input: {}'.format(i))
-
-        # upper bound
-        values.append(1)
-        indices.append(i)
-        indptr.append(2*i)
-        constraint_rhs.append(ub)
-
-        # lower bound
-        values.append(-1)
-        indices.append(i)
-        indptr.append(2*i+1)
-        constraint_rhs.append(-lb)
-
-    indptr.append(len(values))
-
-    input_mat = csr_matrix((values, indices, indptr), shape=(2*ha.inputs, ha.inputs), dtype=float)
-    input_rhs = np.array(constraint_rhs, dtype=float)
-
-    return (input_mat, input_rhs)
 
 def make_init_star(ha, hylaa_settings):
     '''returns a star'''
 
-    init_mat, init_rhs = make_init_constraints(ha)
-    #input_mat, input_rhs = make_input_constraints(ha)
+    rv = None
+    bounds_list = [] # bounds on each dimension
 
-    #return Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs, input_mat, input_rhs)
-    return Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs)
+    for dim in xrange(ha.dims):
+        if dim == 0:
+            lb = -5
+            ub = -5
+        elif dim == 1:
+            lb = 0
+            ub = 1
+        else:
+            raise RuntimeError('Unknown dimension: {}'.format(dim))
+
+        bounds_list.append((lb, ub))
+
+    if not hylaa_settings.simulation.seperate_constant_vars:
+        init_mat, init_rhs = make_constraint_matrix(bounds_list)
+        rv = Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs)
+    else:
+        init_mat, init_rhs, variable_dim_list, fixed_dim_tuples = make_seperated_constraints(bounds_list)
+
+        rv = Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs, \
+                  var_list=variable_dim_list, fixed_tuples=fixed_dim_tuples)
+
+    return rv
 
 def define_settings():
     'get the hylaa settings object'
@@ -156,7 +78,9 @@ def define_settings():
     #settings.simulation.sim_mode = SimulationSettings.MATRIX_EXP
 
     settings.simulation.sim_mode = SimulationSettings.KRYLOV
-    settings.simulation.check_answer = True
+    settings.simulation.pipeline_arnoldi_expm = False
+
+    settings.simulation.check_answer = True    
 
     return settings
 

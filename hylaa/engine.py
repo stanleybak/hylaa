@@ -116,7 +116,11 @@ class HylaaEngine(object):
 
     def run(self, init_star):
         '''
-        run the computation
+        Run the computation (main entry point)
+
+        init_star is the initial state
+
+        fixed_dim_list, if used, is a list of dimensions with fixed initial values
         '''
 
         assert isinstance(init_star, Star), "initial states should be a Star object"

@@ -26,9 +26,9 @@ def define_ha():
     mode = ha.new_mode('mode')
 
     # each mass will add 2 dimensions to the system
-    #num_masses = 5
+    num_masses = 5
     #num_masses = 100
-    num_masses = 500 # 1 thousand dims
+    #num_masses = 500 # 1 thousand dims
     #num_masses =  2500 # 5 thousand dims
     #num_masses = 5000 # 10 thousand dims -> 800 MB
     #num_masses = 50000 # 100 thousand dims -> memory error (80 GB mem needed)
@@ -154,6 +154,7 @@ def define_settings(_):
 
     #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
 
+    settings.simulation.seperate_constant_vars = False
     settings.simulation.guard_mode = SimulationSettings.GUARD_DECOMPOSED
 
     return settings

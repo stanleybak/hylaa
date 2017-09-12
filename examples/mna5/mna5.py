@@ -58,12 +58,13 @@ def define_ha():
     return ha
 
 def make_init_constraints(ha):
-    '''returns a Star'''
+    '''returns a tuple: (Star, fixed_dim_tuple_list)'''
 
     values = []
     indices = []
     indptr = []
     constraint_rhs = []
+    fixed_dim_tuples = []
 
     n = ha.dims
     input_start_dim = 10913
@@ -83,31 +84,34 @@ def make_init_constraints(ha):
         else:
             raise RuntimeError('Unknown dimension: {}'.format(dim))
 
-        # upper bound
-        values.append(1)
-        indices.append(dim)
-        indptr.append(2*dim)
-        constraint_rhs.append(ub)
+        if lb == ub:
+            fixed_dim_tuples.append((dim, lb))
+        else:
+            # upper bound
+            values.append(1)
+            indices.append(dim)
+            indptr.append(2*dim)
+            constraint_rhs.append(ub)
 
-        # lower bound
-        values.append(-1)
-        indices.append(dim)
-        indptr.append(2*dim+1)
-        constraint_rhs.append(-lb)
+            # lower bound
+            values.append(-1)
+            indices.append(dim)
+            indptr.append(2*dim+1)
+            constraint_rhs.append(-lb)
 
     indptr.append(len(values))
 
     init_mat = csr_matrix((values, indices, indptr), shape=(2*ha.dims, ha.dims), dtype=float)
     init_rhs = np.array(constraint_rhs, dtype=float)
 
-    return (init_mat, init_rhs)
+    return (init_mat, init_rhs, fixed_dim_tuples)
 
 def make_init_star(ha, hylaa_settings):
-    '''returns a star'''
+    '''returns a tuple: a star and a list of fixed dimensions'''
 
-    init_mat, init_rhs = make_init_constraints(ha)
+    init_mat, init_rhs, fixed_dim_list = make_init_constraints(ha)
 
-    return Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs)
+    return Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs), fixed_dim_list
 
 def define_settings(ha):
     'get the hylaa settings object'
@@ -124,10 +128,10 @@ def run_hylaa():
 
     ha = define_ha()
     settings = define_settings(ha)
-    init = make_init_star(ha, settings)
+    init, fixed_dim_list = make_init_star(ha, settings)
 
     engine = HylaaEngine(ha, settings)
-    engine.run(init)
+    engine.run(init, fixed_dim_list)
 
     return engine.result
 

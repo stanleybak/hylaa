@@ -29,7 +29,8 @@ class Star(Freezable):
     for plotting that states if requested in the settings.
     '''
 
-    def __init__(self, hylaa_settings, mode, init_mat_csr, init_rhs, input_mat_csr=None, input_rhs=None):
+    def __init__(self, hylaa_settings, mode, init_mat_csr, init_rhs, input_mat_csr=None, input_rhs=None,
+                 var_list=None, fixed_tuples=None):
         assert isinstance(hylaa_settings, HylaaSettings)
 
         self.settings = hylaa_settings
@@ -38,13 +39,17 @@ class Star(Freezable):
         self.mode = mode
         self.dims = mode.parent.dims
         self.inputs = mode.parent.inputs
-        self.time_elapse = TimeElapser(mode, hylaa_settings)
+
+        self.time_elapse = TimeElapser(mode, hylaa_settings, var_list=var_list, fixed_tuples=fixed_tuples)
 
         assert isinstance(init_mat_csr, csr_matrix)
         assert isinstance(init_rhs, np.ndarray)
         assert init_rhs.shape == (init_mat_csr.shape[0],)
         self.init_mat_csr = init_mat_csr
         self.init_rhs = init_rhs
+
+        self.var_list = var_list
+        self.lp_dims = len(var_list) + 1 if var_list is not None else self.dims
 
         if self.inputs == 0:
             assert input_mat_csr is None and input_rhs is None
@@ -81,8 +86,9 @@ class Star(Freezable):
         rv = self._plot_lpi
 
         if rv is None:
-            rv = LpInstance(2, self.dims, self.inputs)
+            rv = LpInstance(2, self.lp_dims, self.inputs)
             rv.set_init_constraints_csr(self.init_mat_csr, self.init_rhs)
+
             rv.update_time_elapse_matrix(self.time_elapse.cur_time_elapse_mat[:2])
 
             if self.inputs > 0:

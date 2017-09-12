@@ -58,6 +58,9 @@ class SimulationSettings(Freezable):
         self.check_answer = False # double-check answer using MATRIX_EXP at each step (slow!)
         self.check_answer_abs_tol = 1e-6 # absolute tolerance when checking answer
 
+        self.seperate_constant_vars = True # seperate constant initial variables optimization (krylov only)
+        self.pipeline_arnoldi_expm = True # pipeline computation of arnoldi and expm optimization (krylov only)
+
         self.freeze_attrs()
 
 class PlotSettings(Freezable):

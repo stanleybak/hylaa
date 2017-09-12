@@ -9,7 +9,7 @@ import numpy as np
 from scipy.sparse import lil_matrix, csr_matrix, csc_matrix
 from scipy.sparse.linalg import expm, expm_multiply
 
-from hylaa.util import Freezable, matrix_to_string
+from hylaa.util import Freezable
 from hylaa.hybrid_automaton import LinearAutomatonMode
 from hylaa.containers import HylaaSettings, PlotSettings, SimulationSettings
 from hylaa.timerutil import Timers
@@ -19,7 +19,7 @@ from hylaa.krylov_interface import KrylovInterface
 class TimeElapser(Freezable):
     'Object which computes the time-elapse function for a single mode at multiples of the time step'
 
-    def __init__(self, mode, hylaa_settings):
+    def __init__(self, mode, hylaa_settings, var_list=None, fixed_tuples=None):
         assert isinstance(mode, LinearAutomatonMode)
         assert isinstance(hylaa_settings, HylaaSettings)
 
@@ -52,7 +52,19 @@ class TimeElapser(Freezable):
         Timers.toc("extract key directions")
 
         # used for Krylov method
-        self.cur_time_elapse_mat_list = None
+        if self.settings.simulation.sim_mode == SimulationSettings.KRYLOV:
+            self.cur_time_elapse_mat_list = None
+
+            if self.settings.simulation.seperate_constant_vars:
+                assert var_list is not None and fixed_tuples is not None
+
+                self.var_list = var_list
+                self.fixed_tuples = fixed_tuples
+            else:
+                assert var_list is None and fixed_tuples is None, "seperate_constant_vars=False but var_list was used"
+        else:
+            assert var_list is None, "var_list is not None but method is not Krylov"
+            assert fixed_tuples is None, "fixed tuples is not None buy method is not Krylov"
 
         self.freeze_attrs()
 

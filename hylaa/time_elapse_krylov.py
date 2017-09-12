@@ -101,11 +101,37 @@ def init_krylov(time_elapser, arnoldi_iter):
     KrylovInterface.set_use_profiling(settings.simulation.krylov_profiling)
 
     rv = []
-    rv.append(np.array(key_dir_mat.todense(), dtype=float)) # step zero
+
+    Timers.tic('initilaizing step zero from key dir mat')
+    dense_key_dir_mat = np.array(key_dir_mat.todense(), dtype=float)
+
+    if settings.simulation.seperate_constant_vars:
+        # we need to create a new dense matrix based on the variable reordering
+        num_vars = len(time_elapser.var_list) + 1
+        compressed_key_dir_mat = np.zeros((dense_key_dir_mat.shape[0], num_vars), dtype=float)
+
+        compressed_var_index = 0
+
+        for dim in xrange(a_matrix.shape[0]):
+            col = dense_key_dir_mat[:, dim]
+
+            if compressed_var_index >= len(time_elapser.var_list) or dim < time_elapser.var_list[compressed_var_index]:
+                # uncompressed dim
+                compressed_key_dir_mat[dim, :] = col
+            else:
+                # compressed dim
+                compressed_key_dir_mat[-1, :] += col
+                compressed_var_index += 1
+
+        rv.append(compressed_key_dir_mat) # step zero
+    else:
+        rv.append(dense_key_dir_mat) # step zero
+
+    Timers.toc('initilaizing step zero from key dir mat')
 
     # add zeros (allocate storage for result)
     for _ in xrange(0, time_elapser.settings.num_steps):
-        rv.append(np.zeros(key_dir_mat.shape, dtype=float))
+        rv.append(np.zeros(rv[0].shape, dtype=float))
 
     Timers.tic("krylov preallocate and load dynamics")
 
@@ -142,7 +168,7 @@ def relative_error(correct, estimate):
 
     return rel_error
 
-def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None, debug_a_matrix=None):
+def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None):
     '''
     Get the relative error given the h and pv matrices, for the given number of arnoldi_iterations.
     If arnoldi_iter is None, then use the full passed-in matrices.
@@ -186,7 +212,7 @@ def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None, debug_a_matrix=Non
 
     return rel_error
 
-def get_max_rel_error(settings, dim_list, limit, debug_a_matrix=None):
+def get_max_rel_error(settings, dim_list, limit):
     '''
     Get the maximum relative error of the passed-in number of arnoldi iterations.
 
@@ -268,29 +294,18 @@ def choose_arnoldi_iter(settings, dims, key_dirs, arnoldi_iter):
 
     Timers.tic("choose arnoldi iterations")
 
-    error_limit = settings.simulation.krylov_rel_error
+    if dims <= 2:
+        arnoldi_iter = dims
+    else:
+        error_limit = settings.simulation.krylov_rel_error
 
-    # sample accuracy in a small number of dimensions
-    samples = min(dims, settings.simulation.krylov_rel_error_samples)
+        # sample accuracy in a small number of dimensions
+        samples = min(dims, settings.simulation.krylov_rel_error_samples)
 
-    dim_list = [int(d) for d in np.linspace(0, dims-1, num=samples)]
+        dim_list = [int(d) for d in np.linspace(0, dims-1, num=samples)]
 
-    # optimization: evaluate the last dimension first (since it's often the highest error one)
-    dim_list = [dim_list[-1]] + dim_list[0:-1]
-
-    if settings.print_output:
-        print "{}".format(arnoldi_iter),
-        sys.stdout.flush()
-
-    cur_rel_error, h_list, pv_list = get_max_rel_error(settings, dim_list, error_limit)
-
-    while cur_rel_error > error_limit:
-        assert arnoldi_iter < dims, "arnoldi_iter > dims and still not converging. Try reducing time" + \
-            " step and bound, or increasing acceptable error."
-
-        arnoldi_iter *= 2
-
-        reallocate_memory(arnoldi_iter, dims, key_dirs, start_stride=1)
+        # optimization: evaluate the last dimension first (since it's often the highest error one)
+        dim_list = [dim_list[-1]] + dim_list[0:-1]
 
         if settings.print_output:
             print "{}".format(arnoldi_iter),
@@ -298,13 +313,27 @@ def choose_arnoldi_iter(settings, dims, key_dirs, arnoldi_iter):
 
         cur_rel_error, h_list, pv_list = get_max_rel_error(settings, dim_list, error_limit)
 
+        while cur_rel_error > error_limit:
+            assert arnoldi_iter < dims, "arnoldi_iter > dims and still not converging. Try reducing time" + \
+                " step and bound, or increasing acceptable error."
 
-    # ok, at this point the error is below the threshold
-    # find the exact value of iterations that makes this work for all the samples
-    arnoldi_iter = find_iter_with_accuracy(settings, h_list, pv_list, error_limit)
+            arnoldi_iter *= 2
 
-    if settings.print_output:
-        print "\nUsing {} Arnoldi Iterations".format(arnoldi_iter)
+            reallocate_memory(arnoldi_iter, dims, key_dirs, start_stride=1)
+
+            if settings.print_output:
+                print "{}".format(arnoldi_iter),
+                sys.stdout.flush()
+
+            cur_rel_error, h_list, pv_list = get_max_rel_error(settings, dim_list, error_limit)
+
+
+        # ok, at this point the error is below the threshold
+        # find the exact value of iterations that makes this work for all the samples
+        arnoldi_iter = find_iter_with_accuracy(settings, h_list, pv_list, error_limit)
+
+        if settings.print_output:
+            print "\nUsing {} Arnoldi Iterations".format(arnoldi_iter)
 
     Timers.toc("choose arnoldi iterations")
 
@@ -317,7 +346,7 @@ def make_cur_time_elapse_mat_list(time_elapser):
     This is called one time, and returns a list, element N is the time_elapse_mat at step N
     '''
 
-    # raise errors on floating point errors (these should be caught and handled explicitly)
+    # numpy raise errors on floating point errors (these should be caught and handled explicitly)
     np.seterr(all='warn', over='raise')
 
     settings = time_elapser.settings
@@ -329,7 +358,9 @@ def make_cur_time_elapse_mat_list(time_elapser):
     rv = init_krylov(time_elapser, arnoldi_iter)
 
     arnoldi_iter = choose_arnoldi_iter(settings, dims, key_dirs, arnoldi_iter)
-    pool = Pool()
+
+    if settings.simulation.pipeline_arnoldi_expm:
+        pool = Pool()
 
     # re-allocate with correct number of arnoldi iterations and larger stride
     stride = reallocate_memory(arnoldi_iter, dims, key_dirs, start_stride=settings.simulation.krylov_max_stride)
@@ -370,23 +401,35 @@ def make_cur_time_elapse_mat_list(time_elapser):
 
             Timers.toc('krylov update result list')
 
-        # push the computation of the (small) matrix exponential to another thread
-        Timers.tic('krylov send expm to another thread')
+        # compute matrix exp
         args = [(settings.num_steps, settings.step, start_vec + i, h_list[i], pv_list[i]) for i in xrange(len(pv_list))]
-        pool_res = pool.map_async(get_krylov_result, args)
-        Timers.toc('krylov send expm to another thread')
+        if settings.simulation.pipeline_arnoldi_expm:
+            # push the computation to another thread
+            Timers.tic('krylov send expm to another thread')
+            pool_res = pool.map_async(get_krylov_result, args)
+            Timers.toc('krylov send expm to another thread')
+        else:
+            # do matrix exp right away
+            list_of_results = [get_krylov_result(a) for a in args]
 
-    # loop ended, update results from the last iteration
-    Timers.tic('krylov wait for expm results')
-    list_of_results = pool_res.get()
-    Timers.toc('krylov wait for expm results')
+            Timers.tic('krylov update result list')
+            for krylov_result in list_of_results:
+                for step, dim, col_vec in krylov_result:
+                    rv[step][:, dim] = col_vec
+            Timers.toc('krylov update result list')
 
-    Timers.tic('krylov update result list')
-    for krylov_result in list_of_results:
-        for step, dim, col_vec in krylov_result:
-            rv[step][:, dim] = col_vec
+    # loop ended, update results from the last iteration (if pipelining was used)
+    if settings.simulation.pipeline_arnoldi_expm:
+        Timers.tic('krylov wait for expm results')
+        list_of_results = pool_res.get()
+        Timers.toc('krylov wait for expm results')
 
-    Timers.toc('krylov update result list')
+        Timers.tic('krylov update result list')
+        for krylov_result in list_of_results:
+            for step, dim, col_vec in krylov_result:
+                rv[step][:, dim] = col_vec
+
+        Timers.toc('krylov update result list')
 
     if settings.simulation.krylov_profiling:
         KrylovInterface.print_profiling_data()
