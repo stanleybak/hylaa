@@ -10,10 +10,34 @@ from multiprocessing import Pool
 
 import numpy as np
 from scipy.sparse.linalg import expm
-from scipy.sparse import csr_matrix
 
 from hylaa.krylov_interface import KrylovInterface
 from hylaa.timerutil import Timers
+
+def compress_fixed(mat, fixed_tuples):
+    'compress the fixed variables in the time_elapse matrix'
+
+    # we need to create a new dense matrix based on the variable reordering
+    num_vars = mat.shape[1] - len(fixed_tuples) + 1
+    rv = np.zeros((mat.shape[0], num_vars), dtype=float)
+
+    compressed_var_index = 0
+    uncompressed_dim = 0
+
+    for dim in xrange(mat.shape[1]):
+        col = mat[:, dim]
+
+        if compressed_var_index >= len(fixed_tuples) or dim < fixed_tuples[compressed_var_index][0]:
+            # uncompressed dim
+            rv[:, uncompressed_dim] = col
+            uncompressed_dim += 1
+        else:
+            # compressed dim
+            fixed_val = fixed_tuples[compressed_var_index][1]
+            rv[:, -1] += col * fixed_val
+            compressed_var_index += 1
+
+    return rv
 
 def format_secs(sec):
     'convert seconds (float) to a human-readable string'
@@ -85,26 +109,9 @@ def init_krylov(time_elapser, arnoldi_iter):
     dense_key_dir_mat = np.array(key_dir_mat.todense(), dtype=float)
 
     if settings.simulation.seperate_constant_vars:
-        # we need to create a new dense matrix based on the variable reordering
-        num_vars = len(time_elapser.var_list) + 1
-        compressed_key_dir_mat = np.zeros((dense_key_dir_mat.shape[0], num_vars), dtype=float)
+        dense_key_dir_mat = compress_fixed(dense_key_dir_mat, time_elapser.fixed_tuples)
 
-        compressed_var_index = 0
-
-        for dim in xrange(a_matrix.shape[0]):
-            col = dense_key_dir_mat[:, dim]
-
-            if compressed_var_index >= len(time_elapser.var_list) or dim < time_elapser.var_list[compressed_var_index]:
-                # uncompressed dim
-                compressed_key_dir_mat[dim, :] = col
-            else:
-                # compressed dim
-                compressed_key_dir_mat[-1, :] += col
-                compressed_var_index += 1
-
-        rv.append(compressed_key_dir_mat) # step zero
-    else:
-        rv.append(dense_key_dir_mat) # step zero
+    rv.append(dense_key_dir_mat) # step zero
 
     Timers.toc('initilaizing step zero from key dir mat')
 
@@ -147,13 +154,21 @@ def relative_error(correct, estimate):
 
     return rel_error
 
-def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None):
+def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_projected_sims=False):
     '''
     Get the relative error given the h and pv matrices, for the given number of arnoldi_iterations.
     If arnoldi_iter is None, then use the full passed-in matrices.
 
-    This compares the error at both the first and last steps.
+    This compares the error at all time steps.
+
+    If return_projected_sims is True, then a tuple is returned where the second element is list of the
+    sim points at each time step.
     '''
+
+    projected_sims = None
+
+    if return_projected_sims:
+        projected_sims = []
 
     # use less arnoldi iterations than what's in the matrices
     if arnoldi_iter is not None:
@@ -175,6 +190,9 @@ def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None):
     small_result = np.dot(small_pv_mat, small_col)
     rel_error = relative_error(cur_result, small_result)
 
+    if return_projected_sims:
+        projected_sims.append(cur_result)
+
     for _ in xrange(2, settings.num_steps + 1):
         cur_col = np.dot(matrix_exp, cur_col)
         small_col = np.dot(small_matrix_exp, small_col)
@@ -184,12 +202,10 @@ def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None):
         small_result = np.dot(small_pv_mat, small_col)
         rel_error = max(rel_error, relative_error(cur_result, small_result))
 
-    # do the comparison at the last step
-    cur_result = np.dot(pv_mat, cur_col)
-    small_result = np.dot(small_pv_mat, small_col)
-    rel_error = max(rel_error, relative_error(cur_result, small_result))
+        if return_projected_sims:
+            projected_sims.append(cur_result)
 
-    return rel_error
+    return rel_error if not return_projected_sims else (rel_error, projected_sims)
 
 def get_max_rel_error(settings, dim_list, limit):
     '''
@@ -258,17 +274,66 @@ def find_iter_with_accuracy(settings, h_list, pv_list, desired_rel_error):
 
     return top
 
-def choose_arnoldi_iter(settings, dims, key_dirs, arnoldi_iter):
+def krylov_sim_fixed_terms(time_elapser):
+    '''simulate the fixed effect vector up to the desired relative error'''
+
+    settings = time_elapser.settings
+    dims = time_elapser.a_matrix.shape[0]
+    key_dirs = time_elapser.key_dir_mat.shape[0]
+    error_limit = settings.simulation.krylov_rel_error
+
+    init_vec = time_elapser.fixed_init_vec
+    arnoldi_iter = min(dims, 2)
+
+    if settings.print_output:
+        print "Computing fixed term using krylov simulation with iterations: ",
+        print "{}".format(arnoldi_iter),
+        sys.stdout.flush()
+
+    KrylovInterface.preallocate_memory(arnoldi_iter, dims, key_dirs, error_on_fail=True)
+
+    h_mat, pv_mat = KrylovInterface.arnoldi_vec(init_vec)
+    h_mat = h_mat[:-1, :].copy()
+    pv_mat = pv_mat[:, :-1].copy()
+
+    cur_rel_error, simulation = get_rel_error(settings, h_mat, pv_mat, arnoldi_iter, True)
+
+    while cur_rel_error > error_limit:
+        assert arnoldi_iter <= dims, "arnoldi_iter > dims and still not converging. Try reducing time" + \
+            " step and bound, or increasing acceptable error."
+
+        arnoldi_iter = min(dims + 1, arnoldi_iter * 2)
+
+        KrylovInterface.preallocate_memory(arnoldi_iter, dims, key_dirs, error_on_fail=True)
+
+        if settings.print_output:
+            print "{}".format(arnoldi_iter),
+            sys.stdout.flush()
+
+        h_mat, pv_mat = KrylovInterface.arnoldi_vec(init_vec)
+        h_mat = h_mat[:-1, :].copy()
+        pv_mat = pv_mat[:, :-1].copy()
+
+        cur_rel_error, simulation = get_rel_error(settings, h_mat, pv_mat, arnoldi_iter, True)
+
+        print "arnoldi_iter = {}, cur_rel_error = {}".format(arnoldi_iter, cur_rel_error)
+
+    return simulation
+
+def choose_arnoldi_iter(time_elapser):
     '''
     Choose the number of arnoldi iterations based on the desired error. This is done through a
     sampling of a number of vectors and using cauchy error.
     '''
 
+    settings = time_elapser.settings
+    dims = time_elapser.a_matrix.shape[0]
+    key_dirs = time_elapser.key_dir_mat.shape[0]
+    arnoldi_iter = min(2, dims)
+
     if settings.print_output:
         print "Determining number of arnoldi iterations for desired accuracy...",
         sys.stdout.flush()
-
-    Timers.tic("choose arnoldi iterations")
 
     if dims <= 2:
         arnoldi_iter = dims
@@ -278,10 +343,19 @@ def choose_arnoldi_iter(settings, dims, key_dirs, arnoldi_iter):
         # sample accuracy in a small number of dimensions
         samples = min(dims, settings.simulation.krylov_rel_error_samples)
 
-        dim_list = [int(d) for d in np.linspace(0, dims-1, num=samples)]
+        if settings.simulation.seperate_constant_vars:
+            # only sample in variable dimensions
+            var_list = time_elapser.var_list
+
+            dim_list = [var_list[int(d)] for d in np.linspace(0, len(var_list)-1, num=samples)]
+        else:
+            dim_list = [int(d) for d in np.linspace(0, dims-1, num=samples)]
 
         # optimization: evaluate the last dimension first (since it's often the highest error one)
         dim_list = [dim_list[-1]] + dim_list[0:-1]
+
+        # eliminate duplicates
+        dim_list = list(set(dim_list))
 
         if settings.print_output:
             print "{}".format(arnoldi_iter),
@@ -290,10 +364,10 @@ def choose_arnoldi_iter(settings, dims, key_dirs, arnoldi_iter):
         cur_rel_error, h_list, pv_list = get_max_rel_error(settings, dim_list, error_limit)
 
         while cur_rel_error > error_limit:
-            assert arnoldi_iter < dims, "arnoldi_iter > dims and still not converging. Try reducing time" + \
+            assert arnoldi_iter <= dims, "arnoldi_iter > dims and still not converging. Try reducing time" + \
                 " step and bound, or increasing acceptable error."
 
-            arnoldi_iter *= 2
+            arnoldi_iter = min(dims + 1, arnoldi_iter * 2)
 
             KrylovInterface.preallocate_memory(arnoldi_iter, dims, key_dirs, error_on_fail=True)
 
@@ -303,17 +377,31 @@ def choose_arnoldi_iter(settings, dims, key_dirs, arnoldi_iter):
 
             cur_rel_error, h_list, pv_list = get_max_rel_error(settings, dim_list, error_limit)
 
-
         # ok, at this point the error is below the threshold
         # find the exact value of iterations that makes this work for all the samples
         arnoldi_iter = find_iter_with_accuracy(settings, h_list, pv_list, error_limit)
 
-        if settings.print_output:
-            print "\nUsing {} Arnoldi Iterations".format(arnoldi_iter)
-
-    Timers.toc("choose arnoldi iterations")
+    if settings.print_output:
+        print "\nUsing {} Arnoldi Iterations".format(arnoldi_iter)
 
     return arnoldi_iter
+
+def assign_fixed_terms(time_elapser, rv):
+    'assign the fixed effect terms using a krylov simulation'
+
+    Timers.tic("krylov sim fixed terms")
+    fixed_sim = krylov_sim_fixed_terms(time_elapser)
+    assert len(fixed_sim) == len(rv) - 1
+    Timers.toc("krylov sim fixed terms")
+
+    # assign results from fixed_sim
+    Timers.tic('krylov update result list')
+
+    for i in xrange(len(fixed_sim)):
+        print "fixed_sim[i] = {}".format(fixed_sim[i])
+        rv[i+1][:, -1] = fixed_sim[i]
+
+    Timers.toc('krylov update result list')
 
 def make_cur_time_elapse_mat_list(time_elapser):
     '''
@@ -332,24 +420,42 @@ def make_cur_time_elapse_mat_list(time_elapser):
     if settings.simulation.pipeline_arnoldi_expm:
         pool = Pool()
 
-    arnoldi_iter = min(2, dims)
+    rv = init_krylov(time_elapser, 2)
 
-    rv = init_krylov(time_elapser, arnoldi_iter)
+    if not settings.simulation.expm_mult_fixed_terms:
+        Timers.tic("krylov assign fixed terms")
+        start = time.time()
+        assign_fixed_terms(time_elapser, rv)
+        diff = start - time.time()
+        print "krylov fix sim time: {:.2f}ms".format(diff * 1000)
+        Timers.toc("krylov assign fixed terms")
 
-    arnoldi_iter = choose_arnoldi_iter(settings, dims, key_dirs, arnoldi_iter)
+    Timers.tic("choose arnoldi iterations")
+    arnoldi_iter = choose_arnoldi_iter(time_elapser)
+    Timers.toc("choose arnoldi iterations")
+
     #print "debug fixed arnoldi_iter=37"
     #arnoldi_iter = 37
 
-    # re-allocate with correct number of arnoldi iterations and larger stride
+    # re-allocate with correct number of arnoldi iterations
     KrylovInterface.preallocate_memory(arnoldi_iter, dims, key_dirs, error_on_fail=True)
 
     start = last_print = time.time()
     start_vec = 0
     pool_res = None
 
-    for start_vec in xrange(0, dims):
+    if settings.simulation.seperate_constant_vars:
+        variable_dim_list = time_elapser.var_list
 
-        #print "start_vec = {}".format(start_vec)
+        # compute the constant_variable effect
+    else:
+        variable_dim_list = xrange(0, dims)
+
+    store_dim_index = 0
+
+    for start_vec in variable_dim_list:
+
+        print "start_vec = {}".format(start_vec)
 
         #if start_vec == 64:
         #    print "debug break at 64"
@@ -386,8 +492,9 @@ def make_cur_time_elapse_mat_list(time_elapser):
 
             Timers.toc('krylov update result list')
 
-        # compute matrix exp
-        args = [(settings.num_steps, settings.step, start_vec, h_mat, pv_mat)]
+        ### compute matrix exp ###
+        args = [(settings.num_steps, settings.step, store_dim_index, h_mat, pv_mat)]
+        store_dim_index += 1
 
         if settings.simulation.pipeline_arnoldi_expm:
             # push the computation to another thread

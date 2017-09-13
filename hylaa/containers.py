@@ -58,6 +58,7 @@ class SimulationSettings(Freezable):
         self.check_answer_abs_tol = 1e-6 # absolute tolerance when checking answer
 
         self.seperate_constant_vars = True # seperate constant initial variables optimization (krylov only)
+        self.expm_mult_fixed_terms = False # used if seperate_constant_vars is True, use expm_multiply for fixed terms?
         self.pipeline_arnoldi_expm = True # pipeline computation of arnoldi and expm optimization (krylov only)
 
         self.freeze_attrs()

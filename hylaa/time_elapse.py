@@ -5,6 +5,7 @@ l * e^{At} where l is some direction of interest, and t is a multiple of some ti
 
 import sys
 import numpy as np
+import time
 
 from scipy.sparse import lil_matrix, csr_matrix, csc_matrix
 from scipy.sparse.linalg import expm, expm_multiply
@@ -13,7 +14,7 @@ from hylaa.util import Freezable
 from hylaa.hybrid_automaton import LinearAutomatonMode
 from hylaa.containers import HylaaSettings, PlotSettings, SimulationSettings
 from hylaa.timerutil import Timers
-from hylaa.time_elapse_krylov import make_cur_time_elapse_mat_list
+from hylaa.time_elapse_krylov import make_cur_time_elapse_mat_list, compress_fixed
 from hylaa.krylov_interface import KrylovInterface
 
 class TimeElapser(Freezable):
@@ -60,6 +61,11 @@ class TimeElapser(Freezable):
 
                 self.var_list = var_list
                 self.fixed_tuples = fixed_tuples
+
+                self.fixed_init_vec = np.zeros((self.dims, 1))
+
+                for dim, val in self.fixed_tuples:
+                    self.fixed_init_vec[dim, 0] = val
             else:
                 assert var_list is None and fixed_tuples is None, "seperate_constant_vars=False but var_list was used"
         else:
@@ -222,6 +228,30 @@ class TimeElapser(Freezable):
 
         self.cur_time_elapse_mat = self.cur_time_elapse_mat_list[self.next_step].copy()
 
+        if self.next_step == 0:
+            print "TODO: profile the speed for fixed terms: expm_multiply vs krylov sim"
+
+        if self.settings.simulation.seperate_constant_vars and self.settings.simulation.expm_mult_fixed_terms:
+            # compute fixed-term effect using expm_multiply
+
+            if self.next_step != 0:
+                t = self.settings.step * self.next_step
+
+                init_vec = self.fixed_init_vec
+
+                Timers.tic("fixed term expm_multiply")
+                start = time.time()
+                solution = expm_multiply(self.a_matrix_csc * t, init_vec)
+                diff = time.time() - start
+                print "expm_multiply time: {:.2f}ms".format(diff * 1000)
+                Timers.toc("fixed term expm_multiply")
+
+                proj_solution = self.key_dir_mat * solution
+                proj_solution.shape = (self.key_dir_mat.shape[0], )
+
+                # project solution onto key directions
+                self.cur_time_elapse_mat[:, -1] = proj_solution
+
     def step(self):
         'perform the computation to obtain the values of the key directions the current time'
 
@@ -243,8 +273,14 @@ class TimeElapser(Freezable):
         # post-conditions check
         assert isinstance(self.cur_time_elapse_mat, np.ndarray), "cur_time_elapse_mat should be an np.array, " + \
             "but it was {}".format(type(self.cur_time_elapse_mat))
-        assert self.cur_time_elapse_mat.shape == self.key_dir_mat.shape, \
-            "cur_time_elapse mat shape({}) should be {}".format(self.cur_time_elapse_mat.shape, self.key_dir_mat.shape)
+
+
+        cur_time_mat_width = 1 + len(self.var_list) if self.settings.simulation.seperate_constant_vars else \
+                                                                                    self.key_dir_mat.shape[1]
+        cur_time_mat_shape = (self.key_dir_mat.shape[0], cur_time_mat_width)
+
+        assert self.cur_time_elapse_mat.shape == cur_time_mat_shape, \
+            "cur_time_elapse mat shape({}) should be {}".format(self.cur_time_elapse_mat.shape, cur_time_mat_shape)
 
         if self.inputs == 0 or self.next_step == 1: # 0-th step input should be null
             assert self.cur_input_effects_matrix is None
@@ -266,6 +302,15 @@ class TimeElapser(Freezable):
         t = self.settings.step * (self.next_step - 1)
         exp = expm(self.a_matrix_csc * t)
         expected = np.array((self.key_dir_mat * exp).todense(), dtype=float)
+
+        if self.settings.simulation.seperate_constant_vars:
+            expected = compress_fixed(expected, self.fixed_tuples)
+
+        assert self.cur_time_elapse_mat.shape == expected.shape, \
+            "wrong shape in check_answer(), got {}, expected {}".format(self.cur_time_elapse_mat.shape, expected.shape)
+
+        print "expected:\n{}".format(expected)
+        print "got:\n{}".format(self.cur_time_elapse_mat)
 
         for dim in xrange(expected.shape[1]):
             col_expected = expected[:, dim]

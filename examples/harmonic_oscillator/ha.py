@@ -17,7 +17,8 @@ def define_ha():
 
     ha = LinearHybridAutomaton()
 
-    a_matrix = np.array([[0, 1], [-1, 0]], dtype=float)
+    # with time and affine variable
+    a_matrix = np.array([[0, 1, 0, 0], [-1, 0, 0, 0], [0, 0, 0, 1], [0, 0, 0, 0]], dtype=float)
     a_matrix = csr_matrix(a_matrix, dtype=float)
 
     mode = ha.new_mode('mode')
@@ -33,11 +34,17 @@ def make_init_star(ha, hylaa_settings):
     bounds_list = [] # bounds on each dimension
 
     for dim in xrange(ha.dims):
-        if dim == 0:
+        if dim == 0: # x == 5
             lb = -5
             ub = -5
-        elif dim == 1:
+        elif dim == 1: # y in [0, 1]
             lb = 0
+            ub = 1
+        elif dim == 2: # t == 0
+            lb = 0
+            ub = 0
+        elif dim == 3: # a == 1
+            lb = 1
             ub = 1
         else:
             raise RuntimeError('Unknown dimension: {}'.format(dim))
@@ -80,7 +87,7 @@ def define_settings():
     settings.simulation.sim_mode = SimulationSettings.KRYLOV
     settings.simulation.pipeline_arnoldi_expm = False
 
-    settings.simulation.check_answer = True    
+    settings.simulation.check_answer = True
 
     return settings
 
