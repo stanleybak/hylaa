@@ -31,27 +31,6 @@ def format_secs(sec):
 
     return rv
 
-def reallocate_memory(arnoldi_iter, dims, key_dirs, start_stride):
-    'try to allocate multiple initial vectors (larger stride). returns the new stride'
-    Timers.tic("reallocate memory")
-
-    stride = start_stride
-
-    while stride >= 1:
-        error_on_fail = (stride == 1)
-
-        success = KrylovInterface.preallocate_memory(arnoldi_iter, stride, dims, key_dirs, error_on_fail=error_on_fail)
-
-        if success:
-            break
-
-        # memory didn't fit on device... try a smaller number of parallel initial vectors
-        stride = stride / 2
-
-    Timers.toc("reallocate memory")
-
-    return stride
-
 def get_krylov_result(arg_tuple):
     '''
     Compute the krylov result and return a list of tuples (step, dim, col_vec)
@@ -135,8 +114,8 @@ def init_krylov(time_elapser, arnoldi_iter):
 
     Timers.tic("krylov preallocate and load dynamics")
 
-    # make sure we can allocated a single initial vector (stride = 1, arnoldi_iter = 2)
-    KrylovInterface.preallocate_memory(arnoldi_iter, 1, a_matrix.shape[0], key_dir_mat.shape[0], error_on_fail=True)
+    # make sure we can allocate with arnoldi_iter = 2
+    KrylovInterface.preallocate_memory(arnoldi_iter, a_matrix.shape[0], key_dir_mat.shape[0], error_on_fail=True)
     KrylovInterface.load_a_matrix(a_matrix) # load a_matrix into device memory
     KrylovInterface.load_key_dir_matrix(key_dir_mat) # load key direction matrix into device memory
 
@@ -224,12 +203,9 @@ def get_max_rel_error(settings, dim_list, limit):
     pv_list = []
 
     for dim in dim_list:
-        Timers.tic('krylov arnoldi_parallel')
-        h_mats, pv_mats = KrylovInterface.arnoldi_parallel(dim)
-        Timers.toc('krylov arnoldi_parallel')
-
-        h_mat = h_mats[0]
-        pv_mat = pv_mats[0]
+        Timers.tic('krylov arnoldi_unit()')
+        h_mat, pv_mat = KrylovInterface.arnoldi_unit(dim)
+        Timers.toc('krylov arnoldi_unit()')
 
         h_mat = h_mat[:-1, :].copy()
         h_list.append(h_mat)
@@ -319,7 +295,7 @@ def choose_arnoldi_iter(settings, dims, key_dirs, arnoldi_iter):
 
             arnoldi_iter *= 2
 
-            reallocate_memory(arnoldi_iter, dims, key_dirs, start_stride=1)
+            KrylovInterface.preallocate_memory(arnoldi_iter, dims, key_dirs, error_on_fail=True)
 
             if settings.print_output:
                 print "{}".format(arnoldi_iter),
@@ -360,24 +336,24 @@ def make_cur_time_elapse_mat_list(time_elapser):
 
     rv = init_krylov(time_elapser, arnoldi_iter)
 
-    #arnoldi_iter = choose_arnoldi_iter(settings, dims, key_dirs, arnoldi_iter)
-    print "debug fixed arnoldi_iter=37"
-    arnoldi_iter = 37
+    arnoldi_iter = choose_arnoldi_iter(settings, dims, key_dirs, arnoldi_iter)
+    #print "debug fixed arnoldi_iter=37"
+    #arnoldi_iter = 37
 
     # re-allocate with correct number of arnoldi iterations and larger stride
-    stride = reallocate_memory(arnoldi_iter, dims, key_dirs, start_stride=settings.simulation.krylov_max_stride)
+    KrylovInterface.preallocate_memory(arnoldi_iter, dims, key_dirs, error_on_fail=True)
 
     start = last_print = time.time()
     start_vec = 0
     pool_res = None
 
-    for start_vec in xrange(0, dims, stride):
+    for start_vec in xrange(0, dims):
 
-        print "start_vec = {}".format(start_vec)
+        #print "start_vec = {}".format(start_vec)
 
-        if start_vec == 64:
-            print "debug break at 64"
-            break
+        #if start_vec == 64:
+        #    print "debug break at 64"
+        #    break
 
         if settings.print_output:
             now = time.time()
@@ -393,9 +369,9 @@ def make_cur_time_elapse_mat_list(time_elapser):
                     eta = format_secs(eta_sec)
                     print "Arnoldi Parallel {} / {} ({:.2f}%, ETA: {})".format(start_vec, dims, 100.0 * frac, eta)
 
-        Timers.tic('krylov arnoldi_parallel')
-        h_list, pv_list = KrylovInterface.arnoldi_parallel(start_vec)
-        Timers.toc('krylov arnoldi_parallel')
+        Timers.tic('krylov arnoldi_unit()')
+        h_mat, pv_mat = KrylovInterface.arnoldi_unit(start_vec)
+        Timers.toc('krylov arnoldi_unit()')
 
         # update result from the previous iteration (skipped on first iteration)
         if pool_res is not None:
@@ -411,7 +387,8 @@ def make_cur_time_elapse_mat_list(time_elapser):
             Timers.toc('krylov update result list')
 
         # compute matrix exp
-        args = [(settings.num_steps, settings.step, start_vec + i, h_list[i], pv_list[i]) for i in xrange(len(pv_list))]
+        args = [(settings.num_steps, settings.step, start_vec, h_mat, pv_mat)]
+
         if settings.simulation.pipeline_arnoldi_expm:
             # push the computation to another thread
             Timers.tic('krylov send expm to another thread')
@@ -449,7 +426,7 @@ def make_cur_time_elapse_mat_list(time_elapser):
         elapsed = format_secs(time.time() - start)
         print "Krylov Computation Total Time: {}\n".format(elapsed)
 
-    print "debug exit"
-    exit(1)
+    #print "debug exit"
+    #exit(1)
 
     return rv

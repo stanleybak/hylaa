@@ -545,7 +545,7 @@ class CuspData
             {
                 // cusp::blas::scal(curVec, 0.0);
 
-                printf("Break! Profile if this actually helps.\n");
+                printf("Break at it = %lu! Profile if this actually helps.\n", it);
                 break;
             }
             else

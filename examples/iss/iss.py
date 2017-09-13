@@ -121,6 +121,7 @@ def define_settings(_):
     settings.simulation.guard_mode = SimulationSettings.GUARD_DECOMPOSED
 
     #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
+    settings.simulation.seperate_constant_vars = False
     settings.simulation.sim_mode = SimulationSettings.KRYLOV
     settings.simulation.check_answer = True
 
