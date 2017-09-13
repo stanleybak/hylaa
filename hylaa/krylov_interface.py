@@ -8,6 +8,7 @@ Simulation of linear system x' = Ax using krylov supspace method in CPU and GPU
 
 import ctypes
 import os
+import math
 
 import numpy as np
 from numpy.ctypeslib import ndpointer
@@ -25,13 +26,13 @@ class CuspData(Freezable):
         self.load_key_dir_matrix = None
         self.get_free_memory_mb = None
         self.preallocate_memory = None
-        self.arnoldi_parallel = None
+        self.arnoldi_unit = None
+        self.arnoldi_vec = None
         self.print_profiling_data = None
 
         self.n = 0 # dimensions of a matrix
         self.k = 0 # number of key directions
         self.i = 0 # number of iterations
-        self.p = 0 # number of parallel initial vectors
 
         self.freeze_attrs()
 
@@ -107,21 +108,33 @@ class KrylovInterface(object):
             gpu_func.restype = cpu_func.restype = ctypes.c_float
             gpu_func.argtypes = cpu_func.argtypes = None
 
-            # int preallocateMemoryGpu(int arnoldiIterations, int numParallel, int numDims)
+            # unsigned long preallocateMemoryGpu(unsigned long arnoldiIterations, unsigned long dims,
+            #                       unsigned long keyDirMatSize)
             cpu_func = KrylovInterface._cpu.preallocate_memory = lib.preallocateMemoryCpu
             gpu_func = KrylovInterface._gpu.preallocate_memory = lib.preallocateMemoryGpu
             gpu_func.restype = cpu_func.restype = ctypes.c_ulong
             gpu_func.argtypes = cpu_func.argtypes = [
-                ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong
+                ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong
             ]
 
-            # void arnoldiParallelGpu(int startDim, double* resultH, int sizeResultH, double* resultPV,
-            #            int sizeResultPV)
-            cpu_func = KrylovInterface._cpu.arnoldi_parallel = lib.arnoldiParallelCpu
-            gpu_func = KrylovInterface._gpu.arnoldi_parallel = lib.arnoldiParallelGpu
+            #void arnoldiUnitGpu(unsigned long dim, FLOAT_TYPE *resultH, unsigned long sizeResultH,
+            #                    FLOAT_TYPE *resultPV, unsigned long sizeResultPV)
+            cpu_func = KrylovInterface._cpu.arnoldi_unit = lib.arnoldiUnitCpu
+            gpu_func = KrylovInterface._gpu.arnoldi_unit = lib.arnoldiUnitGpu
             gpu_func.restype = cpu_func.restype = None
             gpu_func.argtypes = cpu_func.argtypes = [
                 ctypes.c_ulong,
+                ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong,
+                ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong
+            ]
+
+            #void arnoldiVecGpu(FLOAT_TYPE *vec, unsigned long vecLen, FLOAT_TYPE *resultH,
+            #       unsigned long sizeResultH, FLOAT_TYPE *resultPV, unsigned long sizeResultPV)
+            cpu_func = KrylovInterface._cpu.arnoldi_vec = lib.arnoldiVecCpu
+            gpu_func = KrylovInterface._gpu.arnoldi_vec = lib.arnoldiVecGpu
+            gpu_func.restype = cpu_func.restype = None
+            gpu_func.argtypes = cpu_func.argtypes = [
+                ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong,
                 ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong,
                 ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong
             ]
@@ -231,27 +244,26 @@ class KrylovInterface(object):
         Timers.toc("load key dir matrix")
 
     @staticmethod
-    def preallocate_memory(arnoldi_iterations, parallel_init_vecs, dims, key_dir_mat_size, error_on_fail=False):
+    def preallocate_memory(arnoldi_iterations, dims, key_dir_mat_size, error_on_fail=False):
         '''
-        preallocate memory used in the parallel arnoldi iteration
+        preallocate memory used in the arnoldi iteration
         returns True on sucess and False on (memory allocation) error
         '''
+
+        assert isinstance(error_on_fail, bool)
 
         KrylovInterface._init_static()
 
         KrylovInterface._cusp.i = arnoldi_iterations
-        KrylovInterface._cusp.p = parallel_init_vecs
         KrylovInterface._cusp.n = dims
         KrylovInterface._cusp.k = key_dir_mat_size
 
         Timers.tic("preallocate memory")
-        result = KrylovInterface._cusp.preallocate_memory(arnoldi_iterations, parallel_init_vecs, dims,
-                                                          key_dir_mat_size) != 0
+        result = KrylovInterface._cusp.preallocate_memory(arnoldi_iterations, dims, key_dir_mat_size) != 0
         Timers.toc("preallocate memory")
 
         KrylovInterface._preallocated_memory = result
         KrylovInterface._arnoldi_iterations = arnoldi_iterations
-        KrylovInterface._parallel_init_vecs = parallel_init_vecs
 
         assert not error_on_fail or result, "Memory allocation for krylov computation failed. " + \
                                             "Try running with krylov_profiling = True"
@@ -259,48 +271,72 @@ class KrylovInterface(object):
         return result
 
     @staticmethod
-    def arnoldi_parallel(start_dim):
+    def arnoldi_unit(dim):
         '''
-        Run the arnoldi algorithm in parallel for a certain number of orthonormal vectors
-        Returns two lists, one of h matrices and one of projected-v matrices
+        Run the arnoldi algorithm in for a single orthonormal vector
+        Returns a tuple: h-matrix and projected-v matrix
 
-        h_matrix is of size (arnoldi_iter * (arnoldi_iter + 1)) x parallel_init_vecs
-        projected_v_matrix is of size (init_vecs * parallel_init_vecs) x key_dirs
-
-        The matrix may be partially assigned if start_dim + parallel_init_vecs > total_dims
+        h_matrix is of size (arnoldi_iter * (arnoldi_iter + 1))
+        projected_v_matrix is of size (init_vecs) x key_dirs
         '''
 
         KrylovInterface._init_static()
 
         # allocate results
-        p = KrylovInterface._cusp.p
         k = KrylovInterface._cusp.k
         i = KrylovInterface._cusp.i
-        n = KrylovInterface._cusp.n
 
-        result_h = np.zeros((i * p * (i + 1)), dtype=KrylovInterface.float_type)
-        result_pv = np.zeros(((i+1) * p * k), dtype=KrylovInterface.float_type)
+        result_h = np.zeros((i * (i + 1)), dtype=KrylovInterface.float_type)
+        result_pv = np.zeros(((i+1) * k), dtype=KrylovInterface.float_type)
 
-        KrylovInterface._cusp.arnoldi_parallel(start_dim, result_h, len(result_h), result_pv, len(result_pv))
+        KrylovInterface._cusp.arnoldi_unit(dim, result_h, len(result_h), result_pv, len(result_pv))
 
-        result_h.shape = (p*i, i+1)
-        result_pv.shape = (p*(i+1), k)
+        result_h.shape = (i, i+1)
+        result_pv.shape = (i+1, k)
 
-        #print "KrylovInterface - result_h.T:\n{}\n".format(result_h)
-        #print "KrylovInterface - result_pv.T:\n{}\n".format(result_pv)
+        result_h = result_h.transpose()
+        result_pv = result_pv.transpose()
 
-        result_h_list = []
-        result_pv_list = []
+        return result_h, result_pv
 
-        # trim result if only partially computed
-        if start_dim + p > n:
-            p = n - start_dim
+    @staticmethod
+    def arnoldi_vec(vec):
+        '''
+        Run the arnoldi algorithm starting at the passed in vector
+        Returns a tuple: h-matrix and projected-v matrix
 
-        for p_index in xrange(p):
-            h_part = result_h[i*p_index:i*(p_index+1), :]
-            pv_part = result_pv[(i+1)*p_index:(i+1)*(p_index+1), :]
+        h_matrix is of size (arnoldi_iter * (arnoldi_iter + 1))
+        projected_v_matrix is of size init_vecs x key_dirs
+        '''
 
-            result_h_list.append(h_part.T)
-            result_pv_list.append(pv_part.T)
+        assert isinstance(vec, np.ndarray) and vec.dtype == KrylovInterface.float_type
 
-        return result_h_list, result_pv_list
+        KrylovInterface._init_static()
+
+        # allocate results
+        k = KrylovInterface._cusp.k
+        i = KrylovInterface._cusp.i
+
+        result_h = np.zeros((i * (i + 1)), dtype=KrylovInterface.float_type)
+        result_pv = np.zeros(((i+1) * k), dtype=KrylovInterface.float_type)
+
+        # normalize vec
+        norm = np.linalg.norm(vec)
+        assert not math.isinf(norm) and not math.isnan(norm) and norm > 1e-9, "bad initial vec norm: {}".format(norm)
+
+        normalized_vec = vec / norm
+        normalized_vec.shape = (len(normalized_vec), )
+
+        KrylovInterface._cusp.arnoldi_vec(normalized_vec, len(normalized_vec), result_h, len(result_h), \
+                                          result_pv, len(result_pv))
+
+        result_h.shape = (i, i+1)
+        result_pv.shape = (i+1, k)
+
+        result_h = result_h.transpose()
+        result_pv = result_pv.transpose()
+
+        # multiply the projection by the initial vec norm to retrieve the correct answer
+        result_pv *= norm
+
+        return result_h, result_pv

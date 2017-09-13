@@ -22,13 +22,9 @@ def get_projected_simulation(settings, dim, use_mult=False):
     Get the projected simulation using the current settings.
     '''
 
-    h_list, pv_list = KrylovInterface.arnoldi_parallel(dim)
-
-    h_mat = h_list[0]
-    pv_mat = pv_list[0]
+    h_mat, pv_mat = KrylovInterface.arnoldi_unit(dim)
 
     h_mat = h_mat[:-1, :].copy()
-
     pv_mat = pv_mat[:, :-1].copy()
 
     time_mult = settings.step if use_mult else settings.step * settings.num_steps
@@ -131,7 +127,7 @@ def python_arnoldi(mat, vec, iterations):
 
     vec = vec.transpose()
 
-    v_mat, h_mat = arnoldi_parallel(mat.T, vec, iterations)
+    v_mat, h_mat = python_arnoldi_par(mat.T, vec, iterations)
 
     v_mat.shape = (iterations + 1, dims)
     h_mat.shape = (iterations, iterations + 1)
@@ -139,7 +135,7 @@ def python_arnoldi(mat, vec, iterations):
     return v_mat.transpose(), h_mat.transpose()
 
 
-def arnoldi_parallel(mat_transpose, vecs, iterations):
+def python_arnoldi_par(mat_transpose, vecs, iterations):
     'arnoldi with split multiple initial vecs'
 
     num_init = vecs.shape[0]
@@ -187,6 +183,19 @@ def arnoldi_parallel(mat_transpose, vecs, iterations):
 
     return prev_v, h_mat
 
+def relative_error(correct, estimate):
+    'compute the relative error between the correct value and an estimate'
+
+    rel_error = 0
+    norm = np.linalg.norm(correct)
+
+    if norm > 1e-9:
+        diff = correct - estimate
+        err = np.linalg.norm(diff)
+        rel_error = err / norm
+
+    return rel_error
+
 class TestKrylovInterface(unittest.TestCase):
     'Unit tests for krylov utilities'
 
@@ -195,6 +204,7 @@ class TestKrylovInterface(unittest.TestCase):
 
         random.seed(1)
         KrylovInterface.reset()
+        KrylovInterface.set_use_gpu(False)
 
     def test_arnoldi_single(self):
         'compare the python implementation with the cusp implementation with a single initial vector'
@@ -205,7 +215,6 @@ class TestKrylovInterface(unittest.TestCase):
         dims = 5
         iterations = 2
         key_dirs = 2
-        num_parallel = 1
 
         a_matrix = random_sparse_matrix(dims, entries_per_row=2)
 
@@ -219,154 +228,83 @@ class TestKrylovInterface(unittest.TestCase):
 
         # using cusp
 
-        KrylovInterface.preallocate_memory(iterations, num_parallel, dims, key_dirs)
+        KrylovInterface.preallocate_memory(iterations, dims, key_dirs)
         KrylovInterface.load_a_matrix(a_matrix)
         KrylovInterface.load_key_dir_matrix(key_dir_mat)
 
-        result_h, result_pv = KrylovInterface.arnoldi_parallel(0)
+        result_h, result_pv = KrylovInterface.arnoldi_unit(0)
 
-        self.assertTrue(np.allclose(result_h[0], h_mat_testing), "Correct h matrix")
-        self.assertTrue(np.allclose(result_pv[0], projected_v_mat_testing), "Correct projected v matrix")
+        self.assertTrue(np.allclose(result_h, h_mat_testing), "Correct h matrix")
+        self.assertTrue(np.allclose(result_pv, projected_v_mat_testing), "Correct projected v matrix")
+
+    def test_arnoldi_vec(self):
+        'test arnoldi simulation with a passed in initial vector'
+
+        dims = 5
+        iterations = 5 # with iterations = dims, answer should be exact
+        key_dirs = 2
+
+        init_vec = np.array([[1 + 2.0 * d] for d in xrange(dims)], dtype=float)
+        a_matrix = random_sparse_matrix(dims, entries_per_row=3)
+        key_dir_mat = random_sparse_matrix(dims, entries_per_row=2)[:key_dirs, :]
+
+        # do direct expm
+        real_vec = expm_multiply(csc_matrix(a_matrix), init_vec)
+        real_answer = key_dir_mat * real_vec
+        real_answer.shape = (key_dirs,)
+
+        # do cusp
+        KrylovInterface.preallocate_memory(iterations, dims, key_dirs)
+        KrylovInterface.load_a_matrix(a_matrix)
+        KrylovInterface.load_key_dir_matrix(csr_matrix(key_dir_mat))
+
+        result_h, result_pv = KrylovInterface.arnoldi_vec(init_vec)
+
+        h_mat = result_h[:-1, :].copy()
+        pv_mat = result_pv[:, :-1].copy()
+
+        exp = expm(h_mat)[:, 0]
+        cusp_answer = np.dot(pv_mat, exp)
+
+        self.assertEqual(len(real_answer), len(cusp_answer), "real and cusp answer don't have same length")
+        self.assertTrue(np.allclose(real_answer, cusp_answer))
 
     def test_arnoldi_offset(self):
         'compare the python implementation with the cusp implementation with a single initial vector (2nd column)'
 
         #KrylovInterface.set_use_profiling(True)
-        #KrylovInterface.set_use_gpu(True)
 
-        dims = 5
-        iterations = 2
-        key_dirs = 2
-        num_parallel = 1
+        for gpu in [False, True]:
+            if gpu and not KrylovInterface.has_gpu():
+                continue
 
-        a_matrix = random_sparse_matrix(dims, entries_per_row=2)
-
-        key_dir_mat = random_sparse_matrix(dims, entries_per_row=2)[:key_dirs, :]
-
-        # using python
-        init_vec = np.array([[1.0] if d == 1 else [0.0] for d in xrange(dims)], dtype=float)
-        v_mat_testing, h_mat_testing = python_arnoldi(a_matrix, init_vec, iterations)
-
-        projected_v_mat_testing = key_dir_mat * v_mat_testing
-
-        # using cusp
-
-        KrylovInterface.preallocate_memory(iterations, num_parallel, dims, key_dirs)
-        KrylovInterface.load_a_matrix(a_matrix)
-        KrylovInterface.load_key_dir_matrix(key_dir_mat)
-
-        result_h, result_pv = KrylovInterface.arnoldi_parallel(1)
-
-        self.assertTrue(np.allclose(result_h[0], h_mat_testing), "Correct h matrix")
-        self.assertTrue(np.allclose(result_pv[0], projected_v_mat_testing), "Correct projected v matrix")
-
-    def test_arnoldi_off_end(self):
-        'test arnodli when doing 2 parallel vectors at a time when straddling the end (only 1 should be done)'
-
-        #KrylovInterface.set_use_profiling(True)
-        #KrylovInterface.set_use_gpu(True)
-
-        dims = 5
-        iterations = 2
-        key_dirs = 2
-        num_parallel = 2
-
-        a_matrix = random_sparse_matrix(dims, entries_per_row=2)
-        key_dir_mat = random_sparse_matrix(dims, entries_per_row=2)[:key_dirs, :]
-
-        # using python
-        init_vec4 = np.array([[1.0] if d == 4 else [0.0] for d in xrange(dims)], dtype=float)
-
-        v_mat_testing4, h_mat_testing4 = python_arnoldi(a_matrix, init_vec4, iterations)
-        projected_v_mat_testing4 = key_dir_mat * v_mat_testing4
-
-        # using cusp
-        KrylovInterface.preallocate_memory(iterations, num_parallel, dims, key_dirs)
-        KrylovInterface.load_a_matrix(a_matrix)
-        KrylovInterface.load_key_dir_matrix(key_dir_mat)
-
-        result_h, result_pv = KrylovInterface.arnoldi_parallel(4)
-
-        self.assertEqual(len(result_h), len(result_pv))
-        self.assertEqual(len(result_h), 1)
-
-        self.assertTrue(np.allclose(result_h[0], h_mat_testing4), "Correct h matrix")
-        self.assertTrue(np.allclose(result_pv[0], projected_v_mat_testing4), "Correct projV matrix")
-
-    def test_arnoldi_double(self):
-        'compare the cusp implementation with a two initial vectors versus the python implementation'
-
-        #KrylovInterface.set_use_profiling(True)
-        #KrylovInterface.set_use_gpu(True)
-
-        dims = 5
-        iterations = 2
-        key_dirs = 2
-        num_parallel = 2
-
-        a_matrix = random_sparse_matrix(dims, entries_per_row=2)
-        key_dir_mat = random_sparse_matrix(dims, entries_per_row=2)[:key_dirs, :]
-
-        # using python
-        init_vec1 = np.array([[1.0] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
-        init_vec2 = np.array([[1.0] if d == 1 else [0.0] for d in xrange(dims)], dtype=float)
-
-        v_mat_testing1, h_mat_testing1 = python_arnoldi(a_matrix, init_vec1, iterations)
-        projected_v_mat_testing1 = key_dir_mat * v_mat_testing1
-
-        v_mat_testing2, h_mat_testing2 = python_arnoldi(a_matrix, init_vec2, iterations)
-        projected_v_mat_testing2 = key_dir_mat * v_mat_testing2
-
-        # using cusp
-        KrylovInterface.preallocate_memory(iterations, num_parallel, dims, key_dirs)
-        KrylovInterface.load_a_matrix(a_matrix)
-        KrylovInterface.load_key_dir_matrix(key_dir_mat)
-
-        result_h, result_pv = KrylovInterface.arnoldi_parallel(0)
-
-        self.assertTrue(np.allclose(result_h[0], h_mat_testing1), "Correct h matrix init vec 1")
-        self.assertTrue(np.allclose(result_pv[0], projected_v_mat_testing1), "Correct projV matrix for init vec 1")
-
-        self.assertTrue(np.allclose(result_h[1], h_mat_testing2), "Correct h matrix init vec 2")
-        self.assertTrue(np.allclose(result_pv[1], projected_v_mat_testing2), "Correct projV matrix for init vec 2")
-
-    def test_arnoldi_double_gpu(self):
-        'compare the gpu cusp implementation with a two initial vectors versus the python implementation'
-
-        if KrylovInterface.has_gpu():
-            #KrylovInterface.set_use_profiling(True)
-            KrylovInterface.set_use_gpu(False)
+            KrylovInterface.set_use_gpu(gpu)
 
             dims = 5
             iterations = 2
             key_dirs = 2
-            num_parallel = 2
 
             a_matrix = random_sparse_matrix(dims, entries_per_row=2)
+
             key_dir_mat = random_sparse_matrix(dims, entries_per_row=2)[:key_dirs, :]
 
             # using python
-            init_vec1 = np.array([[1.0] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
-            init_vec2 = np.array([[1.0] if d == 1 else [0.0] for d in xrange(dims)], dtype=float)
+            init_vec = np.array([[1.0] if d == 1 else [0.0] for d in xrange(dims)], dtype=float)
+            v_mat_testing, h_mat_testing = python_arnoldi(a_matrix, init_vec, iterations)
 
-            v_mat_testing1, h_mat_testing1 = python_arnoldi(a_matrix, init_vec1, iterations)
-            projected_v_mat_testing1 = key_dir_mat * v_mat_testing1
-
-            v_mat_testing2, h_mat_testing2 = python_arnoldi(a_matrix, init_vec2, iterations)
-            projected_v_mat_testing2 = key_dir_mat * v_mat_testing2
+            projected_v_mat_testing = key_dir_mat * v_mat_testing
 
             # using cusp
-            KrylovInterface.preallocate_memory(iterations, num_parallel, dims, key_dirs)
+
+            KrylovInterface.preallocate_memory(iterations, dims, key_dirs)
             KrylovInterface.load_a_matrix(a_matrix)
             KrylovInterface.load_key_dir_matrix(key_dir_mat)
 
-            result_h, result_pv = KrylovInterface.arnoldi_parallel(0)
+            result_h, result_pv = KrylovInterface.arnoldi_unit(1)
 
-            self.assertTrue(np.allclose(result_h[0], h_mat_testing1), "Correct h matrix init vec 1")
-            self.assertTrue(np.allclose(result_pv[0], projected_v_mat_testing1), "Correct projV matrix for init vec 1")
-
-            self.assertTrue(np.allclose(result_h[1], h_mat_testing2), "Correct h matrix init vec 2")
-            self.assertTrue(np.allclose(result_pv[1], projected_v_mat_testing2), "Correct projV matrix for init vec 2")
+            self.assertTrue(np.allclose(result_h, h_mat_testing), "Incorrect h matrix use_gpu = {}".format(gpu))
+            self.assertTrue(np.allclose(result_pv, projected_v_mat_testing), \
+                "Incorrect projected v matrix, use_gpu = {}".format(gpu))
 
     def test_iss(self):
         'test the cusp implementation using the iss model'
@@ -375,7 +313,6 @@ class TestKrylovInterface(unittest.TestCase):
         #KrylovInterface.set_use_gpu(True)
 
         iterations = 10
-        num_parallel = 3
 
         a_matrix = csr_matrix(loadmat('iss.mat')['A'])
         dims = a_matrix.shape[0]
@@ -403,58 +340,28 @@ class TestKrylovInterface(unittest.TestCase):
         projected_v_mat_testing3 = key_dir_mat * v_mat_testing3
 
         # using cusp
-        KrylovInterface.preallocate_memory(iterations, num_parallel, dims, key_dir_mat.shape[0])
+        KrylovInterface.preallocate_memory(iterations, dims, key_dir_mat.shape[0])
         KrylovInterface.load_a_matrix(a_matrix)
         KrylovInterface.load_key_dir_matrix(key_dir_mat)
 
-        result_h, result_pv = KrylovInterface.arnoldi_parallel(100)
+        result_h1, result_pv1 = KrylovInterface.arnoldi_unit(100)
+        result_h2, result_pv2 = KrylovInterface.arnoldi_unit(101)
+        result_h3, result_pv3 = KrylovInterface.arnoldi_unit(102)
 
-        self.assertTrue(np.allclose(result_h[0], h_mat_testing1), "Correct h matrix init vec 100")
-        self.assertTrue(np.allclose(result_pv[0], projected_v_mat_testing1), "Correct projV matrix for init vec 100")
+        self.assertTrue(np.allclose(result_h1, h_mat_testing1), "Correct h matrix init vec 100")
+        self.assertTrue(np.allclose(result_pv1, projected_v_mat_testing1), "Correct projV matrix for init vec 100")
 
-        self.assertTrue(np.allclose(result_h[1], h_mat_testing2), "Correct h matrix init vec 101")
-        self.assertTrue(np.allclose(result_pv[1], projected_v_mat_testing2), "Correct projV matrix for init vec 101")
+        self.assertTrue(np.allclose(result_h2, h_mat_testing2), "Correct h matrix init vec 101")
+        self.assertTrue(np.allclose(result_pv2, projected_v_mat_testing2), "Correct projV matrix for init vec 101")
 
-        self.assertTrue(np.allclose(result_h[2], h_mat_testing3), "Correct h matrix init vec 102")
-        self.assertTrue(np.allclose(result_pv[2], projected_v_mat_testing3), "Correct projV matrix for init vec 102")
-
-    def test_compare_gpu_cpu(self):
-        'compare the cusp implementation gpu vs cpu (if a gpu is detected)'
-
-        dims = 5
-        iterations = 2
-        key_dirs = 2
-        num_parallel = 2
-
-        a_matrix = random_sparse_matrix(dims, entries_per_row=2)
-        key_dir_mat = random_sparse_matrix(dims, entries_per_row=2)[:key_dirs, :]
-
-        if KrylovInterface.has_gpu():
-            result_h_list = []
-            result_pv_list = []
-
-            for use_gpu in [False, True]:
-                KrylovInterface.set_use_gpu(use_gpu)
-                #print "\n---------------\n"
-                #KrylovInterface.set_use_profiling(True)
-
-                KrylovInterface.preallocate_memory(iterations, num_parallel, dims, key_dirs)
-                KrylovInterface.load_a_matrix(a_matrix)
-                KrylovInterface.load_key_dir_matrix(key_dir_mat)
-                result_h, result_pv = KrylovInterface.arnoldi_parallel(2) # offset by 2 just because
-
-                result_h_list.append(result_h)
-                result_pv_list.append(result_pv)
-
-            for i in [0, 1]:
-                self.assertTrue(np.allclose(result_h_list[0][i], result_h_list[1][i]), "bad h-matrix i={}".format(i))
-                self.assertTrue(np.allclose(result_pv_list[0][i], result_pv_list[1][i]), "bad projV i={}".format(i))
+        self.assertTrue(np.allclose(result_h3, h_mat_testing3), "Correct h matrix init vec 102")
+        self.assertTrue(np.allclose(result_pv3, projected_v_mat_testing3), "Correct projV matrix for init vec 102")
 
     def test_time_large_random(self):
         'compare the cusp implementation gpu vs cpu (if a gpu is detected) on a large example'
 
         # this test is manually enabled, since it can take a long time
-        test_enabled = False
+        test_enabled = True
 
         if test_enabled:
             print "running cpu / gpu timing comparison on large random matrix"
@@ -486,30 +393,24 @@ class TestKrylovInterface(unittest.TestCase):
                 KrylovInterface.set_use_gpu(use_gpu)
                 KrylovInterface.set_use_profiling(True)
 
-                num_parallel = 2 if use_gpu else 1
-                num_parallel_preallocate = num_parallel
-
-                KrylovInterface.preallocate_memory(iterations, num_parallel_preallocate, dims, len(dir_list))
-
+                KrylovInterface.preallocate_memory(iterations, dims, len(dir_list))
 
                 KrylovInterface.load_a_matrix(a_matrix)
                 KrylovInterface.load_key_dir_matrix(key_dir_mat)
-                result_h, result_pv = KrylovInterface.arnoldi_parallel(0)
+                result_h, result_pv = KrylovInterface.arnoldi_unit(0)
 
                 result_h_list.append(result_h)
                 result_pv_list.append(result_pv)
 
             if len(result_h_list) == 2:
-                #diff = result_h_list[0][0] - result_h_list[1][0]
-                #print "norm difference = {}".format(np.linalg.norm(diff))
-                self.assertTrue(np.allclose(result_h_list[0][0], result_h_list[1][0]), "h-mat mismatch")
-                self.assertTrue(np.allclose(result_pv_list[0][0], result_pv_list[1][0]), "mismatch projV")
+                self.assertTrue(np.allclose(result_h_list[0], result_h_list[1]), "h-mat mismatch")
+                self.assertTrue(np.allclose(result_pv_list[0], result_pv_list[1]), "mismatch projV")
 
     def test_large_spring(self):
         'compare the cusp implementation gpu vs cpu (if a gpu is detected) on a large spring example'
 
         # this test is manually enabled, since it can take a long time
-        test_enabled = False
+        test_enabled = True
 
         if test_enabled:
             print "running cpu / gpu timing comparison on large random matrix"
@@ -521,11 +422,11 @@ class TestKrylovInterface(unittest.TestCase):
             a_matrix = make_spring_mass_matrix(dims)
             print "done"
 
-            #dir1 = np.array([float(n) if n % 2 == 0 else 0.0 for n in xrange(dims)], dtype=float)
-            #dir2 = np.array([float(n) if n % 2 == 1 else 0.0 for n in xrange(dims)], dtype=float)
-            #dir_list = [dir1, dir2]
-            dir1 = np.array([1.0 if n == 0 else 0.0 for n in xrange(dims)], dtype=float)
-            dir_list = [dir1]
+            dir1 = np.array([float(n) if n % 2 == 0 else 0.0 for n in xrange(dims)], dtype=float)
+            dir2 = np.array([float(n) if n % 2 == 1 else 0.0 for n in xrange(dims)], dtype=float)
+            dir_list = [dir1, dir2]
+            #dir1 = np.array([1.0 if n == 0 else 0.0 for n in xrange(dims)], dtype=float)
+            #dir_list = [dir1]
             key_dir_mat = csr_matrix(dir_list)
 
             result_h_list = []
@@ -541,40 +442,21 @@ class TestKrylovInterface(unittest.TestCase):
                 KrylovInterface.set_use_gpu(use_gpu)
                 KrylovInterface.set_use_profiling(True)
 
-                num_parallel = 1 if use_gpu else 1
-                num_parallel_preallocate = num_parallel
-
-                KrylovInterface.preallocate_memory(iterations, num_parallel_preallocate, dims, len(dir_list))
-
+                KrylovInterface.preallocate_memory(iterations, dims, len(dir_list))
 
                 KrylovInterface.load_a_matrix(a_matrix)
                 KrylovInterface.load_key_dir_matrix(key_dir_mat)
-                result_h, result_pv = KrylovInterface.arnoldi_parallel(0)
+                result_h, result_pv = KrylovInterface.arnoldi_unit(0)
 
                 result_h_list.append(result_h)
                 result_pv_list.append(result_pv)
 
             if len(result_h_list) == 2:
-                #diff = result_h_list[0][0] - result_h_list[1][0]
-                #print "norm difference = {}".format(np.linalg.norm(diff))
-                self.assertTrue(np.allclose(result_h_list[0][0], result_h_list[1][0]), "h-mat mismatch")
-                self.assertTrue(np.allclose(result_pv_list[0][0], result_pv_list[1][0]), "mismatch projV")
+                self.assertTrue(np.allclose(result_h_list[0], result_h_list[1]), "h-mat mismatch")
+                self.assertTrue(np.allclose(result_pv_list[0], result_pv_list[1]), "mismatch projV")
 
     def test_krylov_spring_accuracy(self):
         'test the if the krylov method is accurate enough'
-
-        def relative_error(correct, estimate):
-            'compute the relative error between the correct value and an estimate'
-
-            rel_error = 0
-            norm = np.linalg.norm(correct)
-
-            if norm > 1e-9:
-                diff = correct - estimate
-                err = np.linalg.norm(diff)
-                rel_error = err / norm
-
-            return rel_error
 
         step = 0.01
         max_time = step * 100
@@ -592,7 +474,7 @@ class TestKrylovInterface(unittest.TestCase):
         dir_list.append(np.array([float(n) if n % 2 == 1 else 0.0 for n in xrange(dims)], dtype=float))
         key_dirs = csr_matrix(dir_list)
 
-        KrylovInterface.preallocate_memory(2, 1, a_matrix.shape[0], key_dirs.shape[0], error_on_fail=True)
+        KrylovInterface.preallocate_memory(2, a_matrix.shape[0], key_dirs.shape[0], error_on_fail=True)
         KrylovInterface.load_a_matrix(a_matrix) # load a_matrix into device memory
         KrylovInterface.load_key_dir_matrix(key_dirs) # load key direction matrix into device memory
 
@@ -603,7 +485,8 @@ class TestKrylovInterface(unittest.TestCase):
         real_proj = np.dot(np.array(key_dirs.todense()), real_answer)
 
         a_iter = 40
-        KrylovInterface.preallocate_memory(a_iter, 1, dims, key_dirs.shape[0], error_on_fail=True)
+        # test reallocating with more arnoldi iterations
+        KrylovInterface.preallocate_memory(a_iter, dims, key_dirs.shape[0], error_on_fail=True)
 
         cur_sim = get_projected_simulation(settings, cur_dim, use_mult=True)
 
@@ -623,8 +506,6 @@ class TestKrylovInterface(unittest.TestCase):
 
         dynamics = loadmat('iss.mat')
         raw_a_matrix = dynamics['A']
-
-        raw_a_matrix = raw_a_matrix
 
         # raw_a_matrix is a csc_matrix
         col_ptr = [n for n in raw_a_matrix.indptr]
@@ -663,11 +544,12 @@ class TestKrylovInterface(unittest.TestCase):
                 "Mismatch in dimension {}, {} (real) vs {} (python)".format(d, real_answer[d], python_answer[d]))
 
         # cusp comparison
-        KrylovInterface.preallocate_memory(iterations, 1, dims, key_dir_mat.shape[0])
+        KrylovInterface.preallocate_memory(iterations, dims, key_dir_mat.shape[0])
         KrylovInterface.load_a_matrix(a_matrix)
         KrylovInterface.load_key_dir_matrix(key_dir_mat)
-        result_h, _ = KrylovInterface.arnoldi_parallel(initial_vec_index)
-        h_mat = result_h[0][:-1, :].copy()
+        result_h, result_v = KrylovInterface.arnoldi_unit(initial_vec_index)
+        h_mat = result_h[:-1, :].copy()
+        v_mat = result_v[:, :-1].copy()
 
         exp = expm(h_mat)[:, 0]
         cusp_answer = np.dot(v_mat, exp)
