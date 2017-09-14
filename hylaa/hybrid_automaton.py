@@ -8,7 +8,6 @@ from scipy.sparse import csr_matrix
 
 from hylaa.util import Freezable
 
-
 def make_constraint_matrix(bounds_list):
     'make a constraints matrix and rhs vector from a list of bounds in each dimension'
 
@@ -33,7 +32,7 @@ def make_constraint_matrix(bounds_list):
         indptr.append(2*dim+1)
         constraint_rhs.append(-lb)
 
-        indptr.append(len(values))
+    indptr.append(len(values))
 
     init_mat = csr_matrix((values, indices, indptr), shape=(2*dims, dims), dtype=float)
     init_rhs = np.array(constraint_rhs, dtype=float)

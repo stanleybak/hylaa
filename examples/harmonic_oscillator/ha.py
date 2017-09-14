@@ -95,6 +95,7 @@ def define_settings():
 
     settings.simulation.guard_mode = SimulationSettings.GUARD_FULL_LP
     settings.simulation.sim_mode = SimulationSettings.KRYLOV
+    settings.simulation.seperate_constant_vars = False
     settings.simulation.pipeline_arnoldi_expm = False
 
     settings.simulation.check_answer = True

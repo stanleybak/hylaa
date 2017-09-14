@@ -17,7 +17,7 @@ def check_instance():
     step = 0.785398163397
     max_time = 2.35619449019
 
-    start_point = [-5.0, 0.65685424949237703, 0.0, 1.0]
+    start_point = [-5.0, 0.65685424949238269, 0.0, 1.0]
     normal_vec = [-1.0, 0.0, 0.0, 0.0]
     normal_val = -4.0
 

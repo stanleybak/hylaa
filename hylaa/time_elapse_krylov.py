@@ -419,7 +419,7 @@ def make_cur_time_elapse_mat_list(time_elapser):
 
     rv = init_krylov(time_elapser, 2)
 
-    if not settings.simulation.expm_mult_fixed_terms:
+    if settings.simulation.seperate_constant_vars and not settings.simulation.expm_mult_fixed_terms:
         Timers.tic("krylov assign fixed terms")
         start = time.time()
         assign_fixed_terms(time_elapser, rv)
