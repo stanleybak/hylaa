@@ -22,7 +22,6 @@ def define_ha():
     a_matrix = csr_matrix(a_matrix, dtype=float)
 
     mode = ha.new_mode('mode')
-
     mode.set_dynamics(a_matrix)
 
     error = ha.new_mode('error')

@@ -283,7 +283,7 @@ def krylov_sim_fixed_terms(time_elapser):
     error_limit = settings.simulation.krylov_rel_error
 
     init_vec = time_elapser.fixed_init_vec
-    arnoldi_iter = min(dims, 2)
+    arnoldi_iter = min(dims, 4)
 
     if settings.print_output:
         print "Computing fixed term using krylov simulation with iterations: ",
@@ -327,15 +327,15 @@ def choose_arnoldi_iter(time_elapser):
     settings = time_elapser.settings
     dims = time_elapser.a_matrix.shape[0]
     key_dirs = time_elapser.key_dir_mat.shape[0]
-    arnoldi_iter = min(2, dims)
 
     if settings.print_output:
         print "Determining number of arnoldi iterations for desired accuracy...",
         sys.stdout.flush()
 
-    if dims <= 2:
+    if dims <= 4:
         arnoldi_iter = dims
     else:
+        arnoldi_iter = 4
         error_limit = settings.simulation.krylov_rel_error
 
         # sample accuracy in a small number of dimensions
@@ -359,6 +359,7 @@ def choose_arnoldi_iter(time_elapser):
             print "{}".format(arnoldi_iter),
             sys.stdout.flush()
 
+        KrylovInterface.preallocate_memory(arnoldi_iter, dims, key_dirs, error_on_fail=True)
         cur_rel_error, h_list, pv_list = get_max_rel_error(settings, dim_list, error_limit)
 
         while cur_rel_error > error_limit:
@@ -431,7 +432,7 @@ def make_cur_time_elapse_mat_list(time_elapser):
     arnoldi_iter = choose_arnoldi_iter(time_elapser)
     Timers.toc("choose arnoldi iterations")
 
-    #print "debug fixed arnoldi_iter=37"
+    #print "debug fixed arnoldi_iter=37 for million dimensional spring profiling"
     #arnoldi_iter = 37
 
     # re-allocate with correct number of arnoldi iterations
@@ -450,11 +451,12 @@ def make_cur_time_elapse_mat_list(time_elapser):
 
     store_dim_index = 0
 
-    for start_vec in variable_dim_list:
+    for start_vec_index in xrange(len(variable_dim_list)):
+        start_vec = variable_dim_list[start_vec_index]
 
-        print "start_vec = {}".format(start_vec)
+        print "start_vec = {}, index = {}".format(start_vec, start_vec_index)
 
-        #if start_vec == 64:
+        #if start_vec_index == 64:
         #    print "debug break at 64"
         #    break
 
@@ -463,14 +465,15 @@ def make_cur_time_elapse_mat_list(time_elapser):
 
             if now - last_print > 1.0: # print every second
                 last_print = now
-                frac = float(start_vec) / dims
+                frac = float(start_vec_index) / len(variable_dim_list)
 
                 if frac > 1e-9:
                     elapsed_sec = now - start
                     total_sec = elapsed_sec / frac
                     eta_sec = total_sec - elapsed_sec
                     eta = format_secs(eta_sec)
-                    print "Arnoldi Parallel {} / {} ({:.2f}%, ETA: {})".format(start_vec, dims, 100.0 * frac, eta)
+                    print "Arnoldi Parallel {} / {} ({:.2f}%, ETA: {})".format(start_vec_index, len(variable_dim_list),
+                                                                               100.0 * frac, eta)
 
         Timers.tic('krylov arnoldi_unit()')
         h_mat, pv_mat = KrylovInterface.arnoldi_unit(start_vec)
