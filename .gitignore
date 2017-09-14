@@ -11,3 +11,4 @@ gpu_flops
 matrixMulCUBLAS
 matrixMulCUBLAS.o
 test
+counterexample.py
