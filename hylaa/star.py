@@ -48,6 +48,7 @@ class Star(Freezable):
         self.init_mat_csr = init_mat_csr
         self.init_rhs = init_rhs
 
+        self.fixed_tuples = fixed_tuples
         self.var_list = var_list
         self.lp_dims = len(var_list) + 1 if var_list is not None else self.dims
 

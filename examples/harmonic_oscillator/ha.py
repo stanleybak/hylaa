@@ -25,6 +25,15 @@ def define_ha():
 
     mode.set_dynamics(a_matrix)
 
+    error = ha.new_mode('error')
+    dims = a_matrix.shape[0]
+
+    # x1 >= 4.0 & x1 <= 4.0
+    mat = csr_matrix(([-1, 1], [0, 0], [0, 1, 2]), dtype=float, shape=(2, dims))
+    rhs = np.array([-4.0, 4.0], dtype=float)
+    trans1 = ha.new_transition(mode, error)
+    trans1.set_guard(mat, rhs)
+
     return ha
 
 def make_init_star(ha, hylaa_settings):
@@ -34,7 +43,7 @@ def make_init_star(ha, hylaa_settings):
     bounds_list = [] # bounds on each dimension
 
     for dim in xrange(ha.dims):
-        if dim == 0: # x == 5
+        if dim == 0: # x == -5
             lb = -5
             ub = -5
         elif dim == 1: # y in [0, 1]
@@ -65,7 +74,7 @@ def make_init_star(ha, hylaa_settings):
 def define_settings():
     'get the hylaa settings object'
     plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
+    plot_settings.plot_mode = PlotSettings.PLOT_INTERACTIVE
     plot_settings.xdim_dir = 0
     plot_settings.ydim_dir = 1
 
@@ -84,6 +93,7 @@ def define_settings():
     #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
     #settings.simulation.sim_mode = SimulationSettings.MATRIX_EXP
 
+    settings.simulation.guard_mode = SimulationSettings.GUARD_FULL_LP
     settings.simulation.sim_mode = SimulationSettings.KRYLOV
     settings.simulation.pipeline_arnoldi_expm = False
 

@@ -316,8 +316,6 @@ def krylov_sim_fixed_terms(time_elapser):
 
         cur_rel_error, simulation = get_rel_error(settings, h_mat, pv_mat, arnoldi_iter, True)
 
-        print "arnoldi_iter = {}, cur_rel_error = {}".format(arnoldi_iter, cur_rel_error)
-
     return simulation
 
 def choose_arnoldi_iter(time_elapser):
@@ -398,7 +396,6 @@ def assign_fixed_terms(time_elapser, rv):
     Timers.tic('krylov update result list')
 
     for i in xrange(len(fixed_sim)):
-        print "fixed_sim[i] = {}".format(fixed_sim[i])
         rv[i+1][:, -1] = fixed_sim[i]
 
     Timers.toc('krylov update result list')
@@ -426,7 +423,7 @@ def make_cur_time_elapse_mat_list(time_elapser):
         Timers.tic("krylov assign fixed terms")
         start = time.time()
         assign_fixed_terms(time_elapser, rv)
-        diff = start - time.time()
+        diff = time.time() - start
         print "krylov fix sim time: {:.2f}ms".format(diff * 1000)
         Timers.toc("krylov assign fixed terms")
 

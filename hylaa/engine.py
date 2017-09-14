@@ -42,6 +42,37 @@ class HylaaEngine(object):
 
         return self.cur_star is None or self.reached_error
 
+    def reconstruct_full_start_pt(self, lp_solution):
+        '''
+        Reconstruct a full-dimensional start point from an lp solution in the current star.
+
+        For use when settings.simulation.seperate_constant_vars == True in order to create the counter-example trace.
+        '''
+
+        star = self.cur_star
+        var_list = star.var_list
+        fixed_tuples = star.fixed_tuples
+        dims = star.dims
+
+        start_pt = []
+        var_index = 0
+        fixed_index = 0
+
+        for dim in xrange(dims):
+            if var_index >= len(var_list) or var_list[var_index] > dim:
+                # fixed dimension
+                fixed_dim, fixed_val = fixed_tuples[fixed_index]
+                assert dim == fixed_dim
+                start_pt.append(fixed_val)
+                fixed_index += 1
+            else:
+                assert dim == var_list[var_index]
+                # variable dim, extract from lp solution
+                start_pt.append(lp_solution[var_index])
+                var_index += 1
+
+        return np.array(start_pt, dtype=float)
+
     def check_guards(self):
         '''check for discrete successors with the guards'''
 
@@ -53,18 +84,29 @@ class HylaaEngine(object):
                     # print out the counter-example trace to a counter-example file
 
                     filename = self.settings.counter_example_filename
-                    mode = self.cur_star.mode
+                    star = self.cur_star
+                    mode = star.mode
                     step_size = self.settings.step
-                    total_steps = self.cur_star.time_elapse.next_step - 1
-                    start_pt = lp_solution[:self.cur_star.dims]
+                    total_steps = star.time_elapse.next_step - 1
+                    start_pt = lp_solution[:star.lp_dims]
+
+                    #print ".engine start point from lp = {}".format(start_pt)
+
+                    if self.cur_star.var_list is not None:
+                        # reconstruct start_pt based on the fixed and non-fixed dims
+                        start_pt = self.reconstruct_full_start_pt(start_pt)
+
+                    #print ".engine reconstructed start point = {}".format(start_pt)
+
                     norm_vec_sparse = self.cur_star.mode.transitions[i].guard_matrix[0]
                     normal_vec = np.array(norm_vec_sparse.toarray(), dtype=float)
                     normal_vec.shape = (self.cur_star.dims,)
                     normal_val = self.cur_star.mode.transitions[i].guard_rhs[0]
-                    end_val = lp_solution[self.cur_star.dims]
+
+                    end_val = lp_solution[self.cur_star.lp_dims]
 
                     num_constraints = len(self.cur_star.mode.transitions[i].guard_rhs)
-                    input_vals = lp_solution[self.cur_star.dims + num_constraints:]
+                    input_vals = lp_solution[self.cur_star.lp_dims + num_constraints:]
 
                     if self.settings.print_output:
                         print 'Writing counter-example trace file: "{}"'.format(filename)

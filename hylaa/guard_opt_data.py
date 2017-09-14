@@ -32,7 +32,7 @@ class GuardOptData(Freezable):
             self.key_dir_offset += self.mode.transitions[t_index].guard_matrix.shape[0]
 
         if self.settings.simulation.guard_mode == SimulationSettings.GUARD_FULL_LP:
-            self.lpi = LpInstance(self.num_constraints, self.dims, self.inputs)
+            self.lpi = LpInstance(self.num_constraints, star.lp_dims, self.inputs)
             self.lpi.set_init_constraints_csr(star.init_mat_csr, star.init_rhs)
             self.lpi.set_cur_time_constraint_bounds(self.transition.guard_rhs)
 
@@ -40,9 +40,10 @@ class GuardOptData(Freezable):
                 self.lpi.set_input_constraints_csr(star.input_mat_csr, star.input_rhs)
         elif self.settings.simulation.guard_mode == SimulationSettings.GUARD_DECOMPOSED:
             assert self.num_constraints == 1, \
-                "SimulationSettings.guard_mode == GUARD_DECOMPOSED requires num transition constraints to be 1"
+                "SimulationSettings.guard_mode == GUARD_DECOMPOSED requires num transition constraints to be 1. " + \
+                "Try using settings.simulation.guard_mode = SimulationSettings.GUARD_FULL_LP."
 
-            self.noinput_lpi = LpInstance(self.num_constraints, self.dims, 0)
+            self.noinput_lpi = LpInstance(self.num_constraints, star.lp_dims, 0)
 
             self.noinput_lpi.set_init_constraints_csr(star.init_mat_csr, star.init_rhs)
 
@@ -64,10 +65,11 @@ class GuardOptData(Freezable):
         self.noinput_lpi.update_time_elapse_matrix(cur_time_mat[row:row+1])
         self.noinput_lpi.commit_cur_time_rows()
 
-        noinput_result = np.zeros((self.dims + 1), dtype=float)
+        noinput_result = np.zeros((self.star.lp_dims + 1), dtype=float)
         direction = np.array([1.0], dtype=float)
+
         self.noinput_lpi.minimize(direction, noinput_result)
-        noinput_value = noinput_result[self.dims]
+        noinput_value = noinput_result[self.star.lp_dims]
 
         # add input effects for the current step (if it exists)
         if self.star.time_elapse.cur_input_effects_matrix is not None:
@@ -87,7 +89,7 @@ class GuardOptData(Freezable):
             # violation! reconstruct result
             total = noinput_value + self.input_effects_sum
 
-            rv = np.concatenate((noinput_result[0:self.dims], [total], self.input_history))
+            rv = np.concatenate((noinput_result[0:self.star.lp_dims], [total], self.input_history))
         else:
             rv = None
 

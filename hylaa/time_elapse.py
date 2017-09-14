@@ -309,8 +309,8 @@ class TimeElapser(Freezable):
         assert self.cur_time_elapse_mat.shape == expected.shape, \
             "wrong shape in check_answer(), got {}, expected {}".format(self.cur_time_elapse_mat.shape, expected.shape)
 
-        print "expected:\n{}".format(expected)
-        print "got:\n{}".format(self.cur_time_elapse_mat)
+        #print "expected:\n{}".format(expected)
+        #print "got:\n{}".format(self.cur_time_elapse_mat)
 
         for dim in xrange(expected.shape[1]):
             col_expected = expected[:, dim]
