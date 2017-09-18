@@ -12,7 +12,7 @@ are no inputs (currently).
 import numpy as np
 from scipy.sparse import csr_matrix, csc_matrix
 
-from hylaa.hybrid_automaton import LinearHybridAutomaton
+from hylaa.hybrid_automaton import LinearHybridAutomaton, make_constraint_matrix, make_seperated_constraints
 from hylaa.engine import HylaaSettings
 from hylaa.engine import HylaaEngine
 from hylaa.containers import PlotSettings, SimulationSettings
@@ -86,9 +86,30 @@ def make_init_constraints(ha):
 def make_init_star(ha, hylaa_settings):
     '''returns a star'''
 
-    init_mat, init_rhs = make_init_constraints(ha)
+    rv = None
+    bounds_list = []
 
-    return Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs)
+    for dim in xrange(ha.dims):
+        if dim == 1:
+            lb = 0.6
+            ub = 1.0
+        else:
+            lb = -0.2
+            ub = 0.2
+
+        bounds_list.append((lb, ub))
+
+    if not hylaa_settings.simulation.seperate_constant_vars or \
+            hylaa_settings.simulation.sim_mode != SimulationSettings.KRYLOV:
+        init_mat, init_rhs = make_constraint_matrix(bounds_list)
+        rv = Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs)
+    else:
+        init_mat, init_rhs, variable_dim_list, fixed_dim_tuples = make_seperated_constraints(bounds_list)
+
+        rv = Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs, \
+                  var_lists=[variable_dim_list], fixed_tuples=fixed_dim_tuples)
+
+    return rv
 
 def make_a_matrix(num_masses):
     '''get the A matrix corresponding to the dynamics for the given number of masses'''
@@ -149,13 +170,13 @@ def define_settings(_):
 
     settings.simulation.sim_mode = SimulationSettings.KRYLOV
     #settings.simulation.krylov_use_gpu = True
-    settings.simulation.krylov_profiling = True
-    settings.simulation.check_answer = True
+    #settings.simulation.krylov_profiling = True
+    #settings.simulation.check_answer = True
 
     #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
 
-    #settings.simulation.pipeline_arnoldi_expm = False
-    settings.simulation.seperate_constant_vars = False
+    settings.simulation.pipeline_arnoldi_expm = False
+    settings.simulation.seperate_constant_vars = True
     settings.simulation.guard_mode = SimulationSettings.GUARD_DECOMPOSED
 
     return settings

@@ -382,8 +382,8 @@ def krylov_sim_fixed_terms(time_elapser):
 
             cur_rel_error, simulation = get_rel_error(settings, h_mat, pv_mat, arnoldi_iter, True, limit=error_limit)
 
-    if settings.print_output:
-        print "\n"
+        if settings.print_output:
+            print "\n"
 
     return simulation
 
@@ -457,19 +457,20 @@ def choose_arnoldi_iter(time_elapser, var_list):
 def assign_fixed_terms(time_elapser, rv):
     'assign the fixed effect terms using a krylov simulation'
 
-    Timers.tic("krylov sim fixed terms")
-    fixed_sim = krylov_sim_fixed_terms(time_elapser)
-    Timers.toc("krylov sim fixed terms")
+    if time_elapser.settings.simulation.seperate_constant_vars:
+        Timers.tic("krylov sim fixed terms")
+        fixed_sim = krylov_sim_fixed_terms(time_elapser)
+        Timers.toc("krylov sim fixed terms")
 
-    if fixed_sim is not None:
-        # assign results from fixed_sim
-        assert len(fixed_sim) == len(rv) - 1
-        Timers.tic('update result list')
+        if fixed_sim is not None:
+            # assign results from fixed_sim
+            assert len(fixed_sim) == len(rv) - 1
+            Timers.tic('update result list')
 
-        for i in xrange(len(fixed_sim)):
-            rv[i+1][:, -1] = fixed_sim[i]
+            for i in xrange(len(fixed_sim)):
+                rv[i+1][:, -1] = fixed_sim[i]
 
-        Timers.toc('update result list')
+            Timers.toc('update result list')
 
 def update_result_list(list_of_results, settings, rv):
     'populate rv based on the list of results'
@@ -554,7 +555,7 @@ def make_cur_time_elapse_mat_list(time_elapser):
                         eta_sec = total_sec - elapsed_sec
                         eta = format_secs(eta_sec)
 
-                        print "Arnoldi Parallel {} / {} ({:.2f}%, ETA: {})".format(
+                        print "Arnoldi {} / {} ({:.2f}%, ETA: {})".format(
                             completed_vars, num_vars, 100.0 * frac, eta)
 
             Timers.tic('krylov arnoldi_unit()')
@@ -575,7 +576,7 @@ def make_cur_time_elapse_mat_list(time_elapser):
             args = [(settings.num_steps, settings.step, dim, h_mat, pv_mat, compute_rel_error)]
             store_dim_index += 1
 
-            if settings.simulation.pipeline_arnoldi_expm and not settings.simulation.check_answer:
+            if settings.simulation.pipeline_arnoldi_expm:
                 # push the computation to another thread
                 Timers.tic('krylov send expm to another thread')
                 pool_res = pool.map_async(get_krylov_result, args)
