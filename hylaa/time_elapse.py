@@ -4,6 +4,7 @@ l * e^{At} where l is some direction of interest, and t is a multiple of some ti
 '''
 
 import sys
+
 import numpy as np
 
 from scipy.sparse import lil_matrix, csr_matrix, csc_matrix
@@ -25,7 +26,8 @@ class TimeElapser(Freezable):
 
         self.settings = hylaa_settings
 
-        if self.settings.simulation.sim_mode == SimulationSettings.MATRIX_EXP or self.settings.simulation.check_answer:
+        if self.settings.simulation.sim_mode == SimulationSettings.MATRIX_EXP or \
+            self.settings.simulation.check_answer:
             Timers.tic("convert a_matrix and b_matrix to csc matrix")
             self.a_matrix_csc = csc_matrix(mode.a_matrix)
             self.b_matrix_csc = None if mode.b_matrix is None else csc_matrix(mode.b_matrix)
@@ -227,30 +229,6 @@ class TimeElapser(Freezable):
 
         self.cur_time_elapse_mat = self.cur_time_elapse_mat_list[self.next_step].copy()
 
-        if self.next_step == 0:
-            print "TODO: profile the speed for fixed terms: expm_multiply vs krylov sim"
-
-        if self.settings.simulation.seperate_constant_vars and self.settings.simulation.expm_mult_fixed_terms:
-            # compute fixed-term effect using expm_multiply
-
-            if self.next_step != 0:
-                t = self.settings.step * self.next_step
-
-                init_vec = self.fixed_init_vec
-
-                Timers.tic("fixed term expm_multiply")
-                start = time.time()
-                solution = expm_multiply(self.a_matrix_csc * t, init_vec)
-                diff = time.time() - start
-                print "expm_multiply time: {:.2f}ms".format(diff * 1000)
-                Timers.toc("fixed term expm_multiply")
-
-                proj_solution = self.key_dir_mat * solution
-                proj_solution.shape = (self.key_dir_mat.shape[0], )
-
-                # project solution onto key directions
-                self.cur_time_elapse_mat[:, -1] = proj_solution
-
     def step(self):
         'perform the computation to obtain the values of the key directions the current time'
 
@@ -275,7 +253,8 @@ class TimeElapser(Freezable):
 
         cur_time_mat_width = self.key_dir_mat.shape[1]
 
-        if self.settings.simulation.seperate_constant_vars:
+        if self.settings.simulation.sim_mode == SimulationSettings.KRYLOV and \
+                self.settings.simulation.seperate_constant_vars:
             cur_time_mat_width = 1 + sum([len(sublist) for sublist in self.var_lists])
 
         cur_time_mat_shape = (self.key_dir_mat.shape[0], cur_time_mat_width)

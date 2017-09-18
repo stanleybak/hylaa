@@ -42,7 +42,6 @@ def define_ha():
     error = ha.new_mode('error')
 
     y3 = dynamics['C'][2]
-
     col_ptr = [n for n in y3.indptr] + num_inputs * [y3.data.shape[0]]
     y3 = csc_matrix((y3.data, y3.indices, col_ptr), shape=(1, y3.shape[1] + num_inputs))
     guard_matrix = csr_matrix(y3)
@@ -81,7 +80,8 @@ def make_init_star(ha, hylaa_settings):
 
         bounds_list.append((lb, ub))
 
-    if not hylaa_settings.simulation.seperate_constant_vars:
+    if not hylaa_settings.simulation.seperate_constant_vars or \
+            hylaa_settings.simulation.sim_mode != SimulationSettings.KRYLOV:
         init_mat, init_rhs = make_constraint_matrix(bounds_list)
         rv = Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs)
     else:
@@ -89,10 +89,10 @@ def make_init_star(ha, hylaa_settings):
 
         # split variable_dim_list into the input and non-input parts
         # this will use different krylov subspace lengths for evaluation
-        variable_dims = [variable_dim_list[:-3], variable_dim_list[-3:]]
+        variable_dims = [variable_dim_list[-3:], variable_dim_list[:-3]]
 
         rv = Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs, \
-                  var_list=variable_dims, fixed_tuples=fixed_dim_tuples)
+                  var_lists=variable_dims, fixed_tuples=fixed_dim_tuples)
 
     return rv
 
@@ -106,15 +106,22 @@ def define_settings(_):
     settings = HylaaSettings(step=step_size, max_time=max_time, plot_settings=plot_settings)
     settings.simulation.guard_mode = SimulationSettings.GUARD_DECOMPOSED
 
-    #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
-    settings.simulation.seperate_constant_vars = False
-    settings.simulation.sim_mode = SimulationSettings.KRYLOV
-    settings.simulation.check_answer = True
+    settings.simulation.sim_mode = SimulationSettings.EXP_MULT
+    #settings.simulation.sim_mode = SimulationSettings.KRYLOV
+    #settings.simulation.seperate_constant_vars = False
+    settings.simulation.pipeline_arnoldi_expm = True
+    #settings.simulation.check_answer = True
+
+    #settings.simulation.krylov_check_all_rel_error = True
+    #settings.simulation.krylov_rel_error = 1e-6
 
     return settings
 
 def run_hylaa():
     'Runs hylaa with the given settings, returning the HylaaResult object.'
+
+    print "!!! in iss.py run_hylaa(). Check if early break in arnoldi loop actually helps performance on this example"
+
     ha = define_ha()
     settings = define_settings(ha)
     init = make_init_star(ha, settings)

@@ -50,23 +50,19 @@ class HylaaEngine(object):
         '''
 
         star = self.cur_star
-        var_list = star.var_list
         fixed_tuples = star.fixed_tuples
         dims = star.dims
 
         start_pt = []
-        var_index = 0
         fixed_index = 0
+        var_index = 0
 
         for dim in xrange(dims):
-            if var_index >= len(var_list) or var_list[var_index] > dim:
+            if fixed_index < len(fixed_tuples) and fixed_tuples[fixed_index][0] == dim:
                 # fixed dimension
-                fixed_dim, fixed_val = fixed_tuples[fixed_index]
-                assert dim == fixed_dim
-                start_pt.append(fixed_val)
+                start_pt.append(fixed_tuples[fixed_index][1])
                 fixed_index += 1
             else:
-                assert dim == var_list[var_index]
                 # variable dim, extract from lp solution
                 start_pt.append(lp_solution[var_index])
                 var_index += 1
@@ -92,7 +88,7 @@ class HylaaEngine(object):
 
                     #print ".engine start point from lp = {}".format(start_pt)
 
-                    if self.cur_star.var_list is not None:
+                    if self.cur_star.var_lists is not None:
                         # reconstruct start_pt based on the fixed and non-fixed dims
                         start_pt = self.reconstruct_full_start_pt(start_pt)
 

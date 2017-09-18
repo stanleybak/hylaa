@@ -19,7 +19,7 @@ from hylaa.hybrid_automaton import HyperRectangle, LinearAutomatonTransition
 from hylaa.hybrid_automaton import LinearAutomatonMode
 from hylaa.timerutil import Timers as Timers
 from hylaa.util import Freezable
-from hylaa.containers import PlotSettings, HylaaSettings
+from hylaa.containers import PlotSettings, HylaaSettings, SimulationSettings
 from hylaa.time_elapse import TimeElapser
 from hylaa.guard_opt_data import GuardOptData
 
@@ -48,7 +48,7 @@ class Star(Freezable):
             assert hylaa_settings.simulation.sim_mode == SimulationSettings.KRYLOV, \
                     "var_lists not null, but sim_mode != KRYLOV"
             assert isinstance(var_lists[0], list), "var_lists should be a list of lists of grouped dimensions"
-            self.lp_dims = sum([len(sublist) for sublist in var_lists])
+            self.lp_dims = 1 + sum([len(sublist) for sublist in var_lists])
 
         self.time_elapse = TimeElapser(mode, hylaa_settings, var_lists=var_lists, fixed_tuples=fixed_tuples)
 

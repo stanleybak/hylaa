@@ -361,7 +361,7 @@ class TestKrylovInterface(unittest.TestCase):
         'compare the cusp implementation gpu vs cpu (if a gpu is detected) on a large example'
 
         # this test is manually enabled, since it can take a long time
-        test_enabled = True
+        test_enabled = False
 
         if test_enabled:
             print "running cpu / gpu timing comparison on large random matrix"
@@ -410,7 +410,7 @@ class TestKrylovInterface(unittest.TestCase):
         'compare the cusp implementation gpu vs cpu (if a gpu is detected) on a large spring example'
 
         # this test is manually enabled, since it can take a long time
-        test_enabled = True
+        test_enabled = False
 
         if test_enabled:
             print "running cpu / gpu timing comparison on large random matrix"
@@ -499,9 +499,12 @@ class TestKrylovInterface(unittest.TestCase):
     def test_iss_inputs(self):
         'test with iss example with forcing inputs'
 
+        tol = 1e-9
         dims = 273
-        iterations = 90
-        initial_vec_index = dims-1
+        iterations = 260
+        compare_time = 20.0
+
+        initial_vec_index = dims-3
         init_vec = np.array([[1.0] if d == initial_vec_index else [0.0] for d in xrange(dims)], dtype=float)
 
         dynamics = loadmat('iss.mat')
@@ -524,38 +527,47 @@ class TestKrylovInterface(unittest.TestCase):
         self.assertEqual(dims, a_matrix.shape[0])
 
         ############
+        y3 = dynamics['C'][2]
+        col_ptr = [n for n in y3.indptr] + 3 * [y3.data.shape[0]]
+        key_dir_mat = csc_matrix((y3.data, y3.indices, col_ptr), shape=(1, dims))
+        key_dir_mat = csr_matrix(key_dir_mat)
 
-        key_dir_mat = csr_matrix(np.identity(dims, dtype=float))
+        #key_dir_mat = csr_matrix(np.identity(dims, dtype=float))
         # key dir is identity (no projection needed)
 
         # real answer
-        real_answer = expm_multiply(a_matrix_csc, init_vec)
+        real_answer = expm_multiply(a_matrix_csc * compare_time, init_vec)
         real_answer.shape = (dims,)
+        real_answer = key_dir_mat * real_answer
 
         # python comparison
         python_v, python_h = python_arnoldi(a_matrix, init_vec, iterations)
         h_mat = python_h[:-1, :].copy()
         v_mat = python_v[:, :-1].copy()
-        exp = expm(h_mat)[:, 0]
+        exp = expm(h_mat * compare_time)[:, 0]
         python_answer = np.dot(v_mat, exp)
+        python_answer = key_dir_mat * python_answer
 
-        for d in xrange(dims):
-            self.assertLess(abs(real_answer[d] - python_answer[d]), 1e-4, \
+        for d in xrange(real_answer.shape[0]):
+            self.assertLess(abs(real_answer[d] - python_answer[d]), tol, \
                 "Mismatch in dimension {}, {} (real) vs {} (python)".format(d, real_answer[d], python_answer[d]))
 
         # cusp comparison
         KrylovInterface.preallocate_memory(iterations, dims, key_dir_mat.shape[0])
         KrylovInterface.load_a_matrix(a_matrix)
         KrylovInterface.load_key_dir_matrix(key_dir_mat)
-        result_h, result_v = KrylovInterface.arnoldi_unit(initial_vec_index)
+        result_h, result_pv = KrylovInterface.arnoldi_unit(initial_vec_index)
         h_mat = result_h[:-1, :].copy()
-        v_mat = result_v[:, :-1].copy()
+        pv_mat = result_pv[:, :-1].copy()
 
-        exp = expm(h_mat)[:, 0]
-        cusp_answer = np.dot(v_mat, exp)
+        exp = expm(h_mat * compare_time)[:, 0]
+        cusp_answer = np.dot(pv_mat, exp)
 
-        for d in xrange(dims):
-            self.assertLess(abs(real_answer[d] - cusp_answer[d]), 1e-4, \
+        #print "real_answer = {}".format(real_answer)
+        #print "cusp answer = {}".format(cusp_answer)
+
+        for d in xrange(real_answer.shape[0]):
+            self.assertLess(abs(real_answer[d] - cusp_answer[d]), tol, \
                 "Mismatch in dimension {}, {} (real) vs {} (cusp)".format(d, real_answer[d], cusp_answer[d]))
 
 if __name__ == '__main__':

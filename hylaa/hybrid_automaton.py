@@ -104,8 +104,6 @@ def make_seperated_constraints(bounds_list):
     init_mat = csr_matrix((values, indices, indptr), shape=(2*dim_index, dim_index), dtype=float)
     init_rhs = np.array(constraint_rhs, dtype=float)
 
-    assert len(fixed_dim_tuples) > 0, "seperated constraints requested, but no dimensions are fixed"
-
     return (init_mat, init_rhs, variable_dim_list, fixed_dim_tuples)
 
 class HyperRectangle(object):

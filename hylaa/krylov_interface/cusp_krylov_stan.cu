@@ -541,11 +541,12 @@ class CuspData
             (*hMatrix)[rowOffset + it] = magnitude;
 
             // scale vector
-            if (magnitude < 1e-10)
+            if (magnitude < 1e-13)
             {
                 // cusp::blas::scal(curVec, 0.0);
 
-                printf("Break at it = %lu! Profile if this actually helps.\n", it);
+                // printf("Break at it = %lu! Vec norm = %f Profile if this actually helps.\n", it,
+                //       magnitude);
                 break;
             }
             else

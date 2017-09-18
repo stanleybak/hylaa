@@ -80,14 +80,15 @@ def make_init_star(ha, hylaa_settings):
 
         bounds_list.append((lb, ub))
 
-    if not hylaa_settings.simulation.seperate_constant_vars:
+    if not hylaa_settings.simulation.seperate_constant_vars or \
+            hylaa_settings.simulation.sim_mode != SimulationSettings.KRYLOV:
         init_mat, init_rhs = make_constraint_matrix(bounds_list)
         rv = Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs)
     else:
         init_mat, init_rhs, variable_dim_list, fixed_dim_tuples = make_seperated_constraints(bounds_list)
 
         rv = Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs, \
-                  var_list=variable_dim_list, fixed_tuples=fixed_dim_tuples)
+                  var_lists=[variable_dim_list], fixed_tuples=fixed_dim_tuples)
 
     return rv
 

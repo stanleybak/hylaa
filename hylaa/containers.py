@@ -51,14 +51,14 @@ class SimulationSettings(Freezable):
         self.krylov_profiling = False # print krylov profiling data?
 
         # accuracy settings. If you don't have enough accuracy, decrease rel error and increase samples
-        self.krylov_rel_error = 1e-6 # desired relative error of projV * exmp(H * end_time)
+        self.krylov_rel_error = 1e-9 # desired relative error of projV * exmp(H * end_time)
         self.krylov_rel_error_samples = 9 # number of samples for checking rel_error
+        self.krylov_check_all_rel_error = False # check relative error condition for all dimensions?
 
         self.check_answer = False # double-check answer using MATRIX_EXP at each step (slow!)
         self.check_answer_abs_tol = 1e-6 # absolute tolerance when checking answer
 
         self.seperate_constant_vars = True # seperate constant initial variables optimization (krylov only)
-        self.expm_mult_fixed_terms = False # used if seperate_constant_vars is True, use expm_multiply for fixed terms?
         self.pipeline_arnoldi_expm = True # pipeline computation of arnoldi and expm optimization (krylov only)
 
         self.freeze_attrs()
