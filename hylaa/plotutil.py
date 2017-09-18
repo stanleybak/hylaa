@@ -123,8 +123,10 @@ class DrawnShapes(Freezable):
 
         if plotman.settings.extra_lines is not None:
             lines = plotman.settings.extra_lines
+            col = plotman.settings.extra_lines_color
+            width = plotman.settings.extra_lines_width
             self.extra_lines_col = collections.LineCollection(
-                lines, animated=True, colors=('gray'), linewidths=(2), linestyle='dashed')
+                lines, animated=True, colors=(col), linewidths=(width), linestyle='dashed')
             self.axes.add_collection(self.extra_lines_col)
         else:
             self.extra_lines_col = None
@@ -236,8 +238,9 @@ class DrawnShapes(Freezable):
             polys = self.parent_to_polys.get(mode_name)
 
             if polys is None:
+                lw = self.plotman.settings.reachable_poly_width
                 face_col, edge_col = self.mode_colors.get_edge_face_colors(mode_name)
-                polys = collections.PolyCollection([], lw=2, animated=True, alpha=0.5,
+                polys = collections.PolyCollection([], lw=lw, animated=True, alpha=0.5,
                                                    edgecolor=edge_col, facecolor=face_col)
                 self.axes.add_collection(polys)
                 self.parent_to_polys[mode_name] = polys

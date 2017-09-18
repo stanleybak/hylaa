@@ -428,59 +428,95 @@ def make_cur_time_elapse_mat_list(time_elapser):
         print "krylov fix sim time: {:.2f}ms".format(diff * 1000)
         Timers.toc("krylov assign fixed terms")
 
-    Timers.tic("choose arnoldi iterations")
-    arnoldi_iter = choose_arnoldi_iter(time_elapser)
-    Timers.toc("choose arnoldi iterations")
-
-    #print "debug fixed arnoldi_iter=37 for million dimensional spring profiling"
-    #arnoldi_iter = 37
-
-    # re-allocate with correct number of arnoldi iterations
-    KrylovInterface.preallocate_memory(arnoldi_iter, dims, key_dirs, error_on_fail=True)
-
-    start = last_print = time.time()
-    start_vec = 0
-    pool_res = None
-
     if settings.simulation.seperate_constant_vars:
-        variable_dim_list = time_elapser.var_list
-
-        # compute the constant_variable effect
+        variable_dim_sublists = time_elapser.var_lists
     else:
-        variable_dim_list = xrange(0, dims)
+        variable_dim_sublists = [xrange(0, dims)]
 
-    store_dim_index = 0
+    num_vars = sum([len(sublist) for sublist in variable_dim_sublists])
+    completed_vars = 0
 
-    for start_vec_index in xrange(len(variable_dim_list)):
-        start_vec = variable_dim_list[start_vec_index]
+    for var_sublist in variable_dim_sublists:
+        Timers.tic("choose arnoldi iterations")
+        arnoldi_iter = choose_arnoldi_iter(time_elapser)
+        Timers.toc("choose arnoldi iterations")
 
-        print "start_vec = {}, index = {}".format(start_vec, start_vec_index)
+        #print "debug fixed arnoldi_iter=37 for million dimensional spring profiling"
+        #arnoldi_iter = 37
 
-        #if start_vec_index == 64:
-        #    print "debug break at 64"
-        #    break
+        # re-allocate with correct number of arnoldi iterations
+        KrylovInterface.preallocate_memory(arnoldi_iter, dims, key_dirs, error_on_fail=True)
 
-        if settings.print_output:
-            now = time.time()
+        start = last_print = time.time()
+        start_vec = 0
+        pool_res = None
 
-            if now - last_print > 1.0: # print every second
-                last_print = now
-                frac = float(start_vec_index) / len(variable_dim_list)
+        store_dim_index = 0
 
-                if frac > 1e-9:
-                    elapsed_sec = now - start
-                    total_sec = elapsed_sec / frac
-                    eta_sec = total_sec - elapsed_sec
-                    eta = format_secs(eta_sec)
-                    print "Arnoldi Parallel {} / {} ({:.2f}%, ETA: {})".format(start_vec_index, len(variable_dim_list),
-                                                                               100.0 * frac, eta)
+        for start_vec_index in xrange(len(var_sublist)):
+            start_vec = var_sublist[start_vec_index]
 
-        Timers.tic('krylov arnoldi_unit()')
-        h_mat, pv_mat = KrylovInterface.arnoldi_unit(start_vec)
-        Timers.toc('krylov arnoldi_unit()')
+            print "start_vec = {}, index = {}".format(start_vec, start_vec_index)
 
-        # update result from the previous iteration (skipped on first iteration)
-        if pool_res is not None:
+            #if start_vec_index == 64:
+            #    print "debug break at 64"
+            #    break
+
+            if settings.print_output:
+                now = time.time()
+
+                if now - last_print > 1.0: # print every second
+                    last_print = now
+                    frac = float(num_vars) / completed_vars
+
+                    if frac > 1e-9:
+                        elapsed_sec = now - start
+                        total_sec = elapsed_sec / frac
+                        eta_sec = total_sec - elapsed_sec
+                        eta = format_secs(eta_sec)
+
+                        print "Arnoldi Parallel {} / {} ({:.2f}%, ETA: {})".format(
+                            completed_vars, num_vars, 100.0 * frac, eta)
+
+            Timers.tic('krylov arnoldi_unit()')
+            h_mat, pv_mat = KrylovInterface.arnoldi_unit(start_vec)
+            completed_vars += 1
+            Timers.toc('krylov arnoldi_unit()')
+
+            # update result from the previous iteration (skipped on first iteration)
+            if pool_res is not None:
+                Timers.tic('krylov wait for expm results')
+                list_of_results = pool_res.get()
+                Timers.toc('krylov wait for expm results')
+
+                Timers.tic('krylov update result list')
+                for krylov_result in list_of_results:
+                    for step, dim, col_vec in krylov_result:
+                        rv[step][:, dim] = col_vec
+
+                Timers.toc('krylov update result list')
+
+            ### compute matrix exp ###
+            args = [(settings.num_steps, settings.step, store_dim_index, h_mat, pv_mat)]
+            store_dim_index += 1
+
+            if settings.simulation.pipeline_arnoldi_expm:
+                # push the computation to another thread
+                Timers.tic('krylov send expm to another thread')
+                pool_res = pool.map_async(get_krylov_result, args)
+                Timers.toc('krylov send expm to another thread')
+            else:
+                # do matrix exp right away
+                list_of_results = [get_krylov_result(a) for a in args]
+
+                Timers.tic('krylov update result list')
+                for krylov_result in list_of_results:
+                    for step, dim, col_vec in krylov_result:
+                        rv[step][:, dim] = col_vec
+                Timers.toc('krylov update result list')
+
+        # loop ended, update results from the last iteration (if pipelining was used)
+        if settings.simulation.pipeline_arnoldi_expm:
             Timers.tic('krylov wait for expm results')
             list_of_results = pool_res.get()
             Timers.toc('krylov wait for expm results')
@@ -491,40 +527,8 @@ def make_cur_time_elapse_mat_list(time_elapser):
                     rv[step][:, dim] = col_vec
 
             Timers.toc('krylov update result list')
-
-        ### compute matrix exp ###
-        args = [(settings.num_steps, settings.step, store_dim_index, h_mat, pv_mat)]
-        store_dim_index += 1
-
-        if settings.simulation.pipeline_arnoldi_expm:
-            # push the computation to another thread
-            Timers.tic('krylov send expm to another thread')
-            pool_res = pool.map_async(get_krylov_result, args)
-            Timers.toc('krylov send expm to another thread')
-        else:
-            # do matrix exp right away
-            list_of_results = [get_krylov_result(a) for a in args]
-
-            Timers.tic('krylov update result list')
-            for krylov_result in list_of_results:
-                for step, dim, col_vec in krylov_result:
-                    rv[step][:, dim] = col_vec
-            Timers.toc('krylov update result list')
-
-    # loop ended, update results from the last iteration (if pipelining was used)
-    if settings.simulation.pipeline_arnoldi_expm:
-        Timers.tic('krylov wait for expm results')
-        list_of_results = pool_res.get()
-        Timers.toc('krylov wait for expm results')
-
-        Timers.tic('krylov update result list')
-        for krylov_result in list_of_results:
-            for step, dim, col_vec in krylov_result:
-                rv[step][:, dim] = col_vec
-
-        Timers.toc('krylov update result list')
-        pool.close()
-        pool.join()
+            pool.close()
+            pool.join()
 
     if settings.simulation.krylov_profiling:
         KrylovInterface.print_profiling_data()

@@ -30,7 +30,7 @@ class Star(Freezable):
     '''
 
     def __init__(self, hylaa_settings, mode, init_mat_csr, init_rhs, input_mat_csr=None, input_rhs=None,
-                 var_list=None, fixed_tuples=None):
+                 var_lists=None, fixed_tuples=None):
         assert isinstance(hylaa_settings, HylaaSettings)
 
         self.settings = hylaa_settings
@@ -40,17 +40,23 @@ class Star(Freezable):
         self.dims = mode.parent.dims
         self.inputs = mode.parent.inputs
 
-        self.time_elapse = TimeElapser(mode, hylaa_settings, var_list=var_list, fixed_tuples=fixed_tuples)
+        self.fixed_tuples = fixed_tuples
+        self.var_lists = var_lists
+        self.lp_dims = self.dims
+
+        if self.var_lists is not None and len(self.var_lists) > 0:
+            assert hylaa_settings.simulation.sim_mode == SimulationSettings.KRYLOV, \
+                    "var_lists not null, but sim_mode != KRYLOV"
+            assert isinstance(var_lists[0], list), "var_lists should be a list of lists of grouped dimensions"
+            self.lp_dims = sum([len(sublist) for sublist in var_lists])
+
+        self.time_elapse = TimeElapser(mode, hylaa_settings, var_lists=var_lists, fixed_tuples=fixed_tuples)
 
         assert isinstance(init_mat_csr, csr_matrix)
         assert isinstance(init_rhs, np.ndarray)
         assert init_rhs.shape == (init_mat_csr.shape[0],)
         self.init_mat_csr = init_mat_csr
         self.init_rhs = init_rhs
-
-        self.fixed_tuples = fixed_tuples
-        self.var_list = var_list
-        self.lp_dims = len(var_list) + 1 if var_list is not None else self.dims
 
         if self.inputs == 0:
             assert input_mat_csr is None and input_rhs is None

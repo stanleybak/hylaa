@@ -6,7 +6,7 @@ import numpy as np
 from scipy.io import loadmat
 from scipy.sparse import csr_matrix, csc_matrix
 
-from hylaa.hybrid_automaton import LinearHybridAutomaton
+from hylaa.hybrid_automaton import LinearHybridAutomaton, make_constraint_matrix, make_seperated_constraints
 from hylaa.engine import HylaaSettings
 from hylaa.engine import HylaaEngine
 from hylaa.containers import PlotSettings, SimulationSettings
@@ -41,11 +41,9 @@ def define_ha():
 
     error = ha.new_mode('error')
 
-    # need to add three more variables to y3 due to the input terms
     y3 = dynamics['C'][2]
 
     col_ptr = [n for n in y3.indptr] + num_inputs * [y3.data.shape[0]]
-
     y3 = csc_matrix((y3.data, y3.indices, col_ptr), shape=(1, y3.shape[1] + num_inputs))
     guard_matrix = csr_matrix(y3)
 
@@ -59,14 +57,11 @@ def define_ha():
 
     return ha
 
-def make_init_constraints(ha):
-    '''return (init_mat, init_rhs)'''
+def make_init_star(ha, hylaa_settings):
+    '''returns a star'''
 
-    values = []
-    indices = []
-    indptr = []
-
-    constraint_rhs = []
+    rv = None
+    bounds_list = []
 
     for dim in xrange(ha.dims):
         if dim == 270: # input 1
@@ -84,31 +79,22 @@ def make_init_constraints(ha):
         else:
             raise RuntimeError('Unknown dimension: {}'.format(dim))
 
-        # upper bound
-        values.append(1)
-        indices.append(dim)
-        indptr.append(2*dim)
-        constraint_rhs.append(ub)
+        bounds_list.append((lb, ub))
 
-        # lower bound
-        values.append(-1)
-        indices.append(dim)
-        indptr.append(2*dim+1)
-        constraint_rhs.append(-lb)
+    if not hylaa_settings.simulation.seperate_constant_vars:
+        init_mat, init_rhs = make_constraint_matrix(bounds_list)
+        rv = Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs)
+    else:
+        init_mat, init_rhs, variable_dim_list, fixed_dim_tuples = make_seperated_constraints(bounds_list)
 
-    indptr.append(len(values))
+        # split variable_dim_list into the input and non-input parts
+        # this will use different krylov subspace lengths for evaluation
+        variable_dims = [variable_dim_list[:-3], variable_dim_list[-3:]]
 
-    init_mat = csr_matrix((values, indices, indptr), shape=(2*ha.dims, ha.dims), dtype=float)
-    init_rhs = np.array(constraint_rhs, dtype=float)
+        rv = Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs, \
+                  var_list=variable_dims, fixed_tuples=fixed_dim_tuples)
 
-    return (init_mat, init_rhs)
-
-def make_init_star(ha, hylaa_settings):
-    '''returns a star'''
-
-    init_mat, init_rhs = make_init_constraints(ha)
-
-    return Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs)
+    return rv
 
 def define_settings(_):
     'get the hylaa settings object'

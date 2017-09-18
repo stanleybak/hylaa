@@ -85,6 +85,10 @@ class PlotSettings(Freezable):
         self.num_angles = 512 # how many evenly-spaced angles to put into plot_vecs
 
         self.extra_lines = None # extra lines to draw on the plot. list of lists of x,y pairs
+        self.extra_lines_color = 'gray' # color of extra lines
+        self.extra_lines_width = 2 # width of extra lines
+        self.reachable_poly_width = 2 # width of reachable polygon outlines
+
         self.min_frame_time = 0.025 # max 40 fps. This allows multiple frames to be drawn at once if they're fast.
 
         self.extend_plot_range_ratio = 0.1 # extend plot axis range 10% at a time

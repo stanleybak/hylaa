@@ -19,6 +19,7 @@ def make_constraint_matrix(bounds_list):
 
     for dim in xrange(dims):
         lb, ub = bounds_list[dim]
+        assert lb <= ub, "lower bound ({}) should be less than upper bound ({})".format(lb, ub)
 
         # upper bound
         values.append(1)
@@ -61,6 +62,7 @@ def make_seperated_constraints(bounds_list):
 
     for dim in xrange(dims):
         lb, ub = bounds_list[dim]
+        assert lb <= ub, "lower bound ({}) should be less than upper bound ({})".format(lb, ub)
 
         if abs(lb-ub) < 1e-13:
             fixed_dim_tuples.append((dim, lb))

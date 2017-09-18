@@ -5,7 +5,6 @@ l * e^{At} where l is some direction of interest, and t is a multiple of some ti
 
 import sys
 import numpy as np
-import time
 
 from scipy.sparse import lil_matrix, csr_matrix, csc_matrix
 from scipy.sparse.linalg import expm, expm_multiply
@@ -20,7 +19,7 @@ from hylaa.krylov_interface import KrylovInterface
 class TimeElapser(Freezable):
     'Object which computes the time-elapse function for a single mode at multiples of the time step'
 
-    def __init__(self, mode, hylaa_settings, var_list=None, fixed_tuples=None):
+    def __init__(self, mode, hylaa_settings, var_lists=None, fixed_tuples=None):
         assert isinstance(mode, LinearAutomatonMode)
         assert isinstance(hylaa_settings, HylaaSettings)
 
@@ -57,9 +56,9 @@ class TimeElapser(Freezable):
             self.cur_time_elapse_mat_list = None
 
             if self.settings.simulation.seperate_constant_vars:
-                assert var_list is not None and fixed_tuples is not None
+                assert var_lists is not None and fixed_tuples is not None
 
-                self.var_list = var_list
+                self.var_lists = var_lists
                 self.fixed_tuples = fixed_tuples
 
                 self.fixed_init_vec = np.zeros((self.dims, 1))
@@ -67,9 +66,9 @@ class TimeElapser(Freezable):
                 for dim, val in self.fixed_tuples:
                     self.fixed_init_vec[dim, 0] = val
             else:
-                assert var_list is None and fixed_tuples is None, "seperate_constant_vars=False but var_list was used"
+                assert var_lists is None and fixed_tuples is None, "seperate_constant_vars=False but var_lists was used"
         else:
-            assert var_list is None, "var_list is not None but method is not Krylov"
+            assert var_lists is None, "var_lists is not None but method is not Krylov"
             assert fixed_tuples is None, "fixed tuples is not None buy method is not Krylov"
 
         self.freeze_attrs()
@@ -274,9 +273,11 @@ class TimeElapser(Freezable):
         assert isinstance(self.cur_time_elapse_mat, np.ndarray), "cur_time_elapse_mat should be an np.array, " + \
             "but it was {}".format(type(self.cur_time_elapse_mat))
 
+        cur_time_mat_width = self.key_dir_mat.shape[1]
 
-        cur_time_mat_width = 1 + len(self.var_list) if self.settings.simulation.seperate_constant_vars else \
-                                                                                    self.key_dir_mat.shape[1]
+        if self.settings.simulation.seperate_constant_vars:
+            cur_time_mat_width = 1 + sum([len(sublist) for sublist in self.var_lists])
+
         cur_time_mat_shape = (self.key_dir_mat.shape[0], cur_time_mat_width)
 
         assert self.cur_time_elapse_mat.shape == cur_time_mat_shape, \

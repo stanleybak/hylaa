@@ -24,14 +24,14 @@ def define_ha():
     mode = ha.new_mode('mode')
     mode.set_dynamics(a_matrix)
 
-    error = ha.new_mode('error')
-    dims = a_matrix.shape[0]
+    #error = ha.new_mode('error')
+    #dims = a_matrix.shape[0]
 
     # x1 >= 4.0 & x1 <= 4.0
-    mat = csr_matrix(([-1, 1], [0, 0], [0, 1, 2]), dtype=float, shape=(2, dims))
-    rhs = np.array([-4.0, 4.0], dtype=float)
-    trans1 = ha.new_transition(mode, error)
-    trans1.set_guard(mat, rhs)
+    #mat = csr_matrix(([-1, 1], [0, 0], [0, 1, 2]), dtype=float, shape=(2, dims))
+    #rhs = np.array([-4.0, 4.0], dtype=float)
+    #trans1 = ha.new_transition(mode, error)
+    #trans1.set_guard(mat, rhs)
 
     return ha
 
@@ -43,8 +43,8 @@ def make_init_star(ha, hylaa_settings):
 
     for dim in xrange(ha.dims):
         if dim == 0: # x == -5
-            lb = -5
-            ub = -5
+            lb = -5.0
+            ub = -5.0
         elif dim == 1: # y in [0, 1]
             lb = 0
             ub = 1
@@ -66,14 +66,14 @@ def make_init_star(ha, hylaa_settings):
         init_mat, init_rhs, variable_dim_list, fixed_dim_tuples = make_seperated_constraints(bounds_list)
 
         rv = Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs, \
-                  var_list=variable_dim_list, fixed_tuples=fixed_dim_tuples)
+                  var_lists=[variable_dim_list], fixed_tuples=fixed_dim_tuples)
 
     return rv
 
 def define_settings():
     'get the hylaa settings object'
     plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_INTERACTIVE
+    plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
     plot_settings.xdim_dir = 0
     plot_settings.ydim_dir = 1
 
@@ -82,13 +82,18 @@ def define_settings():
 
     plot_settings.num_angles = 128
     plot_settings.max_shown_polys = 2048
-    plot_settings.label.y_label = 'y'
-    plot_settings.label.x_label = 'x'
-    plot_settings.label.title = ''
-    plot_settings.plot_size = (8, 8)
-    #plot_settings.label.big(size=40)
+    plot_settings.label.y_label = '$y$'
+    plot_settings.label.x_label = '$x$'
+    plot_settings.label.title = 'Reachable States'
+    plot_settings.plot_size = (12, 7)
+    plot_settings.label.big(size=48)
 
-    settings = HylaaSettings(step=math.pi/4, max_time=math.pi, plot_settings=plot_settings)
+    plot_settings.reachable_poly_width = 10
+    plot_settings.extra_lines = [[(4.0, 10.0), (4.0, -10.0)]]
+    plot_settings.extra_lines_color = 'red'
+    plot_settings.extra_lines_width = 4
+
+    settings = HylaaSettings(step=math.pi/4, max_time=3 * math.pi / 4, plot_settings=plot_settings)
     #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
     #settings.simulation.sim_mode = SimulationSettings.MATRIX_EXP
 
