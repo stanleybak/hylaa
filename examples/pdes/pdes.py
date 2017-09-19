@@ -202,13 +202,13 @@ class HeatTwoDimension2(object):
             raise ValueError('number of mesh points should be larger than zero')
 
         disc_step_x = self.len_x/(num_x+1) # dicrezation step along x axis
-        print "\ndiscretization step along x-axis:{} cm".format(disc_step_x)
+        print "\ndiscretization step along x-axis:{}".format(disc_step_x)
         disc_step_y = self.len_y/(num_y+1) # discrezation step along y axis
-        print "\ndiscretization step along y-axis:{} cm".format(disc_step_y)
+        print "\ndiscretization step along y-axis:{}".format(disc_step_y)
 
         if self.has_heat_source:
-            heat_start_pos_x = int(math.ceil(self.heat_source_pos[0]/disc_step_x))
-            heat_end_pos_x = int(math.ceil(self.heat_source_pos[1]/disc_step_x))
+            heat_start_pos_x = int(math.floor(self.heat_source_pos[0]/disc_step_x))
+            heat_end_pos_x = int(math.floor(self.heat_source_pos[1]/disc_step_x))
 
             print "\nheat source is from point {} to point {} on x-axis\n".\
               format(heat_start_pos_x, heat_end_pos_x)
