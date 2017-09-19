@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 from pdes import HeatOneDimension, HeatTwoDimension1, HeatTwoDimension2, sim_odeint_sparse
 
+from scipy.io import loadmat
+
 def heat_1d():
     'test 1-d heat equation'
     len_x = 200
@@ -123,11 +125,34 @@ def heat_2d2():
                                    len_x, len_y, has_heat_source, heat_source_pos)
 
     # get linear ode model of 2-d heat equation
-    num_x = 2 # number of discretized steps between 0 and len_x
-    num_y = 2 # number of discretized steps between 0 and len_y
+    num_x = 20 # number of discretized steps between 0 and len_x
+    num_y = 20 # number of discretized steps between 0 and len_y
     matrix_a, matrix_b = he.get_odes(num_x, num_y)
-    print "\nmatrix_a :\n{}".format(matrix_a.todense())
-    print "\nmatrix_b :\n{}".format(matrix_b.todense())
+    #print "\nmatrix_a :\n{}".format(matrix_a.todense())
+    #print "\nmatrix_b :\n{}".format(matrix_b.todense())
+
+    matlab_matrices = loadmat('20x20.mat')
+
+
+    matlab_a = matlab_matrices['A']
+
+    print matrix_a.todense()
+
+    assert matlab_a.shape == matrix_a.shape
+
+    for y in xrange(matrix_a.shape[0]):
+        for x in xrange(matrix_a.shape[1]):
+            val_matrix = matrix_a[y, x]
+            val_matlab = matlab_a[y, x]
+
+            if abs(val_matrix - val_matlab) > 1e-6:
+                print "mismatch in element {},{}, matrix val = {}, matlab val = {}".format(y, x, val_matrix, val_matlab)
+                exit(1)
+
+    print "TODO: also add comparisons for B and c from matlab"
+
+    #matlab_b = matlab_matrices['b']
+    #matlab_c = matlab_matrices['c']
 
     # simulate the linear ode model of 2-d heat equation
     heat_source = 1 # the value of heat source is 1 degree celcius
@@ -140,8 +165,8 @@ def heat_2d2():
     print "\input vector v = matrix_b*inputs is: \n{}".format(input_vec)
 
     init_vec = np.zeros((matrix_a.shape[0]),)
-    final_time = 2000
-    num_steps = 100000
+    final_time = 200
+    num_steps = 1000
     times = np.linspace(0, final_time, num_steps)
     runtime, result = sim_odeint_sparse(matrix_a, init_vec, input_vec, final_time, num_steps)
 
@@ -151,8 +176,8 @@ def heat_2d2():
     # plot the result
 
     #plot the center point temperature
-    center_point_pos_x = int(math.ceil(num_x/2)) - 1
-    center_point_pos_y = int(math.ceil(num_y/2)) - 1
+    center_point_pos_x = int(math.floor(num_x/2))
+    center_point_pos_y = int(math.floor(num_y/2))
 
     center_point_state_pos = center_point_pos_y*num_x + center_point_pos_x
     print "\ncenter_point corresponds to the {}-th state variable".format(center_point_state_pos)

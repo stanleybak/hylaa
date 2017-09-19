@@ -288,7 +288,7 @@ def sim_odeint_sparse(sparse_a_matrix, init_vec, input_vec, step, num_steps):
         return rv
 
     start = time.time()
-    result = odeint(der_func, init_vec, times)
+    result = odeint(der_func, init_vec, times, rtol=1e-13, atol=1e-13)
     runtime = time.time() - start
 
     return runtime, result
