@@ -189,8 +189,56 @@ def heat_2d2():
     plt.grid()
     plt.show()
 
-    # plot all points in 3-d
+
+def ZhiHan_benchmark():
+    'produce again ZhiHan benchmark, find out that Zhi Han matlab code was wrong'
+
+    
+    # parameters
+    diffusity_const = 0.01
+    heat_exchange_coeff = 0.5
+    thermal_cond = 1
+    len_x = 1
+    len_y = 1
+    has_heat_source = True
+    heat_source_pos = np.array([0, 0.4])
+    he = HeatTwoDimension2(diffusity_const, heat_exchange_coeff, thermal_cond,\
+                                   len_x, len_y, has_heat_source, heat_source_pos)
+
+    # get linear ode model of 2-d heat equation
+    num_x = 3 # number of discretized steps between 0 and len_x
+    num_y = 3 # number of discretized steps between 0 and len_y
+    matrix_a, matrix_b = he.get_odes(num_x, num_y)
+    print "\nmatrix_a :\n{}".format(matrix_a)
+    print "\nmatrix_b :\n{}".format(matrix_b)
+
+    # simulate the linear ode model of 2-d heat equation
+    heat_source = 1 # the value of heat source is 1 degree celcius
+    envi_temp = 0   # environment temperature is 0 degree celcius
+    inputs = np.array([heat_source, envi_temp]) # input to linear ode model
+    print "\ninputs to the odes including heat_source = {} and environment temperature = {}".\
+      format(heat_source, envi_temp)
+
+    # matrix b
+    A = matrix_a
+    b = matrix_b*inputs
+    c = np.zeros((1, A.shape[0]))
+    
+    center_point_pos_x = int(math.floor(num_x/2))
+    center_point_pos_y = int(math.floor(num_y/2))
+
+    center_point_state_pos = center_point_pos_y*num_x + center_point_pos_x
+    print "\ncenter_point corresponds to the {}-th state variable".format(center_point_state_pos)
+
+    c[0, center_point_state_pos] = 1
+
+    print "\n A = {}".format(A)
+    print "\n b = {}".format(b)
+    print "\n c = {}".format(c)
+    
+
 if __name__ == '__main__':
     #heat_1d()  # benchmark from the book: "Partial differential equations for scientists and engineers", page 39 
     #heat_2d1() # benchmark from the same book, page 40.
-    heat_2d2() # Zhi Han benchmark in his thesis, page 68.
+    #heat_2d2() # Zhi Han benchmark in his thesis, page 68.
+    ZhiHan_benchmark()
