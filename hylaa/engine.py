@@ -76,7 +76,11 @@ class HylaaEngine(object):
             lp_solution = self.cur_star.get_guard_intersection(i)
 
             if lp_solution is not None:
-                if self.settings.counter_example_filename is not None:
+                if self.settings.print_lp_on_error:
+                    # print the LP solution and exit
+                    lpi = self.cur_star.get_guard_lpi(i)
+                    lpi.print_lp()
+                elif self.settings.counter_example_filename is not None:
                     # print out the counter-example trace to a counter-example file
 
                     filename = self.settings.counter_example_filename

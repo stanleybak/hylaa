@@ -85,6 +85,11 @@ class Star(Freezable):
 
         return self._guard_opt_data[transition_index].get_updated_lp_solution()
 
+    def get_guard_lpi(self, transition_index):
+        '''update the LP for the given transition, solve, and return get the lp solution (if feasible)'''
+
+        return self._guard_opt_data[transition_index].get_guard_lpi()
+
     def get_plot_lpi(self):
         'get (maybe create) the LpInstance object for this star, and return it'
 

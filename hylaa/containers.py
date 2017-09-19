@@ -25,6 +25,7 @@ class HylaaSettings(Freezable):
         self.print_output = True # print status and waiting list information to stdout
         self.skip_step_times = False # print the times at each step
 
+        self.print_lp_on_error = False # upon reaching an error mode, print LP and exit (no counter-example)
         self.counter_example_filename = 'counterexample.py' # the counter-example filename to create on errors
         self.simulation = SimulationSettings(step)
 
@@ -99,6 +100,9 @@ class PlotSettings(Freezable):
         self.video = None # instance of VideoSettings
 
         self.grid = True
+        self.grid_xtics = None # override default xtics value, for example np.linspace(0.0, 5.0, 1.0)
+        self.grid_ytics = None # override default ytics value, for example np.linspace(0.0, 5.0, 1.0)
+
         self.plot_traces = True
         self.max_shown_polys = 512 # thin out the reachable set if we go over this number of polys (optimization)
         self.draw_stride = 1 # draw every 2nd poly, 4th, ect.

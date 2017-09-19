@@ -28,6 +28,10 @@ class GuardOptData(Freezable):
 
         self.key_dir_offset = 0 if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE else 2
 
+        if self.settings.print_lp_on_error:
+            assert self.settings.simulation.guard_mode == SimulationSettings.GUARD_FULL_LP, \
+                "printing lp on error requires guard_mode == GUARD_FULL_LP"
+
         for t_index in xrange(transition_index):
             self.key_dir_offset += self.mode.transitions[t_index].guard_matrix.shape[0]
 
@@ -125,6 +129,11 @@ class GuardOptData(Freezable):
         is_feasible = self.lpi.minimize(direction, result, error_if_infeasible=False)
 
         return result if is_feasible else None
+
+    def get_guard_lpi(self):
+        '''get the current full lp instance for this guard'''
+
+        return self.lpi
 
     def get_updated_lp_solution(self):
         '''update the LP solution and, if it's feasible, get its solution'''

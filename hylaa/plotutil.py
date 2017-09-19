@@ -377,6 +377,12 @@ class PlotManager(Freezable):
             if self.settings.grid:
                 self.axes.grid(True)
 
+                if self.settings.grid_xtics is not None:
+                    self.axes.set_xticks(self.settings.grid_xtics)
+
+                if self.settings.grid_ytics is not None:
+                    self.axes.set_xticks(self.settings.grid_ytics)
+
             # make the x and y axis animated in case of rescaling
             self.axes.xaxis.set_animated(True)
             self.axes.yaxis.set_animated(True)
