@@ -27,6 +27,7 @@ class TimeElapser(Freezable):
         self.settings = hylaa_settings
 
         if self.settings.simulation.sim_mode == SimulationSettings.MATRIX_EXP or \
+           self.settings.simulation.sim_mode == SimulationSettings.EXP_MULT or \
             self.settings.simulation.check_answer:
             Timers.tic("convert a_matrix and b_matrix to csc matrix")
             self.a_matrix_csc = csc_matrix(mode.a_matrix)
@@ -129,7 +130,7 @@ class TimeElapser(Freezable):
                     self.a_matrix.shape[0]),
                 sys.stdout.flush()
 
-            a_step_mat = self.a_matrix * self.settings.step
+            a_step_mat = self.a_matrix_csc * self.settings.step
 
             self.one_step_matrix_exp = np.array(expm(a_step_mat).todense(), dtype=float)
 

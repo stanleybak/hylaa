@@ -359,9 +359,9 @@ class PlotManager(Freezable):
             title = title if title is not None else ha.name
 
             x_label = self.settings.label.x_label
-            x_label = x_label if x_label is not None else ha.variables[self.settings.xdim].capitalize()
+            x_label = x_label if x_label is not None else '$x_{{ {} }}$'.format(self.settings.xdim_dir)
             y_label = self.settings.label.y_label
-            y_label = y_label if y_label is not None else ha.variables[self.settings.ydim].capitalize()
+            y_label = y_label if y_label is not None else '$x_{{ {} }}$'.format(self.settings.ydim_dir)
 
             self.axes.set_xlabel(x_label, fontsize=self.settings.label.label_size)
             self.axes.set_ylabel(y_label, fontsize=self.settings.label.label_size)
