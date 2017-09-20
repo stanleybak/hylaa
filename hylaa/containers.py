@@ -54,7 +54,8 @@ class SimulationSettings(Freezable):
         # accuracy settings. If you don't have enough accuracy, decrease rel error and increase samples
         self.krylov_rel_error = 1e-9 # desired relative error of projV * exmp(H * end_time)
         self.krylov_rel_error_samples = 9 # number of samples for checking rel_error
-        self.krylov_check_all_rel_error = False # check relative error condition for all dimensions?
+        self.krylov_check_all_rel_error = None # amount for relative error check for all dimensions (None = skip)
+        self.krylov_reject_zero_rel_error = True # if result is all zeros, force increasing arnoldi_iter
 
         self.check_answer = False # double-check answer using MATRIX_EXP at each step (slow!)
         self.check_answer_abs_tol = 1e-6 # absolute tolerance when checking answer

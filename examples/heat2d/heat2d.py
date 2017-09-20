@@ -32,7 +32,7 @@ def define_ha(samples_per_side):
     he = HeatTwoDimension2(diffusity_const, heat_exchange_coeff, thermal_cond, \
                                    len_x, len_y, has_heat_source, heat_source_pos)
 
-    print "Making {}x{} 2d Heat Plate ODEs..."
+    print "Making {}x{} 2d Heat Plate ODEs...".format(samples_per_side, samples_per_side)
     a_matrix, b_matrix = he.get_odes(samples_per_side, samples_per_side)
     print "Finished Making ODEs"
 
@@ -69,18 +69,16 @@ def define_ha(samples_per_side):
     error = ha.new_mode('error')
     dims = combined_mat.shape[0]
 
-    center_x = int(math.floor(samples_per_side/2.0))
-    center_y = int(math.floor(samples_per_side/2.0))
+    center_x = int(math.floor(samples_per_side / 2.0))
+    center_y = int(math.floor(samples_per_side / 2.0))
     center_dim = center_y * samples_per_side + center_x
 
     # x_center >= 0.9
     mat = csr_matrix(([-1], [center_dim], [0, 1]), dtype=float, shape=(1, dims))
-    rhs = np.array([-0.9], dtype=float) # safe
-    #rhs = np.array([-0.8], dtype=float) # unsafe
+    #rhs = np.array([-0.9], dtype=float) # 0.9 = safe
+    rhs = np.array([-0.8], dtype=float) # 0.8 = unsafe
     trans1 = ha.new_transition(mode, error)
     trans1.set_guard(mat, rhs)
-
-    #dims = combined_mat.shape[0]
 
     return ha
 
@@ -232,8 +230,10 @@ def define_settings(samples_per_side):
     plot_settings = PlotSettings()
     plot_settings.plot_mode = PlotSettings.PLOT_NONE
 
-    settings = HylaaSettings(step=0.2, max_time=200.0, plot_settings=plot_settings)
+    settings = HylaaSettings(step=0.2, max_time=2.0, plot_settings=plot_settings)
     settings.simulation.sim_mode = SimulationSettings.KRYLOV
+
+    #settings.simulation.check_answer = True
 
     center_x = int(math.floor(samples_per_side/2.0))
     center_y = int(math.floor(samples_per_side/2.0))
@@ -247,7 +247,7 @@ def define_settings(samples_per_side):
 def run_hylaa():
     'Runs hylaa with the given settings, returning the HylaaResult object.'
 
-    samples_per_side = 10
+    samples_per_side = 300
 
     ha = define_ha(samples_per_side)
     settings = define_settings(samples_per_side)
