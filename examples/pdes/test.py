@@ -125,8 +125,8 @@ def heat_2d2():
                                    len_x, len_y, has_heat_source, heat_source_pos)
 
     # get linear ode model of 2-d heat equation
-    num_x = 20 # number of discretized steps between 0 and len_x
-    num_y = 20 # number of discretized steps between 0 and len_y
+    num_x = 4 # number of discretized steps between 0 and len_x
+    num_y = 4 # number of discretized steps between 0 and len_y
     matrix_a, matrix_b = he.get_odes(num_x, num_y)
     #print "\nmatrix_a :\n{}".format(matrix_a.todense())
     #print "\nmatrix_b :\n{}".format(matrix_b.todense())
@@ -206,8 +206,8 @@ def ZhiHan_benchmark():
                                    len_x, len_y, has_heat_source, heat_source_pos)
 
     # get linear ode model of 2-d heat equation
-    num_x = 3 # number of discretized steps between 0 and len_x
-    num_y = 3 # number of discretized steps between 0 and len_y
+    num_x = 4 # number of discretized steps between 0 and len_x
+    num_y = 4 # number of discretized steps between 0 and len_y
     matrix_a, matrix_b = he.get_odes(num_x, num_y)
     print "\nmatrix_a :\n{}".format(matrix_a)
     print "\nmatrix_b :\n{}".format(matrix_b)
