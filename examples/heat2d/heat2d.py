@@ -231,9 +231,10 @@ def define_settings(samples_per_side):
     settings = HylaaSettings(step=0.2, max_time=200.0, plot_settings=plot_settings)
     settings.simulation.sim_mode = SimulationSettings.KRYLOV
 
+    settings.simulation.krylov_use_odeint = False
     #settings.simulation.check_answer = True
-    settings.simulation.krylov_use_gpu = True
-    settings.simulation.krylov_profiling = True
+    #settings.simulation.krylov_use_gpu = True
+    #settings.simulation.krylov_profiling = True
 
     center_x = int(math.floor(samples_per_side/2.0))
     center_y = int(math.floor(samples_per_side/2.0))
@@ -247,7 +248,16 @@ def define_settings(samples_per_side):
 def run_hylaa():
     'Runs hylaa with the given settings, returning the HylaaResult object.'
 
-    samples_per_side = 200
+    # gpu results before simulation
+    # Get_rel_error expm Time (40 calls): 938.55 sec (81.5%)
+    # total time 1151 secs (~20 mins)
+
+    # samples_per_side = 200 (also set use_gpu + profiling)
+    samples_per_side = 100
+
+    # 100x100 -> Get_rel_error odeint Time (32 calls): 11.58 sec (62.3%)
+    # 100x100 -> Get_rel_error expm Time (32 calls): 9.14 sec (54.4%)
+    # conclusion: for 100x100, it seems expm is faster than odeint
 
     ha = define_ha(samples_per_side)
     settings = define_settings(samples_per_side)

@@ -11,9 +11,32 @@ from multiprocessing import Pool
 import numpy as np
 from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import expm
+from scipy.integrate import odeint
 
 from hylaa.krylov_interface import KrylovInterface
 from hylaa.timerutil import Timers
+
+def odeint_sim(a_matrix, start_vec, settings):
+    '''
+    simulate a given dense a-matrix with the provided initial vector, for a certain number of steps,
+    returning the projected result at each step (excluding step zero)
+    '''
+
+    assert isinstance(a_matrix, np.ndarray)
+
+    step = settings.step
+    num_steps = settings.num_steps
+    sim_tol = settings.simulation.krylov_odeint_simtol
+
+    der_func = lambda state, _: np.dot(a_matrix, state)
+    a_transpose = a_matrix.transpose().copy()
+    jac_func = lambda dummy_state, dummy_t: a_transpose
+
+    times = np.linspace(0, step * num_steps, num=num_steps+1)
+
+    result = odeint(der_func, start_vec, times, Dfun=jac_func, col_deriv=True, atol=sim_tol, rtol=sim_tol)
+
+    return result[:-1] # omit step zero
 
 def compress_fixed(mat, fixed_tuples):
     'compress the fixed variables in the time_elapse matrix'
@@ -192,10 +215,7 @@ def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_projected_s
     if limit is not None, this will break as soon as the relative error exceeds the limit
     '''
 
-    projected_sims = None
-
-    if return_projected_sims:
-        projected_sims = []
+    projected_sims = []
 
     # use less arnoldi iterations than what's in the matrices
     if arnoldi_iter is not None:
@@ -205,39 +225,60 @@ def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_projected_s
     small_h_mat = h_mat[:-1, :-1].copy()
     small_pv_mat = pv_mat[:, :-1].copy()
 
-    Timers.tic('get_rel_error expm')
-    matrix_exp = expm(settings.step * h_mat)
-    cur_col = matrix_exp[:, 0]
-    Timers.toc('get_rel_error expm')
+    if settings.simulation.krylov_use_odeint:
+        start_vec = np.array([1.0 if d == 0 else 0.0 for d in xrange(h_mat.shape[0])], dtype=float)
+        small_start_vec = start_vec[:-1].copy()
 
-    # for accuracy check
-    Timers.tic('get_rel_error expm')
-    small_matrix_exp = expm(settings.step * small_h_mat) # step time is already included in loaded a_mat
-    small_col = small_matrix_exp[:, 0]
-    Timers.toc('get_rel_error expm')
+        Timers.tic('get_rel_error odeint')
+        sim = odeint_sim(h_mat, start_vec, settings)
+        Timers.toc('get_rel_error odeint')
 
-    # do the comparison at the first step
-    cur_result = np.dot(pv_mat, cur_col)
-    small_result = np.dot(small_pv_mat, small_col)
-    rel_error = relative_error(cur_result, small_result)
+        Timers.tic('get_rel_error odeint')
+        small_sim = odeint_sim(small_h_mat, small_start_vec, settings)
+        Timers.toc('get_rel_error odeint')
 
-    if return_projected_sims:
-        projected_sims.append(cur_result)
+        for step in xrange(len(sim)):
+            cur_result = np.dot(pv_mat, sim[step])
+            small_result = np.dot(small_pv_mat, small_sim[step])
 
-    for _ in xrange(2, settings.num_steps + 1):
-        cur_col = np.dot(matrix_exp, cur_col)
-        small_col = np.dot(small_matrix_exp, small_col)
+            projected_sims.append(cur_result)
+            rel_error = relative_error(cur_result, small_result)
 
-        # maybe we want to check relative error in the middle as well
+            if limit is not None and rel_error > limit:
+                break
+    else:
+        Timers.tic('get_rel_error expm')
+        matrix_exp = expm(settings.step * h_mat)
+        cur_col = matrix_exp[:, 0]
+        Timers.toc('get_rel_error expm')
+
+        # for accuracy check
+        Timers.tic('get_rel_error expm')
+        small_matrix_exp = expm(settings.step * small_h_mat) # step time is already included in loaded a_mat
+        small_col = small_matrix_exp[:, 0]
+        Timers.toc('get_rel_error expm')
+
+        # do the comparison at the first step
         cur_result = np.dot(pv_mat, cur_col)
         small_result = np.dot(small_pv_mat, small_col)
-        rel_error = max(rel_error, relative_error(cur_result, small_result))
+        rel_error = relative_error(cur_result, small_result)
 
         if return_projected_sims:
             projected_sims.append(cur_result)
 
-        if limit is not None and rel_error > limit:
-            break
+        for _ in xrange(2, settings.num_steps + 1):
+            cur_col = np.dot(matrix_exp, cur_col)
+            small_col = np.dot(small_matrix_exp, small_col)
+
+            # maybe we want to check relative error in the middle as well
+            cur_result = np.dot(pv_mat, cur_col)
+            small_result = np.dot(small_pv_mat, small_col)
+            rel_error = max(rel_error, relative_error(cur_result, small_result))
+
+            projected_sims.append(cur_result)
+
+            if limit is not None and rel_error > limit:
+                break
 
     return rel_error if not return_projected_sims else (rel_error, projected_sims)
 
