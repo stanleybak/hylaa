@@ -34,7 +34,8 @@ def odeint_sim(a_matrix, start_vec, settings):
 
     times = np.linspace(0, step * num_steps, num=num_steps+1)
 
-    result = odeint(der_func, start_vec, times, Dfun=jac_func, col_deriv=True, atol=sim_tol, rtol=sim_tol)
+    result = odeint(der_func, start_vec, times, Dfun=jac_func, col_deriv=True, atol=sim_tol, rtol=sim_tol, \
+            mxstep=int(1e8)) # mxstep = maximum number of internal steps
 
     return result[:-1] # omit step zero
 
