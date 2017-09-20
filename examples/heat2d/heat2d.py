@@ -62,9 +62,7 @@ def define_ha(samples_per_side):
     combined_mat = csc_matrix((data, rows, col_ptr), \
                               shape=(a_matrix.shape[0] + 3, a_matrix.shape[1] + 3))
 
-    print "converting csc matrix to csr matrix"
     mode.set_dynamics(csr_matrix(combined_mat))
-    print "done"
 
     error = ha.new_mode('error')
     dims = combined_mat.shape[0]
@@ -230,7 +228,7 @@ def define_settings(samples_per_side):
     plot_settings = PlotSettings()
     plot_settings.plot_mode = PlotSettings.PLOT_NONE
 
-    settings = HylaaSettings(step=0.2, max_time=2.0, plot_settings=plot_settings)
+    settings = HylaaSettings(step=0.2, max_time=200.0, plot_settings=plot_settings)
     settings.simulation.sim_mode = SimulationSettings.KRYLOV
 
     #settings.simulation.check_answer = True
@@ -247,7 +245,7 @@ def define_settings(samples_per_side):
 def run_hylaa():
     'Runs hylaa with the given settings, returning the HylaaResult object.'
 
-    samples_per_side = 300
+    samples_per_side = 40
 
     ha = define_ha(samples_per_side)
     settings = define_settings(samples_per_side)

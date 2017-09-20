@@ -261,8 +261,6 @@ def get_max_rel_error(settings, dim_list, limit):
 
         rel_error, projected_sim = get_rel_error(settings, h_mat, pv_mat, return_projected_sims=True, limit=limit)
 
-        print "dim = {}, rel_error = {}".format(dim, rel_error)
-
         # if the rel error is small and the whole simulation is near zero... we probably don't have enough arnoldi_iter
         if rel_error < 1e-13 and settings.simulation.krylov_reject_zero_rel_error:
             all_small = True
@@ -274,7 +272,6 @@ def get_max_rel_error(settings, dim_list, limit):
 
             # use a large relative error to force more arnoldi iterations
             if all_small:
-                print "all sim points were small, rejecting"
                 rel_error = 1e16
 
         max_rel_error = max(max_rel_error, rel_error)
@@ -485,7 +482,6 @@ def assign_fixed_terms(time_elapser, rv, dims_to_compute):
 
             for i in xrange(len(fixed_sim)):
                 rv[i+1][:, -1] = fixed_sim[i]
-                print "assigning fixed term step {} = {}".format(i+1, fixed_sim[i])
 
             Timers.toc('update result list')
 
@@ -504,7 +500,6 @@ def update_result_list(list_of_results, settings, rv):
 
         for (step, dim, col_vec) in result_list:
             rv[step][:, dim] = col_vec
-            print "assigning step {}, dim = {}, val = {}".format(step, dim, col_vec)
 
     Timers.toc('update result list')
 
