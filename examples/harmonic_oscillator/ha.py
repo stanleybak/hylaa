@@ -24,14 +24,14 @@ def define_ha():
     mode = ha.new_mode('mode')
     mode.set_dynamics(a_matrix)
 
-    #error = ha.new_mode('error')
-    #dims = a_matrix.shape[0]
+    error = ha.new_mode('error')
+    dims = a_matrix.shape[0]
 
     # x1 >= 4.0 & x1 <= 4.0
-    #mat = csr_matrix(([-1, 1], [0, 0], [0, 1, 2]), dtype=float, shape=(2, dims))
-    #rhs = np.array([-4.0, 4.0], dtype=float)
-    #trans1 = ha.new_transition(mode, error)
-    #trans1.set_guard(mat, rhs)
+    mat = csr_matrix(([-1, 1], [0, 0], [0, 1, 2]), dtype=float, shape=(2, dims))
+    rhs = np.array([-4.0, 4.0], dtype=float)
+    trans1 = ha.new_transition(mode, error)
+    trans1.set_guard(mat, rhs)
 
     return ha
 

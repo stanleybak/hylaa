@@ -25,6 +25,7 @@ class HylaaSettings(Freezable):
         self.print_output = True # print status and waiting list information to stdout
         self.skip_step_times = False # print the times at each step
 
+        self.print_lp_on_error = False # upon reaching an error mode, print LP and exit (no counter-example)
         self.counter_example_filename = 'counterexample.py' # the counter-example filename to create on errors
         self.simulation = SimulationSettings(step)
 
@@ -51,15 +52,19 @@ class SimulationSettings(Freezable):
         self.krylov_profiling = False # print krylov profiling data?
 
         # accuracy settings. If you don't have enough accuracy, decrease rel error and increase samples
-        self.krylov_rel_error = 1e-9 # desired relative error of projV * exmp(H * end_time)
+        self.krylov_rel_error = 1e-7 # desired relative error of projV * exmp(H * end_time)
         self.krylov_rel_error_samples = 9 # number of samples for checking rel_error
-        self.krylov_check_all_rel_error = False # check relative error condition for all dimensions?
+        self.krylov_use_odeint = True # use odeint instead of expm for computing expm(t*v)
+        self.krylov_odeint_simtol = None # if using odeint, use this simulation error tolerance for atol and rtol
+        self.krylov_check_all_rel_error = None # amount for relative error check for all dimensions (None = skip)
+        self.krylov_reject_zero_rel_error = True # if result is all zeros, force increasing arnoldi_iter
+        self.krylov_force_arnoldi_iter = None # force a fixed arnoldi iteration count
 
         self.check_answer = False # double-check answer using MATRIX_EXP at each step (slow!)
         self.check_answer_abs_tol = 1e-6 # absolute tolerance when checking answer
 
         self.seperate_constant_vars = True # seperate constant initial variables optimization (krylov only)
-        self.pipeline_arnoldi_expm = True # pipeline computation of arnoldi and expm optimization (krylov only)
+        self.krylov_multithreaded = True # use multiple threads to try to speed up krylov method?
 
         self.freeze_attrs()
 
@@ -99,6 +104,9 @@ class PlotSettings(Freezable):
         self.video = None # instance of VideoSettings
 
         self.grid = True
+        self.grid_xtics = None # override default xtics value, for example np.linspace(0.0, 5.0, 1.0)
+        self.grid_ytics = None # override default ytics value, for example np.linspace(0.0, 5.0, 1.0)
+
         self.plot_traces = True
         self.max_shown_polys = 512 # thin out the reachable set if we go over this number of polys (optimization)
         self.draw_stride = 1 # draw every 2nd poly, 4th, ect.
@@ -175,6 +183,7 @@ class HylaaResult(Freezable):
     'Result, assigned to engine.result after computation'
 
     def __init__(self):
-        self.time = None
+        self.timers = None # map of string (timer name) -> TimerData
+        self.safe = True # was the verificaation result safe?
 
         self.freeze_attrs()
