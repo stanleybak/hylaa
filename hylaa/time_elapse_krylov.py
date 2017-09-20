@@ -205,12 +205,16 @@ def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_projected_s
     small_h_mat = h_mat[:-1, :-1].copy()
     small_pv_mat = pv_mat[:, :-1].copy()
 
+    Timers.tic('get_rel_error expm')
     matrix_exp = expm(settings.step * h_mat)
     cur_col = matrix_exp[:, 0]
+    Timers.toc('get_rel_error expm')
 
     # for accuracy check
+    Timers.tic('get_rel_error expm')
     small_matrix_exp = expm(settings.step * small_h_mat) # step time is already included in loaded a_mat
     small_col = small_matrix_exp[:, 0]
+    Timers.toc('get_rel_error expm')
 
     # do the comparison at the first step
     cur_result = np.dot(pv_mat, cur_col)
@@ -673,7 +677,6 @@ def make_cur_time_elapse_mat_list(time_elapser):
             ### compute matrix exp ###
             compute_rel_error = settings.simulation.krylov_check_all_rel_error
             lp_var = time_elapser.dim_to_lp_var[dim]
-            print "dim = {}, lp_var = {}".format(dim, lp_var)
             args = [(settings.num_steps, settings.step, lp_var, h_mat, pv_mat, compute_rel_error)]
             completed_vars += 1
 

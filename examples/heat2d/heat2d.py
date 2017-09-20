@@ -232,6 +232,8 @@ def define_settings(samples_per_side):
     settings.simulation.sim_mode = SimulationSettings.KRYLOV
 
     #settings.simulation.check_answer = True
+    settings.simulation.krylov_use_gpu = True
+    settings.simulation.krylov_profiling = True
 
     center_x = int(math.floor(samples_per_side/2.0))
     center_y = int(math.floor(samples_per_side/2.0))
@@ -245,7 +247,7 @@ def define_settings(samples_per_side):
 def run_hylaa():
     'Runs hylaa with the given settings, returning the HylaaResult object.'
 
-    samples_per_side = 20
+    samples_per_side = 200
 
     ha = define_ha(samples_per_side)
     settings = define_settings(samples_per_side)
