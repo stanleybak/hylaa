@@ -55,7 +55,7 @@ class SimulationSettings(Freezable):
         self.krylov_rel_error = 1e-7 # desired relative error of projV * exmp(H * end_time)
         self.krylov_rel_error_samples = 9 # number of samples for checking rel_error
         self.krylov_use_odeint = True # use odeint instead of expm for computing expm(t*v)
-        self.krylov_odeint_simtol = 1e-9 # if using odeint, use this simulation error tolerance for atol and rtol
+        self.krylov_odeint_simtol = None # if using odeint, use this simulation error tolerance for atol and rtol
         self.krylov_check_all_rel_error = None # amount for relative error check for all dimensions (None = skip)
         self.krylov_reject_zero_rel_error = True # if result is all zeros, force increasing arnoldi_iter
         self.krylov_force_arnoldi_iter = None # force a fixed arnoldi iteration count
@@ -64,7 +64,7 @@ class SimulationSettings(Freezable):
         self.check_answer_abs_tol = 1e-6 # absolute tolerance when checking answer
 
         self.seperate_constant_vars = True # seperate constant initial variables optimization (krylov only)
-        self.pipeline_arnoldi_expm = True # pipeline computation of arnoldi and expm optimization (krylov only)
+        self.krylov_multithreaded = True # use multiple threads to try to speed up krylov method?
 
         self.freeze_attrs()
 
