@@ -233,9 +233,9 @@ def define_settings(samples_per_side):
 
     #settings.simulation.krylov_use_odeint = False
     #settings.simulation.check_answer = True
-    #settings.simulation.krylov_use_gpu = True
+    settings.simulation.krylov_use_gpu = True
     #settings.simulation.krylov_profiling = True
-    #settings.simulation.krylov_multithreaded = True
+    #settings.simulation.krylov_multithreaded = False
 
     center_x = int(math.floor(samples_per_side/2.0))
     center_y = int(math.floor(samples_per_side/2.0))
@@ -253,12 +253,15 @@ def run_hylaa():
     # Get_rel_error expm Time (40 calls): 938.55 sec (81.5%)
     # total time 1151 secs (~20 mins)
 
-    # Get_rel_error odeint Time (36 calls): 232.52 sec (78.2%)
-    # Total Time: 297.51 sec (~ 5 mins)
+    # single_threaded: Get_rel_error odeint Time (18 calls): 157.03 sec (73.5%)
+    # multi_threaded: Get_rel_error odeint Time (18 calls): 82.49 sec (59.1%)
 
-    #samples_per_side = 200 # (also set use_gpu + profiling)
+    # 100 -> Get_rel_error odeint Time (16 calls): 12.13 sec (47.5%)
 
-    samples_per_side = 100
+
+    samples_per_side = 100 # (also set use_gpu + profiling)
+
+    #samples_per_side = 100
     # 100x100 -> Get_rel_error odeint Time (16 calls): 10.80 sec (62.0%) (single threaded)
     # Get_rel_error odeint Time (16 calls): 11.12 sec (63.0%) (multi-threaded)
 
