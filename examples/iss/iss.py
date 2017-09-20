@@ -49,10 +49,10 @@ def define_ha():
     #limit = 0.0005
     limit = 0.00017
     trans1 = ha.new_transition(mode, error)
-    trans1.set_guard(guard_matrix, np.array([-limit], dtype=float)) # y3 <= -0.0005
+    trans1.set_guard(guard_matrix, np.array([-limit], dtype=float)) # y3 <= -limit
 
     trans2 = ha.new_transition(mode, error)
-    trans2.set_guard(-guard_matrix, np.array([-limit], dtype=float)) # y3 >= 0.0005
+    trans2.set_guard(-guard_matrix, np.array([-limit], dtype=float)) # y3 >= limit
 
     return ha
 
@@ -101,15 +101,15 @@ def define_settings(_):
     plot_settings = PlotSettings()
     plot_settings.plot_mode = PlotSettings.PLOT_NONE
 
-    max_time = 20.0
+    max_time = 20.0 # 20.0
     step_size = 0.001
     settings = HylaaSettings(step=step_size, max_time=max_time, plot_settings=plot_settings)
     settings.simulation.guard_mode = SimulationSettings.GUARD_DECOMPOSED
 
-    settings.simulation.sim_mode = SimulationSettings.EXP_MULT
-    #settings.simulation.sim_mode = SimulationSettings.KRYLOV
+    #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
+    settings.simulation.sim_mode = SimulationSettings.KRYLOV
     #settings.simulation.seperate_constant_vars = False
-    settings.simulation.pipeline_arnoldi_expm = True
+    settings.simulation.pipeline_arnoldi_expm = False
     #settings.simulation.check_answer = True
 
     #settings.simulation.krylov_check_all_rel_error = True

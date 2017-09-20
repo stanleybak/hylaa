@@ -43,8 +43,8 @@ def define_ha():
 
     # x1 >= 0.2
     mat = csr_matrix(([-1], [0], [0, 1]), dtype=float, shape=(1, dims))
-    rhs = np.array([-0.2], dtype=float) # safe
-    #rhs = np.array([-0.1], dtype=float) # unsafe
+    #rhs = np.array([-0.2], dtype=float) # safe
+    rhs = np.array([-0.1], dtype=float) # unsafe
     trans1 = ha.new_transition(mode, error)
     trans1.set_guard(mat, rhs)
 

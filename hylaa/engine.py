@@ -34,13 +34,12 @@ class HylaaEngine(object):
         self.cur_step_in_mode = None # how much dwell time in current continuous post
         self.max_steps_remaining = None # bound on num steps left in current mode ; assigned on pop
 
-        self.reached_error = False
         self.result = None # a HylaaResult... assigned on run()
 
     def is_finished(self):
         'is the computation finished'
 
-        return self.cur_star is None or self.reached_error
+        return self.cur_star is None or not self.result.safe
 
     def reconstruct_full_start_pt(self, lp_solution):
         '''
@@ -121,7 +120,7 @@ class HylaaEngine(object):
                     write_counter_example(filename, mode, step_size, total_steps, start_pt, inputs,
                                           normal_vec, normal_val, end_val)
 
-                self.reached_error = True
+                self.result.safe = False
                 break # no need to keep checking
 
     def do_step_continuous_post(self):
@@ -151,10 +150,10 @@ class HylaaEngine(object):
                 break
 
         if self.is_finished() and self.settings.print_output:
-            if self.reached_error:
+            if not self.result.safe:
                 print "Result: Error modes are reachable.\n"
             else:
-                print "Result: Error modes are NOT reachable.\n"
+                print "Result: System is safe. Error modes are NOT reachable.\n"
 
     def run(self, init_star):
         '''
@@ -177,4 +176,4 @@ class HylaaEngine(object):
         else:
             self.plotman.compute_and_animate(self.do_step, self.is_finished)
 
-        self.result.time = Timers.timers["total"].total_secs
+        self.result.timers = Timers.timers["total"].total_secs

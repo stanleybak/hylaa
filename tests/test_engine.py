@@ -5,13 +5,17 @@ September 2016
 '''
 
 import unittest
-import math
 import numpy as np
 
-from hylaa.hybrid_automaton import HyperRectangle, LinearHybridAutomaton
+from scipy.io import loadmat
+from scipy.sparse import csr_matrix, csc_matrix
+
+from hylaa.hybrid_automaton import LinearHybridAutomaton, make_seperated_constraints
 from hylaa.engine import HylaaEngine, HylaaSettings
 from hylaa.plotutil import PlotSettings
 from hylaa.timerutil import Timers
+from hylaa.containers import SimulationSettings
+from hylaa.star import Star
 
 class TestEngine(unittest.TestCase):
     'Unit tests for hylaa engine'
@@ -20,113 +24,93 @@ class TestEngine(unittest.TestCase):
         'setup function'
         Timers.reset()
 
-    def test_rectangular(self):
-        '''test integration of x' = 1, y' = 2'''
+    def test_iss(self):
+        '''test short-run iss system (with check_answer == True)'''
 
-        ha = LinearHybridAutomaton('Harmonic Oscillator')
-        ha.variables = ["x", "y"]
+        ########### define ha ###################
+        ha = LinearHybridAutomaton()
 
-        # x' = x
-        loc1 = ha.new_mode('loc')
-        loc1.a_matrix = np.array([[0, 0], [0, 0]])
-        loc1.c_vector = np.array([1, 2])
+        mode = ha.new_mode('mode')
+        dynamics = loadmat('iss.mat')
+        a_matrix = dynamics['A']
 
-        # x(0) = 1, y(0) = 2
-        init_list = [(ha.modes['loc'], HyperRectangle([(0.99, 1.01), (1.99, 2.01)]))]
+        # a is a csc_matrix
+        col_ptr = [n for n in a_matrix.indptr]
+        rows = [n for n in a_matrix.indices]
+        data = [n for n in a_matrix.data]
 
+        b_matrix = dynamics['B']
+        num_inputs = b_matrix.shape[1]
+
+        for u in xrange(num_inputs):
+            rows += [n for n in b_matrix[:, u].indices]
+            data += [n for n in b_matrix[:, u].data]
+            col_ptr.append(len(data))
+
+        combined_mat = csc_matrix((data, rows, col_ptr), \
+            shape=(a_matrix.shape[0] + num_inputs, a_matrix.shape[1] + num_inputs))
+
+        mode.set_dynamics(csr_matrix(combined_mat))
+
+        error = ha.new_mode('error')
+        y3 = dynamics['C'][2]
+        col_ptr = [n for n in y3.indptr] + num_inputs * [y3.data.shape[0]]
+        y3 = csc_matrix((y3.data, y3.indices, col_ptr), shape=(1, y3.shape[1] + num_inputs))
+        guard_matrix = csr_matrix(y3)
+
+        #limit = 0.0005
+        limit = 0.00017
+        trans1 = ha.new_transition(mode, error)
+        trans1.set_guard(guard_matrix, np.array([-limit], dtype=float)) # y3 <= -limit
+        trans2 = ha.new_transition(mode, error)
+        trans2.set_guard(-guard_matrix, np.array([-limit], dtype=float)) # y3 >= limit
+
+        ########### define settings ######################
         plot_settings = PlotSettings()
         plot_settings.plot_mode = PlotSettings.PLOT_NONE
-        settings = HylaaSettings(step=0.1, max_time=1.1, plot_settings=plot_settings)
+        settings = HylaaSettings(step=0.05, max_time=1.0, plot_settings=plot_settings)
+        settings.simulation.sim_mode = SimulationSettings.KRYLOV
+        settings.simulation.pipeline_arnoldi_expm = False
+        settings.simulation.check_answer = True # raise error if answer is incorrect
+        settings.counter_example_filename = None
         settings.print_output = False
 
-        engine = HylaaEngine(ha, settings)
+        ############ make init star ####################
+        bounds_list = []
 
-        engine.load_waiting_list(init_list)
-        # x(t) = 1 + t; y(t) = 2 + 2*t
+        for dim in xrange(ha.dims):
+            if dim == 270: # input 1
+                lb = 0
+                ub = 0.1
+            elif dim == 271: # input 2
+                lb = 0.8
+                ub = 1.0
+            elif dim == 272: # input 3
+                lb = 0.9
+                ub = 1.0
+            elif dim < 270:
+                lb = -0.0001
+                ub = 0.0001
+            else:
+                raise RuntimeError('Unknown dimension: {}'.format(dim))
 
-        # pop from waiting_list (doesn't advance state)
-        engine.do_step()
+            bounds_list.append((lb, ub))
 
-        for i in xrange(10):
-            engine.do_step()
+        init_mat, init_rhs, variable_dim_list, fixed_dim_tuples = make_seperated_constraints(bounds_list)
 
-            t = 0.1 * (i+1)
-            star = engine.cur_state
-            point = [1 + t, 2 + 2 * t]
+        # split variable_dim_list into the input and non-input parts
+        # this will use different krylov subspace lengths for evaluation
+        variable_dims = [variable_dim_list[-3:], variable_dim_list[:-3]]
 
-            self.assertTrue(star.contains_point(point))
+        init = Star(settings, ha.modes['mode'], init_mat, init_rhs, \
+                    var_lists=variable_dims, fixed_tuples=fixed_dim_tuples)
 
-    def test_exp(self):
-        '''test integration of x' = x'''
-
-        ha = LinearHybridAutomaton('Harmonic Oscillator')
-        ha.variables = ["x"]
-
-        # x' = x
-        a_matrix = np.array([[1]], dtype=float)
-        c_vector = np.array([0], dtype=float)
-
-        loc1 = ha.new_mode('loc')
-        loc1.set_dynamics(a_matrix, c_vector)
-
-        # x(0) = 1
-        init_list = [(ha.modes['loc'], HyperRectangle([(0.99, 1.01)]))]
-
-        plot_settings = PlotSettings()
-        plot_settings.plot_mode = PlotSettings.PLOT_NONE
-        settings = HylaaSettings(step=0.1, max_time=1.1, plot_settings=plot_settings)
-        settings.print_output = False
+        ################ run #################
 
         engine = HylaaEngine(ha, settings)
+        engine.run(init)
+        self.assertFalse(engine.result.safe)
 
-        engine.load_waiting_list(init_list)
-
-        # pop from waiting_list (doesn't advance state)
-        engine.do_step()
-
-        # x(t) should be e^t
-        for i in xrange(10):
-            engine.do_step()
-
-            t = 0.1 * (i+1)
-            star = engine.cur_state
-
-            self.assertTrue(star.contains_point([math.exp(t)]))
-
-    def test_exp_plus_one(self):
-        '''test integration of x' = x + 1; x(t) should be 2*e^t - 1'''
-
-        ha = LinearHybridAutomaton('Harmonic Oscillator')
-        ha.variables = ["x"]
-
-        # x' = x + 1
-        loc1 = ha.new_mode('loc')
-        loc1.a_matrix = np.array([[1]])
-        loc1.c_vector = np.array([1])
-
-        # x(0) = 1
-        init_list = [(ha.modes['loc'], HyperRectangle([(0.99, 1.01)]))]
-
-        plot_settings = PlotSettings()
-        plot_settings.plot_mode = PlotSettings.PLOT_NONE
-        settings = HylaaSettings(step=0.1, max_time=1.1, plot_settings=plot_settings)
-        settings.print_output = False
-
-        engine = HylaaEngine(ha, settings)
-
-        engine.load_waiting_list(init_list)
-
-        # pop from waiting_list (doesn't advance state)
-        engine.do_step()
-
-        # x(t) should be 2*e^t - 1
-        for i in xrange(10):
-            engine.do_step()
-
-            t = 0.1 * (i+1)
-            star = engine.cur_state
-
-            self.assertTrue(star.contains_point([2 * math.exp(t) - 1]))
 
 if __name__ == '__main__':
     unittest.main()

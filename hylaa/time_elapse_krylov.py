@@ -10,7 +10,7 @@ from multiprocessing import Pool
 
 import numpy as np
 from scipy.sparse import csr_matrix
-from scipy.sparse.linalg import expm, expm_multiply
+from scipy.sparse.linalg import expm
 
 from hylaa.krylov_interface import KrylovInterface
 from hylaa.timerutil import Timers
@@ -232,7 +232,7 @@ def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_projected_s
         if return_projected_sims:
             projected_sims.append(cur_result)
 
-        if rel_error > limit:
+        if limit is not None and rel_error > limit:
             break
 
     return rel_error if not return_projected_sims else (rel_error, projected_sims)
@@ -247,6 +247,7 @@ def get_max_rel_error(settings, dim_list, limit):
     max_rel_error = 0
     h_list = []
     pv_list = []
+    all_sims = []
 
     for dim in dim_list:
         Timers.tic('krylov arnoldi_unit()')
@@ -260,24 +261,26 @@ def get_max_rel_error(settings, dim_list, limit):
         pv_list.append(pv_mat)
 
         rel_error, projected_sim = get_rel_error(settings, h_mat, pv_mat, return_projected_sims=True, limit=limit)
-
-        # if the rel error is small and the whole simulation is near zero... we probably don't have enough arnoldi_iter
-        if rel_error < 1e-13 and settings.simulation.krylov_reject_zero_rel_error:
-            all_small = True
-
-            for sim in projected_sim:
-                if np.linalg.norm(sim) > 1e-13:
-                    all_small = False
-                    break
-
-            # use a large relative error to force more arnoldi iterations
-            if all_small:
-                rel_error = 1e16
+        all_sims.append(projected_sim)
 
         max_rel_error = max(max_rel_error, rel_error)
 
         if max_rel_error > limit:
             break
+
+    # if the max_rel error is small and simulations are near zero... we probably don't have enough arnoldi_iter
+    if max_rel_error < 1e-13 and settings.simulation.krylov_reject_zero_rel_error:
+        all_small = True
+
+        for sim in all_sims:
+            for state in sim:
+                if np.linalg.norm(state) > 1e-13:
+                    all_small = False
+                    break
+
+        # use a large relative error to force more arnoldi iterations
+        if all_small:
+            max_rel_error = 1e16
 
     return max_rel_error, h_list, pv_list
 
@@ -356,6 +359,20 @@ def krylov_sim_fixed_terms(time_elapser, dims_to_compute):
 
         if settings.print_output:
             print "Skipping fixed-term simulation (no effect on key directions)"
+    elif settings.simulation.krylov_force_arnoldi_iter is not None:
+        arnoldi_iter = settings.simulation.krylov_force_arnoldi_iter
+
+        KrylovInterface.preallocate_memory(arnoldi_iter, dims, key_dirs, error_on_fail=True)
+
+        h_mat, pv_mat = KrylovInterface.arnoldi_vec(init_vec)
+        h_mat = h_mat[:-1, :].copy()
+        pv_mat = pv_mat[:, :-1].copy()
+
+        print "getting simulation with fixed krylov iter"
+
+        (_, simulation) = get_rel_error(settings, h_mat, pv_mat, arnoldi_iter, True)
+
+        print "returning sim with len {}".format(len(simulation))
     else:
         arnoldi_iter = min(dims, 4)
 
@@ -498,8 +515,8 @@ def update_result_list(list_of_results, settings, rv):
                 "Got rel error {} > {} (max) in dimension {}".format(rel_error, \
                 settings.simulation.krylov_rel_error, result_list[0][1])
 
-        for (step, dim, col_vec) in result_list:
-            rv[step][:, dim] = col_vec
+        for (step, lp_var, col_vec) in result_list:
+            rv[step][:, lp_var] = col_vec
 
     Timers.toc('update result list')
 
@@ -583,6 +600,9 @@ def make_cur_time_elapse_mat_list(time_elapser):
     dims_to_compute = get_dims_to_compute(time_elapser.a_matrix, time_elapser.key_dir_mat)
     Timers.toc("get_dims_to_compute()")
 
+    if settings.simulation.krylov_force_arnoldi_iter and settings.print_output:
+        print "Using fixed arnoldi_iter from settings: {}".format(settings.simulation.krylov_force_arnoldi_iter)
+
     Timers.tic("krylov assign fixed terms")
     assign_fixed_terms(time_elapser, rv, dims_to_compute)
     Timers.toc("krylov assign fixed terms")
@@ -594,12 +614,16 @@ def make_cur_time_elapse_mat_list(time_elapser):
 
     num_vars = sum([len(sublist) for sublist in variable_dim_sublists])
     completed_vars = 0
+
     pool_res = None
 
     for var_sublist in variable_dim_sublists:
-        Timers.tic("choose arnoldi iterations")
-        arnoldi_iter = choose_arnoldi_iter(time_elapser, var_sublist, dims_to_compute)
-        Timers.toc("choose arnoldi iterations")
+        if settings.simulation.krylov_force_arnoldi_iter is not None:
+            arnoldi_iter = settings.simulation.krylov_force_arnoldi_iter
+        else:
+            Timers.tic("choose arnoldi iterations")
+            arnoldi_iter = choose_arnoldi_iter(time_elapser, var_sublist, dims_to_compute)
+            Timers.toc("choose arnoldi iterations")
 
         # re-allocate with correct number of arnoldi iterations
         KrylovInterface.preallocate_memory(arnoldi_iter, dims, key_dirs, error_on_fail=True)
@@ -648,8 +672,9 @@ def make_cur_time_elapse_mat_list(time_elapser):
 
             ### compute matrix exp ###
             compute_rel_error = settings.simulation.krylov_check_all_rel_error
-            print "dim = {}, completed_vars = {}".format(dim, completed_vars)
-            args = [(settings.num_steps, settings.step, completed_vars, h_mat, pv_mat, compute_rel_error)]
+            lp_var = time_elapser.dim_to_lp_var[dim]
+            print "dim = {}, lp_var = {}".format(dim, lp_var)
+            args = [(settings.num_steps, settings.step, lp_var, h_mat, pv_mat, compute_rel_error)]
             completed_vars += 1
 
             if settings.simulation.pipeline_arnoldi_expm:

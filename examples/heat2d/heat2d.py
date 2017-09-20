@@ -245,7 +245,7 @@ def define_settings(samples_per_side):
 def run_hylaa():
     'Runs hylaa with the given settings, returning the HylaaResult object.'
 
-    samples_per_side = 40
+    samples_per_side = 20
 
     ha = define_ha(samples_per_side)
     settings = define_settings(samples_per_side)

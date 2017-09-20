@@ -68,6 +68,8 @@ class TimeElapser(Freezable):
 
                 for dim, val in self.fixed_tuples:
                     self.fixed_init_vec[dim, 0] = val
+
+                self.dim_to_lp_var = self.create_dim_to_lp_var()
             else:
                 assert var_lists is None and fixed_tuples is None, "seperate_constant_vars=False but var_lists was used"
         else:
@@ -112,6 +114,27 @@ class TimeElapser(Freezable):
 
         # done constructing, convert to csc_matrix
         self.key_dir_mat = csr_matrix(lil_dir_mat)
+
+    def create_dim_to_lp_var(self):
+        'create a mapping of dimention -> variable in the LP. For use with Krylov sim and seperate_fixed_vars'
+
+        dims = self.dims
+        fixed_tuples = self.fixed_tuples
+        rv = [-1] * dims
+
+        counter = 0
+        next_fixed_dim = -1 if len(fixed_tuples) == 0 else fixed_tuples[0][0]
+        fixed_dim_index = 0
+
+        for dim in xrange(dims):
+            if dim == next_fixed_dim:
+                fixed_dim_index += 1
+                next_fixed_dim = -1 if fixed_dim_index >= len(fixed_tuples) else fixed_tuples[fixed_dim_index][0]
+            else:
+                rv[dim] = counter
+                counter += 1
+
+        return rv
 
     def step_exp_mult(self):
         'first step matrix exp, other steps matrix multiplication'

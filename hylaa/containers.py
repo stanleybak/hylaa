@@ -56,6 +56,7 @@ class SimulationSettings(Freezable):
         self.krylov_rel_error_samples = 9 # number of samples for checking rel_error
         self.krylov_check_all_rel_error = None # amount for relative error check for all dimensions (None = skip)
         self.krylov_reject_zero_rel_error = True # if result is all zeros, force increasing arnoldi_iter
+        self.krylov_force_arnoldi_iter = None # force a fixed arnoldi iteration count
 
         self.check_answer = False # double-check answer using MATRIX_EXP at each step (slow!)
         self.check_answer_abs_tol = 1e-6 # absolute tolerance when checking answer
@@ -180,6 +181,7 @@ class HylaaResult(Freezable):
     'Result, assigned to engine.result after computation'
 
     def __init__(self):
-        self.time = None
+        self.timers = None # map of string (timer name) -> TimerData
+        self.safe = True # was the verificaation result safe?
 
         self.freeze_attrs()
