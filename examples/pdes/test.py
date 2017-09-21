@@ -4,7 +4,7 @@
 import math
 import matplotlib.pyplot as plt
 import numpy as np
-from pdes import HeatOneDimension, HeatTwoDimension1, HeatTwoDimension2, sim_odeint_sparse
+from pdes import HeatOneDimension, HeatTwoDimension1, HeatTwoDimension2, sim_odeint_sparse, HeatThreeDimension
 
 from scipy.io import loadmat
 
@@ -235,10 +235,50 @@ def ZhiHan_benchmark():
     print "\n A = {}".format(A)
     print "\n b = {}".format(b)
     print "\n c = {}".format(c)
+
+def heat_3d():
+    'heat 3d benchmark'
+
+    diffusity_const = 0.01
+    heat_exchange_const = 0.5
+    len_x = 1
+    len_y = 1
+    len_z = 1
+    
+    heat_source_pos = np.array([[0.2, 0.4], [0.2, 0.4]])
+    he = HeatThreeDimension(diffusity_const, heat_exchange_const, len_x, len_y, len_z, heat_source_pos)
+
+    # get linear ode model of 2-d heat equation
+    num_x = 4 # number of discretized steps between 0 and len_x
+    num_y = 4 # number of discretized steps between 0 and len_y
+    num_z = 4 # number of discretized steps between 0 and len_z
+    matrix_a, matrix_b = he.get_odes(num_x, num_y, num_z)
+    
+    A = matrix_a
+    b = matrix_b
+    c = np.zeros((1, A.shape[0]))
+    
+    c_pos_x = int(math.floor(num_x/2))
+    c_pos_y = int(math.floor(num_y/2))
+    c_pos_z = int(math.floor(num_z/2))
+
+    c_state_pos = c_pos_z*num_x*num_y + c_pos_y*num_x + c_pos_x
+    print"\n--------------------"
+    print "\ncenter_point corresponds to the {}-th state variable".format(c_state_pos)
+
+    c[0, c_state_pos] = 1
+
+    print"\n--------------------"
+
+    print "\n A = {}".format(A)
+    print "\n b = {}".format(b)
+    print "\n c = {}".format(c)
+    
     
 
 if __name__ == '__main__':
     #heat_1d()  # benchmark from the book: "Partial differential equations for scientists and engineers", page 39 
     #heat_2d1() # benchmark from the same book, page 40.
     #heat_2d2() # Zhi Han benchmark in his thesis, page 68.
-    ZhiHan_benchmark()
+    #ZhiHan_benchmark()
+    heat_3d() # 3-dimensional heat equation benchmark

@@ -207,8 +207,8 @@ class HeatTwoDimension2(object):
         print "\ndiscretization step along y-axis:{}".format(disc_step_y)
 
         if self.has_heat_source:
-            heat_start_pos_x = int(math.floor(self.heat_source_pos[0]/disc_step_x))
-            heat_end_pos_x = int(math.floor(self.heat_source_pos[1]/disc_step_x))
+            heat_start_pos_x = int(math.floor(self.heat_source_pos[0]/disc_step_x)) - 1
+            heat_end_pos_x = int(math.floor(self.heat_source_pos[1]/disc_step_x)) - 1
 
             print "\nheat source is from point {} to point {} on x-axis\n".\
               format(heat_start_pos_x, heat_end_pos_x)
@@ -272,7 +272,118 @@ class HeatTwoDimension2(object):
 
         return self.diffusity_const*(matrix_a.tocsr()), self.diffusity_const*(matrix_b.tocsr())
 
+class HeatThreeDimension(object):
+    '3-dimensional heat equation'
 
+    def __init__(self, diffusity_const, heat_exchange_const, len_x, len_y, len_z, heat_source_pos):
+
+        self.diffusity_const = diffusity_const if diffusity_const > 0 else 0
+        self.heat_exchange_const = heat_exchange_const if heat_exchange_const > 0 else 0
+        self.len_x = len_x if len_x > 0 else 0
+        self.len_y = len_y if len_y > 0 else 0
+        self.len_z = len_z if len_z > 0 else 0
+
+        if self.diffusity_const == 0 or self.heat_exchange_const == 0 or self.len_x == 0 \
+          or self.len_y == 0 or self.len_z == 0:
+            raise ValueError("inappropriate parameters")
+
+        assert isinstance(heat_source_pos, np.ndarray)
+        if heat_source_pos.shape != (2, 2):
+            raise ValueError("heat source position should be 2 x 2 array")
+        if heat_source_pos[0, 0] < 0 or heat_source_pos[0, 1] > self.len_x or heat_source_pos[1, 0] < 0 \
+          or heat_source_pos[1, 1] > self.len_y:
+            raise ValueError("heat source position should be inside the 3-d object")
+
+        self.heat_source_pos = heat_source_pos
+      
+    def get_odes(self, num_x, num_y, num_z):
+
+        assert isinstance(num_x, int)
+        assert isinstance(num_y, int)
+        assert isinstance(num_z, int)
+
+        if num_x <= 0 or num_y <= 0 or num_z <=0:
+            raise ValueError("number of mesh points should be large than zero")
+
+        step_x = self.len_x/(num_x + 1)
+        step_y = self.len_y/(num_y + 1)
+        step_z = self.len_z/(num_z + 1)
+
+        print"\nstep_x = {}, step_y = {}, step_z = {}".format(step_x, step_y, step_z)
+        print"\n------------------"
+
+        a = 1/step_x**2
+        b = 1/step_y**2
+        c = 1/step_z**2
+        d = -2*(a + b + c)
+        
+        heat_start_pos_x = int(math.ceil(self.heat_source_pos[0, 0]/step_x)) - 1
+        heat_stop_pos_x = int(math.floor(self.heat_source_pos[0, 1]/step_x)) - 1
+
+        heat_start_pos_y = int(math.ceil(self.heat_source_pos[1, 0]/step_y)) - 1
+        heat_stop_pos_y  = int(math.floor(self.heat_source_pos[1, 1]/step_y)) - 1
+
+        print"\nheat source is from pos_x = {} to pos_x = {}".format(heat_start_pos_x, heat_stop_pos_x)
+        print"\nheat source is from pos_y = {} to pos_y = {}".format(heat_start_pos_y, heat_stop_pos_y)
+        print"\n------------------"
+        num_var = num_x*num_y*num_z
+
+        matrix_a = sparse.lil_matrix((num_var, num_var))
+        matrix_b = sparse.lil_matrix((num_var, 1))
+
+        for i in xrange(0, num_var):
+            z_pos = int(math.floor(i/num_x/num_y))   
+            y_pos = int(math.floor((i - z_pos*num_x*num_y)/num_x))
+            x_pos = i - z_pos*num_x*num_y - y_pos*num_x
+
+            print"\nposition of the {}-th variable is: ({},{},{})".format(i, x_pos, y_pos, z_pos)
+            
+            matrix_a[i, i] = d # fill the diagonal 
+
+            if x_pos - 1 >= 0:
+                matrix_a[i, i-1] = matrix_a[i, i-1] + a
+            if x_pos + 1 <= num_x -1:
+                matrix_a[i, i+1] = matrix_a[i, i+1] + a
+
+            if y_pos - 1 >= 0:
+                ind = z_pos*num_x*num_y + (y_pos - 1)*num_x + x_pos
+                matrix_a[i, ind] = matrix_a[i, ind] + b
+            if y_pos + 1 <= num_y - 1:
+                ind = z_pos*num_x*num_y + (y_pos + 1)*num_x + x_pos
+                matrix_a[i, ind] = matrix_a[i, ind] + b
+
+            if z_pos - 1 >=0:
+                ind = (z_pos - 1)*num_x*num_y + y_pos*num_x + x_pos
+                matrix_a[i, ind] = matrix_a[i, ind] + c
+            if z_pos + 1 <= num_z - 1:
+                ind = (z_pos + 1)*num_x*num_y + y_pos*num_x + x_pos
+                matrix_a[i, ind] = matrix_a[i, ind] + c
+
+            # boundary conditions
+
+            if x_pos == 0: #  u(0, j, k) = u(1, j, k): the left face
+                matrix_a[i, i] = matrix_a[i, i] + a
+            if y_pos == num_y - 1: # u(i, num_y, k) = u(i, num_y - 1, k): the back face
+                matrix_a[i, i] = matrix_a[i, i] + b
+            if y_pos == 0: # u(i, 0, k) = u(i, 1, k): the front face
+                matrix_a[i, i] = matrix_a[i, i] + b
+            if z_pos == num_z - 1: # u(i, j, num_z) = u(i, j, num_z - 1): the top face
+                matrix_a[i, i] = matrix_a[i, i] + c
+
+            # heat source
+            if z_pos == 0:
+                if (x_pos >= heat_start_pos_x) and (x_pos <= heat_stop_pos_x) and \
+                  (y_pos >= heat_start_pos_y) and (y_pos <= heat_stop_pos_y):
+                    matrix_b[i, 0] = c
+                else:
+                    matrix_a[i, i] = matrix_a[i, i] + c
+
+            # diffusion
+            if x_pos == num_x - 1:
+                matrix_a[i, i] = matrix_a[i, i] + a/(1+self.heat_exchange_const*step_x)
+
+        return self.diffusity_const*(matrix_a.tocsr()), self.diffusity_const*(matrix_b.tocsr())
+            
 def sim_odeint_sparse(sparse_a_matrix, init_vec, input_vec, step, num_steps):
     'use odeint and keep the A matrix sparse'
 
