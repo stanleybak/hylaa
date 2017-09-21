@@ -191,6 +191,7 @@ def init_krylov(time_elapser, arnoldi_iter):
     rv = []
 
     Timers.tic('initilaizing step zero from key dir mat')
+
     dense_key_dir_mat = np.array(key_dir_mat.todense(), dtype=float)
 
     if settings.simulation.krylov_seperate_constant_vars:

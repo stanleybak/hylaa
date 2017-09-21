@@ -51,13 +51,9 @@ class TimeElapser(Freezable):
         self.one_step_matrix_exp = None # one step matrix exponential
         self.one_step_input_effects_matrix = None # one step input effects matrix, if inputs exist
 
-        print "time_elapse extract_key_directions"
-
         Timers.tic("extract key directions")
         self._extract_key_directions(mode)
         Timers.toc("extract key directions")
-
-        print "done extract_key_directions"
 
         # used for Krylov method
         if self.settings.simulation.sim_mode == SimulationSettings.KRYLOV:
@@ -73,8 +69,6 @@ class TimeElapser(Freezable):
 
                 for dim, val in self.fixed_tuples:
                     self.fixed_init_vec[dim, 0] = val
-
-                print "time_elapse create_dim_to_lp_var"
 
                 self.dim_to_lp_var = self.create_dim_to_lp_var()
             else:
@@ -131,12 +125,7 @@ class TimeElapser(Freezable):
             cols += [n for n in t.guard_matrix.indices]
             indptr += [i + offset for i in t.guard_matrix.indptr[1:]]
 
-        # done constructing, convert to csr_matrix
-        a = csr_matrix((data, cols, indptr), shape=(num_directions, self.dims), dtype=float)
-
-        # original 62 seconds
-        print "extract_key_directions time = {}".format(time.time() - start)
-        exit()
+        self.key_dir_mat = csr_matrix((data, cols, indptr), shape=(num_directions, self.dims), dtype=float)
 
     def create_dim_to_lp_var(self):
         'create a mapping of dimention -> variable in the LP. For use with Krylov sim and seperate_fixed_vars'

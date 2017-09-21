@@ -21,8 +21,12 @@ def define_ha():
     #num_heli = 10 # 300 dims
     #num_heli = 100 # 3000 dims
     #num_heli = 1000 # 30k dimensions
-    num_heli = 10000 # 300k dimensions
-    #num_heli = 33334 # 1 million dimensions
+    #num_heli = 10000 # 300k dimensions
+    #num_heli = 33334 # 1 million dimensions -> expected GPU memory @ 32 arnoldi iterations = 0.25 GB
+    #num_heli = 333334 # 10 million dimensions -> expected GPU memory = 2.5 GB -> 801 seconds (LP time: 80%)
+    num_heli = 2 * 333334 # 20 million dimensions -> expected GPU memory = 5.0 GB => 1649.47 sec (LP time: 80%)
+
+    num_key_dirs = 10
 
     ha = LinearHybridAutomaton()
 
@@ -32,14 +36,22 @@ def define_ha():
 
     error = ha.new_mode('error')
 
-    # error = x8 >= 0.45 for each helicopter
-    for instance in xrange(num_heli):
+    # error = x8 >= 0.45 for the first key_dir matrices
+    num_key_dirs = min(num_heli, num_key_dirs)
+    data = []
+    cols = []
+    indptrs = [0]
+
+    for instance in xrange(num_key_dirs):
         offset = instance * 30
-        guard_matrix = csr_matrix(([-1.0], [offset + 8], [0, 1]), shape=(1, 30 * num_heli), dtype=float)
 
-        trans = ha.new_transition(mode, error)
+        data.append(-1.0)
+        cols.append(offset + 8)
+        indptrs.append(len(data))
 
-        trans.set_guard(guard_matrix, np.array([-0.45], dtype=float)) # x8 >= 0.45
+    guard_matrix = csr_matrix((data, cols, indptrs), shape=(num_key_dirs, 30 * num_heli), dtype=float)
+    trans = ha.new_transition(mode, error)
+    trans.set_guard(guard_matrix, np.array([-0.45] * num_key_dirs, dtype=float)) # x8 >= 0.45 = safe, 0.4 = unsafe
 
     return ha
 
@@ -113,7 +125,7 @@ def define_settings(_):
     #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
 
     #settings.simulation.check_answer = True
-    settings.simulation.guard_mode = SimulationSettings.GUARD_DECOMPOSED
+    settings.simulation.guard_mode = SimulationSettings.GUARD_FULL_LP
 
     return settings
 

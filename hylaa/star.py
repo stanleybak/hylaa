@@ -50,9 +50,7 @@ class Star(Freezable):
             assert isinstance(var_lists[0], list), "var_lists should be a list of lists of grouped dimensions"
             self.lp_dims = 1 + sum([len(sublist) for sublist in var_lists])
 
-        print "making time elapser"
         self.time_elapse = TimeElapser(mode, hylaa_settings, var_lists=var_lists, fixed_tuples=fixed_tuples)
-        print "made"
 
         assert isinstance(init_mat_csr, csr_matrix)
         assert isinstance(init_rhs, np.ndarray)
@@ -78,11 +76,10 @@ class Star(Freezable):
         self._plot_lpi = None # LpInstance for plotting
         self._verts = None # for plotting optimization, a cached copy of this star's projected polygon verts
 
-        print "star making guard_opt data"
-
-        self._guard_opt_data = [GuardOptData(self, mode, i) for i in xrange(len(mode.transitions))]
-
-        print "made"
+        self._guard_opt_data = []
+        
+        for i in xrange(len(mode.transitions)):
+            self._guard_opt_data.append(GuardOptData(self, mode, i))
 
         self.freeze_attrs()
 
