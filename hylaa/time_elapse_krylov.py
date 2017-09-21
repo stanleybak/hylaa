@@ -193,7 +193,7 @@ def init_krylov(time_elapser, arnoldi_iter):
     Timers.tic('initilaizing step zero from key dir mat')
     dense_key_dir_mat = np.array(key_dir_mat.todense(), dtype=float)
 
-    if settings.simulation.seperate_constant_vars:
+    if settings.simulation.krylov_seperate_constant_vars:
         dense_key_dir_mat = compress_fixed(dense_key_dir_mat, time_elapser.fixed_tuples)
 
     rv.append(dense_key_dir_mat) # step zero
@@ -563,10 +563,9 @@ def choose_arnoldi_iter(time_elapser, var_list, dims_to_compute, pool):
 
             print "cur_rel_error = {}".format(cur_rel_error)
 
-        if arnoldi_iter != dims + 1:
-            # ok, at this point the error is below the threshold
-            # find the exact value of iterations that makes this work for all the samples
-            arnoldi_iter = find_iter_with_accuracy(settings, h_list, pv_list, error_limit, pool)
+        # ok, at this point the error is below the threshold
+        # find the exact value of iterations that makes this work for all the samples
+        arnoldi_iter = find_iter_with_accuracy(settings, h_list, pv_list, error_limit, pool)
 
     if settings.print_output:
         print "\nUsing {} Arnoldi Iterations".format(arnoldi_iter)
@@ -576,7 +575,7 @@ def choose_arnoldi_iter(time_elapser, var_list, dims_to_compute, pool):
 def assign_fixed_terms(time_elapser, rv, dims_to_compute, pool):
     'assign the fixed effect terms using a krylov simulation'
 
-    if time_elapser.settings.simulation.seperate_constant_vars:
+    if time_elapser.settings.simulation.krylov_seperate_constant_vars:
         Timers.tic("krylov sim fixed terms")
         fixed_sim = krylov_sim_fixed_terms(time_elapser, dims_to_compute, pool)
         Timers.toc("krylov sim fixed terms")
@@ -677,10 +676,16 @@ def make_cur_time_elapse_mat_list(time_elapser):
     dims = time_elapser.a_matrix.shape[0]
     key_dirs = time_elapser.key_dir_mat.shape[0]
 
-    if settings.simulation.krylov_multithreaded:
+    pool = arnoldi_expm_pool = rel_error_pool = None
+
+    if settings.simulation.krylov_multithreaded_arnoldi_expm or settings.simulation.krylov_multithreaded_rel_error:
         pool = Pool()
-    else:
-        pool = None
+
+        if settings.simulation.krylov_multithreaded_arnoldi_expm:
+            arnoldi_expm_pool = pool
+
+        if settings.simulation.krylov_multithreaded_rel_error:
+            rel_error_pool = pool
 
     rv = init_krylov(time_elapser, 2)
 
@@ -695,10 +700,10 @@ def make_cur_time_elapse_mat_list(time_elapser):
         print "Using fixed arnoldi_iter from settings: {}".format(settings.simulation.krylov_force_arnoldi_iter)
 
     Timers.tic("krylov assign fixed terms")
-    assign_fixed_terms(time_elapser, rv, dims_to_compute, pool)
+    assign_fixed_terms(time_elapser, rv, dims_to_compute, rel_error_pool)
     Timers.toc("krylov assign fixed terms")
 
-    if settings.simulation.seperate_constant_vars:
+    if settings.simulation.krylov_seperate_constant_vars:
         variable_dim_sublists = time_elapser.var_lists
     else:
         variable_dim_sublists = [xrange(0, dims)]
@@ -713,7 +718,7 @@ def make_cur_time_elapse_mat_list(time_elapser):
             arnoldi_iter = settings.simulation.krylov_force_arnoldi_iter
         else:
             Timers.tic("choose arnoldi iterations")
-            arnoldi_iter = choose_arnoldi_iter(time_elapser, var_sublist, dims_to_compute, pool)
+            arnoldi_iter = choose_arnoldi_iter(time_elapser, var_sublist, dims_to_compute, rel_error_pool)
             Timers.toc("choose arnoldi iterations")
 
         # re-allocate with correct number of arnoldi iterations
@@ -766,10 +771,10 @@ def make_cur_time_elapse_mat_list(time_elapser):
             args = [(settings, lp_var, h_mat, pv_mat)]
             completed_vars += 1
 
-            if settings.simulation.krylov_multithreaded:
+            if arnoldi_expm_pool is not None:
                 # push the computation to another thread
                 Timers.tic('krylov send expm(H) to another thread')
-                pool_res = pool.map_async(get_krylov_result, args)
+                pool_res = arnoldi_expm_pool.map_async(get_krylov_result, args)
                 Timers.toc('krylov send expm(H) to another thread')
             else:
                 # do matrix exp right away
@@ -787,7 +792,7 @@ def make_cur_time_elapse_mat_list(time_elapser):
 
         update_result_list(list_of_results, settings, rv)
 
-    if settings.simulation.krylov_multithreaded:
+    if pool is not None:
         pool.close()
         pool.join()
 

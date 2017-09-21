@@ -487,6 +487,9 @@ class CuspData
 
         for (unsigned long it = 1; it <= iterations; it++)
         {
+            if (useProfiling && it % 100 == 0)
+                printf("Arnoldi iteration %lu / %lu\n", it, iterations);
+
             util.tic("sparse matrix vector multiply");
             unsigned long prevRowOffset = _n * (it - 1);
             unsigned long curRowOffset = _n * it;

@@ -58,7 +58,7 @@ class TimeElapser(Freezable):
         if self.settings.simulation.sim_mode == SimulationSettings.KRYLOV:
             self.cur_time_elapse_mat_list = None
 
-            if self.settings.simulation.seperate_constant_vars:
+            if self.settings.simulation.krylov_seperate_constant_vars:
                 assert var_lists is not None and fixed_tuples is not None
 
                 self.var_lists = var_lists
@@ -278,7 +278,7 @@ class TimeElapser(Freezable):
         cur_time_mat_width = self.key_dir_mat.shape[1]
 
         if self.settings.simulation.sim_mode == SimulationSettings.KRYLOV and \
-                self.settings.simulation.seperate_constant_vars:
+                self.settings.simulation.krylov_seperate_constant_vars:
             cur_time_mat_width = 1 + sum([len(sublist) for sublist in self.var_lists])
 
         cur_time_mat_shape = (self.key_dir_mat.shape[0], cur_time_mat_width)
@@ -307,7 +307,7 @@ class TimeElapser(Freezable):
         exp = expm(self.a_matrix_csc * t)
         expected = np.array((self.key_dir_mat * exp).todense(), dtype=float)
 
-        if self.settings.simulation.seperate_constant_vars:
+        if self.settings.simulation.krylov_seperate_constant_vars:
             expected = compress_fixed(expected, self.fixed_tuples)
 
         assert self.cur_time_elapse_mat.shape == expected.shape, \
