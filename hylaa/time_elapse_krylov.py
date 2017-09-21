@@ -713,6 +713,8 @@ def make_cur_time_elapse_mat_list(time_elapser):
 
     pool_res = None
 
+    print "Num_Vars = {}".format(num_vars)
+
     for var_sublist in variable_dim_sublists:
         if settings.simulation.krylov_force_arnoldi_iter is not None:
             arnoldi_iter = settings.simulation.krylov_force_arnoldi_iter

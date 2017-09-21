@@ -19,7 +19,10 @@ def define_ha():
 
     #num_heli = 1 # 30 dims
     #num_heli = 10 # 300 dims
-    num_heli = 100 # 3000 dims
+    #num_heli = 100 # 3000 dims
+    #num_heli = 1000 # 30k dimensions
+    num_heli = 10000 # 300k dimensions
+    #num_heli = 33334 # 1 million dimensions
 
     ha = LinearHybridAutomaton()
 
@@ -73,6 +76,8 @@ def make_init_star(ha, hylaa_settings):
 
         bounds_list.append((lb, ub))
 
+    print "Finishing with bounds... making star"
+
     if not hylaa_settings.simulation.krylov_seperate_constant_vars or \
             hylaa_settings.simulation.sim_mode != SimulationSettings.KRYLOV:
         init_mat, init_rhs = make_constraint_matrix(bounds_list)
@@ -96,13 +101,13 @@ def define_settings(_):
 
     settings = HylaaSettings(step=0.1, max_time=30.0, plot_settings=plot_settings)
 
-    settings.simulation.krylov_multithreaded_arnoldi_expm = False
+    settings.simulation.krylov_multithreaded_arnoldi_expm = True
     settings.simulation.krylov_multithreaded_rel_error = False
 
     #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
     settings.simulation.sim_mode = SimulationSettings.KRYLOV
-    #settings.simulation.krylov_use_gpu = True
-    #settings.simulation.krylov_profiling = True
+    settings.simulation.krylov_use_gpu = True
+    settings.simulation.krylov_profiling = True
     #settings.simulation.check_answer = True
 
     #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
