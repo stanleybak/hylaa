@@ -48,6 +48,9 @@ class SimulationSettings(Freezable):
         self.sim_mode = SimulationSettings.EXP_MULT
         self.guard_mode = SimulationSettings.GUARD_DECOMPOSED
 
+        self.check_answer = False # double-check answer using MATRIX_EXP at each step (slow!)
+        self.check_answer_abs_tol = 1e-6 # absolute tolerance when checking answer
+
         self.krylov_use_gpu = False # use GPU with krylov method? (False = CPU)
         self.krylov_profiling = False # print krylov profiling data?
 
@@ -60,11 +63,9 @@ class SimulationSettings(Freezable):
         self.krylov_reject_zero_rel_error = True # if result is all zeros, force increasing arnoldi_iter
         self.krylov_force_arnoldi_iter = None # force a fixed arnoldi iteration count
 
-        self.check_answer = False # double-check answer using MATRIX_EXP at each step (slow!)
-        self.check_answer_abs_tol = 1e-6 # absolute tolerance when checking answer
-
-        self.seperate_constant_vars = True # seperate constant initial variables optimization (krylov only)
-        self.krylov_multithreaded = True # use multiple threads to try to speed up krylov method?
+        self.krylov_seperate_constant_vars = True # seperate constant initial variables optimization (krylov only)
+        self.krylov_multithreaded_arnoldi_expm = True # use multiple threads to pipeline arnoldi and expm
+        self.krylov_multithreaded_rel_error = False # use multiple threads to pipeline rel_error calculation
 
         self.freeze_attrs()
 

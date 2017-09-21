@@ -4,6 +4,7 @@ l * e^{At} where l is some direction of interest, and t is a multiple of some ti
 '''
 
 import sys
+import time
 
 import numpy as np
 
@@ -58,7 +59,7 @@ class TimeElapser(Freezable):
         if self.settings.simulation.sim_mode == SimulationSettings.KRYLOV:
             self.cur_time_elapse_mat_list = None
 
-            if self.settings.simulation.seperate_constant_vars:
+            if self.settings.simulation.krylov_seperate_constant_vars:
                 assert var_lists is not None and fixed_tuples is not None
 
                 self.var_lists = var_lists
@@ -84,36 +85,47 @@ class TimeElapser(Freezable):
     def _extract_key_directions(self, mode):
         'extract the key directions for lp solving'
 
+        start = time.time()
+
         num_directions = 0 if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE else 2
 
         for t in mode.transitions:
             num_directions += t.guard_matrix.shape[0]
 
-        lil_dir_mat = lil_matrix((num_directions, self.dims), dtype=float)
-
-        # fill the matrix
-        dir_index = 0
+        data = []
+        cols = []
+        indptr = [0]
 
         if self.settings.plot.plot_mode != PlotSettings.PLOT_NONE:
             if isinstance(self.settings.plot.xdim_dir, int):
-                lil_dir_mat[0, self.settings.plot.xdim_dir] = 1.0
+                data.append(1.0)
+                cols.append(self.settings.plot.xdim_dir)
+                indptr.append(len(data))
             else:
-                lil_dir_mat[0, :] = self.settings.plot.xdim_dir
+                xdir = csr_matrix(self.settings.plot.xdim_dir)
+                data += [n for n in xdir.data]
+                cols += [n for n in xdir.cols]
+                indptr.append(len(data))
 
             if isinstance(self.settings.plot.ydim_dir, int):
-                lil_dir_mat[1, self.settings.plot.ydim_dir] = 1.0
+                data.append(1.0)
+                cols.append(self.settings.plot.ydim_dir)
+                indptr.append(len(data))
             else:
-                lil_dir_mat[1, :] = self.settings.plot.ydim_dir
-
-            dir_index += 2
+                ydir = csr_matrix(self.settings.plot.ydim_dir)
+                data += [n for n in ydir.data]
+                cols += [n for n in ydir.cols]
+                indptr.append(len(data))
 
         for t in mode.transitions:
-            for row in t.guard_matrix:
-                lil_dir_mat[dir_index, :] = row
-                dir_index += 1
+            assert isinstance(t.guard_matrix, csr_matrix)
 
-        # done constructing, convert to csc_matrix
-        self.key_dir_mat = csr_matrix(lil_dir_mat)
+            offset = len(data)
+            data += [n for n in t.guard_matrix.data]
+            cols += [n for n in t.guard_matrix.indices]
+            indptr += [i + offset for i in t.guard_matrix.indptr[1:]]
+
+        self.key_dir_mat = csr_matrix((data, cols, indptr), shape=(num_directions, self.dims), dtype=float)
 
     def create_dim_to_lp_var(self):
         'create a mapping of dimention -> variable in the LP. For use with Krylov sim and seperate_fixed_vars'
@@ -278,7 +290,7 @@ class TimeElapser(Freezable):
         cur_time_mat_width = self.key_dir_mat.shape[1]
 
         if self.settings.simulation.sim_mode == SimulationSettings.KRYLOV and \
-                self.settings.simulation.seperate_constant_vars:
+                self.settings.simulation.krylov_seperate_constant_vars:
             cur_time_mat_width = 1 + sum([len(sublist) for sublist in self.var_lists])
 
         cur_time_mat_shape = (self.key_dir_mat.shape[0], cur_time_mat_width)
@@ -307,7 +319,7 @@ class TimeElapser(Freezable):
         exp = expm(self.a_matrix_csc * t)
         expected = np.array((self.key_dir_mat * exp).todense(), dtype=float)
 
-        if self.settings.simulation.seperate_constant_vars:
+        if self.settings.simulation.krylov_seperate_constant_vars:
             expected = compress_fixed(expected, self.fixed_tuples)
 
         assert self.cur_time_elapse_mat.shape == expected.shape, \

@@ -19,6 +19,19 @@
 #include <cublas_v2.h>
 #include "gpu_util.h"
 
+long now()
+{
+    struct timeval nowUs;
+
+    if (gettimeofday(&nowUs, 0))
+    {
+        perror("gettimeofday");
+        error("gettimeofday failed");
+    }
+
+    return 1000000l * nowUs.tv_sec + nowUs.tv_usec;
+}
+
 typedef double FLOAT_TYPE;
 
 // anyArray is only used to identify if CPU (do nothing) or GPU (initialize handle)
@@ -484,9 +497,26 @@ class CuspData
     void arnoldi(unsigned long iterations)
     {
         Array1dView cuspNumsView = cuspNums->subarray(0, 4);
+        
+        long start = now();
 
         for (unsigned long it = 1; it <= iterations; it++)
         {
+            if (useProfiling && it % 100 == 0)
+            {
+                long elapsedUs = now() - start; // microseconds
+                double elapsedSec = elapsedUs / 1000.0 / 1000.0;
+                double frac = ((double)it / iterations);
+                double totalSec = elapsedSec / frac;
+                double totalMin = totalSec / 60.0;
+                double remainingSec = totalSec - elapsedSec;
+                double remainingMin = remainingSec / 60.0;
+                double remainingHr = remainingMin / 60.0;
+                
+                printf("iter %lu / %lu (%.2f). Total: %.1f min, ETA: %.1f sec (%.2f min) (%.2f hr)\n", 
+                    it, iterations, frac, totalMin, remainingSec, remainingMin, remainingHr);
+            }
+
             util.tic("sparse matrix vector multiply");
             unsigned long prevRowOffset = _n * (it - 1);
             unsigned long curRowOffset = _n * it;

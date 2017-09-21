@@ -44,43 +44,6 @@ def define_ha():
 
     return ha
 
-def make_init_constraints(ha):
-    '''return (init_mat, init_rhs)'''
-
-    values = []
-    indices = []
-    indptr = []
-
-    constraint_rhs = []
-
-    for dim in xrange(ha.dims):
-        if dim == 1:
-            lb = 0.6
-            ub = 1.0
-        else:
-            lb = -0.2
-            ub = 0.2
-
-        # upper bound
-        values.append(1)
-        indices.append(dim)
-        indptr.append(2*dim)
-        constraint_rhs.append(ub)
-
-        # lower bound
-        values.append(-1)
-        indices.append(dim)
-        indptr.append(2*dim+1)
-        constraint_rhs.append(-lb)
-
-    indptr.append(len(values))
-
-    init_mat = csr_matrix((values, indices, indptr), shape=(2*ha.dims, ha.dims), dtype=float)
-
-    init_rhs = np.array(constraint_rhs, dtype=float)
-
-    return (init_mat, init_rhs)
-
 def make_init_star(ha, hylaa_settings):
     '''returns a star'''
 
