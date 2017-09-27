@@ -77,6 +77,9 @@ class TimeElapser(Freezable):
             assert var_lists is None, "var_lists is not None but method is not Krylov"
             assert fixed_tuples is None, "fixed tuples is not None buy method is not Krylov"
 
+        # stats
+        self.arnoldi_iter = [] # number of arnoldi iterations first element is fixed term
+
         self.freeze_attrs()
 
     def __del__(self):

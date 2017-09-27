@@ -67,6 +67,10 @@ class SimulationSettings(Freezable):
         self.krylov_multithreaded_arnoldi_expm = True # use multiple threads to pipeline arnoldi and expm
         self.krylov_multithreaded_rel_error = False # use multiple threads to pipeline rel_error calculation
 
+        # profiling setting, if assigned this will print the relative error at each arnoldi iteration to the given file 
+        # and stedout for the first group of initial vectors, and then exit immediately
+        self.krylov_print_rel_error_filename = None 
+
         self.freeze_attrs()
 
 class PlotSettings(Freezable):
@@ -186,5 +190,7 @@ class HylaaResult(Freezable):
     def __init__(self):
         self.timers = None # map of string (timer name) -> TimerData
         self.safe = True # was the verificaation result safe?
+
+        self.arnoldi_iter = None # list of number of arnoldi iterations used (0 = fixed terms)
 
         self.freeze_attrs()

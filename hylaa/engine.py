@@ -165,6 +165,7 @@ class HylaaEngine(object):
         '''
 
         assert isinstance(init_star, Star), "initial states should be a Star object"
+        Timers.reset()
 
         self.result = HylaaResult()
         self.plotman.create_plot()
@@ -176,4 +177,6 @@ class HylaaEngine(object):
         else:
             self.plotman.compute_and_animate(self.do_step, self.is_finished)
 
-        self.result.timers = Timers.timers["total"].total_secs
+        # assign results
+        self.result.timers = Timers.timers
+        self.result.arnoldi_iter = init_star.time_elapse.arnoldi_iter

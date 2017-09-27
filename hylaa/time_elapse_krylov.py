@@ -434,8 +434,8 @@ def krylov_sim_fixed_terms(time_elapser, dims_to_compute, pool):
     dims = time_elapser.a_matrix.shape[0]
     key_dirs = time_elapser.key_dir_mat.shape[0]
     error_limit = settings.simulation.krylov_rel_error
-
     init_vec = time_elapser.fixed_init_vec
+    arnoldi_iter = 0
 
     if np.linalg.norm(init_vec) < 1e-9:
         simulation = None
@@ -500,7 +500,36 @@ def krylov_sim_fixed_terms(time_elapser, dims_to_compute, pool):
         if settings.print_output:
             print "\n"
 
+    time_elapser.arnoldi_iter.append(arnoldi_iter) # record stats
+
     return simulation
+
+def print_rel_error_at_each_step(settings, pool, h_list, pv_list):
+    '''
+    a profiling function. If this is used, output a file with the relative error for every number of
+    arnoldi iteartions, and then quit.
+    '''
+
+    filename = settings.simulation.krylov_print_rel_error_filename
+
+    print "Printing relative errors to file: {}".format(filename)
+
+    max_iter = h_list[0].shape[0]
+
+    with open(filename, 'w') as f:
+
+        for aiter in xrange(2, max_iter):
+            max_rel_error = 0.0
+
+            for h_mat, pv_mat in zip(h_list, pv_list):
+                rel_error = get_rel_error(settings, h_mat, pv_mat, pool, arnoldi_iter=aiter)
+                max_rel_error = max(max_rel_error, rel_error)
+
+            line = "{}\t{:.20f}\n".format(aiter, max_rel_error)
+            print line,
+            f.write(line)
+
+    print "print_rel_error_at_each_step data written to {}, exiting".format(filename)
 
 def choose_arnoldi_iter(time_elapser, var_list, dims_to_compute, pool):
     '''
@@ -550,9 +579,8 @@ def choose_arnoldi_iter(time_elapser, var_list, dims_to_compute, pool):
         while cur_rel_error > error_limit:
             arnoldi_iter = arnoldi_iter * 2
 
-            if arnoldi_iter > dims + 1:
-                arnoldi_iter = dims + 1
-                break
+            if arnoldi_iter > dims:
+                arnoldi_iter = dims
 
             KrylovInterface.preallocate_memory(arnoldi_iter, dims, key_dirs, error_on_fail=True)
 
@@ -562,7 +590,13 @@ def choose_arnoldi_iter(time_elapser, var_list, dims_to_compute, pool):
 
             cur_rel_error, h_list, pv_list = get_max_rel_error(settings, dim_list, error_limit, pool)
 
-            print "cur_rel_error = {}".format(cur_rel_error)
+            print "!cur_rel_error = {}".format(cur_rel_error)
+
+            if arnoldi_iter == dims:
+                break
+
+        if settings.simulation.krylov_print_rel_error_filename is not None:
+            print_rel_error_at_each_step(settings, pool, h_list, pv_list)
 
         # ok, at this point the error is below the threshold
         # find the exact value of iterations that makes this work for all the samples
@@ -570,6 +604,10 @@ def choose_arnoldi_iter(time_elapser, var_list, dims_to_compute, pool):
 
     if settings.print_output:
         print "\nUsing {} Arnoldi Iterations".format(arnoldi_iter)
+
+    if settings.simulation.krylov_print_rel_error_filename is not None:
+        print "Exiting because settings.simulation.krylov_print_rel_error_filename was set"
+        exit(0)
 
     return arnoldi_iter
 
@@ -590,6 +628,8 @@ def assign_fixed_terms(time_elapser, rv, dims_to_compute, pool):
                 rv[i+1][:, -1] = fixed_sim[i]
 
             Timers.toc('update result list')
+    else:
+        time_elapser.arnoldi_iter.append(0) # no fixed-term iterations
 
 def update_result_list(list_of_results, settings, rv):
     'populate rv based on the list of results'
@@ -714,7 +754,7 @@ def make_cur_time_elapse_mat_list(time_elapser):
 
     pool_res = None
 
-    print "Num_Vars = {}".format(num_vars)
+    # print "Num_Vars (i) = {}".format(num_vars)
 
     for var_sublist in variable_dim_sublists:
         if settings.simulation.krylov_force_arnoldi_iter is not None:
@@ -723,6 +763,7 @@ def make_cur_time_elapse_mat_list(time_elapser):
             Timers.tic("choose arnoldi iterations")
             arnoldi_iter = choose_arnoldi_iter(time_elapser, var_sublist, dims_to_compute, rel_error_pool)
             Timers.toc("choose arnoldi iterations")
+            time_elapser.arnoldi_iter.append(arnoldi_iter) # record stats
 
         # re-allocate with correct number of arnoldi iterations
         KrylovInterface.preallocate_memory(arnoldi_iter, dims, key_dirs, error_on_fail=True)

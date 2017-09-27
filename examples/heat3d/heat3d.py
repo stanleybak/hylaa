@@ -5,6 +5,7 @@
 import math
 
 import numpy as np
+import scipy as sp
 from scipy.sparse import csr_matrix, csc_matrix, lil_matrix
 
 from hylaa.hybrid_automaton import LinearHybridAutomaton, make_constraint_matrix, make_seperated_constraints
@@ -28,7 +29,7 @@ def define_ha(samples_per_side):
     len_y = 1.0
     len_z = 1.0
 
-    heat_source_pos = np.array([[0.2, 0.4], [0.2, 0.4]])
+    heat_source_pos = np.array([[0.0, 0.4], [0.0, 0.2]])
     he = HeatThreeDimension(diffusity_const, heat_exchange_const, len_x, len_y, len_z, heat_source_pos)
 
     print "Making {}x{}x{} ({} dims) 3d Heat Plate ODEs...".format(samples_per_side, samples_per_side, \
@@ -36,9 +37,16 @@ def define_ha(samples_per_side):
     a_matrix, b_matrix = he.get_odes(samples_per_side, samples_per_side, samples_per_side)
     print "Finished Making ODEs"
 
-    assert isinstance(a_matrix, csc_matrix)
+    a_matrix *= 500.0
+    print "Matrix F-norm: {}".format( \
+        sp.sparse.linalg.norm(a_matrix))
+    #sym_a = (a_matrix + a_matrix.T) / 2.0
+    #print "computed symmetrix part"
+    #print "eig: {}".format(sp.sparse.linalg.eigs(sym_a, k=1, return_eigenvectors=False))
+    print "largest SVD: {}".format(sp.sparse.linalg.svds(a_matrix, k=1, return_singular_vectors=False))
+    exit(1)
 
-    print "b_matrix shape = {}".format(b_matrix.shape)
+    assert isinstance(a_matrix, csc_matrix)
 
     dims = a_matrix.shape[0]
     col_ptr = [n for n in a_matrix.indptr]
@@ -251,7 +259,7 @@ def define_settings(samples_per_side):
 def run_hylaa():
     'Runs hylaa with the given settings, returning the HylaaResult object.'
 
-    samples_per_side = 50
+    samples_per_side = 40
 
     ha = define_ha(samples_per_side)
     settings = define_settings(samples_per_side)
