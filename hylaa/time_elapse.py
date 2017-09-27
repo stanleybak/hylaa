@@ -323,7 +323,7 @@ class TimeElapser(Freezable):
         expected = np.array((self.key_dir_mat * exp).todense(), dtype=float)
 
         if self.settings.simulation.krylov_seperate_constant_vars:
-            expected = compress_fixed(expected, self.fixed_tuples)
+            expected = compress_fixed(csr_matrix(expected, dtype=float), self.fixed_tuples)
 
         assert self.cur_time_elapse_mat.shape == expected.shape, \
             "wrong shape in check_answer(), got {}, expected {}".format(self.cur_time_elapse_mat.shape, expected.shape)

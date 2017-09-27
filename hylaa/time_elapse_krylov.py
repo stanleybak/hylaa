@@ -9,7 +9,7 @@ import sys
 from multiprocessing import Pool
 
 import numpy as np
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, csc_matrix
 from scipy.sparse.linalg import expm
 from scipy.integrate import odeint
 
@@ -49,27 +49,39 @@ def projected_odeint_sim(arg):
 
     return rv
 
-def compress_fixed(mat, fixed_tuples):
+def compress_fixed(key_dir_mat, fixed_tuples):
     'compress the fixed variables in the time_elapse matrix'
 
+    assert isinstance(key_dir_mat, csr_matrix)
+
+    csc_mat = csc_matrix(key_dir_mat)
+
     # we need to create a new dense matrix based on the variable reordering
-    num_vars = mat.shape[1] - len(fixed_tuples) + 1
-    rv = np.zeros((mat.shape[0], num_vars), dtype=float)
+    num_vars = csc_mat.shape[1] - len(fixed_tuples) + 1
+    rv = np.zeros((csc_mat.shape[0], num_vars), dtype=float)
 
     compressed_var_index = 0
     uncompressed_dim = 0
 
-    for dim in xrange(mat.shape[1]):
-        col = mat[:, dim]
-
+    for dim in xrange(csc_mat.shape[1]):
         if compressed_var_index >= len(fixed_tuples) or dim < fixed_tuples[compressed_var_index][0]:
             # uncompressed dim
-            rv[:, uncompressed_dim] = col
+
+            for index in xrange(csc_mat.indptr[dim], csc_mat.indptr[dim+1]):
+                row = csc_mat.indices[index]
+                n = csc_mat.data[index]
+                rv[row, uncompressed_dim] = n
+
             uncompressed_dim += 1
         else:
             # compressed dim
             fixed_val = fixed_tuples[compressed_var_index][1]
-            rv[:, -1] += col * fixed_val
+
+            for index in xrange(csc_mat.indptr[dim], csc_mat.indptr[dim+1]):
+                row = csc_mat.indices[index]
+                n = csc_mat.data[index]
+                rv[row, uncompressed_dim] += fixed_val * n
+
             compressed_var_index += 1
 
     return rv
@@ -192,10 +204,10 @@ def init_krylov(time_elapser, arnoldi_iter):
 
     Timers.tic('initilaizing step zero from key dir mat')
 
-    dense_key_dir_mat = np.array(key_dir_mat.todense(), dtype=float)
-
     if settings.simulation.krylov_seperate_constant_vars:
-        dense_key_dir_mat = compress_fixed(dense_key_dir_mat, time_elapser.fixed_tuples)
+        dense_key_dir_mat = compress_fixed(key_dir_mat, time_elapser.fixed_tuples)
+    else:
+        dense_key_dir_mat = np.array(key_dir_mat.todense(), dtype=float)
 
     rv.append(dense_key_dir_mat) # step zero
 
@@ -206,6 +218,10 @@ def init_krylov(time_elapser, arnoldi_iter):
         rv.append(np.zeros(rv[0].shape, dtype=float))
 
     Timers.tic("krylov preallocate and load dynamics")
+
+    print "maybe add a check here if we're out of memory... zeros seems to do funny things"
+    print "!! steps = {}".format(time_elapser.settings.num_steps)
+    print "!! Total memory: {}".format(rv[0].nbytes * time_elapser.settings.num_steps / 1024.0**3)
 
     # make sure we can allocate with arnoldi_iter = 2
     KrylovInterface.preallocate_memory(arnoldi_iter, a_matrix.shape[0], key_dir_mat.shape[0], error_on_fail=True)
@@ -590,7 +606,7 @@ def choose_arnoldi_iter(time_elapser, var_list, dims_to_compute, pool):
 
             cur_rel_error, h_list, pv_list = get_max_rel_error(settings, dim_list, error_limit, pool)
 
-            print "!cur_rel_error = {}".format(cur_rel_error)
+            # print "!cur_rel_error = {}".format(cur_rel_error)
 
             if arnoldi_iter == dims:
                 break
