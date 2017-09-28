@@ -12,3 +12,4 @@ matrixMulCUBLAS
 matrixMulCUBLAS.o
 test
 counterexample.py
+*_flymake.py

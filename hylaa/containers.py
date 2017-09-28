@@ -58,7 +58,7 @@ class SimulationSettings(Freezable):
         self.krylov_rel_error = 1e-7 # desired relative error of projV * exmp(H * end_time)
         self.krylov_rel_error_samples = 9 # number of samples for checking rel_error
         self.krylov_use_odeint = True # use odeint instead of expm for computing expm(t*v)
-        self.krylov_odeint_simtol = None # if using odeint, use this simulation error tolerance for atol and rtol
+        self.krylov_odeint_simtol = 1e-9 # if using odeint, use this simulation error tolerance for atol and rtol
         self.krylov_check_all_rel_error = None # amount for relative error check for all dimensions (None = skip)
         self.krylov_reject_zero_rel_error = True # if result is all zeros, force increasing arnoldi_iter
         self.krylov_force_arnoldi_iter = None # force a fixed arnoldi iteration count
@@ -66,6 +66,10 @@ class SimulationSettings(Freezable):
         self.krylov_seperate_constant_vars = True # seperate constant initial variables optimization (krylov only)
         self.krylov_multithreaded_arnoldi_expm = True # use multiple threads to pipeline arnoldi and expm
         self.krylov_multithreaded_rel_error = False # use multiple threads to pipeline rel_error calculation
+
+        # profiling setting, if assigned this will print the relative error at each arnoldi iteration to the given file 
+        # and stedout for the first group of initial vectors, and then exit immediately
+        self.krylov_print_rel_error_filename = None 
 
         self.freeze_attrs()
 
@@ -186,5 +190,7 @@ class HylaaResult(Freezable):
     def __init__(self):
         self.timers = None # map of string (timer name) -> TimerData
         self.safe = True # was the verificaation result safe?
+
+        self.arnoldi_iter = None # list of number of arnoldi iterations used (0 = fixed terms)
 
         self.freeze_attrs()

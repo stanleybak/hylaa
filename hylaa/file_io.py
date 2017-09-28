@@ -92,7 +92,7 @@ import sys
 from scipy.sparse import csc_matrix
 from hylaa.check_trace import check, plot
 
-def check_instance():
+def check_instance(stdout=True, skip_plot=False):
     'define parameters for one instance and call checking function'
 
 ''')
@@ -145,10 +145,11 @@ def check_instance():
         f.write('    end_val = {}\n'.format(end_val))
 
         #####################
-        f.write('    sim_states, sim_times = check(a_matrix, b_matrix, step, max_time, start_point, ' + \
-            'inputs, normal_vec, end_val)\n\n')
-        f.write('    if len(sys.argv) < 2 or sys.argv[1] != "noplot":\n')
+        f.write('    sim_states, sim_times, trace_data = check(a_matrix, b_matrix, step, max_time, start_point, ' + \
+            'inputs, normal_vec, end_val, stdout=stdout)\n\n')
+        f.write('    if not skip_plot and (len(sys.argv) < 2 or sys.argv[1] != "noplot"):\n')
         f.write('        plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step)\n\n')
+        f.write('    return trace_data\n\n')
 
         f.write('if __name__ == "__main__":\n')
         f.write('    check_instance()\n')

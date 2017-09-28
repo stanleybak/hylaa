@@ -17,6 +17,18 @@ import numpy as np
 from scipy.integrate import odeint
 from scipy.sparse import csr_matrix
 
+from hylaa.util import Freezable
+
+class CheckTraceData(Freezable):
+    'class containing data about the counter-example trace'
+
+    def __init__(self):
+        self.sim_time = None
+        self.abs_error = None
+        self.rel_error = None
+
+        self.freeze_attrs()
+
 def make_der_func(a_matrix, b_matrix, input_vec):
     'make the derivative function with the given paremeters'
 
@@ -52,7 +64,7 @@ def check(a_matrix, b_matrix, step, max_time, start_point, inputs, normal_vec, e
     The comparison is printed showing the differences between the simulation's projection onto normal_vec
     and expected result (passed in as end_val), both in terms of abs_error and rel_error
 
-    Returns a tuple, (states, times), where states is the projected simulation state at each time step
+    Returns a tuple, (states, times, CheckTraceData) where states is the projected simulation state at each time step
     '''
 
     a_matrix = csr_matrix(a_matrix)
@@ -72,6 +84,9 @@ def check(a_matrix, b_matrix, step, max_time, start_point, inputs, normal_vec, e
         inputs = [0] * (total_steps)
 
     assert len(inputs) <= total_steps, "more inputs({}) than steps({})?".format(len(inputs), total_steps)
+
+    data = CheckTraceData()    
+    data.sim_time = max_time
 
     # we want to roughly get the desired number of sample points, so we may need to do multiple
     # samples per input
@@ -115,26 +130,26 @@ def check(a_matrix, b_matrix, step, max_time, start_point, inputs, normal_vec, e
 
         index += num_steps
 
-    print "Final Time: {}".format(index * step)
-
     last_sim_point = sim_states[-1].copy()
 
     sim_val = np.dot(last_sim_point, normal_vec)
     diff = sim_val - end_val
 
-    numerator = diff
-    print "Absolute Error (l-2 norm): {}".format(numerator)
-
+    data.abs_error = numerator = diff
     denominator = sim_val
 
     if denominator == 0:
-        print "Relative Error (l-2 norm): N/A (denominator was 0)"
+        data.rel_error = 0.0
     else:
-        print "Relative Error (l-2 norm): {}".format(numerator / denominator)
+        data.rel_error = numerator / denominator
 
-    print "Runtime: {:.2f} seconds".format(time.time() - start)
+    if stdout:
+        print "Final Time: {}".format(index * step)
+        print "Absolute Error (l-2 norm): {}".format(numerator)
+        print "Relative Error (l-2 norm): {}".format(data.rel_error)
+        print "Runtime: {:.2f} seconds".format(time.time() - start)
 
-    return (sim_states, sim_times)
+    return (sim_states, sim_times, data)
 
 def sim(start, der_func, time_amount, num_steps, quick):
     'simulate for some fixed time, and return the resultant (states, times) tuple'
@@ -164,9 +179,11 @@ def plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step, 
     do_2d = xdim is not None and ydim is not None
 
     total_steps = int(math.ceil(max_time / step))
-    end_point = sim_states[-1]
+    end_point = sim_states[-1]    
     end_val = np.dot(end_point, normal_vec)
     tol = 1e-6
+    
+    print "End Point: {}".format(end_point)
 
     if end_val - tol <= normal_val:
         print "End Point is a violation (within tolerance): {} - {} <= {}".format(end_val, tol, normal_val)

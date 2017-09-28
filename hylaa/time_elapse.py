@@ -77,6 +77,9 @@ class TimeElapser(Freezable):
             assert var_lists is None, "var_lists is not None but method is not Krylov"
             assert fixed_tuples is None, "fixed tuples is not None buy method is not Krylov"
 
+        # stats
+        self.arnoldi_iter = [] # number of arnoldi iterations first element is fixed term
+
         self.freeze_attrs()
 
     def __del__(self):
@@ -320,7 +323,7 @@ class TimeElapser(Freezable):
         expected = np.array((self.key_dir_mat * exp).todense(), dtype=float)
 
         if self.settings.simulation.krylov_seperate_constant_vars:
-            expected = compress_fixed(expected, self.fixed_tuples)
+            expected = compress_fixed(csr_matrix(expected, dtype=float), self.fixed_tuples)
 
         assert self.cur_time_elapse_mat.shape == expected.shape, \
             "wrong shape in check_answer(), got {}, expected {}".format(self.cur_time_elapse_mat.shape, expected.shape)
