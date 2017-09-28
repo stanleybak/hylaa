@@ -43,7 +43,7 @@ class KrylovInterface(object):
     _lib = None
     _lib_path = os.path.join(get_script_path(__file__), 'krylov_interface', 'cusp_krylov_stan.so')
 
-    float_type = float
+    float_type = ctypes.c_double
 
     def __init__(self):
         raise RuntimeError(
@@ -105,7 +105,7 @@ class KrylovInterface(object):
             # double getFreeMemoryMbCpu()
             cpu_func = KrylovInterface._cpu.get_free_memory_mb = lib.getFreeMemoryMbCpu
             gpu_func = KrylovInterface._gpu.get_free_memory_mb = lib.getFreeMemoryMbGpu
-            gpu_func.restype = cpu_func.restype = ctypes.c_float
+            gpu_func.restype = cpu_func.restype = float_type
             gpu_func.argtypes = cpu_func.argtypes = None
 
             # unsigned long preallocateMemoryGpu(unsigned long arnoldiIterations, unsigned long dims,
@@ -173,8 +173,16 @@ class KrylovInterface(object):
         KrylovInterface._reset()
 
     @staticmethod
+    def cpu_get_free_memory_mb():
+        'get the free memory on the cpu (main memory) in megabytes'
+
+        KrylovInterface._init_static()
+
+        return KrylovInterface._cpu.get_free_memory_mb()
+
+    @staticmethod
     def get_free_memory_mb():
-        'get the amount of free memory in megabytes'
+        'get the amount of free memory in megabytes (on gpu or cpu)'
 
         KrylovInterface._init_static()
 

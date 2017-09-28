@@ -176,6 +176,16 @@ def get_krylov_result(arg_tuple):
 
     return rv, rel_error
 
+def check_available_memory(s, k, i):
+    'check if enough memory is available to store the basis matrix'
+
+    required_mb = (s * k * i) / 1024.0 / 1024.0
+    available_mb = KrylovInterface.cpu_get_free_memory_mb()
+
+    if required_mb > available_mb:
+        raise RuntimeError(("Not enogh memory to store basis matrix with s = {}, k = {}, i+1 = {}, required GB = " + \
+            "{:.3f}, available GB = {:.3f}").format(s, k, i, required_mb / 1024.0, available_mb / 1024.0))
+
 def init_krylov(time_elapser, arnoldi_iter):
     '''
     initialize krylov interface for the computation
@@ -183,9 +193,19 @@ def init_krylov(time_elapser, arnoldi_iter):
     returns a list of empty matrices to be filled in by the subsequent computation
     '''
 
+    KrylovInterface.reset()
+
     settings = time_elapser.settings
     key_dir_mat = time_elapser.key_dir_mat
     a_matrix = time_elapser.a_matrix
+
+    # check available memory before computing
+    i = key_dir_mat.shape[1]
+
+    if settings.simulation.krylov_seperate_constant_vars:
+        i = a_matrix.shape[0] - len(time_elapser.fixed_tuples) + 1
+
+    check_available_memory(time_elapser.settings.num_steps, key_dir_mat.shape[0], i)
 
     if settings.simulation.krylov_use_gpu:
         if settings.print_output:
@@ -218,10 +238,6 @@ def init_krylov(time_elapser, arnoldi_iter):
         rv.append(np.zeros(rv[0].shape, dtype=float))
 
     Timers.tic("krylov preallocate and load dynamics")
-
-    print "maybe add a check here if we're out of memory... zeros seems to do funny things"
-    print "!! steps = {}".format(time_elapser.settings.num_steps)
-    print "!! Total memory: {}".format(rv[0].nbytes * time_elapser.settings.num_steps / 1024.0**3)
 
     # make sure we can allocate with arnoldi_iter = 2
     KrylovInterface.preallocate_memory(arnoldi_iter, a_matrix.shape[0], key_dir_mat.shape[0], error_on_fail=True)
@@ -863,7 +879,7 @@ def make_cur_time_elapse_mat_list(time_elapser):
         elapsed = format_secs(time.time() - start)
         print "Krylov Computation Total Time: {}\n".format(elapsed)
 
-    #print "debug exit"
-    #exit(1)
+    # computation is done, explicitly reset to free gpu memory
+    KrylovInterface.reset()
 
     return rv

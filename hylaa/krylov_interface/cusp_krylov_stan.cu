@@ -390,8 +390,9 @@ class CuspData
     FLOAT_TYPE getFreeMemoryMb()
     {
         unsigned long bytes = util.getFreeMemory();
+        FLOAT_TYPE rv = (bytes / 1024.0 / 1024.0);
 
-        return bytes / 1024.0 / 1024.0;
+        return rv;
     }
 
     // frees memory if it was previously allocated, returns false if memory error
@@ -497,14 +498,14 @@ class CuspData
     void arnoldi(unsigned long iterations)
     {
         Array1dView cuspNumsView = cuspNums->subarray(0, 4);
-        
+
         long start = now();
 
         for (unsigned long it = 1; it <= iterations; it++)
         {
             if (useProfiling && it % 100 == 0)
             {
-                long elapsedUs = now() - start; // microseconds
+                long elapsedUs = now() - start;  // microseconds
                 double elapsedSec = elapsedUs / 1000.0 / 1000.0;
                 double frac = ((double)it / iterations);
                 double totalSec = elapsedSec / frac;
@@ -512,8 +513,9 @@ class CuspData
                 double remainingSec = totalSec - elapsedSec;
                 double remainingMin = remainingSec / 60.0;
                 double remainingHr = remainingMin / 60.0;
-                
-                printf("iter %lu / %lu (%.2f). Total: %.1f min, ETA: %.1f sec (%.2f min) (%.2f hr)\n", 
+
+                printf(
+                    "iter %lu / %lu (%.2f). Total: %.1f min, ETA: %.1f sec (%.2f min) (%.2f hr)\n",
                     it, iterations, frac, totalMin, remainingSec, remainingMin, remainingHr);
             }
 

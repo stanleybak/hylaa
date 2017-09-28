@@ -46,7 +46,7 @@ class SimulationSettings(Freezable):
     def __init__(self, step):
         self.step = step
         self.sim_mode = SimulationSettings.EXP_MULT
-        self.guard_mode = SimulationSettings.GUARD_DECOMPOSED
+        self.guard_mode = SimulationSettings.GUARD_FULL_LP
 
         self.check_answer = False # double-check answer using MATRIX_EXP at each step (slow!)
         self.check_answer_abs_tol = 1e-6 # absolute tolerance when checking answer
@@ -64,7 +64,7 @@ class SimulationSettings(Freezable):
         self.krylov_force_arnoldi_iter = None # force a fixed arnoldi iteration count
 
         self.krylov_seperate_constant_vars = True # seperate constant initial variables optimization (krylov only)
-        self.krylov_multithreaded_arnoldi_expm = True # use multiple threads to pipeline arnoldi and expm
+        self.krylov_multithreaded_arnoldi_expm = False # use multiple threads to pipeline arnoldi and expm
         self.krylov_multithreaded_rel_error = False # use multiple threads to pipeline rel_error calculation
 
         # profiling setting, if assigned this will print the relative error at each arnoldi iteration to the given file 

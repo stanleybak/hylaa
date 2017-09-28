@@ -82,9 +82,6 @@ class TimeElapser(Freezable):
 
         self.freeze_attrs()
 
-    def __del__(self):
-        KrylovInterface.reset()
-
     def _extract_key_directions(self, mode):
         'extract the key directions for lp solving'
 
