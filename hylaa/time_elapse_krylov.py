@@ -176,11 +176,14 @@ def get_krylov_result(arg_tuple):
 
     return rv, rel_error
 
-def check_available_memory(s, k, i):
+def check_available_memory(stdout, s, k, i):
     'check if enough memory is available to store the basis matrix'
 
     required_mb = (s * k * i) / 1024.0 / 1024.0
     available_mb = KrylovInterface.cpu_get_free_memory_mb()
+
+    if stdout:
+        print "Required GB = {:.3f}, available GB = {:.3f}".format(required_mb / 1024.0, available_mb / 1024.0)
 
     if required_mb > available_mb:
         raise RuntimeError(("Not enogh memory to store basis matrix with s = {}, k = {}, i+1 = {}, required GB = " + \
@@ -205,7 +208,7 @@ def init_krylov(time_elapser, arnoldi_iter):
     if settings.simulation.krylov_seperate_constant_vars:
         i = a_matrix.shape[0] - len(time_elapser.fixed_tuples) + 1
 
-    check_available_memory(time_elapser.settings.num_steps, key_dir_mat.shape[0], i)
+    check_available_memory(settings.print_output, time_elapser.settings.num_steps, key_dir_mat.shape[0], i)
 
     if settings.simulation.krylov_use_gpu:
         if settings.print_output:
