@@ -179,7 +179,7 @@ def get_krylov_result(arg_tuple):
 def check_available_memory(stdout, s, k, i):
     'check if enough memory is available to store the basis matrix'
 
-    required_mb = (s * k * i) / 1024.0 / 1024.0
+    required_mb = (s * k * i * 8) / 1024.0 / 1024.0
     available_mb = KrylovInterface.cpu_get_free_memory_mb()
 
     if stdout:
