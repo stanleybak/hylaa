@@ -183,11 +183,11 @@ def check_available_memory(stdout, s, k, i):
     available_mb = KrylovInterface.cpu_get_free_memory_mb()
 
     if stdout:
-        print "Required GB = {:.3f}, available GB = {:.3f}".format(required_mb / 1024.0, available_mb / 1024.0)
+        print "Required GB = {:.3f}, available GB = {:.3f} (s = {}, k = {}, i+1 = {})".format(
+            s, k, i, required_mb / 1024.0, available_mb / 1024.0)
 
     if required_mb > available_mb:
-        raise RuntimeError(("Not enogh memory to store basis matrix with s = {}, k = {}, i+1 = {}, required GB = " + \
-            "{:.3f}, available GB = {:.3f}").format(s, k, i, required_mb / 1024.0, available_mb / 1024.0))
+        raise RuntimeError("Not enogh memory to store basis matrix at each step.")
 
 def init_krylov(time_elapser, arnoldi_iter):
     '''
