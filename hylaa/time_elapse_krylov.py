@@ -184,7 +184,7 @@ def check_available_memory(stdout, s, k, i):
 
     if stdout:
         print "Required GB = {:.3f}, available GB = {:.3f} (s = {}, k = {}, i+1 = {})".format(
-            s, k, i, required_mb / 1024.0, available_mb / 1024.0)
+            required_mb / 1024.0, available_mb / 1024.0, s, k, i)
 
     if required_mb > available_mb:
         raise RuntimeError("Not enogh memory to store basis matrix at each step.")
