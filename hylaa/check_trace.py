@@ -135,8 +135,8 @@ def check(a_matrix, b_matrix, step, max_time, start_point, inputs, normal_vec, e
     sim_val = np.dot(last_sim_point, normal_vec)
     diff = sim_val - end_val
 
-    data.abs_error = numerator = diff
-    denominator = sim_val
+    data.abs_error = numerator = abs(diff)
+    denominator = abs(sim_val)
 
     if denominator == 0:
         data.rel_error = 0.0
