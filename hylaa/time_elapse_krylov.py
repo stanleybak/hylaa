@@ -220,6 +220,8 @@ def init_krylov(time_elapser, arnoldi_iter):
 
         if settings.print_output:
             print "Initialized\n"
+    else:
+        KrylovInterface.set_use_gpu(False)
 
     KrylovInterface.set_use_profiling(settings.simulation.krylov_profiling)
 

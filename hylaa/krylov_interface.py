@@ -182,6 +182,8 @@ class KrylovInterface(object):
         KrylovInterface._init_static()
         KrylovInterface._reset()
 
+        KrylovInterface.set_use_gpu(False) # revert to CPU
+
     @staticmethod
     def cpu_get_free_memory_mb():
         'get the free memory on the cpu (main memory) in megabytes'
