@@ -191,6 +191,6 @@ class HylaaResult(Freezable):
         self.timers = None # map of string (timer name) -> TimerData
         self.safe = True # was the verificaation result safe?
 
-        self.arnoldi_iter = None # list of number of arnoldi iterations used (0 = fixed terms)
+        self.krylov_stats = None # krylov statistics, map of string -> value, copy of TimerData.stats
 
         self.freeze_attrs()

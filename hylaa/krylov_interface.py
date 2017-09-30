@@ -28,6 +28,7 @@ class CuspData(Freezable):
         self.preallocate_memory = None
         self.arnoldi_unit = None
         self.arnoldi_vec = None
+        self.get_profiling_data = None
         self.print_profiling_data = None
 
         self.n = 0 # dimensions of a matrix
@@ -139,6 +140,15 @@ class KrylovInterface(object):
                 ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong
             ]
 
+            # void getProfilingDataGpu(const char *name, FLOAT_TYPE *resultVec, unsigned long resultVecLen)
+            cpu_func = KrylovInterface._cpu.get_profiling_data = lib.getProfilingDataCpu
+            gpu_func = KrylovInterface._gpu.get_profiling_data = lib.getProfilingDataGpu
+            gpu_func.restype = cpu_func.restype = None
+            gpu_func.argtypes = cpu_func.argtypes = [
+                ctypes.c_char_p,
+                ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong,
+            ]
+
             # void printProfilingDataGpu()
             cpu_func = KrylovInterface._cpu.print_profiling_data = lib.printProfilingDataCpu
             gpu_func = KrylovInterface._gpu.print_profiling_data = lib.printProfilingDataGpu
@@ -194,6 +204,21 @@ class KrylovInterface(object):
 
         KrylovInterface._init_static()
         KrylovInterface._cusp.set_use_profiling(1 if use_profiling else 0)
+
+    @staticmethod
+    def get_profiling_data(name):
+        '''
+        Get the profiling data for a single measurement (identified by the string). Use with set_use_profiling(True)
+
+        This returns a pair (milliseconds, gflops)
+        '''
+
+        KrylovInterface._init_static()
+
+        result = np.array([0.0, 0.0], dtype=KrylovInterface.float_type)
+        KrylovInterface._cusp.get_profiling_data(name, result, len(result))
+
+        return (result[0], result[1])
 
     @staticmethod
     def print_profiling_data():
@@ -273,8 +298,9 @@ class KrylovInterface(object):
         KrylovInterface._preallocated_memory = result
         KrylovInterface._arnoldi_iterations = arnoldi_iterations
 
-        assert not error_on_fail or result, "Memory allocation for krylov computation failed. " + \
-                                            "Try running with krylov_profiling = True"
+        if error_on_fail and not result:
+            raise RuntimeError("Memory allocation (preallocate) for krylov computation failed. " + \
+                               "Run with krylov_profiling = True for details")
 
         return result
 
@@ -297,7 +323,9 @@ class KrylovInterface(object):
         result_h = np.zeros((i * (i + 1)), dtype=KrylovInterface.float_type)
         result_pv = np.zeros(((i+1) * k), dtype=KrylovInterface.float_type)
 
+        Timers.tic('arnoldi')
         KrylovInterface._cusp.arnoldi_unit(dim, result_h, len(result_h), result_pv, len(result_pv))
+        Timers.toc('arnoldi')
 
         result_h.shape = (i, i+1)
         result_pv.shape = (i+1, k)
@@ -335,8 +363,10 @@ class KrylovInterface(object):
         normalized_vec = vec / norm
         normalized_vec.shape = (len(normalized_vec), )
 
+        Timers.tic('arnoldi')
         KrylovInterface._cusp.arnoldi_vec(normalized_vec, len(normalized_vec), result_h, len(result_h), \
                                           result_pv, len(result_pv))
+        Timers.toc('arnoldi')
 
         result_h.shape = (i, i+1)
         result_pv.shape = (i+1, k)

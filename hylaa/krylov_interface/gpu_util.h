@@ -248,6 +248,42 @@ class GpuUtil
         }
     }
 
+    // get data from profiling data
+    void getProfilingData(const char* name, double* ms, double* gflops)
+    {
+        if (!useProfiling)
+            printf("getProfilingData called but useProfiling was false\n");
+        else
+        {
+            if (useGpu)
+            {
+                map<string, GpuTimingData>::iterator i = gpuTimers.find(name);
+
+                if (i == gpuTimers.end())
+                    error("getProfilingData called on unknown key: '%s'", name);
+
+                *ms = i->second.getTotalMs();
+                unsigned long ops = i->second.getOps();
+
+                if (ops != 0)
+                    *gflops = ops / *ms / 1000.0 / 1000.0;
+            }
+            else
+            {
+                map<string, CpuTimingData>::iterator i = cpuTimers.find(name);
+
+                if (i == cpuTimers.end())
+                    error("getProfilingData called on unknown key: '%s'", name);
+
+                *ms = i->second.getTotalMs();
+                unsigned long ops = i->second.getOps();
+
+                if (ops != 0)
+                    *gflops = ops / *ms / 1000.0 / 1000.0;
+            }
+        }
+    }
+
     // print timers results
     void printTimers()
     {

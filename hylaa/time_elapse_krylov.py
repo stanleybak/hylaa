@@ -183,11 +183,11 @@ def check_available_memory(stdout, s, k, i):
     available_mb = KrylovInterface.cpu_get_free_memory_mb()
 
     if stdout:
-        print "Required GB = {:.3f}, available GB = {:.3f} (s = {}, k = {}, i+1 = {})".format(
+        print "Required GB = {:.3f} (+1), available GB = {:.3f} (s = {}, k = {}, i+1 = {})".format(
             required_mb / 1024.0, available_mb / 1024.0, s, k, i)
 
-    if required_mb > available_mb:
-        raise RuntimeError("Not enogh memory to store basis matrix at each step.")
+    if required_mb + 1024 > available_mb: # add 1024 mb since we want 1 GB free for other things
+        raise RuntimeError("Not enogh main memory for computation.")
 
 def init_krylov(time_elapser, arnoldi_iter):
     '''
@@ -373,9 +373,7 @@ def get_max_rel_error(settings, dim_list, limit, pool):
     all_sims = []
 
     for dim in dim_list:
-        Timers.tic('krylov arnoldi_unit()')
         h_mat, pv_mat = KrylovInterface.arnoldi_unit(dim)
-        Timers.toc('krylov arnoldi_unit()')
 
         h_mat = h_mat[:-1, :].copy()
         h_list.append(h_mat)
@@ -535,7 +533,7 @@ def krylov_sim_fixed_terms(time_elapser, dims_to_compute, pool):
         if settings.print_output:
             print "\n"
 
-    time_elapser.arnoldi_iter.append(arnoldi_iter) # record stats
+    time_elapser.stats['arnoldi_iter'].append(arnoldi_iter) # record stats
 
     return simulation
 
@@ -649,6 +647,8 @@ def choose_arnoldi_iter(time_elapser, var_list, dims_to_compute, pool):
 def assign_fixed_terms(time_elapser, rv, dims_to_compute, pool):
     'assign the fixed effect terms using a krylov simulation'
 
+    time_elapser.stats['arnoldi_iter'] = []
+
     if time_elapser.settings.simulation.krylov_seperate_constant_vars:
         Timers.tic("krylov sim fixed terms")
         fixed_sim = krylov_sim_fixed_terms(time_elapser, dims_to_compute, pool)
@@ -664,7 +664,7 @@ def assign_fixed_terms(time_elapser, rv, dims_to_compute, pool):
 
             Timers.toc('update result list')
     else:
-        time_elapser.arnoldi_iter.append(0) # no fixed-term iterations
+        time_elapser.stats['arnoldi_iter'].append(0) # no fixed-term iterations
 
 def update_result_list(list_of_results, settings, rv):
     'populate rv based on the list of results'
@@ -798,7 +798,7 @@ def make_cur_time_elapse_mat_list(time_elapser):
             Timers.tic("choose arnoldi iterations")
             arnoldi_iter = choose_arnoldi_iter(time_elapser, var_sublist, dims_to_compute, rel_error_pool)
             Timers.toc("choose arnoldi iterations")
-            time_elapser.arnoldi_iter.append(arnoldi_iter) # record stats
+            time_elapser.stats['arnoldi_iter'].append(arnoldi_iter) # record stats
 
         # re-allocate with correct number of arnoldi iterations
         KrylovInterface.preallocate_memory(arnoldi_iter, dims, key_dirs, error_on_fail=True)
@@ -833,9 +833,7 @@ def make_cur_time_elapse_mat_list(time_elapser):
                         print "Arnoldi {} / {} ({:.2f}%, ETA: {})".format(
                             completed_vars, num_vars, 100.0 * frac, eta)
 
-            Timers.tic('krylov arnoldi_unit()')
             h_mat, pv_mat = KrylovInterface.arnoldi_unit(dim)
-            Timers.toc('krylov arnoldi_unit()')
 
             # update result from the previous iteration (skipped on first iteration)
             if pool_res is not None:
@@ -876,7 +874,7 @@ def make_cur_time_elapse_mat_list(time_elapser):
         pool.join()
 
     if settings.simulation.krylov_profiling:
-        KrylovInterface.print_profiling_data()
+        do_krylov_stats(time_elapser)
 
     if settings.print_output:
         elapsed = format_secs(time.time() - start)
@@ -886,3 +884,21 @@ def make_cur_time_elapse_mat_list(time_elapser):
     KrylovInterface.reset()
 
     return rv
+
+def do_krylov_stats(time_elapser):
+    'save krylov performance stats and print'
+
+    # dots_axpy_ms - time for dots and axpy portion of arnoldi
+    # dots_axpy_gflops - gflops for dots and axpy
+    # a_mult_ms - time for multiplying a times cur_vec
+    # a_mult_gflops - gflops for multiplying a times cur_vec
+
+    ms, gflops = KrylovInterface.get_profiling_data('dots & axpy')
+    time_elapser.stats['dots_axpy_ms'] = ms
+    time_elapser.stats['dots_axpy_gflops'] = gflops
+
+    ms, gflops = KrylovInterface.get_profiling_data('sparse matrix vector multiply')
+    time_elapser.stats['a_mult_ms'] = ms
+    time_elapser.stats['a_mult_gflops'] = gflops
+
+    KrylovInterface.print_profiling_data()

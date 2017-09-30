@@ -611,6 +611,11 @@ class CuspData
         }
     }
 
+    void getProfilingData(const char *name, double *ms, double *gflops)
+    {
+        util.getProfilingData(name, ms, gflops);
+    }
+
     void printProfilingData()
     {
         util.printTimers();
@@ -620,7 +625,7 @@ class CuspData
     // initialize with a passed-in vector
     void initVec(FLOAT_TYPE *vec, unsigned long len)
     {
-        util.toc("init arnoldi");
+        util.tic("init arnoldi");
 
         if (len != _n)
             error("initArnoldi called with bad len = %lu (_n = %lu)\n", len, _n);
@@ -641,7 +646,7 @@ class CuspData
         if (magnitude < 1.0 - tol || magnitude > 1.0 + tol)
             error("initial arnoldi vec must be normalized first (magnitude was %f)", magnitude);
 
-        util.tic("init arnoldi");
+        util.toc("init arnoldi");
     }
 
     // initialize with a unit-vector in the given dimention
@@ -781,6 +786,14 @@ void arnoldiVecCpu(FLOAT_TYPE *vec, unsigned long vecLen, FLOAT_TYPE *resultH,
     cuspDataCpu.compute(resultH, sizeResultH, resultPV, sizeResultPV);
 }
 
+void getProfilingDataCpu(const char *name, FLOAT_TYPE *resultVec, unsigned long resultVecLen)
+{
+    if (resultVecLen != 2)
+        error("Expected resultVecLen == 2 in getProfilingData()");
+
+    cuspDataCpu.getProfilingData(name, &resultVec[0], &resultVec[1]);
+}
+
 void printProfilingDataCpu()
 {
     cuspDataCpu.printProfilingData();
@@ -833,6 +846,14 @@ void arnoldiVecGpu(FLOAT_TYPE *vec, unsigned long vecLen, FLOAT_TYPE *resultH,
 {
     cuspDataGpu.initVec(vec, vecLen);
     cuspDataGpu.compute(resultH, sizeResultH, resultPV, sizeResultPV);
+}
+
+void getProfilingDataGpu(const char *name, FLOAT_TYPE *resultVec, unsigned long resultVecLen)
+{
+    if (resultVecLen != 2)
+        error("Expected resultVecLen == 2 in getProfilingData()");
+
+    cuspDataGpu.getProfilingData(name, &resultVec[0], &resultVec[1]);
 }
 
 void printProfilingDataGpu()

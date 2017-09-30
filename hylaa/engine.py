@@ -71,6 +71,9 @@ class HylaaEngine(object):
     def check_guards(self):
         '''check for discrete successors with the guards'''
 
+        if self.cur_star.next_step == 1 and self.settings.print_output:
+            print "Solving first step guard LP..."
+
         for i in xrange(len(self.cur_star.mode.transitions)):
             lp_solution = self.cur_star.get_guard_intersection(i)
 
@@ -179,4 +182,4 @@ class HylaaEngine(object):
 
         # assign results
         self.result.timers = Timers.timers
-        self.result.arnoldi_iter = init_star.time_elapse.arnoldi_iter
+        self.result.krylov_stats = init_star.time_elapse.stats

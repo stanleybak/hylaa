@@ -77,15 +77,21 @@ class TimeElapser(Freezable):
             assert var_lists is None, "var_lists is not None but method is not Krylov"
             assert fixed_tuples is None, "fixed tuples is not None buy method is not Krylov"
 
-        # stats
-        self.arnoldi_iter = [] # number of arnoldi iterations first element is fixed term
+        # -- performance statistics --
+        # arnoldi_iter -> list, with 0 = fixed-effect, others are the tuned arnoldi iterations
+        #
+        # -- if krylov_profiling is set --
+        # dots_axpy_ms - time for dots and axpy portion of arnoldi
+        # dots_axpy_gflops - gflops for dots and axpy
+        # a_mult_ms - time for multiplying a times cur_vec
+        # a_mult_gflops - gflops for multiplying a times cur_vec
+        #
+        self.stats = {} # performance statistics, map name -> value
 
         self.freeze_attrs()
 
     def _extract_key_directions(self, mode):
         'extract the key directions for lp solving'
-
-        start = time.time()
 
         num_directions = 0 if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE else 2
 
