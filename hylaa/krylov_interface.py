@@ -22,6 +22,7 @@ class CuspData(Freezable):
 
     def __init__(self):
         self.set_use_profiling = None
+        self.set_print_output = None
         self.load_a_matrix = None
         self.load_key_dir_matrix = None
         self.get_free_memory_mb = None
@@ -73,9 +74,15 @@ class KrylovInterface(object):
             KrylovInterface._gpu = CuspData()
             KrylovInterface._cusp = KrylovInterface._cpu # can be changed programatically
 
-            #void setUseProfilingCpu(int enabled)
+            #void setUseProfilingCpu(unsigned long enabled)
             cpu_func = KrylovInterface._cpu.set_use_profiling = lib.setUseProfilingCpu
             gpu_func = KrylovInterface._gpu.set_use_profiling = lib.setUseProfilingGpu
+            gpu_func.restype = cpu_func.restype = None
+            gpu_func.argtypes = cpu_func.argtypes = [ctypes.c_ulong]
+
+            #void setUsePrintOutputCpu(unsigned long enabled)
+            cpu_func = KrylovInterface._cpu.set_print_output = lib.setPrintOutputCpu
+            gpu_func = KrylovInterface._gpu.set_print_output = lib.setPrintOutputGpu
             gpu_func.restype = cpu_func.restype = None
             gpu_func.argtypes = cpu_func.argtypes = [ctypes.c_ulong]
 
@@ -206,6 +213,13 @@ class KrylovInterface(object):
 
         KrylovInterface._init_static()
         KrylovInterface._cusp.set_use_profiling(1 if use_profiling else 0)
+
+    @staticmethod
+    def set_print_output(print_output):
+        'set if output should be printing to stdout (profiling also needs to be on)'
+
+        KrylovInterface._init_static()
+        KrylovInterface._cusp.set_print_output(1 if print_output else 0)
 
     @staticmethod
     def get_profiling_data(name):

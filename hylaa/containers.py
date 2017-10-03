@@ -62,6 +62,7 @@ class SimulationSettings(Freezable):
         self.krylov_check_all_rel_error = None # amount for relative error check for all dimensions (None = skip)
         self.krylov_reject_zero_rel_error = True # if result is all zeros, force increasing arnoldi_iter
         self.krylov_force_arnoldi_iter = None # force a fixed arnoldi iteration count
+        self.krylov_always_do_tuning_reduce = False # never skip tuning to exact arnoldi iteration count
 
         self.krylov_seperate_constant_vars = True # seperate constant initial variables optimization (krylov only)
         self.krylov_multithreaded_arnoldi_expm = False # use multiple threads to pipeline arnoldi and expm
@@ -82,6 +83,7 @@ class PlotSettings(Freezable):
     PLOT_IMAGE = 3 # save the image plot to a file
     PLOT_VIDEO = 4 # save animation to a video file
     PLOT_MATLAB = 5 # create a matlab script which visualizes the reachable region
+    PLOT_GNUPLOT = 6 # plot gnuplot polygon data file
 
     def __init__(self):
         self.plot_mode = PlotSettings.PLOT_NONE
@@ -104,7 +106,7 @@ class PlotSettings(Freezable):
         self.extend_plot_range_ratio = 0.1 # extend plot axis range 10% at a time
         self.anim_delay_interval = 0 # milliseconds, extra delay between frames
 
-        self.filename = None # used with PLOT_VIDEO AND PLOT_IMAGE
+        self.filename = None # filename to print data to for certain plot modes
 
         self.video = None # instance of VideoSettings
 

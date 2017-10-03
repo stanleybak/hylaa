@@ -70,7 +70,6 @@ class TestEngine(unittest.TestCase):
         plot_settings.plot_mode = PlotSettings.PLOT_NONE
         settings = HylaaSettings(step=0.05, max_time=1.0, plot_settings=plot_settings)
         settings.simulation.sim_mode = SimulationSettings.KRYLOV
-        settings.simulation.pipeline_arnoldi_expm = False
         settings.simulation.check_answer = True # raise error if answer is incorrect
         settings.counter_example_filename = None
         settings.print_output = False

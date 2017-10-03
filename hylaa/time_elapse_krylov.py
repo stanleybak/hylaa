@@ -138,8 +138,8 @@ def get_krylov_result(arg_tuple):
         sim = projected_odeint_sim(arg)
 
         if compute_rel_error:
-            arg = smal_pv_mat, small_h_mat, small_start_vec, settings
-            small_sim = odeint_sim(arg)
+            arg = small_pv_mat, small_h_mat, small_start_vec, settings
+            small_sim = projected_odeint_sim(arg)
 
         for step in xrange(len(sim)):
             cur_result = sim[step]
@@ -224,6 +224,7 @@ def init_krylov(time_elapser, arnoldi_iter):
         KrylovInterface.set_use_gpu(False)
 
     KrylovInterface.set_use_profiling(settings.simulation.krylov_profiling)
+    KrylovInterface.set_print_output(settings.print_output)
 
     rv = []
 
@@ -366,7 +367,9 @@ def get_max_rel_error(settings, dim_list, limit, pool):
     '''
     Get the maximum relative error of the passed-in number of arnoldi iterations.
 
-    returns max_rel_error, h_mat_list, pv_mat_list
+    returns max_rel_error, h_mat_list, pv_mat_list, simulations
+
+    simulations is a list of size dim_list, each of which is a single projected simulation at each step.
     '''
 
     max_rel_error = 0
@@ -388,7 +391,7 @@ def get_max_rel_error(settings, dim_list, limit, pool):
 
         max_rel_error = max(max_rel_error, rel_error)
 
-        if max_rel_error > limit:
+        if limit is not None and max_rel_error > limit:
             break
 
     # if the max_rel error is small and simulations are near zero... we probably don't have enough arnoldi_iter
@@ -405,12 +408,14 @@ def get_max_rel_error(settings, dim_list, limit, pool):
         if all_small:
             max_rel_error = 1e16
 
-    return max_rel_error, h_list, pv_list
+    return max_rel_error, h_list, pv_list, all_sims
 
 def find_iter_with_accuracy(settings, h_list, pv_list, desired_rel_error, pool):
     '''
     Find the exact number of arnoldi iterations that has the desired accuracy for all of the
     passed in h_mat lists, for the complete reach time.
+
+    Returns the number of iterations
     '''
 
     max_iter = h_list[0].shape[0]
@@ -431,7 +436,8 @@ def find_iter_with_accuracy(settings, h_list, pv_list, desired_rel_error, pool):
             sys.stdout.flush()
 
         for h_mat, pv_mat in zip(h_list, pv_list):
-            rel_error = get_rel_error(settings, h_mat, pv_mat, pool, arnoldi_iter=aiter, limit=desired_rel_error)
+            rel_error = get_rel_error(settings, h_mat, pv_mat, pool, arnoldi_iter=aiter,\
+                                                  limit=desired_rel_error)
             max_rel_error = max(max_rel_error, rel_error)
 
             if max_rel_error > desired_rel_error:
@@ -491,11 +497,7 @@ def krylov_sim_fixed_terms(time_elapser, dims_to_compute, pool):
         h_mat = h_mat[:-1, :].copy()
         pv_mat = pv_mat[:, :-1].copy()
 
-        print "getting simulation with fixed krylov iter"
-
         (_, simulation) = get_rel_error(settings, h_mat, pv_mat, pool, arnoldi_iter, return_projected_sims=True)
-
-        print "returning sim with len {}".format(len(simulation))
     else:
         arnoldi_iter = min(dims, 4)
 
@@ -569,9 +571,13 @@ def print_rel_error_at_each_step(settings, pool, h_list, pv_list):
 def choose_arnoldi_iter(time_elapser, var_list, dims_to_compute, pool):
     '''
     Choose the number of arnoldi iterations based on the desired error. This is done through a
-    sampling of a number of vectors and using cauchy error.
+    sampling of a number of vectors and using a relative error check.
+
+    This returns a tuple: the number of arnold iterations chosen, all_sims, sim_dim_list
     '''
 
+    all_sims = []
+    dim_list = []
     settings = time_elapser.settings
     dims = time_elapser.a_matrix.shape[0]
     key_dirs = time_elapser.key_dir_mat.shape[0]
@@ -610,6 +616,7 @@ def choose_arnoldi_iter(time_elapser, var_list, dims_to_compute, pool):
 
         arnoldi_iter = 2
         cur_rel_error = 2 * error_limit # force the loop to start
+        all_sims = None
 
         while cur_rel_error > error_limit:
             arnoldi_iter = arnoldi_iter * 2
@@ -623,7 +630,9 @@ def choose_arnoldi_iter(time_elapser, var_list, dims_to_compute, pool):
                 print "{}".format(arnoldi_iter),
                 sys.stdout.flush()
 
-            cur_rel_error, h_list, pv_list = get_max_rel_error(settings, dim_list, error_limit, pool)
+            use_error_limit = error_limit if arnoldi_iter < dims else None
+
+            cur_rel_error, h_list, pv_list, all_sims = get_max_rel_error(settings, dim_list, use_error_limit, pool)
 
             # print "!cur_rel_error = {}".format(cur_rel_error)
 
@@ -633,9 +642,20 @@ def choose_arnoldi_iter(time_elapser, var_list, dims_to_compute, pool):
         if settings.simulation.krylov_print_rel_error_filename is not None:
             print_rel_error_at_each_step(settings, pool, h_list, pv_list)
 
-        # ok, at this point the error is below the threshold
-        # find the exact value of iterations that makes this work for all the samples
-        arnoldi_iter = find_iter_with_accuracy(settings, h_list, pv_list, error_limit, pool)
+        # under certain conditions, we skip tuning to the exact number of arnoldi iterations to save time
+        skip_tuning_reduce = False
+
+        if not settings.simulation.krylov_always_do_tuning_reduce: # if we can skip the reduction part of tuning
+            if len(var_list) == len(dim_list):
+                # if tuning used every dimension in the dim_sub_list, there's no more work to do
+                skip_tuning_reduce = True
+            elif arnoldi_iter == dims and cur_rel_error > error_limit:
+                # if we reached the maximum number of dims, and relative error was still to high, use iter=dims
+                skip_tuning_reduce = True
+
+        if not skip_tuning_reduce:
+            # find the exact value of iterations that makes error below the threshold
+            arnoldi_iter = find_iter_with_accuracy(settings, h_list, pv_list, error_limit, pool)
 
     if settings.print_output:
         print "\nUsing {} Arnoldi Iterations".format(arnoldi_iter)
@@ -644,7 +664,18 @@ def choose_arnoldi_iter(time_elapser, var_list, dims_to_compute, pool):
         print "Exiting because settings.simulation.krylov_print_rel_error_filename was set"
         exit(0)
 
-    return arnoldi_iter
+    return arnoldi_iter, all_sims, dim_list
+
+def assign_from_sim(rv, fixed_sim, lp_index):
+    'assign a simulation to the result object'
+
+    assert len(fixed_sim) == len(rv) - 1, "Got fixed sim of length {}, expected {}".format(len(fixed_sim), len(rv) - 1)
+    Timers.tic('update result list')
+
+    for i in xrange(len(fixed_sim)):
+        rv[i+1][:, lp_index] = fixed_sim[i]
+
+    Timers.toc('update result list')
 
 def assign_fixed_terms(time_elapser, rv, dims_to_compute, pool):
     'assign the fixed effect terms using a krylov simulation'
@@ -657,14 +688,7 @@ def assign_fixed_terms(time_elapser, rv, dims_to_compute, pool):
         Timers.toc("krylov sim fixed terms")
 
         if fixed_sim is not None:
-            # assign results from fixed_sim
-            assert len(fixed_sim) == len(rv) - 1
-            Timers.tic('update result list')
-
-            for i in xrange(len(fixed_sim)):
-                rv[i+1][:, -1] = fixed_sim[i]
-
-            Timers.toc('update result list')
+            assign_from_sim(rv, fixed_sim, -1)
     else:
         time_elapser.stats['arnoldi_iter'].append(0) # no fixed-term iterations
 
@@ -676,7 +700,7 @@ def update_result_list(list_of_results, settings, rv):
     for krylov_result in list_of_results:
         result_list, rel_error = krylov_result
 
-        if rel_error is not None:
+        if rel_error is not None and settings.simulation.krylov_check_all_rel_error is not None:
             assert rel_error < settings.simulation.krylov_check_all_rel_error, \
                 "Got rel error {} > {} (max) in dimension {}".format(rel_error, \
                 settings.simulation.krylov_rel_error, result_list[0][1])
@@ -791,16 +815,25 @@ def make_cur_time_elapse_mat_list(time_elapser):
 
     pool_res = None
 
-    # print "Num_Vars (i) = {}".format(num_vars)
-
     for var_sublist in variable_dim_sublists:
         if settings.simulation.krylov_force_arnoldi_iter is not None:
             arnoldi_iter = settings.simulation.krylov_force_arnoldi_iter
         else:
             Timers.tic("choose arnoldi iterations")
-            arnoldi_iter = choose_arnoldi_iter(time_elapser, var_sublist, dims_to_compute, rel_error_pool)
+            arnoldi_iter, all_sims, sim_dim_list = choose_arnoldi_iter(time_elapser, var_sublist, \
+                                                                       dims_to_compute, rel_error_pool)
             Timers.toc("choose arnoldi iterations")
             time_elapser.stats['arnoldi_iter'].append(arnoldi_iter) # record stats
+
+            # assign result for each of the simulations
+            for i in xrange(len(all_sims)):
+                sim = all_sims[i]
+                dim = sim_dim_list[i]
+                lp_var = time_elapser.dim_to_lp_var[dim]
+
+                assign_from_sim(rv, sim, lp_var)
+
+                dims_to_compute[dim] = False # skip it during the computation
 
         # re-allocate with correct number of arnoldi iterations
         KrylovInterface.preallocate_memory(arnoldi_iter, dims, key_dirs, error_on_fail=True)
@@ -814,10 +847,6 @@ def make_cur_time_elapse_mat_list(time_elapser):
             if dims_to_compute[dim] is False:
                 completed_vars += 1
                 continue
-
-            #if dim == 64:
-            #    print "debug break at 64"
-            #    break
 
             if settings.print_output:
                 now = time.time()
@@ -903,4 +932,5 @@ def do_krylov_stats(time_elapser):
     time_elapser.stats['a_mult_ms'] = ms
     time_elapser.stats['a_mult_gflops'] = gflops
 
-    KrylovInterface.print_profiling_data()
+    if time_elapser.settings.print_output:
+        KrylovInterface.print_profiling_data()

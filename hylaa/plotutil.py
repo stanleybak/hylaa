@@ -18,7 +18,7 @@ from matplotlib import colors
 from matplotlib.widgets import Button
 from matplotlib.lines import Line2D
 
-from hylaa.file_io import write_matlab
+from hylaa.file_io import write_matlab, write_gnuplot
 from hylaa.timerutil import Timers
 from hylaa.containers import PlotSettings
 from hylaa.util import Freezable
@@ -289,7 +289,7 @@ class PlotManager(Freezable):
         self.draw_stride = plot_settings.draw_stride # draw every 2nd poly, or every 4th, ect. (if over poly limit)
         self.draw_cur_step = 0 # the current poly in the step
 
-        if self.settings.plot_mode == PlotSettings.PLOT_MATLAB:
+        if self.settings.plot_mode in [PlotSettings.PLOT_MATLAB, PlotSettings.PLOT_GNUPLOT]:
             self.reach_poly_data = OrderedDict()
 
         self.freeze_attrs()
@@ -351,7 +351,7 @@ class PlotManager(Freezable):
     def create_plot(self):
         'create the plot'
 
-        if self.settings.plot_mode != PlotSettings.PLOT_NONE and self.settings.plot_mode != PlotSettings.PLOT_MATLAB:
+        if not self.settings.plot_mode in [PlotSettings.PLOT_NONE, PlotSettings.PLOT_MATLAB, PlotSettings.PLOT_GNUPLOT]:
             self.fig, self.axes = plt.subplots(nrows=1, figsize=self.settings.plot_size)
             ha = self.engine.hybrid_automaton
 
@@ -394,7 +394,7 @@ class PlotManager(Freezable):
 
     def add_reachable_poly_data(self, verts, mode_name):
         '''
-        Add raw reachable poly data for use with certain plotting modes (matlab).
+        Add raw reachable poly data for use with certain plotting modes (matlab, gnuplot).
         '''
 
         data = self.reach_poly_data
@@ -415,7 +415,7 @@ class PlotManager(Freezable):
 
         skipped_plot = True
 
-        if self.settings.plot_mode == PlotSettings.PLOT_MATLAB:
+        if self.settings.plot_mode in [PlotSettings.PLOT_MATLAB, PlotSettings.PLOT_GNUPLOT]:
             verts = star.verts()
 
             self.add_reachable_poly_data(verts, star.mode.name)
@@ -547,20 +547,24 @@ class PlotManager(Freezable):
         for _ in xrange(self.settings.skip_frames):
             anim_func(True)
 
-        self._anim = animation.FuncAnimation(self.fig, anim_func, iterator, init_func=init_func,
-                                             interval=self.settings.anim_delay_interval, blit=True, repeat=False)
+        if self.settings.plot_mode == PlotSettings.PLOT_IMAGE:
+            self.run_to_completion(step_func, is_finished_func)
+            self.save_image()
+        elif self.settings.plot_mode == PlotSettings.PLOT_MATLAB:
+            self.run_to_completion(step_func, is_finished_func)
+            self.save_matlab()
+        elif self.settings.plot_mode == PlotSettings.PLOT_GNUPLOT:
+            self.run_to_completion(step_func, is_finished_func)
+            self.save_gnuplot()
+        else:
+            self._anim = animation.FuncAnimation(self.fig, anim_func, iterator, init_func=init_func,
+                                                 interval=self.settings.anim_delay_interval, blit=True, repeat=False)
 
-        if not self.settings.skip_show_gui:
-            if self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
-                self.save_video(self._anim)
-            elif self.settings.plot_mode == PlotSettings.PLOT_IMAGE:
-                self.run_to_completion(step_func, is_finished_func)
-                self.save_image()
-            elif self.settings.plot_mode == PlotSettings.PLOT_MATLAB:
-                self.run_to_completion(step_func, is_finished_func)
-                self.save_matlab()
-            else:
-                plt.show()
+            if not self.settings.skip_show_gui:
+                if self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
+                    self.save_video(self._anim)
+                else:
+                    plt.show()
 
     def run_to_completion(self, step_func, is_finished_func, compute_plot=True):
         'run to completion, creating the plot at each step'
@@ -568,7 +572,7 @@ class PlotManager(Freezable):
         Timers.tic("total")
 
         while not is_finished_func():
-            if compute_plot:
+            if compute_plot and self.shapes is not None:
                 self.shapes.reset_cur_state()
 
             step_func()
@@ -594,6 +598,19 @@ class PlotManager(Freezable):
             filename = filename + '.m'
 
         write_matlab(filename, self.reach_poly_data, self.settings, self.engine.hybrid_automaton)
+
+    def save_gnuplot(self):
+        'save a gnuplot data file'
+
+        filename = self.settings.filename
+
+        if filename is None:
+            filename = "reach_data.txt"
+
+        if not filename.endswith('.txt'):
+            filename = filename + '.txt'
+
+        write_gnuplot(filename, self.reach_poly_data)
 
     def save_image(self):
         'save an image file'

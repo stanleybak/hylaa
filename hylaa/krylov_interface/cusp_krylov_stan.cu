@@ -160,6 +160,7 @@ class CuspData
 
     // profiling variables
     bool useProfiling;
+    bool printOutput;
     unsigned long aMatrixNonzeros;
     unsigned long keyDirMatrixNonzeros;
 
@@ -243,10 +244,13 @@ class CuspData
         _k = 0;
         _i = 0;
 
+        setPrintOutput(false);
         setUseProfiling(false);
         aMatrixNonzeros = 0;
         keyDirMatrixNonzeros = 0;
     }
+
+    void setPrintOutput(bool enabled) { printOutput = enabled; }
 
     void setUseProfiling(bool enabled)
     {
@@ -271,7 +275,7 @@ class CuspData
                 "(%lu)",
                 w, _n);
 
-        if (useProfiling)
+        if (useProfiling && printOutput)
         {
             FLOAT_TYPE size = rowOffsetsLen * sizeof(int);
             size += colIndsLen * sizeof(int);
@@ -351,7 +355,7 @@ class CuspData
                 "(%lu)",
                 h, _k);
 
-        if (useProfiling)
+        if (useProfiling && printOutput)
         {
             FLOAT_TYPE size = rowOffsetsLen * sizeof(int);
             size += colIndsLen * sizeof(int);
@@ -419,7 +423,7 @@ class CuspData
         _i = arnoldiIt;
         _k = keyDirMatSize;
 
-        if (useProfiling)
+        if (useProfiling && printOutput)
             printf(
                 "preallocateMemory() called with profiling, Free memory on "
                 "device: %.2f MB\n",
@@ -450,7 +454,7 @@ class CuspData
             // preallocate hMatrix, numParInit * iterations * iterations
             unsigned long hMatrixSize = _i * (_i + 1);
 
-            if (useProfiling)
+            if (useProfiling && printOutput)
                 printf(
                     "Trying to allocate %.2f MB for hMatrix (remaining memory %.2f "
                     "MB)...\n",
@@ -461,7 +465,7 @@ class CuspData
             // preallocate vMatrix, width = dims * iterations, height = numParInit
             unsigned long vMatrixSize = _n * (_i + 1);
 
-            if (useProfiling)
+            if (useProfiling && printOutput)
                 printf(
                     "Trying to allocate %.2f MB for vMatrix (remaining memory %.2f "
                     "MB)...\n",
@@ -472,7 +476,7 @@ class CuspData
             // preallocate vProjected
             unsigned long vProjectedSize = _k * (_i + 1);
 
-            if (useProfiling)
+            if (useProfiling && printOutput)
                 printf(
                     "Trying to allocate %.2f MB for vProjected (remaining memory %.2f "
                     "MB)...\n",
@@ -482,7 +486,7 @@ class CuspData
         }
         catch (std::bad_alloc)
         {
-            if (useProfiling)
+            if (useProfiling && printOutput)
                 printf("memory allocation failed\n");
 
             _i = 0;
@@ -503,7 +507,7 @@ class CuspData
 
         for (unsigned long it = 1; it <= iterations; it++)
         {
-            if (useProfiling && it % 100 == 0)
+            if (printOutput && it % 100 == 0)
             {
                 long elapsedUs = now() - start;  // microseconds
                 double elapsedSec = elapsedUs / 1000.0 / 1000.0;
@@ -744,6 +748,11 @@ void setUseProfilingCpu(unsigned long enabled)
     cuspDataCpu.setUseProfiling(enabled != 0);
 }
 
+void setPrintOutputCpu(unsigned long enabled)
+{
+    cuspDataCpu.setPrintOutput(enabled != 0);
+}
+
 // as csr matrix
 void loadAMatrixCpu(unsigned long w, unsigned long h, int *rowOffsets, unsigned long rowOffsetsLen,
                     int *colInds, unsigned long colIndsLen, FLOAT_TYPE *values,
@@ -803,6 +812,11 @@ void printProfilingDataCpu()
 void setUseProfilingGpu(unsigned long enabled)
 {
     cuspDataGpu.setUseProfiling(enabled != 0);
+}
+
+void setPrintOutputGpu(unsigned long enabled)
+{
+    cuspDataGpu.setPrintOutput(enabled != 0);
 }
 
 // as csr matrix

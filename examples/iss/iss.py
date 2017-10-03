@@ -80,7 +80,7 @@ def make_init_star(ha, hylaa_settings):
 
         bounds_list.append((lb, ub))
 
-    if not hylaa_settings.simulation.seperate_constant_vars or \
+    if not hylaa_settings.simulation.krylov_seperate_constant_vars or \
             hylaa_settings.simulation.sim_mode != SimulationSettings.KRYLOV:
         init_mat, init_rhs = make_constraint_matrix(bounds_list)
         rv = Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs)
@@ -108,8 +108,6 @@ def define_settings(_):
 
     #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
     settings.simulation.sim_mode = SimulationSettings.KRYLOV
-    #settings.simulation.seperate_constant_vars = False
-    settings.simulation.pipeline_arnoldi_expm = False
     #settings.simulation.check_answer = True
 
     #settings.simulation.krylov_check_all_rel_error = True
