@@ -197,7 +197,6 @@ def init_krylov(time_elapser, arnoldi_iter):
     '''
 
     KrylovInterface.reset()
-    time_elapser.stats['arnoldi_mem_start'] = KrylovInterface.get_free_memory_mb()
 
     settings = time_elapser.settings
     key_dir_mat = time_elapser.key_dir_mat
@@ -224,6 +223,7 @@ def init_krylov(time_elapser, arnoldi_iter):
     else:
         KrylovInterface.set_use_gpu(False)
 
+    time_elapser.stats['arnoldi_mem_start'] = KrylovInterface.get_free_memory_mb()
     KrylovInterface.set_use_profiling(settings.simulation.krylov_profiling)
     KrylovInterface.set_print_output(settings.print_output)
 
