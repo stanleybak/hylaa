@@ -610,9 +610,6 @@ class PlotManager(Freezable):
         if filename is None:
             filename = "reach_data.txt"
 
-        if not filename.endswith('.txt'):
-            filename = filename + '.txt'
-
         write_gnuplot(filename, self.reach_poly_data)
 
     def save_image(self):
