@@ -523,6 +523,7 @@ class CuspData
                     "(%.2f min) (%.2f hr)\n",
                     it, iterations, (unsigned long)(frac * 100.0), elapsedSec / 60.0,
                     (it - 1) / (elapsedSec / 60.0), remainingSec, remainingMin, remainingHr);
+                fflush(stdout);
             }
 
             util.tic("sparse matrix vector multiply");
