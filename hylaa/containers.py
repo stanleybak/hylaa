@@ -193,6 +193,7 @@ class HylaaResult(Freezable):
         self.timers = None # map of string (timer name) -> TimerData
         self.safe = True # was the verificaation result safe?
 
-        self.krylov_stats = None # krylov statistics, map of string -> value, copy of TimerData.stats
+        self.krylov_stats = None # krylov statistics, map of string -> value, copy of TimerElapse.stats
+        self.reachable_poly_data = None # set to the vertices of the reachble plot (if plot mode is GNUPLOT or MATLAB)
 
         self.freeze_attrs()

@@ -79,6 +79,8 @@ class TimeElapser(Freezable):
 
         # -- performance statistics --
         # arnoldi_iter -> list, with 0 = fixed-effect, others are the tuned arnoldi iterations
+        # arnoldi_mem_start -> mb, total amount of memory on device
+        # arnoldi_mem_choose -> mb, amount of memory after allocating maximum amount during choose_arnoldi_iterations
         #
         # -- if krylov_profiling is set --
         # dots_axpy_ms - time for dots and axpy portion of arnoldi

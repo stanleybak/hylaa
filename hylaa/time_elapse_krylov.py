@@ -197,6 +197,7 @@ def init_krylov(time_elapser, arnoldi_iter):
     '''
 
     KrylovInterface.reset()
+    time_elapser.stats['arnoldi_mem_start'] = KrylovInterface.get_free_memory_mb()
 
     settings = time_elapser.settings
     key_dir_mat = time_elapser.key_dir_mat
@@ -638,6 +639,9 @@ def choose_arnoldi_iter(time_elapser, var_list, dims_to_compute, pool):
 
             if arnoldi_iter == dims:
                 break
+
+        # this the the maximum amount of memory needed on the device (before reduction)
+        time_elapser.stats['arnoldi_mem_choose'] = KrylovInterface.get_free_memory_mb()
 
         if settings.simulation.krylov_print_rel_error_filename is not None:
             print_rel_error_at_each_step(settings, pool, h_list, pv_list)

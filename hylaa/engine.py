@@ -183,3 +183,6 @@ class HylaaEngine(object):
         # assign results
         self.result.timers = Timers.timers
         self.result.krylov_stats = init_star.time_elapse.stats
+
+        if self.plotman.reach_poly_data is not None:
+            self.result.reachable_poly_data = self.plotman.reach_poly_data

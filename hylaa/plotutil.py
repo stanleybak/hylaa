@@ -289,6 +289,9 @@ class PlotManager(Freezable):
         self.draw_stride = plot_settings.draw_stride # draw every 2nd poly, or every 4th, ect. (if over poly limit)
         self.draw_cur_step = 0 # the current poly in the step
 
+        # used to save reachable polys for certain drawing modes (gnuplot, matlab)
+        self.reach_poly_data = None
+
         if self.settings.plot_mode in [PlotSettings.PLOT_MATLAB, PlotSettings.PLOT_GNUPLOT]:
             self.reach_poly_data = OrderedDict()
 
