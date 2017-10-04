@@ -507,20 +507,22 @@ class CuspData
 
         for (unsigned long it = 1; it <= iterations; it++)
         {
-            if (printOutput && it % 100 == 0)
+            if (printOutput && it % 50 == 0)
             {
                 long elapsedUs = now() - start;  // microseconds
                 double elapsedSec = elapsedUs / 1000.0 / 1000.0;
                 double frac = ((double)it / iterations);
                 double totalSec = elapsedSec / frac;
-                double totalMin = totalSec / 60.0;
                 double remainingSec = totalSec - elapsedSec;
                 double remainingMin = remainingSec / 60.0;
                 double remainingHr = remainingMin / 60.0;
 
                 printf(
-                    "iter %lu / %lu (%.2f). Total: %.1f min, ETA: %.1f sec (%.2f min) (%.2f hr)\n",
-                    it, iterations, frac, totalMin, remainingSec, remainingMin, remainingHr);
+                    "iter %lu / %lu (%lu%%). Elapsed: %.1f min, Speed (it/min): %.3f, ETA: %.1f "
+                    "sec "
+                    "(%.2f min) (%.2f hr)\n",
+                    it, iterations, (unsigned long)(frac * 100.0), elapsedSec / 60.0,
+                    (it - 1) / (elapsedSec / 60.0), remainingSec, remainingMin, remainingHr);
             }
 
             util.tic("sparse matrix vector multiply");
