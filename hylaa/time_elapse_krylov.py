@@ -879,7 +879,8 @@ def make_cur_time_elapse_mat_list(time_elapser):
                 update_result_list(list_of_results, settings, rv)
 
             ### compute matrix exp ###
-            lp_var = time_elapser.dim_to_lp_var[dim]
+            lp_var = time_elapser.dim_to_lp_var[dim] if settings.simulation.krylov_seperate_constant_vars else dim
+
             args = [(settings, lp_var, h_mat, pv_mat)]
             completed_vars += 1
 
