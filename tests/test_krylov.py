@@ -14,8 +14,10 @@ from scipy.io import loadmat
 from scipy.sparse import csr_matrix, csc_matrix
 from scipy.sparse.linalg import expm, expm_multiply
 
-from hylaa.krylov_interface import KrylovInterface
+from hylaa.krylov import arnoldi, lanczos
 from hylaa.containers import HylaaSettings
+
+from krypy.utils import arnoldi as krypy_arnoldi # krypy is used for testing
 
 def get_projected_simulation(settings, dim, use_mult=False):
     '''
@@ -77,7 +79,7 @@ def make_spring_mass_matrix(num_dims):
 
     return csr_matrix(csc_matrix((values, indices, indptr), shape=(num_dims, num_dims), dtype=float))
 
-def random_sparse_matrix(dims, entries_per_row, random_cols=True, print_progress=False):
+def random_sparse_matrix(dims, entries_per_row, symmetric=False, random_cols=True, print_progress=False):
     'make a random sparse matrix with the given number of entries per row'
 
     row_inds = []
@@ -117,71 +119,15 @@ def random_sparse_matrix(dims, entries_per_row, random_cols=True, print_progress
     if print_progress:
         print "making csr_matrix time {:.1f}s".format(time.time() - start)
 
+    if symmetric:
+        start = time.time()
+
+        rv = rv + rv.T
+
+        if print_progress:
+            print "transpose add time {:.1f}s".format(time.time() - start)
+
     return rv
-
-def python_arnoldi(mat, vec, iterations):
-    'arnoldi for a single initial vector'
-
-    dims = mat.shape[0]
-    assert vec.shape == (dims, 1), "vec.shape was {}, expected (1, {})".format(vec.shape, dims)
-
-    vec = vec.transpose()
-
-    v_mat, h_mat = python_arnoldi_par(mat.T, vec, iterations)
-
-    v_mat.shape = (iterations + 1, dims)
-    h_mat.shape = (iterations, iterations + 1)
-
-    return v_mat.transpose(), h_mat.transpose()
-
-
-def python_arnoldi_par(mat_transpose, vecs, iterations):
-    'arnoldi with split multiple initial vecs'
-
-    num_init = vecs.shape[0]
-    size = vecs.shape[1]
-
-    prev_v = np.zeros((num_init, (iterations + 1) * size))
-    h_mat = np.zeros((num_init, (iterations + 1) * (iterations)))
-
-    for c in xrange(num_init):
-        vec = vecs[c, :]
-        vec = vec / np.linalg.norm(vec)
-        prev_v[c, 0:size] = vec
-
-    # use a-transpose
-    #a_transpose = mat.T.copy()
-
-    for cur_it in xrange(1, iterations + 1):
-
-        # do all the multiplications up front
-        for init_index in xrange(num_init):
-            #vec = np.dot(prev_v[cur_vec, (cur_it-1)*size:cur_it*size], a_transpose)
-
-            vec = prev_v[init_index, (cur_it-1)*size:cur_it*size] * mat_transpose
-
-            prev_v[init_index, cur_it*size:(cur_it+1)*size] = vec
-
-        for init_index in xrange(num_init):
-            cur_vec = prev_v[init_index, cur_it*size:(cur_it+1)*size]
-
-            for c in xrange(cur_it):
-                prev_vec = prev_v[init_index, c*size:(c+1)*size]
-
-                dot_val = np.dot(prev_vec, cur_vec)
-                h_mat[init_index][(iterations + 1) * (cur_it-1) + c] = dot_val
-
-                sub_vec = prev_v[init_index, c*size:(c+1)*size]
-                cur_vec -= sub_vec * dot_val
-
-            norm = np.linalg.norm(cur_vec)
-            h_mat[init_index][cur_it + (iterations+1) * (cur_it-1)] = norm
-
-            if norm >= 1e-6:
-                cur_vec = cur_vec / norm
-                prev_v[init_index, cur_it*size:(cur_it+1)*size] = cur_vec
-
-    return prev_v, h_mat
 
 def relative_error(correct, estimate):
     'compute the relative error between the correct value and an estimate'
@@ -196,46 +142,54 @@ def relative_error(correct, estimate):
 
     return rel_error
 
-class TestKrylovInterface(unittest.TestCase):
-    'Unit tests for krylov utilities'
+class TestKrylov(unittest.TestCase):
+    'Unit tests for hylaa.krylov'
 
     def setUp(self):
         'test setup'
 
         random.seed(1)
-        KrylovInterface.reset()
-        KrylovInterface.set_use_gpu(False)
 
-    def test_arnoldi_single(self):
-        'compare the python implementation with the cusp implementation with a single initial vector'
-
-        #KrylovInterface.set_use_profiling(True)
-        #KrylovInterface.set_use_gpu(True)
+    def test_arnoldi(self):
+        'compare the krypy implementation with the hylaa implementation with e_1 as initial vec'
 
         dims = 5
         iterations = 2
-        key_dirs = 2
 
         a_matrix = random_sparse_matrix(dims, entries_per_row=2)
 
-        key_dir_mat = random_sparse_matrix(dims, entries_per_row=2)[:key_dirs, :]
+        # using krypy
+        e1_dense = np.array([[1.0] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
+        krypy_v, krypy_h = krypy_arnoldi(a_matrix, e1_dense, maxiter=iterations)
 
-        # using python
-        init_vec = np.array([[1.0] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
-        v_mat_testing, h_mat_testing = python_arnoldi(a_matrix, init_vec, iterations)
+        # using hylaa
+        e1_sparse = csr_matrix(([1.0], [0], [0, 1]), shape=(1, dims))
 
-        projected_v_mat_testing = key_dir_mat * v_mat_testing
+        result_v, result_h = arnoldi(a_matrix, e1_sparse, iterations)
 
-        # using cusp
+        self.assertTrue(np.allclose(result_h, krypy_h), "Correct h matrix")
+        self.assertTrue(np.allclose(result_v.T, krypy_v), "Correct v matrix")
 
-        KrylovInterface.preallocate_memory(iterations, dims, key_dirs)
-        KrylovInterface.load_a_matrix(a_matrix)
-        KrylovInterface.load_key_dir_matrix(key_dir_mat)
+    def test_lanczos(self):
+        'compare the krypy implementation with the hylaa implementation with e_1 as initial vec'
 
-        result_h, result_pv = KrylovInterface.arnoldi_unit(0)
+        dims = 6
+        iterations = 4
 
-        self.assertTrue(np.allclose(result_h, h_mat_testing), "Correct h matrix")
-        self.assertTrue(np.allclose(result_pv, projected_v_mat_testing), "Correct projected v matrix")
+        a_matrix = random_sparse_matrix(dims, entries_per_row=2, symmetric=True)
+
+        # using krypy
+        e1_dense = np.array([[1.0] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
+        krypy_v, krypy_h = krypy_arnoldi(a_matrix, e1_dense, maxiter=iterations, ortho='lanczos')
+
+        # using hylaa
+        e1_sparse = csr_matrix(([1.0], [0], [0, 1]), shape=(1, dims))
+        k_mat = csr_matrix(np.identity(6))
+
+        result_v, result_h = lanczos(a_matrix, e1_sparse, iterations, k_mat)
+
+        self.assertTrue(np.allclose(result_h.toarray(), krypy_h), "Correct h matrix")
+        self.assertTrue(np.allclose(result_v.T, krypy_v), "Correct v matrix")
 
     def test_arnoldi_vec(self):
         'test arnoldi simulation with a passed in initial vector'
