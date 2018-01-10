@@ -1,6 +1,7 @@
 '''
 Harmonic Oscillator (with time) Example in Hylaa-Continuous
 '''
+
 import math
 
 import numpy as np
