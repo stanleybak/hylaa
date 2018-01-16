@@ -13,8 +13,11 @@ import numpy as np
 from scipy.io import loadmat
 from scipy.sparse import csr_matrix, csc_matrix
 from scipy.sparse.linalg import expm, expm_multiply
+from scipy.integrate import odeint
 
-from hylaa.krylov import arnoldi, lanczos
+from hylaa.krylov_python import python_arnoldi, python_lanczos
+from hylaa.krylov_interface import KrylovInterface
+
 from hylaa.containers import HylaaSettings
 
 from krypy.utils import arnoldi as krypy_arnoldi # krypy is used for testing
@@ -114,6 +117,7 @@ def random_sparse_matrix(dims, entries_per_row, symmetric=False, random_cols=Tru
         print "Row {} / {} ({:.2f}%). Elapsed: {:.1f}s".format(dims, dims, 100.0, elapsed)
 
     start = time.time()
+
     rv = csr_matrix((vals, cols, row_inds), shape=(dims, dims), dtype=float)
 
     if print_progress:
@@ -148,48 +152,152 @@ class TestKrylov(unittest.TestCase):
     def setUp(self):
         'test setup'
 
+        KrylovInterface.reset()
+        np.set_printoptions(suppress=True)
         random.seed(1)
 
+        # testing code for vector comparison
+        #for x in xrange(dims):
+        #    print "{}, res1={}, res2={}".format(x, res1[x], res2[x])
+        #    self.assertAlmostEqual(res1[x], res2[x], places=3, msg='result[{}] differs'.format(x))
+
     def test_arnoldi(self):
-        'compare the krypy implementation with the hylaa implementation with e_1 as initial vec'
+        'compare the krypy implementation with the python and cusp implementations'
 
-        dims = 5
-        iterations = 2
+        dims = 10
+        iterations = 5
+        a_matrix = random_sparse_matrix(dims, entries_per_row=3)
+        key_dir_mat = csr_matrix(np.identity(dims))
 
-        a_matrix = random_sparse_matrix(dims, entries_per_row=2)
+        init1_dense = np.array([[1.] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
+        init2_dense = np.array([[2.] if d == 1 else [.4] if d == dims-1 else [0.0] for d in xrange(dims)], dtype=float)
 
-        # using krypy
-        e1_dense = np.array([[1.0] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
-        krypy_v, krypy_h = krypy_arnoldi(a_matrix, e1_dense, maxiter=iterations)
+        for init_dense in [init1_dense, init2_dense]:
+            init_sparse = csr_matrix(init_dense.T)
 
-        # using hylaa
-        e1_sparse = csr_matrix(([1.0], [0], [0, 1]), shape=(1, dims))
+            # for krypy, we must manually normalize and rescale
+            norm = np.linalg.norm(init_dense)
+            init_dense /= norm
+            krypy_v, krypy_h = krypy_arnoldi(a_matrix, init_dense, maxiter=iterations)
+            krypy_v *= norm
 
-        result_v, result_h = arnoldi(a_matrix, e1_sparse, iterations)
+            # using python
+            python_pv, python_h = python_arnoldi(a_matrix, init_sparse, iterations, key_dir_mat)
 
-        self.assertTrue(np.allclose(result_h, krypy_h), "Correct h matrix")
-        self.assertTrue(np.allclose(result_v.T, krypy_v), "Correct v matrix")
+            self.assertTrue(np.allclose(python_h, krypy_h), "Python h matrix incorrect")
+            self.assertTrue(np.allclose(python_pv, krypy_v), "Python v matrix incorrect")
+
+            # using cusp
+            KrylovInterface.preallocate_memory(iterations, dims, key_dir_mat.shape[0])
+            KrylovInterface.load_a_matrix(a_matrix)
+            KrylovInterface.load_key_dir_matrix(key_dir_mat)
+            cusp_h, cusp_pv = KrylovInterface.arnoldi(init_sparse)
+
+            self.assertTrue(np.allclose(cusp_h, krypy_h), "Cusp h matrix incorrect")
+            self.assertTrue(np.allclose(cusp_pv, krypy_v), "Cusp v matrix incorrect")
 
     def test_lanczos(self):
-        'compare the krypy implementation with the hylaa implementation with e_1 as initial vec'
+        'compare the krypy implementation with the python and cusp implementations'
 
-        dims = 6
-        iterations = 4
-
+        dims = 5
+        iterations = 3
         a_matrix = random_sparse_matrix(dims, entries_per_row=2, symmetric=True)
 
-        # using krypy
-        e1_dense = np.array([[1.0] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
-        krypy_v, krypy_h = krypy_arnoldi(a_matrix, e1_dense, maxiter=iterations, ortho='lanczos')
+        key_dir_mat = csr_matrix(np.identity(dims))
+
+        init1_dense = np.array([[1.] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
+        init2_dense = np.array([[2.] if d == 1 else [.4] if d == dims-1 else [0.0] for d in xrange(dims)], dtype=float)
+
+        for init_dense in [init1_dense, init2_dense]:
+            init_sparse = csr_matrix(init_dense.T)
+
+            # for krypy, manually scale based on initial vec
+            norm = np.linalg.norm(init_dense)
+            init_dense /= norm
+            krypy_v, krypy_h = krypy_arnoldi(a_matrix, init_dense, maxiter=iterations, ortho='lanczos')
+            krypy_v *= norm
+
+            # using python
+            python_pv, python_h = python_lanczos(a_matrix, init_sparse, iterations, key_dir_mat, compat=True)
+            python_h = python_h.toarray()
+
+            self.assertTrue(np.allclose(python_h, krypy_h), "Python h matrix incorrect")
+            self.assertTrue(np.allclose(python_pv, krypy_v), "Python v matrix incorrect")
+
+            # using cusp
+            KrylovInterface.preallocate_memory(iterations, dims, key_dir_mat.shape[0])
+            KrylovInterface.load_a_matrix(a_matrix)
+            KrylovInterface.load_key_dir_matrix(key_dir_mat)
+
+            cusp_h, cusp_pv = KrylovInterface.lanczos(init_sparse)
+
+            self.assertTrue(np.allclose(cusp_h, krypy_h), "Cusp h matrix incorrect")
+            self.assertTrue(np.allclose(cusp_pv, krypy_v), "Cusp v matrix incorrect")
+
+    def test_lanczos_sim(self):
+        'compare lanczos simulation vs python vs cusp'
+
+        dims = 1000
+        iterations = 50
+        sim_time = 0.1
+
+        a_matrix_sparse = random_sparse_matrix(dims, entries_per_row=50, symmetric=True)
+        a_matrix = a_matrix_sparse.toarray()
+        der_func = lambda state, _: np.dot(a_matrix, state)
+        a_transpose = a_matrix.transpose().copy()
+        jac_func = lambda dummy_state, dummy_t: a_transpose
+
+        # using python lanczos
+        e1_sparse = csr_matrix(([1.0], [0], [0, 1]), shape=(1, dims))
+        key_dir_mat = csr_matrix(np.identity(dims))
+
+        python_pv, python_h = python_lanczos(a_matrix_sparse, e1_sparse, iterations, key_dir_mat)
+
+        python_pv = python_pv[:, :iterations]
+        python_h = python_h[:iterations, :iterations]
+
+        e1_dense = np.array([1.0 if d == 0 else 0.0 for d in xrange(iterations)], dtype=float)
+        python_result = np.dot(python_pv, expm_multiply(python_h * sim_time, e1_dense))
+
+        # using cusp lanczos
+        KrylovInterface.preallocate_memory(iterations, dims, key_dir_mat.shape[0])
+        KrylovInterface.load_a_matrix(a_matrix_sparse)
+        KrylovInterface.load_key_dir_matrix(key_dir_mat)
+        cusp_h, cusp_pv = KrylovInterface.arnoldi_unit(0)
+
+        cusp_pv = cusp_pv[:, :iterations]
+        cusp_h = cusp_h[:iterations, :iterations]
+
+        e1_dense = np.array([1.0 if d == 0 else 0.0 for d in xrange(iterations)], dtype=float)
+        cusp_result = np.dot(cusp_pv, expm_multiply(cusp_h * sim_time, e1_dense))
+
+        # using odeint
+        times = np.linspace(0, sim_time)
+        start_vec = np.array([1.0 if d == 0 else 0.0 for d in xrange(dims)], dtype=float)
+        odeint_result = odeint(der_func, start_vec, times, Dfun=jac_func, col_deriv=True, mxstep=int(1e8))[-1]
+
+        self.assertTrue(np.allclose(python_result, odeint_result, atol=1e-3), "python result incorrect")
+        self.assertTrue(np.allclose(cusp_result, odeint_result, atol=1e-3), "cusp result incorrect")
+
+    def test_large_lanczos_profile(self):
+        'test my implementation of lanczos with a large system'
+
+        dims = int(1e5)
+        iterations = 10
+
+        a_matrix = random_sparse_matrix(dims, entries_per_row=2, symmetric=True, print_progress=True)
 
         # using hylaa
         e1_sparse = csr_matrix(([1.0], [0], [0, 1]), shape=(1, dims))
-        k_mat = csr_matrix(np.identity(6))
 
-        result_v, result_h = lanczos(a_matrix, e1_sparse, iterations, k_mat)
+        k_mat = csr_matrix(([1.0], [0], [0, 1]), shape=(1, dims)) # first coordinate
 
-        self.assertTrue(np.allclose(result_h.toarray(), krypy_h), "Correct h matrix")
-        self.assertTrue(np.allclose(result_v.T, krypy_v), "Correct v matrix")
+        print "starting lanczos"
+        start = time.time()
+        result_v, result_h = lanczos(a_matrix, e1_sparse, iterations, k_mat, compat=True, profile=True)
+        print "python lanczos time = {}\n".format(time.time() - start)
+
+        # try it using cusp
 
     def test_arnoldi_vec(self):
         'test arnoldi simulation with a passed in initial vector'

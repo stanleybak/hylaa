@@ -13,9 +13,11 @@ import math
 import numpy as np
 from numpy.ctypeslib import ndpointer
 from scipy.sparse import csr_matrix
+from scipy.sparse.linalg import norm as sparse_norm
 
 from hylaa.util import Freezable, get_script_path
 from hylaa.timerutil import Timers
+from hylaa.krylov_python import normalize_sparse
 
 class CuspData(Freezable):
     'Function pointers / data for gpu or cpu'
@@ -27,8 +29,8 @@ class CuspData(Freezable):
         self.load_key_dir_matrix = None
         self.get_free_memory_mb = None
         self.preallocate_memory = None
-        self.arnoldi_unit = None
-        self.arnoldi_vec = None
+        self.arnoldi = None
+        self.lanczos = None
         self.get_profiling_data = None
         self.print_profiling_data = None
 
@@ -86,15 +88,16 @@ class KrylovInterface(object):
             gpu_func.restype = cpu_func.restype = None
             gpu_func.argtypes = cpu_func.argtypes = [ctypes.c_ulong]
 
-            #void loadAMatrixGpu(int w, int h, int* rowOffsets, int rowOffsetsLen, int* colInds, int colIndsLen,
-            #        double* values, int valuesLen)
+            #void loadAMatrixGpu(unsigned long w, unsigned long h, long *rowOffsets, unsigned long rowOffsetsLen,
+            #        long *colInds, unsigned long colIndsLen, FLOAT_TYPE *values,
+            #        unsigned long valuesLen)
             cpu_func = KrylovInterface._cpu.load_a_matrix = lib.loadAMatrixCpu
             gpu_func = KrylovInterface._gpu.load_a_matrix = lib.loadAMatrixGpu
             gpu_func.restype = cpu_func.restype = None
             gpu_func.argtypes = cpu_func.argtypes = [
                 ctypes.c_ulong, ctypes.c_ulong,
-                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_ulong,
-                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_ulong,
+                ndpointer(ctypes.c_long, flags="C_CONTIGUOUS"), ctypes.c_ulong,
+                ndpointer(ctypes.c_long, flags="C_CONTIGUOUS"), ctypes.c_ulong,
                 ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong
             ]
 
@@ -105,8 +108,8 @@ class KrylovInterface(object):
             gpu_func.restype = cpu_func.restype = None
             gpu_func.argtypes = cpu_func.argtypes = [
                 ctypes.c_ulong, ctypes.c_ulong,
-                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_ulong,
-                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_ulong,
+                ndpointer(ctypes.c_long, flags="C_CONTIGUOUS"), ctypes.c_ulong,
+                ndpointer(ctypes.c_long, flags="C_CONTIGUOUS"), ctypes.c_ulong,
                 ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong
             ]
 
@@ -125,26 +128,35 @@ class KrylovInterface(object):
                 ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong
             ]
 
-            #void arnoldiUnitGpu(unsigned long dim, FLOAT_TYPE *resultH, unsigned long sizeResultH,
-            #                    FLOAT_TYPE *resultPV, unsigned long sizeResultPV)
-            cpu_func = KrylovInterface._cpu.arnoldi_unit = lib.arnoldiUnitCpu
-            gpu_func = KrylovInterface._gpu.arnoldi_unit = lib.arnoldiUnitGpu
+            #void arnoldiGpu(FLOAT_TYPE *initData, int *initIndices, unsigned long initLen,
+            #    FLOAT_TYPE *resultH, unsigned long sizeResultH, FLOAT_TYPE *resultPV,
+            #    unsigned long sizeResultPV)
+            cpu_func = KrylovInterface._cpu.arnoldi = lib.arnoldiCpu
+            gpu_func = KrylovInterface._gpu.arnoldi = lib.arnoldiGpu
             gpu_func.restype = cpu_func.restype = None
             gpu_func.argtypes = cpu_func.argtypes = [
-                ctypes.c_ulong,
+                ndpointer(float_type, flags="C_CONTIGUOUS"),
+                ndpointer(ctypes.c_long, flags="C_CONTIGUOUS"), ctypes.c_ulong,
                 ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong,
                 ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong
             ]
 
-            #void arnoldiVecGpu(FLOAT_TYPE *vec, unsigned long vecLen, FLOAT_TYPE *resultH,
-            #       unsigned long sizeResultH, FLOAT_TYPE *resultPV, unsigned long sizeResultPV)
-            cpu_func = KrylovInterface._cpu.arnoldi_vec = lib.arnoldiVecCpu
-            gpu_func = KrylovInterface._gpu.arnoldi_vec = lib.arnoldiVecGpu
+            #void lanczosGpu(FLOAT_TYPE *initData, long *initIndices, unsigned long initLen,
+            #    FLOAT_TYPE *resultCscDataH, unsigned long sizeCscDataH, long *resultCscIndptrH,
+            #    unsigned long sizeCscIndptrH, long *resultCscIndicesH,
+            #    unsigned long sizeCscIndicesH, FLOAT_TYPE *resultPV, unsigned long sizeResultPV)
+            cpu_func = KrylovInterface._cpu.lanczos = lib.lanczosCpu
+            gpu_func = KrylovInterface._gpu.lanczos = lib.lanczosGpu
             gpu_func.restype = cpu_func.restype = None
             gpu_func.argtypes = cpu_func.argtypes = [
-                ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong,
-                ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong,
-                ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong
+                # init below
+                ndpointer(float_type, flags="C_CONTIGUOUS"), 
+                ndpointer(ctypes.c_long, flags="C_CONTIGUOUS"), ctypes.c_ulong,
+
+                ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong, # resultH.data
+                ndpointer(ctypes.c_long, flags="C_CONTIGUOUS"), ctypes.c_ulong, #resultH.indptr
+                ndpointer(ctypes.c_long, flags="C_CONTIGUOUS"), ctypes.c_ulong, #resultH.indices
+                ndpointer(float_type, flags="C_CONTIGUOUS"), ctypes.c_ulong # resultPv
             ]
 
             # void getProfilingDataGpu(const char *name, FLOAT_TYPE *resultVec, unsigned long resultVecLen)
@@ -258,13 +270,21 @@ class KrylovInterface(object):
         assert w == KrylovInterface._cusp.n, "a_matrix dims ({}) differs from preallocate dims ({})".format(
             w, KrylovInterface._cusp.n)
 
-        values = matrix.data
-        row_offsets = matrix.indptr
-        col_inds = matrix.indices
+        # we must pass a long* to the c++ code
+        if matrix.indices.dtype == np.dtype('int64'):
+            indices = matrix.indices
+        else:
+            indices = np.array(matrix.indices, dtype=np.dtype('int64'))
+
+        # we must pass a long* to the c++ code
+        if matrix.indptr.dtype == np.dtype('int64'):
+            indptr = matrix.indices
+        else:
+            indptr = np.array(matrix.indptr, dtype=np.dtype('int64'))
 
         Timers.tic("load a matrix")
-        KrylovInterface._cusp.load_a_matrix(w, h, row_offsets, len(row_offsets), col_inds, len(col_inds), values,
-                                            len(values))
+        KrylovInterface._cusp.load_a_matrix(w, h, indptr, len(indptr), indices, len(indices), \
+                                            matrix.data, len(matrix.data))
         Timers.toc("load a matrix")
 
     @staticmethod
@@ -277,9 +297,17 @@ class KrylovInterface(object):
         assert matrix.dtype == KrylovInterface.float_type, "expected matrix dtype {}".format(
             type(KrylovInterface.float_type))
 
-        values = matrix.data
-        row_offsets = matrix.indptr
-        col_inds = matrix.indices
+        # we must pass a long* to the c++ code
+        if matrix.indices.dtype == np.dtype('int64'):
+            indices = matrix.indices
+        else:
+            indices = np.array(matrix.indices, dtype=np.dtype('int64'))
+
+        # we must pass a long* to the c++ code
+        if matrix.indptr.dtype == np.dtype('int64'):
+            indptr = matrix.indices
+        else:
+            indptr = np.array(matrix.indptr, dtype=np.dtype('int64'))
 
         h, w = matrix.shape
         assert w == KrylovInterface._cusp.n, "key dir matrix width ({}) should equal number of dimensions ({})".format(
@@ -288,8 +316,8 @@ class KrylovInterface(object):
             h, KrylovInterface._cusp.k)
 
         Timers.tic("load key dir matrix")
-        KrylovInterface._cusp.load_key_dir_matrix(w, h, row_offsets, len(row_offsets), col_inds, len(col_inds),
-                                                  values, len(values))
+        KrylovInterface._cusp.load_key_dir_matrix(w, h, indptr, len(indptr), indices, len(indices),
+                                                  matrix.data, len(matrix.data))
         Timers.toc("load key dir matrix")
 
     @staticmethod
@@ -320,72 +348,40 @@ class KrylovInterface(object):
 
         return result
 
-
-!!! HERE !!! Remove arnoldi_unit and arnoldi_vec... replace by a single function which takes in a csr_vector
-!!! then, check if test_arnoldi still passes !!!
-!!! then do the same thing for lanczos !!!
     @staticmethod
-    def arnoldi_unit(dim):
+    def arnoldi(vec):
         '''
-        Run the arnoldi algorithm in for a single orthonormal vector
+        Run the arnoldi algorithm starting at the passed in (sparse) vector
         Returns a tuple: h-matrix and projected-v matrix
 
         h_matrix is of size (arnoldi_iter * (arnoldi_iter + 1))
-        projected_v_matrix is of size (init_vecs) x key_dirs
+        projected_v_matrix is of size init_vecs * key_dirs
         '''
 
         KrylovInterface._init_static()
 
-        # allocate results
         k = KrylovInterface._cusp.k
         i = KrylovInterface._cusp.i
+        n = KrylovInterface._cusp.n
 
+        assert isinstance(vec, csr_matrix), "Expected init vector as csr_matrix, got {}".format(type(vec))
+        assert vec.shape == (1, n), "Expected 1x{} init vec, got shape={}".format(n, vec.shape)
+
+        # allocate results
         result_h = np.zeros((i * (i + 1)), dtype=KrylovInterface.float_type)
         result_pv = np.zeros(((i+1) * k), dtype=KrylovInterface.float_type)
 
-        Timers.tic('arnoldi')
-        KrylovInterface._cusp.arnoldi_unit(dim, result_h, len(result_h), result_pv, len(result_pv))
-        Timers.toc('arnoldi')
+        scaled_vec, norm = normalize_sparse(vec)
 
-        result_h.shape = (i, i+1)
-        result_pv.shape = (i+1, k)
-
-        result_h = result_h.transpose()
-        result_pv = result_pv.transpose()
-
-        return result_h, result_pv
-
-    @staticmethod
-    def arnoldi_vec(vec):
-        '''
-        Run the arnoldi algorithm starting at the passed in vector
-        Returns a tuple: h-matrix and projected-v matrix
-
-        h_matrix is of size (arnoldi_iter * (arnoldi_iter + 1))
-        projected_v_matrix is of size init_vecs x key_dirs
-        '''
-
-        assert isinstance(vec, np.ndarray) and vec.dtype == KrylovInterface.float_type
-
-        KrylovInterface._init_static()
-
-        # allocate results
-        k = KrylovInterface._cusp.k
-        i = KrylovInterface._cusp.i
-
-        result_h = np.zeros((i * (i + 1)), dtype=KrylovInterface.float_type)
-        result_pv = np.zeros(((i+1) * k), dtype=KrylovInterface.float_type)
-
-        # normalize vec
-        norm = np.linalg.norm(vec)
-        assert not math.isinf(norm) and not math.isnan(norm) and norm > 1e-9, "bad initial vec norm: {}".format(norm)
-
-        normalized_vec = vec / norm
-        normalized_vec.shape = (len(normalized_vec), )
+        # we must pass a long* to the c++ code
+        if scaled_vec.indices.dtype == np.dtype('int64'):
+            indices = scaled_vec.indices
+        else:
+            indices = np.array(scaled_vec.indices, dtype=np.dtype('int64'))
 
         Timers.tic('arnoldi')
-        KrylovInterface._cusp.arnoldi_vec(normalized_vec, len(normalized_vec), result_h, len(result_h), \
-                                          result_pv, len(result_pv))
+        KrylovInterface._cusp.arnoldi(scaled_vec.data, indices, len(scaled_vec.data), result_h, \
+                                      len(result_h), result_pv, len(result_pv))
         Timers.toc('arnoldi')
 
         result_h.shape = (i, i+1)
@@ -396,5 +392,61 @@ class KrylovInterface(object):
 
         # multiply the projection by the initial vec norm to retrieve the correct answer
         result_pv *= norm
+
+        return result_h, result_pv
+
+    @staticmethod
+    def lanczos(vec):
+        '''
+        Run the lanczos algorithm starting at the passed in (sparse) vector
+        Returns a tuple: h-matrix and projected-v matrix
+
+        h matrix is returned as a csr matrix of shape arnoldi_iter x (arnoldi_iter + 1)
+        projected_v_matrix is of size init_vecs * key_dirs
+        '''
+
+        KrylovInterface._init_static()
+
+        k = KrylovInterface._cusp.k
+        i = KrylovInterface._cusp.i
+        n = KrylovInterface._cusp.n
+
+        assert isinstance(vec, csr_matrix), "Expected init vector as csr_matrix, got {}".format(type(vec))
+        assert vec.shape == (1, n), "Expected 1x{} init vec, got shape={}".format(n, vec.shape)
+
+        # allocate results
+        data_len = 3*i+2
+        result_h_data = np.zeros(data_len, dtype=KrylovInterface.float_type)
+        result_h_indices = np.zeros(data_len, dtype=np.dtype('int64'))
+        result_h_indptr = np.zeros(i+1, dtype=np.dtype('int64'))
+
+        result_pv = np.zeros(((i+1) * k), dtype=KrylovInterface.float_type)
+
+        scaled_vec, norm = normalize_sparse(vec)
+
+        # we must pass a long* to the c++ code
+        if scaled_vec.indices.dtype == np.dtype('int64'):
+            indices = scaled_vec.indices
+        else:
+            indices = np.array(scaled_vec.indices, dtype=np.dtype('int64'))
+
+        Timers.tic('lanczos')
+        KrylovInterface._cusp.lanczos(scaled_vec.data, indices, len(scaled_vec.data), 
+            result_h_data, len(result_h_data_, result_h_indices, len(result_h_indices), 
+            result_h_indptr, len(result_h_indptr), result_pv, len(result_pv))
+        Timers.toc('lanczos')
+
+        Timers.tic('lanczos post processing')
+        # h is easier to construct as a csc matrix, but we want to use it as a csr_matrix
+        h_csc = csc_matrix((result_h_data, result_h_indices, result_h_indptr), shape=(iterations + 1, iterations))
+        h_csr = csr_matrix(h_csc)
+
+        result_pv.shape = (i+1, k)
+
+        result_pv = result_pv.transpose()
+
+        # multiply the projection by the initial vec norm to retrieve the correct answer
+        result_pv *= norm
+        Timers.toc('lanczos post processing')
 
         return result_h, result_pv

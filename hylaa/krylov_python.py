@@ -5,12 +5,28 @@ August 2017
 Simulating a linear system x' = Ax using krylov supspace methods (arnoldi and lanczos)
 '''
 
+import math
 import time
 import numpy as np
 from scipy.sparse import csr_matrix, csc_matrix
 from scipy.sparse.linalg import norm as sparse_norm
 
 from hylaa.timerutil import Timers
+
+def normalize_sparse(vec):
+    'normalize a sparse vector (passed in as a 1xn csr_matrix), and return a tuple: scaled_vec, original_norm'
+
+    assert isinstance(vec, csr_matrix) and vec.shape[0] == 1
+
+    norm = sparse_norm(vec)
+
+    assert not math.isinf(norm) and not math.isnan(norm) and norm > 1e-9, \
+        "bad initial vec norm in normalize_sparse: {}".format(norm)
+
+    # divide in place
+    rv = vec / norm
+
+    return rv, norm
 
 def python_arnoldi(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9):
     '''run the arnoldi algorithm
@@ -24,7 +40,8 @@ def python_arnoldi(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9):
     assert isinstance(a_mat, csr_matrix), "a_mat should be a csr_matrix"
     assert isinstance(init_vec, csr_matrix), "init_vec should be csr_matrix"
     assert init_vec.shape[0] == 1
-    assert abs(sparse_norm(init_vec) - 1.0) < tol, "init vec norm should be 1.0"
+
+    scaled_vec, init_norm = normalize_sparse(init_vec)
 
     dims = a_mat.shape[0]
 
@@ -32,8 +49,8 @@ def python_arnoldi(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9):
     h_mat = np.zeros((iterations + 1, iterations))
 
     # sparse assignment of initial vector
-    for i in xrange(len(init_vec.data)):
-        v_mat[0, init_vec.indices[i]] = init_vec.data[i]
+    for i in xrange(len(scaled_vec.data)):
+        v_mat[0, scaled_vec.indices[i]] = scaled_vec.data[i]
 
     for cur_it in xrange(1, iterations + 1):
         cur_vec = a_mat * v_mat[cur_it - 1]
@@ -56,6 +73,8 @@ def python_arnoldi(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9):
 
     pv_mat = key_dir_mat * v_mat.transpose()
 
+    pv_mat *= init_norm
+
     Timers.toc('python_arnoldi')
 
     return pv_mat, h_mat
@@ -65,7 +84,7 @@ def python_lanczos(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, compat=Fa
 
     This will project each of the v vectors using the key directions matrix, to make pv_mat, a k x n matrix
 
-    further, h_mat is returned as a csc_matrix
+    further, h_mat is returned as a csr_matrix
 
     this returns pv_mat, h_mat
     '''
@@ -76,7 +95,6 @@ def python_lanczos(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, compat=Fa
     assert isinstance(key_dir_mat, csr_matrix), "key_dir_mat should be a csr_matrix"
     assert isinstance(init_vec, csr_matrix), "init_vec should be csr_matrix"
     assert init_vec.shape[0] == 1
-    assert abs(sparse_norm(init_vec) - 1.0) < tol, "init vec norm should be 1.0"
     assert a_mat.shape[0] == a_mat.shape[1], "a_mat should be square"
     assert key_dir_mat.shape[1] == a_mat.shape[0], "key_dir_mat width should equal number of dims"
 
@@ -88,10 +106,12 @@ def python_lanczos(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, compat=Fa
     h_inds = []
     h_indptrs = [0]
 
-    # sparse assignment of initial vector
-    pv_mat[0, :] = (key_dir_mat * init_vec.T).toarray()[:, 0]
+    scaled_vec, init_norm = normalize_sparse(init_vec)
 
-    cur_vec = init_vec.toarray()
+    # sparse assignment of initial vector
+    pv_mat[0, :] = (key_dir_mat * scaled_vec.T).toarray()[:, 0]
+
+    cur_vec = scaled_vec.toarray()
     prev_vec = None
     prev_prev_vec = None
     prev_norm = None
@@ -199,6 +219,9 @@ def python_lanczos(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, compat=Fa
             mflops = ops[i] / secs[i] / 1e6
 
             print "{}: {} MOPS in {} ms ({} MFLOPS)".format(names[i], ops[i] / 1e6, secs[i] * 1000, mflops)
+
+    # scale back
+    pv_mat *= init_norm
 
     # h is easier to construct as a csc matrix, but we want to use it as a csr_matrix
     h_csc = csc_matrix((h_data, h_inds, h_indptrs), shape=(iterations + 1, iterations))

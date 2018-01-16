@@ -69,7 +69,7 @@ void myDot(cublasHandle_t &cublasHandle, unsigned long size,
 void myDot(cublasHandle_t &cublasHandle, unsigned long size,
            cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view &a,
            cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view &b,
-           cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view &resultView, int resultIndex)
+           cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view &resultView, long resultIndex)
 {
     double *x = thrust::raw_pointer_cast(&a[0]);
     double *y = thrust::raw_pointer_cast(&b[0]);
@@ -85,7 +85,7 @@ void myAxpy(cublasHandle_t &cublasHandle,
             cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view &numsView,
             cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view &a,
             cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view &resView,
-            cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view &hView, int hIndex)
+            cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view &hView, long hIndex)
 {
     // cpu implementation
     cusp::blas::axpy(a, resView, -hView[hIndex]);
@@ -97,12 +97,12 @@ void myAxpy(cublasHandle_t &cublasHandle,
             cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view &numsView,
             cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view &a,
             cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view &resView,
-            cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view &hView, int hIndex)
+            cusp::array1d<FLOAT_TYPE, cusp::device_memory>::view &hView, long hIndex)
 {
     // gpu implementation
     // cusp::blas::axpy(a, b, -hView[hIndex]);
 
-    int count = a.size();
+    long count = a.size();
 
     double *minusOne = thrust::raw_pointer_cast(&numsView[0]);
     double *zero = thrust::raw_pointer_cast(&numsView[1]);
@@ -136,14 +136,14 @@ class CuspData
     typedef cusp::array1d<FLOAT_TYPE, cusp::host_memory> HostFloatArray1d;
     typedef typename HostFloatArray1d::view HostFloatArray1dView;
 
-    typedef cusp::array1d<int, cusp::host_memory> HostIntArray1d;
-    typedef typename HostIntArray1d::view HostIntArray1dView;
+    typedef cusp::array1d<long, cusp::host_memory> HostLongArray1d;
+    typedef typename HostLongArray1d::view HostLongArray1dView;
 
-    typedef cusp::coo_matrix<int, FLOAT_TYPE, MEMORY_TYPE> CooMatrix;
+    typedef cusp::coo_matrix<long, FLOAT_TYPE, MEMORY_TYPE> CooMatrix;
 
-    typedef cusp::hyb_matrix<int, FLOAT_TYPE, MEMORY_TYPE> HybMatrix;
+    typedef cusp::hyb_matrix<long, FLOAT_TYPE, MEMORY_TYPE> HybMatrix;
 
-    typedef cusp::csr_matrix<int, FLOAT_TYPE, cusp::host_memory> HostCsrMatrix;
+    typedef cusp::csr_matrix<long, FLOAT_TYPE, cusp::host_memory> HostCsrMatrix;
     typedef typename HostCsrMatrix::view HostCsrMatrixView;
 
    private:
@@ -259,9 +259,9 @@ class CuspData
     }
 
     // load A matrix, passed in as a csr matrix
-    void loadAMatrix(unsigned long w, unsigned long h, int *rowOffsets, unsigned long rowOffsetsLen,
-                     int *colInds, unsigned long colIndsLen, FLOAT_TYPE *values,
-                     unsigned long valuesLen)
+    void loadAMatrix(unsigned long w, unsigned long h, long *rowOffsets,
+                     unsigned long rowOffsetsLen, long *colInds, unsigned long colIndsLen,
+                     FLOAT_TYPE *values, unsigned long valuesLen)
     {
         if (_n == 0)
             error("loadKeyDirMatrix() called before preallocate() (_n==0)\n");
@@ -290,8 +290,8 @@ class CuspData
 
         aMatrixNonzeros = valuesLen;
 
-        HostIntArray1dView rowOffsetsView(rowOffsets, rowOffsets + rowOffsetsLen);
-        HostIntArray1dView colIndsView(colInds, colInds + colIndsLen);
+        HostLongArray1dView rowOffsetsView(rowOffsets, rowOffsets + rowOffsetsLen);
+        HostLongArray1dView colIndsView(colInds, colInds + colIndsLen);
         HostFloatArray1dView valuesView(values, values + colIndsLen);
 
         HostCsrMatrixView view(_n, _n, valuesLen, rowOffsetsView, colIndsView, valuesView);
@@ -335,8 +335,8 @@ class CuspData
     }
 
     // load key dir matrix, passed in as a csr matrix
-    void loadKeyDirMatrix(unsigned long w, unsigned long h, int *rowOffsets,
-                          unsigned long rowOffsetsLen, int *colInds, unsigned long colIndsLen,
+    void loadKeyDirMatrix(unsigned long w, unsigned long h, long *rowOffsets,
+                          unsigned long rowOffsetsLen, long *colInds, unsigned long colIndsLen,
                           FLOAT_TYPE *values, unsigned long valuesLen)
     {
         if (_n == 0)
@@ -369,8 +369,8 @@ class CuspData
 
         keyDirMatrixNonzeros = valuesLen;
 
-        HostIntArray1dView rowOffsetsView(rowOffsets, rowOffsets + rowOffsetsLen);
-        HostIntArray1dView colIndsView(colInds, colInds + colIndsLen);
+        HostLongArray1dView rowOffsetsView(rowOffsets, rowOffsets + rowOffsetsLen);
+        HostLongArray1dView colIndsView(colInds, colInds + colIndsLen);
         HostFloatArray1dView valuesView(values, values + colIndsLen);
 
         HostCsrMatrixView view(h, w, valuesLen, rowOffsetsView, colIndsView, valuesView);
@@ -629,64 +629,50 @@ class CuspData
         util.clearTimers();
     }
 
-    // initialize with a passed-in vector
-    void initVec(FLOAT_TYPE *vec, unsigned long len)
+    // initialize with a passed-in sparse vector (similar to csr_matrix)
+    void arnoldiInitSparseVec(FLOAT_TYPE *data, long *indices, unsigned long len)
     {
-        util.tic("init arnoldi");
-
-        if (len != _n)
-            error("initArnoldi called with bad len = %lu (_n = %lu)\n", len, _n);
-
         // initialize with zeros
         cusp::blas::fill(*vMatrix, 0.0);
         cusp::blas::fill(*hMatrix, 0.0);
         cusp::blas::fill(*vProjected, 0.0);
 
-        HostFloatArray1dView vecView(vec, vec + len);
         Array1dView vMatrixView = vMatrix->subarray(0, _n);
-        cusp::blas::copy(vecView, vMatrixView);
+        FLOAT_TYPE normSq = 0.0;
+
+        // sparse assignment and norm computation
+        for (unsigned long i = 0; i < len; ++i)
+        {
+            long index = indices[i];
+            double d = data[i];
+
+            if (index < 0 || index >= _n)
+                error("arnoldiInitSparseVec called with bad index: %lu (_n = %lu)\n", index, _n);
+
+            normSq += d * d;
+            vMatrixView[index] = d;
+        }
 
         // sanity check that norm of vec is 1
-        FLOAT_TYPE magnitude = cusp::blas::nrm2(vMatrixView);
         FLOAT_TYPE tol = 1e-6;
 
-        if (magnitude < 1.0 - tol || magnitude > 1.0 + tol)
-            error("initial arnoldi vec must be normalized first (magnitude was %f)", magnitude);
-
-        util.toc("init arnoldi");
+        if (normSq < 1.0 - tol || normSq > 1.0 + tol)
+            error("initial arnoldi vec must be normalized first (normSq was %f)", normSq);
     }
 
-    // initialize with a unit-vector in the given dimention
-    void initUnit(unsigned long dim)
-    {
-        util.tic("init arnoldi");
-
-        if (dim > _n)
-            error("initParallelArnoldiV called with single dim=%lu, but _n=%lu", dim, _n);
-
-        // initialize with zeros
-        cusp::blas::fill(*vMatrix, 0.0);
-        cusp::blas::fill(*hMatrix, 0.0);
-        cusp::blas::fill(*vProjected, 0.0);
-
-        // put a 1.0 in the correct spot
-        (*vMatrix)[dim] = 1.0;
-
-        util.toc("init arnoldi");
-    }
-
-    // copy memory, run arnoldi, project results, copy memory back (everything but init)
-    void compute(FLOAT_TYPE *resultH, unsigned long sizeResultH, FLOAT_TYPE *resultPV,
-                 unsigned long sizeResultPV)
+    // copy memory, run arnoldi, project results, copy memory back
+    void copyArnoldiCopy(FLOAT_TYPE *initData, long *initIndices, unsigned long initLen,
+                         FLOAT_TYPE *resultH, unsigned long sizeResultH, FLOAT_TYPE *resultPV,
+                         unsigned long sizeResultPV)
     {
         if (aMatrix == 0)
-            error("arnoldiParallel() called before loadAMatrix()\n");
+            error("arnoldi() called before loadAMatrix()\n");
 
         if (keyDirMatrix == 0)
-            error("arnoldiParallel() called before loadKeyDirMatrix()\n");
+            error("arnoldi() called before loadKeyDirMatrix()\n");
 
         if (_i == 0)
-            error("arnoldiParallel() called before preallocate() (_i==0)\n");
+            error("arnoldi() called before preallocate() (_i==0)\n");
 
         // check expected results sizes
         unsigned long expectedH = _i * (_i + 1);
@@ -702,7 +688,9 @@ class CuspData
                 "%lu, expected %lu.",
                 _i, _k, sizeResultPV, expectedPV);
 
-        util.tic("compute");
+        util.tic("arnoldiInitSparseVec()");
+        arnoldiInitSparseVec(initData, initIndices, initLen);
+        util.toc("arnoldiInitSparseVec()");
 
         util.tic("arnoldi()");
         arnoldi(_i);
@@ -725,8 +713,64 @@ class CuspData
         HostFloatArray1dView hostPVView(resultPV, resultPV + expectedPV);
         cusp::blas::copy(*vProjected, hostPVView);  // hostPVView = *vProjected
         util.toc("copying V-projected matrix to np.ndarray");
+    }
 
-        util.toc("compute");
+    // copy memory, run lanczos, project results, copy memory back
+    void copyLanczosCopy(FLOAT_TYPE *initData, long *initIndices, unsigned long initLen,
+                         FLOAT_TYPE *resultCscDataH, unsigned long sizeCscDataH,
+                         long *resultCscIndptrH, unsigned long sizeCscIndptrH,
+                         long *resultCscIndicesH, unsigned long sizeCscIndicesH,
+                         FLOAT_TYPE *resultPV, unsigned long sizeResultPV)
+    {
+        if (aMatrix == 0)
+            error("lanczos() called before loadAMatrix()\n");
+
+        if (keyDirMatrix == 0)
+            error("lanczos() called before loadKeyDirMatrix()\n");
+
+        if (_i == 0)
+            error("lanczos() called before preallocate() (_i==0)\n");
+
+        // check expected results sizes
+        WORKING HERE !!!UPDATE TO CHECK SPARSE H CONSTRAINTS unsigned long expectedH =
+            _i * (_i + 1);
+        unsigned long expectedPV = (_i + 1) * _k;
+
+        if (sizeResultH != expectedH)
+            error("Wrong size for resultH with i = %lu. Got %lu, expected %lu.", _i, sizeResultH,
+                  expectedH);
+
+        if (sizeResultPV != expectedPV)
+            error(
+                "Wrong size for resultPV with (i, k) = (%lu, %lu, %lu). Got "
+                "%lu, expected %lu.",
+                _i, _k, sizeResultPV, expectedPV);
+
+        util.tic("arnoldiInitSparseVec()");
+        arnoldiInitSparseVec(initData, initIndices, initLen);
+        util.toc("arnoldiInitSparseVec()");
+
+        util.tic("arnoldi()");
+        arnoldi(_i);
+        util.toc("arnoldi()");
+
+        // project v_matrix onto keyDirMatrix
+        util.tic("projectV()");
+        projectV(_i);
+        util.toc("projectV()");
+
+        // copying H matrix to np.ndarray
+        util.tic("copying H matrix to np.ndarray");
+        HostFloatArray1dView hostHView(resultH, resultH + expectedH);
+        cusp::blas::copy(*hMatrix, hostHView);  // hostHView = *hMatrix
+        util.toc("copying H matrix to np.ndarray");
+
+        // copy vProjected to np.ndarray
+
+        util.tic("copying V-projected matrix to np.ndarray");
+        HostFloatArray1dView hostPVView(resultPV, resultPV + expectedPV);
+        cusp::blas::copy(*vProjected, hostPVView);  // hostPVView = *vProjected
+        util.toc("copying V-projected matrix to np.ndarray");
     }
 };
 
@@ -757,16 +801,16 @@ void setPrintOutputCpu(unsigned long enabled)
 }
 
 // as csr matrix
-void loadAMatrixCpu(unsigned long w, unsigned long h, int *rowOffsets, unsigned long rowOffsetsLen,
-                    int *colInds, unsigned long colIndsLen, FLOAT_TYPE *values,
+void loadAMatrixCpu(unsigned long w, unsigned long h, long *rowOffsets, unsigned long rowOffsetsLen,
+                    long *colInds, unsigned long colIndsLen, FLOAT_TYPE *values,
                     unsigned long valuesLen)
 {
     cuspDataCpu.loadAMatrix(w, h, rowOffsets, rowOffsetsLen, colInds, colIndsLen, values,
                             valuesLen);
 }
 
-void loadKeyDirMatrixCpu(unsigned long w, unsigned long h, int *rowOffsets,
-                         unsigned long rowOffsetsLen, int *colInds, unsigned long colIndsLen,
+void loadKeyDirMatrixCpu(unsigned long w, unsigned long h, long *rowOffsets,
+                         unsigned long rowOffsetsLen, long *colInds, unsigned long colIndsLen,
                          FLOAT_TYPE *values, unsigned long valuesLen)
 {
     cuspDataCpu.loadKeyDirMatrix(w, h, rowOffsets, rowOffsetsLen, colInds, colIndsLen, values,
@@ -784,18 +828,21 @@ unsigned long preallocateMemoryCpu(unsigned long arnoldiIt, unsigned long dims,
     return cuspDataCpu.preallocateMemory(arnoldiIt, dims, keyDirMatSize) ? 1 : 0;
 }
 
-void arnoldiUnitCpu(unsigned long dim, FLOAT_TYPE *resultH, unsigned long sizeResultH,
-                    FLOAT_TYPE *resultPV, unsigned long sizeResultPV)
+void arnoldiCpu(FLOAT_TYPE *initData, long *initIndices, unsigned long initLen, FLOAT_TYPE *resultH,
+                unsigned long sizeResultH, FLOAT_TYPE *resultPV, unsigned long sizeResultPV)
 {
-    cuspDataCpu.initUnit(dim);
-    cuspDataCpu.compute(resultH, sizeResultH, resultPV, sizeResultPV);
+    cuspDataCpu.copyArnoldiCopy(initData, initIndices, initLen, resultH, sizeResultH, resultPV,
+                                sizeResultPV);
 }
 
-void arnoldiVecCpu(FLOAT_TYPE *vec, unsigned long vecLen, FLOAT_TYPE *resultH,
-                   unsigned long sizeResultH, FLOAT_TYPE *resultPV, unsigned long sizeResultPV)
+void lanczosCpu(FLOAT_TYPE *initData, long *initIndices, unsigned long initLen,
+                FLOAT_TYPE *resultCscDataH, unsigned long sizeCscDataH, long *resultCscIndptrH,
+                unsigned long sizeCscIndptrH, long *resultCscIndicesH,
+                unsigned long sizeCscIndicesH, FLOAT_TYPE *resultPV, unsigned long sizeResultPV)
 {
-    cuspDataCpu.initVec(vec, vecLen);
-    cuspDataCpu.compute(resultH, sizeResultH, resultPV, sizeResultPV);
+    cuspDataCpu.copyLanczosCopy(initData, initIndices, initLen, resultCscDataH, sizeCscDataH,
+                                resultCscIndptrH, sizeCscIndptrH, resultCscIndicesH,
+                                sizeCscIndicesH, resultPV, sizeResultPV);
 }
 
 void getProfilingDataCpu(const char *name, FLOAT_TYPE *resultVec, unsigned long resultVecLen)
@@ -823,8 +870,8 @@ void setPrintOutputGpu(unsigned long enabled)
 }
 
 // as csr matrix
-void loadAMatrixGpu(unsigned long w, unsigned long h, int *rowOffsets, unsigned long rowOffsetsLen,
-                    int *colInds, unsigned long colIndsLen, FLOAT_TYPE *values,
+void loadAMatrixGpu(unsigned long w, unsigned long h, long *rowOffsets, unsigned long rowOffsetsLen,
+                    long *colInds, unsigned long colIndsLen, FLOAT_TYPE *values,
                     unsigned long valuesLen)
 {
     cuspDataGpu.loadAMatrix(w, h, rowOffsets, rowOffsetsLen, colInds, colIndsLen, values,
@@ -832,8 +879,8 @@ void loadAMatrixGpu(unsigned long w, unsigned long h, int *rowOffsets, unsigned 
 }
 
 // as csr matrix
-void loadKeyDirMatrixGpu(unsigned long w, unsigned long h, int *rowOffsets,
-                         unsigned long rowOffsetsLen, int *colInds, unsigned long colIndsLen,
+void loadKeyDirMatrixGpu(unsigned long w, unsigned long h, long *rowOffsets,
+                         unsigned long rowOffsetsLen, long *colInds, unsigned long colIndsLen,
                          FLOAT_TYPE *values, unsigned long valuesLen)
 {
     cuspDataGpu.loadKeyDirMatrix(w, h, rowOffsets, rowOffsetsLen, colInds, colIndsLen, values,
@@ -851,18 +898,21 @@ unsigned long preallocateMemoryGpu(unsigned long arnoldiIterations, unsigned lon
     return cuspDataGpu.preallocateMemory(arnoldiIterations, dims, keyDirMatSize) ? 1 : 0;
 }
 
-void arnoldiUnitGpu(unsigned long dim, FLOAT_TYPE *resultH, unsigned long sizeResultH,
-                    FLOAT_TYPE *resultPV, unsigned long sizeResultPV)
+void arnoldiGpu(FLOAT_TYPE *initData, long *initIndices, unsigned long initLen, FLOAT_TYPE *resultH,
+                unsigned long sizeResultH, FLOAT_TYPE *resultPV, unsigned long sizeResultPV)
 {
-    cuspDataGpu.initUnit(dim);
-    cuspDataGpu.compute(resultH, sizeResultH, resultPV, sizeResultPV);
+    cuspDataGpu.copyArnoldiCopy(initData, initIndices, initLen, resultH, sizeResultH, resultPV,
+                                sizeResultPV);
 }
 
-void arnoldiVecGpu(FLOAT_TYPE *vec, unsigned long vecLen, FLOAT_TYPE *resultH,
-                   unsigned long sizeResultH, FLOAT_TYPE *resultPV, unsigned long sizeResultPV)
+void lanczosGpu(FLOAT_TYPE *initData, long *initIndices, unsigned long initLen,
+                FLOAT_TYPE *resultCscDataH, unsigned long sizeCscDataH, long *resultCscIndptrH,
+                unsigned long sizeCscIndptrH, long *resultCscIndicesH,
+                unsigned long sizeCscIndicesH, FLOAT_TYPE *resultPV, unsigned long sizeResultPV)
 {
-    cuspDataGpu.initVec(vec, vecLen);
-    cuspDataGpu.compute(resultH, sizeResultH, resultPV, sizeResultPV);
+    cuspDataGpu.copyLanczosCopy(initData, initIndices, initLen, resultCscDataH, sizeCscDataH,
+                                resultCscIndptrH, sizeCscIndptrH, resultCscIndicesH,
+                                sizeCscIndicesH, resultPV, sizeResultPV);
 }
 
 void getProfilingDataGpu(const char *name, FLOAT_TYPE *resultVec, unsigned long resultVecLen)
