@@ -130,14 +130,13 @@ class CuspData
     typedef cusp::array1d<FLOAT_TYPE, MEMORY_TYPE> Array1d;
     typedef typename Array1d::view Array1dView;
 
-    typedef cusp::array2d<FLOAT_TYPE, MEMORY_TYPE> Array2d;
-    typedef typename Array2d::view Array2dView;
-
     typedef cusp::array1d<FLOAT_TYPE, cusp::host_memory> HostFloatArray1d;
     typedef typename HostFloatArray1d::view HostFloatArray1dView;
 
     typedef cusp::array1d<long, cusp::host_memory> HostLongArray1d;
     typedef typename HostLongArray1d::view HostLongArray1dView;
+
+    typedef cusp::array1d<long, MEMORY_TYPE> LongArray1d;
 
     typedef cusp::coo_matrix<long, FLOAT_TYPE, MEMORY_TYPE> CooMatrix;
 
@@ -150,8 +149,17 @@ class CuspData
     HybMatrix *aMatrix;
     HybMatrix *keyDirMatrix;
 
-    Array1d *vMatrix;     // (i+1) * n
-    Array1d *hMatrix;     // (i+1) * i
+    // used with arnoldi and not lanczos
+    Array1d *vMatrix;  // (i+1) * n
+    Array1d *hMatrix;  // (i+1) * i
+
+    // used with lanczos and not arnoldi
+    Array1d *hCscData;
+    LongArray1d *hCscIndptr;
+    LongArray1d *hCscIndices;
+    Array1d *prevThreeVecs;  // 3 * n, storage for lanczos three-term recurrence relation
+
+    // usd with both arnoldi and lanczos
     Array1d *vProjected;  // k * (i+1)
 
     unsigned long _n;  // number of dimensions in the system
@@ -178,6 +186,12 @@ class CuspData
 
         vMatrix = 0;
         hMatrix = 0;
+
+        hCscData = 0;
+        hCscIndptr = 0;
+        hCscIndices = 0;
+        prevThreeVecs = 0;
+
         vProjected = 0;
 
         cuspNums = 0;
@@ -216,6 +230,30 @@ class CuspData
         {
             delete hMatrix;
             hMatrix = 0;
+        }
+
+        if (hCscData != 0)
+        {
+            delete hCscData;
+            hCscData = 0;
+        }
+
+        if (hCscIndptr != 0)
+        {
+            delete hCscIndptr;
+            hCscIndptr = 0;
+        }
+
+        if (hCscIndices != 0)
+        {
+            delete hCscIndices;
+            hCscIndices = 0;
+        }
+
+        if (prevThreeVecs != 0)
+        {
+            delete prevThreeVecs;
+            prevThreeVecs = 0;
         }
 
         if (vProjected != 0)
@@ -401,7 +439,8 @@ class CuspData
 
     // frees memory if it was previously allocated, returns false if memory error
     // occurs
-    bool preallocateMemory(unsigned long arnoldiIt, unsigned long dims, unsigned long keyDirMatSize)
+    bool preallocateMemory(unsigned long arnoldiIt, unsigned long dims, unsigned long keyDirMatSize,
+                           bool isLanczos)
     {
         bool success = true;
 
@@ -443,6 +482,30 @@ class CuspData
             vMatrix = 0;
         }
 
+        if (hCscData != 0)
+        {
+            delete hCscData;
+            hCscData = 0;
+        }
+
+        if (hCscIndptr != 0)
+        {
+            delete hCscIndptr;
+            hCscIndptr = 0;
+        }
+
+        if (hCscIndices != 0)
+        {
+            delete hCscIndices;
+            hCscIndices = 0;
+        }
+
+        if (prevThreeVecs != 0)
+        {
+            delete prevThreeVecs;
+            prevThreeVecs = 0;
+        }
+
         if (vProjected != 0)
         {
             delete vProjected;
@@ -451,28 +514,6 @@ class CuspData
 
         try
         {
-            // preallocate hMatrix, numParInit * iterations * iterations
-            unsigned long hMatrixSize = _i * (_i + 1);
-
-            if (useProfiling && printOutput)
-                printf(
-                    "Trying to allocate %.2f MB for hMatrix (remaining memory %.2f "
-                    "MB)...\n",
-                    sizeof(FLOAT_TYPE) * hMatrixSize / 1024.0 / 1024.0, getFreeMemoryMb());
-
-            hMatrix = new Array1d(hMatrixSize, 0);
-
-            // preallocate vMatrix, width = dims * iterations, height = numParInit
-            unsigned long vMatrixSize = _n * (_i + 1);
-
-            if (useProfiling && printOutput)
-                printf(
-                    "Trying to allocate %.2f MB for vMatrix (remaining memory %.2f "
-                    "MB)...\n",
-                    sizeof(FLOAT_TYPE) * vMatrixSize / 1024.0 / 1024.0, getFreeMemoryMb());
-
-            vMatrix = new Array1d(vMatrixSize, 0);
-
             // preallocate vProjected
             unsigned long vProjectedSize = _k * (_i + 1);
 
@@ -483,6 +524,70 @@ class CuspData
                     sizeof(FLOAT_TYPE) * vProjectedSize / 1024.0 / 1024.0, getFreeMemoryMb());
 
             vProjected = new Array1d(vProjectedSize, 0);
+
+            if (!isLanczos)
+            {
+                // preallocate hMatrix, numParInit * iterations * iterations
+                unsigned long hMatrixSize = _i * (_i + 1);
+
+                if (useProfiling && printOutput)
+                    printf(
+                        "Trying to allocate %.2f MB for hMatrix (remaining memory %.2f "
+                        "MB)...\n",
+                        sizeof(FLOAT_TYPE) * hMatrixSize / 1024.0 / 1024.0, getFreeMemoryMb());
+
+                hMatrix = new Array1d(hMatrixSize, 0);
+
+                // preallocate vMatrix, width = dims * iterations, height = numParInit
+                unsigned long vMatrixSize = _n * (_i + 1);
+
+                if (useProfiling && printOutput)
+                    printf(
+                        "Trying to allocate %.2f MB for vMatrix (remaining memory %.2f "
+                        "MB)...\n",
+                        sizeof(FLOAT_TYPE) * vMatrixSize / 1024.0 / 1024.0, getFreeMemoryMb());
+
+                vMatrix = new Array1d(vMatrixSize, 0);
+            }
+            else
+            {
+                // lanczos memory allocation
+                unsigned long dataSize = 3 * _i - 1;
+                unsigned long indptrSize = _i + 1;
+
+                if (useProfiling && printOutput)
+                    printf(
+                        "Trying to allocate %.2f MB for hCscData (remaining memory %.2f "
+                        "MB)...\n",
+                        sizeof(FLOAT_TYPE) * dataSize / 1024.0 / 1024.0, getFreeMemoryMb());
+
+                hCscData = new Array1d(dataSize, 0);
+
+                if (useProfiling && printOutput)
+                    printf(
+                        "Trying to allocate %.2f MB for hCscIndptr (remaining memory %.2f "
+                        "MB)...\n",
+                        sizeof(long) * indptrSize / 1024.0 / 1024.0, getFreeMemoryMb());
+
+                hCscIndptr = new LongArray1d(indptrSize, 0);
+
+                if (useProfiling && printOutput)
+                    printf(
+                        "Trying to allocate %.2f MB for hCscIndices (remaining memory %.2f "
+                        "MB)...\n",
+                        sizeof(long) * dataSize / 1024.0 / 1024.0, getFreeMemoryMb());
+
+                hCscIndices = new LongArray1d(dataSize, 0);
+
+                // 3 * n for three vecs
+                if (useProfiling && printOutput)
+                    printf(
+                        "Trying to allocate %.2f MB for prevThreeVecs (remaining memory %.2f "
+                        "MB)...\n",
+                        sizeof(long) * (3 * _n) / 1024.0 / 1024.0, getFreeMemoryMb());
+
+                prevThreeVecs = new Array1d(3 * _n, 0);
+            }
         }
         catch (std::bad_alloc)
         {
@@ -499,19 +604,19 @@ class CuspData
     }
 
     // reads/writes from/to vMatrix, writes to hMatrix
-    void arnoldi(unsigned long iterations)
+    void arnoldi()
     {
         Array1dView cuspNumsView = cuspNums->subarray(0, 4);
 
         long start = now();
 
-        for (unsigned long it = 1; it <= iterations; it++)
+        for (unsigned long it = 1; it <= _i; it++)
         {
             if (printOutput && it % 50 == 0)
             {
                 long elapsedUs = now() - start;  // microseconds
                 double elapsedSec = elapsedUs / 1000.0 / 1000.0;
-                double frac = ((double)it / iterations);
+                double frac = ((double)it / _i);
                 double totalSec = elapsedSec / frac;
                 double remainingSec = totalSec - elapsedSec;
                 double remainingMin = remainingSec / 60.0;
@@ -521,7 +626,118 @@ class CuspData
                     "iter %lu / %lu (%lu%%). Elapsed: %.1f min, Speed (it/min): %.3f, ETA: %.1f "
                     "sec "
                     "(%.2f min) (%.2f hr)\n",
-                    it, iterations, (unsigned long)(frac * 100.0), elapsedSec / 60.0,
+                    it, _i, (unsigned long)(frac * 100.0), elapsedSec / 60.0,
+                    (it - 1) / (elapsedSec / 60.0), remainingSec, remainingMin, remainingHr);
+                fflush(stdout);
+            }
+
+            util.tic("sparse matrix vector multiply");
+            unsigned long prevRowOffset = _n * (it - 1);
+            unsigned long curRowOffset = _n * it;
+
+            Array1dView vecView = vMatrix->subarray(prevRowOffset, _n);
+            Array1dView resultView = vMatrix->subarray(curRowOffset, _n);
+
+            cusp::multiply(*aMatrix, vecView, resultView);
+            util.toc("sparse matrix vector multiply", 2 * aMatrixNonzeros);
+
+            ////////
+
+            util.tic("dots & axpy");
+            unsigned long rowOffset = (it - 1) * (_i + 1);
+            resultView = hMatrix->subarray(rowOffset, it);
+
+            rowOffset = _n * it;
+
+            Array1dView curVec = vMatrix->subarray(rowOffset, _n);
+
+            // combined dot/axpy to have modified gram-schmidt orthogonalization
+            // (more stable)
+            for (unsigned long row = 0; row < it; ++row)
+            {
+                Array1dView curRow = vMatrix->subarray(row * _n, _n);
+
+                // util.tic("dot");
+                myDot(cublasHandle, _n, curVec, curRow, resultView, row);
+                // util.toc("dot", 2 * _n);
+
+                rowOffset = _n * row;
+                Array1dView prevVec = vMatrix->subarray(rowOffset, _n);
+
+                // util.tic("axpy");
+                myAxpy(cublasHandle, cuspNumsView, prevVec, curVec, resultView, row);
+                // util.toc("axpy", 2 * _n);
+            }
+
+            util.toc("dots & axpy", 2 * 2 * _n * it);
+
+            ////////
+
+            rowOffset = _n * it;
+            curVec = vMatrix->subarray(rowOffset, _n);
+
+            util.tic("nrm2");
+            FLOAT_TYPE magnitude = cusp::blas::nrm2(curVec);
+            util.toc("nrm2");
+
+            // store magnitude in H
+            rowOffset = (it - 1) * (_i + 1);
+            (*hMatrix)[rowOffset + it] = magnitude;
+
+            // scale vector
+            if (magnitude < 1e-13)
+            {
+                // cusp::blas::scal(curVec, 0.0);
+
+                // printf("Break at it = %lu! Vec norm = %f Profile if this actually helps.\n", it,
+                //       magnitude);
+                break;
+            }
+            else
+            {
+                util.tic("scale");
+                cusp::blas::scal(curVec, 1.0 / magnitude);
+                util.toc("scale");
+            }
+        }
+    }
+
+    // uses prevThreeVecs, writes outsput to vProjected and hCsc* variables
+    void lanczos()
+    {
+        Array1dView cuspNumsView = cuspNums->subarray(0, 4);
+
+        long start = now();
+
+        // assume initial vector is in prevThreeVecs[0]
+        Array1dView curVec = prevThreeVecs->subarray(0, _n);
+
+        // sparse assignment of initial vector
+        Array1dView resultView = vProjected->subarray(0, _i);
+
+        util.tic("project-v sparse matrix vector multiply");
+        cusp::multiply(*keyDirMatrix, curVec, resultView);
+        util.toc("project-v sparse matrix vector multiply", 2 * keyDirMatrixNonzeros);
+
+        WORKING HERE !!!!!
+
+            for (unsigned long it = 1; it <= _i; it++)
+        {
+            if (printOutput && it % 50 == 0)
+            {
+                long elapsedUs = now() - start;  // microseconds
+                double elapsedSec = elapsedUs / 1000.0 / 1000.0;
+                double frac = ((double)it / _i);
+                double totalSec = elapsedSec / frac;
+                double remainingSec = totalSec - elapsedSec;
+                double remainingMin = remainingSec / 60.0;
+                double remainingHr = remainingMin / 60.0;
+
+                printf(
+                    "iter %lu / %lu (%lu%%). Elapsed: %.1f min, Speed (it/min): %.3f, ETA: %.1f "
+                    "sec "
+                    "(%.2f min) (%.2f hr)\n",
+                    it, _i, (unsigned long)(frac * 100.0), elapsedSec / 60.0,
                     (it - 1) / (elapsedSec / 60.0), remainingSec, remainingMin, remainingHr);
                 fflush(stdout);
             }
@@ -660,6 +876,37 @@ class CuspData
             error("initial arnoldi vec must be normalized first (normSq was %f)", normSq);
     }
 
+    // initialize with a passed-in sparse vector (similar to csr_matrix)
+    void lanczosInitSparseVec(FLOAT_TYPE *data, long *indices, unsigned long len)
+    {
+        // initialize with zeros
+        cusp::blas::fill(*hCscData, 0.0);
+        cusp::blas::fill(*hCscIndptr, 0.0);
+        cusp::blas::fill(*hCscIndices, 0.0);
+        cusp::blas::fill(*prevThreeVecs, 0.0);
+
+        FLOAT_TYPE normSq = 0.0;
+
+        // sparse assignment and norm computation
+        for (unsigned long i = 0; i < len; ++i)
+        {
+            long index = indices[i];
+            double d = data[i];
+
+            if (index < 0 || index >= _n)
+                error("lanczosInitSparseVec called with bad index: %lu (_n = %lu)\n", index, _n);
+
+            normSq += d * d;
+            prevThreeVecs[index] = d;
+        }
+
+        // sanity check that norm of vec is 1
+        FLOAT_TYPE tol = 1e-6;
+
+        if (normSq < 1.0 - tol || normSq > 1.0 + tol)
+            error("initial lanczos vec must be normalized first (normSq was %f)", normSq);
+    }
+
     // copy memory, run arnoldi, project results, copy memory back
     void copyArnoldiCopy(FLOAT_TYPE *initData, long *initIndices, unsigned long initLen,
                          FLOAT_TYPE *resultH, unsigned long sizeResultH, FLOAT_TYPE *resultPV,
@@ -673,6 +920,9 @@ class CuspData
 
         if (_i == 0)
             error("arnoldi() called before preallocate() (_i==0)\n");
+
+        if (vMatrix == 0)
+            error("preallocate should be called with isLanczos == false to use arnoldi()");
 
         // check expected results sizes
         unsigned long expectedH = _i * (_i + 1);
@@ -693,7 +943,7 @@ class CuspData
         util.toc("arnoldiInitSparseVec()");
 
         util.tic("arnoldi()");
-        arnoldi(_i);
+        arnoldi();
         util.toc("arnoldi()");
 
         // project v_matrix onto keyDirMatrix
@@ -731,42 +981,54 @@ class CuspData
         if (_i == 0)
             error("lanczos() called before preallocate() (_i==0)\n");
 
+        if (hCscData == 0)
+            error("preallocate should be called with isLanczos == true to use lanczos()");
+
         // check expected results sizes
-        WORKING HERE !!!UPDATE TO CHECK SPARSE H CONSTRAINTS unsigned long expectedH =
-            _i * (_i + 1);
+        unsigned long expectedDataLen = 3 * _i - 1;
+        unsigned long expectedIndptrLen = _i - 1;
         unsigned long expectedPV = (_i + 1) * _k;
 
-        if (sizeResultH != expectedH)
-            error("Wrong size for resultH with i = %lu. Got %lu, expected %lu.", _i, sizeResultH,
-                  expectedH);
+        if (sizeCscDataH != expectedDataLen)
+            error("Wrong size for cscDataH with _i = %lu. Got %lu, expected %lu.", _i, sizeCscDataH,
+                  exepectedDataLen);
+
+        if (sizeCscIndptr != expectedIndptrLen)
+            error("Wrong size for cscIndptrH with _i = %lu. Got %lu, expected %lu.", _i,
+                  sizeCscIndptrH, exepectedIndptrLen);
+
+        if (sizeCscIndicesH != expectedDataLen)
+            error("Wrong size for cscIndicesH with _i = %lu. Got %lu, expected %lu.", _i,
+                  sizeCscIndicesH, exepectedDataLen);
 
         if (sizeResultPV != expectedPV)
             error(
-                "Wrong size for resultPV with (i, k) = (%lu, %lu, %lu). Got "
+                "Wrong size for resultPV with (i, k) = (%lu, %lu). Got "
                 "%lu, expected %lu.",
                 _i, _k, sizeResultPV, expectedPV);
 
-        util.tic("arnoldiInitSparseVec()");
-        arnoldiInitSparseVec(initData, initIndices, initLen);
-        util.toc("arnoldiInitSparseVec()");
+        util.tic("lanczosInitSparseVec()");
+        lanczosInitSparseVec(initData, initIndices, initLen);
+        util.toc("lanczosInitSparseVec()");
 
-        util.tic("arnoldi()");
-        arnoldi(_i);
-        util.toc("arnoldi()");
+        util.tic("lanczos()");
+        lanczos();
+        util.toc("lanczos()");
 
-        // project v_matrix onto keyDirMatrix
-        util.tic("projectV()");
-        projectV(_i);
-        util.toc("projectV()");
+        // copying H matrix data, indptr, and indices to np.ndarray
+        util.tic("copying H matrix components");
+        HostFloatArray1dView hostHDataView(resultCscDataH, resultCscDataH + sizeCscDataH);
+        cusp::blas::copy(*hCscData, hostHDataView);
 
-        // copying H matrix to np.ndarray
-        util.tic("copying H matrix to np.ndarray");
-        HostFloatArray1dView hostHView(resultH, resultH + expectedH);
-        cusp::blas::copy(*hMatrix, hostHView);  // hostHView = *hMatrix
-        util.toc("copying H matrix to np.ndarray");
+        HostFloatArray1dView hostHIndptrView(resultCscIndptrH, resultCscIndptrH + sizeCscIndptrH);
+        cusp::blas::copy(*hCscIndptr, hostHIndptrView);
+
+        HostFloatArray1dView hostHIndicesView(resultCscIndicesH,
+                                              resultCscIndicesH + sizeCscIndicesH);
+        cusp::blas::copy(*hCscIndices, hostHIndicesView);
+        util.toc("copying H matrix components");
 
         // copy vProjected to np.ndarray
-
         util.tic("copying V-projected matrix to np.ndarray");
         HostFloatArray1dView hostPVView(resultPV, resultPV + expectedPV);
         cusp::blas::copy(*vProjected, hostPVView);  // hostPVView = *vProjected
@@ -823,9 +1085,9 @@ FLOAT_TYPE getFreeMemoryMbCpu()
 }
 
 unsigned long preallocateMemoryCpu(unsigned long arnoldiIt, unsigned long dims,
-                                   unsigned long keyDirMatSize)
+                                   unsigned long keyDirMatSize, int isLanczos)
 {
-    return cuspDataCpu.preallocateMemory(arnoldiIt, dims, keyDirMatSize) ? 1 : 0;
+    return cuspDataCpu.preallocateMemory(arnoldiIt, dims, keyDirMatSize, isLanczos ? 1 : 0) ? 1 : 0;
 }
 
 void arnoldiCpu(FLOAT_TYPE *initData, long *initIndices, unsigned long initLen, FLOAT_TYPE *resultH,
@@ -893,9 +1155,11 @@ FLOAT_TYPE getFreeMemoryMbGpu()
 }
 
 unsigned long preallocateMemoryGpu(unsigned long arnoldiIterations, unsigned long dims,
-                                   unsigned long keyDirMatSize)
+                                   unsigned long keyDirMatSize, int isLanczos)
 {
-    return cuspDataGpu.preallocateMemory(arnoldiIterations, dims, keyDirMatSize) ? 1 : 0;
+    return cuspDataGpu.preallocateMemory(arnoldiIterations, dims, keyDirMatSize, isLanczos ? 1 : 0)
+               ? 1
+               : 0;
 }
 
 void arnoldiGpu(FLOAT_TYPE *initData, long *initIndices, unsigned long initLen, FLOAT_TYPE *resultH,

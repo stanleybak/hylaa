@@ -188,7 +188,7 @@ class TestKrylov(unittest.TestCase):
             self.assertTrue(np.allclose(python_pv, krypy_v), "Python v matrix incorrect")
 
             # using cusp
-            KrylovInterface.preallocate_memory(iterations, dims, key_dir_mat.shape[0])
+            KrylovInterface.preallocate_memory(iterations, dims, key_dir_mat.shape[0], False, True)
             KrylovInterface.load_a_matrix(a_matrix)
             KrylovInterface.load_key_dir_matrix(key_dir_mat)
             cusp_h, cusp_pv = KrylovInterface.arnoldi(init_sparse)

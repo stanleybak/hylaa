@@ -120,12 +120,12 @@ class KrylovInterface(object):
             gpu_func.argtypes = cpu_func.argtypes = None
 
             # unsigned long preallocateMemoryGpu(unsigned long arnoldiIterations, unsigned long dims,
-            #                       unsigned long keyDirMatSize)
+            #                       unsigned long keyDirMatSize, int isLanczos)
             cpu_func = KrylovInterface._cpu.preallocate_memory = lib.preallocateMemoryCpu
             gpu_func = KrylovInterface._gpu.preallocate_memory = lib.preallocateMemoryGpu
             gpu_func.restype = cpu_func.restype = ctypes.c_ulong
             gpu_func.argtypes = cpu_func.argtypes = [
-                ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong
+                ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_int
             ]
 
             #void arnoldiGpu(FLOAT_TYPE *initData, int *initIndices, unsigned long initLen,
@@ -321,7 +321,7 @@ class KrylovInterface(object):
         Timers.toc("load key dir matrix")
 
     @staticmethod
-    def preallocate_memory(arnoldi_iterations, dims, key_dir_mat_size, error_on_fail=False):
+    def preallocate_memory(arnoldi_iterations, dims, key_dir_mat_size, is_lanczos, error_on_fail):
         '''
         preallocate memory used in the arnoldi iteration
         returns True on sucess and False on (memory allocation) error
@@ -336,7 +336,8 @@ class KrylovInterface(object):
         KrylovInterface._cusp.k = key_dir_mat_size
 
         Timers.tic("preallocate memory")
-        result = KrylovInterface._cusp.preallocate_memory(arnoldi_iterations, dims, key_dir_mat_size) != 0
+        result = KrylovInterface._cusp.preallocate_memory(arnoldi_iterations, dims, key_dir_mat_size, \
+                                                          1 if is_lanczos else 0) != 0
         Timers.toc("preallocate memory")
 
         KrylovInterface._preallocated_memory = result
@@ -432,8 +433,8 @@ class KrylovInterface(object):
 
         Timers.tic('lanczos')
         KrylovInterface._cusp.lanczos(scaled_vec.data, indices, len(scaled_vec.data), 
-            result_h_data, len(result_h_data_, result_h_indices, len(result_h_indices), 
-            result_h_indptr, len(result_h_indptr), result_pv, len(result_pv))
+            result_h_data, len(result_h_data_, result_h_indptr, len(result_h_indptr), 
+            result_h_indices, len(result_h_indices),result_pv, len(result_pv))
         Timers.toc('lanczos')
 
         Timers.tic('lanczos post processing')
