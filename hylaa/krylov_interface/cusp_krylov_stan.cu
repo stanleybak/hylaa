@@ -289,7 +289,6 @@ class CuspData
     }
 
     void setPrintOutput(bool enabled) { printOutput = enabled; }
-
     void setUseProfiling(bool enabled)
     {
         useProfiling = enabled;
@@ -733,7 +732,7 @@ class CuspData
 
         for (unsigned long it = 1; it <= _i; it++)
         {
-            if (printOutput && it % 50 == 0)
+            if (printOutput && it % 1 == 0)
             {
                 long elapsedUs = now() - start;  // microseconds
                 double elapsedSec = elapsedUs / 1000.0 / 1000.0;
@@ -886,7 +885,7 @@ class CuspData
             long index = indices[i];
             double d = data[i];
 
-            if (index < 0 || index >= _n)
+            if (index < 0 || index >= (long)_n)
                 error("arnoldiInitSparseVec called with bad index: %lu (_n = %lu)\n", index, _n);
 
             normSq += d * d;
@@ -917,7 +916,7 @@ class CuspData
             long index = indices[i];
             double d = data[i];
 
-            if (index < 0 || index >= _n)
+            if (index < 0 || index >= (long)_n)
                 error("lanczosInitSparseVec called with bad index: %lu (_n = %lu)\n", index, _n);
 
             normSq += d * d;

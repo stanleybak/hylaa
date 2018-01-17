@@ -116,10 +116,14 @@ def random_five_diag_sym_matrix(dims, print_progress=False):
         print "allocate csr_matrix data time {:.1f}s".format(time.time() - start)
 
     for row in xrange(dims):
-        if print_progress and row % 100000 == 0 and time.time() - last_print > 1.0:
+        if print_progress and row > 0 and row % 100000 == 0 and time.time() - last_print > 1.0:
             last_print = time.time()
             elapsed = last_print - start
-            print "Row {} / {} ({:.2f}%). Elapsed: {:.1f}s".format(row, dims, 100.0 * row / dims, elapsed)
+
+            eta = elapsed / (row / float(dims)) - elapsed
+            print "Row {} / {} ({:.2f}%). Elapsed: {:.1f}s, ETA: {:.1f}min".format(row, dims, 100.0 * row / dims,
+                elapsed, eta / 60.0)
+            
 
         if row > 1:
             data[data_index] = q_n_minus_2
@@ -376,7 +380,11 @@ class TestKrylov(unittest.TestCase):
     def test_lanczos_profile(self):
         'test my implementation of lanczos with a large system'
 
-        dims = int(2e7)
+        # laptop, 2e7, allocate 24.5 secs, lanczos ~3.6 secs
+        # desktop, 2e7, allocate 24.2 secs, lanczos ~2.9 secs
+        # 1e8, allocate 122 secs, lanczos ~15 secs
+
+        dims = int(1e9)
         iterations = 10
 
         a_matrix = random_five_diag_sym_matrix(dims, True)

@@ -208,8 +208,9 @@ def python_lanczos(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, compat=Fa
 
         if norm >= tol:
             cur_vec = cur_vec / norm
-
             pv_mat[cur_it, :] = (key_dir_mat * cur_vec[0])
+        else:
+            break
 
     if profile:
         names = ['dot', 'sub', 'mult', 'norm']
