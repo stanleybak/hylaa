@@ -12,7 +12,7 @@ import math
 
 import numpy as np
 from numpy.ctypeslib import ndpointer
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, csc_matrix
 from scipy.sparse.linalg import norm as sparse_norm
 
 from hylaa.util import Freezable, get_script_path
@@ -394,7 +394,7 @@ class KrylovInterface(object):
         # multiply the projection by the initial vec norm to retrieve the correct answer
         result_pv *= norm
 
-        return result_h, result_pv
+        return result_pv, result_h
 
     @staticmethod
     def lanczos(vec):
@@ -416,7 +416,7 @@ class KrylovInterface(object):
         assert vec.shape == (1, n), "Expected 1x{} init vec, got shape={}".format(n, vec.shape)
 
         # allocate results
-        data_len = 3*i+2
+        data_len = 3*i-1
         result_h_data = np.zeros(data_len, dtype=KrylovInterface.float_type)
         result_h_indices = np.zeros(data_len, dtype=np.dtype('int64'))
         result_h_indptr = np.zeros(i+1, dtype=np.dtype('int64'))
@@ -433,13 +433,13 @@ class KrylovInterface(object):
 
         Timers.tic('lanczos')
         KrylovInterface._cusp.lanczos(scaled_vec.data, indices, len(scaled_vec.data), 
-            result_h_data, len(result_h_data_, result_h_indptr, len(result_h_indptr), 
-            result_h_indices, len(result_h_indices),result_pv, len(result_pv))
+            result_h_data, len(result_h_data), result_h_indptr, len(result_h_indptr), 
+            result_h_indices, len(result_h_indices), result_pv, len(result_pv))
         Timers.toc('lanczos')
 
         Timers.tic('lanczos post processing')
         # h is easier to construct as a csc matrix, but we want to use it as a csr_matrix
-        h_csc = csc_matrix((result_h_data, result_h_indices, result_h_indptr), shape=(iterations + 1, iterations))
+        h_csc = csc_matrix((result_h_data, result_h_indices, result_h_indptr), shape=(i + 1, i))
         h_csr = csr_matrix(h_csc)
 
         result_pv.shape = (i+1, k)
@@ -450,4 +450,4 @@ class KrylovInterface(object):
         result_pv *= norm
         Timers.toc('lanczos post processing')
 
-        return result_h, result_pv
+        return result_pv, h_csr

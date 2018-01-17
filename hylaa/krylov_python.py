@@ -99,7 +99,7 @@ def python_lanczos(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, compat=Fa
     assert key_dir_mat.shape[1] == a_mat.shape[0], "key_dir_mat width should equal number of dims"
 
     dims = a_mat.shape[0]
-    key_dirs = key_dir_mat.shape[1]
+    key_dirs = key_dir_mat.shape[0]
 
     pv_mat = np.zeros((iterations + 1, key_dirs))
     h_data = []
@@ -208,7 +208,8 @@ def python_lanczos(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, compat=Fa
 
         if norm >= tol:
             cur_vec = cur_vec / norm
-            pv_mat[cur_it, :] = cur_vec[0]
+
+            pv_mat[cur_it, :] = (key_dir_mat * cur_vec[0])
 
     if profile:
         names = ['dot', 'sub', 'mult', 'norm']

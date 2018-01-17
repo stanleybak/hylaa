@@ -79,7 +79,7 @@ void myDot(cublasHandle_t &cublasHandle, unsigned long size,
         error("cublasDdot() failed");
 }
 
-// subtract dots * prevVec from curVec using axpy
+// computes resView -= a * hView[hIndex]
 void myAxpy(cublasHandle_t &cublasHandle,
             // numsView: [-1, 0, 1, temp storage]
             cusp::array1d<FLOAT_TYPE, cusp::host_memory>::view &numsView,
@@ -706,6 +706,7 @@ class CuspData
     void lanczos()
     {
         Array1dView cuspNumsView = cuspNums->subarray(0, 4);
+        Array1dView hCscDataView = hCscData->subarray(0, 3 * _i - 1);
 
         long start = now();
 
@@ -713,15 +714,24 @@ class CuspData
         Array1dView curVec = prevThreeVecs->subarray(0, _n);
 
         // sparse assignment of initial vector
-        Array1dView resultView = vProjected->subarray(0, _i);
+        Array1dView vProjectedView = vProjected->subarray(0, _k);
 
         util.tic("project-v sparse matrix vector multiply");
-        cusp::multiply(*keyDirMatrix, curVec, resultView);
+        cusp::multiply(*keyDirMatrix, curVec, vProjectedView);
         util.toc("project-v sparse matrix vector multiply", 2 * keyDirMatrixNonzeros);
 
-        WORKING HERE !!!!!
+        // variables used between iteartions
+        FLOAT_TYPE prevNorm = 0;
+        long dataIndex = 0;
+        long indptrIndex = 0;
+        (*hCscIndptr)[indptrIndex++] = 0;  // first column starts at index zero
 
-            for (unsigned long it = 1; it <= _i; it++)
+        // these three share storate (prevThreeVecs), so store the offsets for swapping
+        long curVecOffset = 0;
+        long prevPrevVecOffset = _n;
+        long prevVecOffset = 2 * _n;
+
+        for (unsigned long it = 1; it <= _i; it++)
         {
             if (printOutput && it % 50 == 0)
             {
@@ -742,73 +752,87 @@ class CuspData
                 fflush(stdout);
             }
 
+            // rotate offsets
+            long temp = prevPrevVecOffset;
+            prevPrevVecOffset = prevVecOffset;
+            prevVecOffset = curVecOffset;
+            curVecOffset = temp;
+
             util.tic("sparse matrix vector multiply");
-            unsigned long prevRowOffset = _n * (it - 1);
-            unsigned long curRowOffset = _n * it;
+            Array1dView prevVec = prevThreeVecs->subarray(prevVecOffset, _n);
+            curVec = prevThreeVecs->subarray(curVecOffset, _n);
 
-            Array1dView vecView = vMatrix->subarray(prevRowOffset, _n);
-            Array1dView resultView = vMatrix->subarray(curRowOffset, _n);
-
-            cusp::multiply(*aMatrix, vecView, resultView);
+            cusp::multiply(*aMatrix, prevVec, curVec);
             util.toc("sparse matrix vector multiply", 2 * aMatrixNonzeros);
 
             ////////
+            // curVec -= prevNorm * prevVec
 
-            util.tic("dots & axpy");
-            unsigned long rowOffset = (it - 1) * (_i + 1);
-            resultView = hMatrix->subarray(rowOffset, it);
-
-            rowOffset = _n * it;
-
-            Array1dView curVec = vMatrix->subarray(rowOffset, _n);
-
-            // combined dot/axpy to have modified gram-schmidt orthogonalization
-            // (more stable)
-            for (unsigned long row = 0; row < it; ++row)
+            if (it > 1)
             {
-                Array1dView curRow = vMatrix->subarray(row * _n, _n);
+                // reuse norm from previous iteartion
+                (*hCscData)[dataIndex] = prevNorm;  // first row starts at index zero
+                (*hCscIndices)[dataIndex++] = it - 2;
 
-                // util.tic("dot");
-                myDot(cublasHandle, _n, curVec, curRow, resultView, row);
-                // util.toc("dot", 2 * _n);
+                // cur_vec -= prev_prev_vec * prevNorm
+                Array1dView prevPrevVec = prevThreeVecs->subarray(prevPrevVecOffset, _n);
 
-                rowOffset = _n * row;
-                Array1dView prevVec = vMatrix->subarray(rowOffset, _n);
-
-                // util.tic("axpy");
-                myAxpy(cublasHandle, cuspNumsView, prevVec, curVec, resultView, row);
-                // util.toc("axpy", 2 * _n);
+                util.tic("axpy");
+                myAxpy(cublasHandle, cuspNumsView, prevPrevVec, curVec, hCscDataView,
+                       dataIndex - 1);
+                util.toc("axpy", 2 * _n);
             }
 
-            util.toc("dots & axpy", 2 * 2 * _n * it);
+            ////////
+            // dot_val = dot(curVec, prevVec)
+
+            util.tic("dot");
+            myDot(cublasHandle, _n, curVec, prevVec, hCscDataView, dataIndex);
+            util.toc("dot", 2 * _n);
+
+            (*hCscIndices)[dataIndex++] = it - 1;
 
             ////////
+            // cur_vec -= prev_vec * dot_val
 
-            rowOffset = _n * it;
-            curVec = vMatrix->subarray(rowOffset, _n);
+            util.tic("axpy");
+            myAxpy(cublasHandle, cuspNumsView, prevVec, curVec, hCscDataView, dataIndex - 1);
+            util.toc("axpy", 2 * _n);
+
+            ////////
+            // prevNorm = norm = norm(curVec)
 
             util.tic("nrm2");
-            FLOAT_TYPE magnitude = cusp::blas::nrm2(curVec);
+            FLOAT_TYPE norm = prevNorm = cusp::blas::nrm2(curVec);
             util.toc("nrm2");
 
             // store magnitude in H
-            rowOffset = (it - 1) * (_i + 1);
-            (*hMatrix)[rowOffset + it] = magnitude;
+            (*hCscData)[dataIndex] = norm;  // first row starts at index zero
+            (*hCscIndices)[dataIndex++] = it;
+            (*hCscIndptr)[indptrIndex++] = dataIndex;  // end of column
 
+            ////////
             // scale vector
-            if (magnitude < 1e-13)
+            if (norm < 1e-13)
             {
                 // cusp::blas::scal(curVec, 0.0);
 
                 // printf("Break at it = %lu! Vec norm = %f Profile if this actually helps.\n", it,
-                //       magnitude);
+                //       norm);
                 break;
             }
             else
             {
                 util.tic("scale");
-                cusp::blas::scal(curVec, 1.0 / magnitude);
+                cusp::blas::scal(curVec, 1.0 / norm);
                 util.toc("scale");
+
+                // multiply curVec by keyDirMat and store in projected result
+                vProjectedView = vProjected->subarray(it * _k, _k);
+
+                util.tic("project-v sparse matrix vector multiply");
+                cusp::multiply(*keyDirMatrix, curVec, vProjectedView);
+                util.toc("project-v sparse matrix vector multiply", 2 * keyDirMatrixNonzeros);
             }
         }
     }
@@ -897,7 +921,7 @@ class CuspData
                 error("lanczosInitSparseVec called with bad index: %lu (_n = %lu)\n", index, _n);
 
             normSq += d * d;
-            prevThreeVecs[index] = d;
+            (*prevThreeVecs)[index] = d;
         }
 
         // sanity check that norm of vec is 1
@@ -986,20 +1010,20 @@ class CuspData
 
         // check expected results sizes
         unsigned long expectedDataLen = 3 * _i - 1;
-        unsigned long expectedIndptrLen = _i - 1;
+        unsigned long expectedIndptrLen = _i + 1;
         unsigned long expectedPV = (_i + 1) * _k;
 
         if (sizeCscDataH != expectedDataLen)
             error("Wrong size for cscDataH with _i = %lu. Got %lu, expected %lu.", _i, sizeCscDataH,
-                  exepectedDataLen);
+                  expectedDataLen);
 
-        if (sizeCscIndptr != expectedIndptrLen)
+        if (sizeCscIndptrH != expectedIndptrLen)
             error("Wrong size for cscIndptrH with _i = %lu. Got %lu, expected %lu.", _i,
-                  sizeCscIndptrH, exepectedIndptrLen);
+                  sizeCscIndptrH, expectedIndptrLen);
 
         if (sizeCscIndicesH != expectedDataLen)
             error("Wrong size for cscIndicesH with _i = %lu. Got %lu, expected %lu.", _i,
-                  sizeCscIndicesH, exepectedDataLen);
+                  sizeCscIndicesH, expectedDataLen);
 
         if (sizeResultPV != expectedPV)
             error(
@@ -1020,11 +1044,11 @@ class CuspData
         HostFloatArray1dView hostHDataView(resultCscDataH, resultCscDataH + sizeCscDataH);
         cusp::blas::copy(*hCscData, hostHDataView);
 
-        HostFloatArray1dView hostHIndptrView(resultCscIndptrH, resultCscIndptrH + sizeCscIndptrH);
+        HostLongArray1dView hostHIndptrView(resultCscIndptrH, resultCscIndptrH + sizeCscIndptrH);
         cusp::blas::copy(*hCscIndptr, hostHIndptrView);
 
-        HostFloatArray1dView hostHIndicesView(resultCscIndicesH,
-                                              resultCscIndicesH + sizeCscIndicesH);
+        HostLongArray1dView hostHIndicesView(resultCscIndicesH,
+                                             resultCscIndicesH + sizeCscIndicesH);
         cusp::blas::copy(*hCscIndices, hostHIndicesView);
         util.toc("copying H matrix components");
 
