@@ -16,7 +16,7 @@ from scipy.sparse import csr_matrix, csc_matrix
 from scipy.sparse.linalg import expm, expm_multiply
 from scipy.integrate import odeint
 
-from hylaa.krylov_python import python_arnoldi, python_lanczos
+from hylaa.krylov_python import python_arnoldi, python_lanczos, pdot
 from hylaa.krylov_interface import KrylovInterface
 
 from hylaa.containers import HylaaSettings
@@ -255,6 +255,29 @@ class TestKrylov(unittest.TestCase):
         #    print "{}, res1={}, res2={}".format(x, res1[x], res2[x])
         #    self.assertAlmostEqual(res1[x], res2[x], places=3, msg='result[{}] differs'.format(x))
 
+    def test_pdot(self):
+        'test parallel dot function'
+
+        dims = 5e8
+
+        start = time.time()
+        a = np.random.random_sample((dims,))
+        print "allocated first vector in {}s".format(time.time() - start)
+
+        start = time.time()
+        b = np.random.random_sample((dims,))
+        print "allocated second vector in {}s".format(time.time() - start)
+
+        start = time.time()
+        res_parallel = pdot(a, b, force_parallel=True)
+        print "parallel time = {}s".format(time.time() - start)
+
+        start = time.time()
+        res_serial = np.dot(a, b)
+        print "serial time = {}s".format(time.time() - start)
+
+        self.assertTrue(np.allclose(res_parallel, res_serial))
+
     def test_arnoldi(self):
         'compare the krypy implementation with the python and cusp implementations'
 
@@ -312,7 +335,7 @@ class TestKrylov(unittest.TestCase):
             krypy_v *= norm
 
             # using python
-            python_pv, python_h = python_lanczos(a_matrix, init_sparse, iterations, key_dir_mat, compat=True)
+            python_pv, python_h = python_lanczos(a_matrix, init_sparse, iterations, key_dir_mat)
             python_h = python_h.toarray()
 
             self.assertTrue(np.allclose(python_h, krypy_h), "Python h matrix incorrect")

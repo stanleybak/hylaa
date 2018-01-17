@@ -7,11 +7,55 @@ Simulating a linear system x' = Ax using krylov supspace methods (arnoldi and la
 
 import math
 import time
+
 import numpy as np
 from scipy.sparse import csr_matrix, csc_matrix
 from scipy.sparse.linalg import norm as sparse_norm
 
 from hylaa.timerutil import Timers
+import multiprocessing
+from multiprocessing.pool import ThreadPool
+
+print "Note: krylov_python using global thread_pool"
+global_thread_pool = ThreadPool(multiprocessing.cpu_count())
+
+def pdot(a, b, force_parallel=False):
+    'parallel dot product'
+
+    global global_thread_pool
+    assert len(a.shape) == 1
+    assert len(b.shape) == 1
+    assert a.shape == b.shape
+
+    if a.shape[0] < 150 and not force_parallel:
+        # single-threaded is fast if dims < 150
+        rv = np.dot(a, b)
+    else:
+        # multi-threaded version
+
+        def mult_func((num1, num2)):
+            'multiplication of matrices, for parallel map'
+
+            return np.dot(num1, num2)
+
+        size = a.shape[0]
+        split = multiprocessing.cpu_count()
+        args = []
+
+        for i in xrange(split):
+            start_index = i * size / split
+            end_index = (i+1) * size / split
+
+            if start_index == end_index:
+                continue
+
+            args.append((a[start_index:end_index], b[start_index:end_index]))
+
+        result = global_thread_pool.map(mult_func, args)
+
+        rv = sum(result)
+
+    return rv
 
 def normalize_sparse(vec):
     'normalize a sparse vector (passed in as a 1xn csr_matrix), and return a tuple: scaled_vec, original_norm'
@@ -171,7 +215,8 @@ def python_lanczos(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, compat=Fa
         if compat:
             dot_val = np.dot(prev_vec[0].T.conj(), cur_vec[0])
         else:
-            dot_val = np.dot(prev_vec[0], cur_vec[0])
+            #dot_val = np.dot(prev_vec[0], cur_vec[0])
+            dot_val = pdot(prev_vec[0], cur_vec[0])
 
         if profile:
             dot_secs += time.time() - start
