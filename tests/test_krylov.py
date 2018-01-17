@@ -105,6 +105,9 @@ def random_five_diag_sym_matrix(dims, print_progress=False):
     else:
         index_dtype = np.dtype('int32')
 
+    if print_progress:
+        print "index_dtype is {}".format(index_dtype)
+
     data = np.zeros((data_len,), dtype=np.dtype('float64'))
     indices = np.zeros((data_len,), dtype=index_dtype)
     data_index = 0
@@ -113,15 +116,17 @@ def random_five_diag_sym_matrix(dims, print_progress=False):
     indptr_index = 1 # zero element already in place at index 0
 
     if print_progress:
-        print "allocate csr_matrix data time {:.1f}s".format(time.time() - start)
+        total_bytes = data.nbytes + indices.nbytes + indptrs.nbytes
+        print "allocate csr_matrix data time {:.1f}s, memory = {:.3f} GB".format(time.time() - start,
+            float(total_bytes) / 1024. / 1024. / 1024.)
 
     for row in xrange(dims):
-        if print_progress and row > 0 and row % 100000 == 0 and time.time() - last_print > 1.0:
+        if print_progress and row > 0 and row % 1000000 == 0 and time.time() - last_print > 1.0:
             last_print = time.time()
             elapsed = last_print - start
 
             eta = elapsed / (row / float(dims)) - elapsed
-            print "Row {} / {} ({:.2f}%). Elapsed: {:.1f}s, ETA: {:.1f}min".format(row, dims, 100.0 * row / dims,
+            print "Row {} / {} ({:.2f}%). Elapsed: {:.1f}s, ETA: {:.1f}m".format(row, dims, 100.0 * row / dims,
                 elapsed, eta / 60.0)
             
 
@@ -383,6 +388,7 @@ class TestKrylov(unittest.TestCase):
         # laptop, 2e7, allocate 24.5 secs, lanczos ~3.6 secs
         # desktop, 2e7, allocate 24.2 secs, lanczos ~2.9 secs
         # 1e8, allocate 122 secs, lanczos ~15 secs
+        # 1e9, allocate 22 mins, lanczos ~150 secs (10 secs per iteration)
 
         dims = int(1e9)
         iterations = 10
@@ -390,6 +396,11 @@ class TestKrylov(unittest.TestCase):
         a_matrix = random_five_diag_sym_matrix(dims, True)
         k_mat = csr_matrix(([1.0], [0], [0, 1]), shape=(1, dims)) # first coordinate
         e1_sparse = csr_matrix(([1.0], [0], [0, 1]), shape=(1, dims))
+
+        # using python
+        start = time.time()
+        python_pv, python_h = python_lanczos(a_matrix, e1_sparse, iterations, k_mat, compat=True, profile=True)
+        print "python lanczos time = {}\n".format(time.time() - start)
 
         # using cusp
         start = time.time()
@@ -405,13 +416,6 @@ class TestKrylov(unittest.TestCase):
 
         print "cusp lanczos time = {}".format(time.time() - iter_start)
         print "cusp total time = {}\n".format(time.time() - start)
-
-        # using python
-        start = time.time()
-        python_pv, python_h = python_lanczos(a_matrix, e1_sparse, iterations, k_mat, compat=True, profile=True)
-        print "python lanczos time = {}\n".format(time.time() - start)
-
-        print "python pv shape = {}".format(python_pv.shape)
 
         self.assertEqual(cusp_h.shape, python_h.shape)
         self.assertEqual(cusp_pv.shape, python_pv.shape)
