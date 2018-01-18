@@ -16,7 +16,6 @@ from scipy.sparse.linalg import expm, expm_multiply
 from scipy.integrate import odeint
 
 from hylaa.krylov_python import python_arnoldi, python_lanczos
-from hylaa.krylov_interface import KrylovInterface
 
 from hylaa.containers import HylaaSettings
 
@@ -250,7 +249,6 @@ class TestKrylov(unittest.TestCase):
     def setUp(self):
         'test setup'
 
-        KrylovInterface.reset()
         np.set_printoptions(suppress=True)
         random.seed(1)
 
@@ -260,7 +258,7 @@ class TestKrylov(unittest.TestCase):
         #    self.assertAlmostEqual(res1[x], res2[x], places=3, msg='result[{}] differs'.format(x))
 
     def test_arnoldi(self):
-        'compare the krypy implementation with the python and cusp implementations'
+        'compare the krypy implementation against the python version'
 
         dims = 10
         iterations = 5
@@ -285,17 +283,8 @@ class TestKrylov(unittest.TestCase):
             self.assertTrue(np.allclose(python_h, krypy_h), "Python h matrix incorrect")
             self.assertTrue(np.allclose(python_pv, krypy_v), "Python v matrix incorrect")
 
-            # using cusp
-            KrylovInterface.preallocate_memory(iterations, dims, key_dir_mat.shape[0], False, True)
-            KrylovInterface.load_a_matrix(a_matrix)
-            KrylovInterface.load_key_dir_matrix(key_dir_mat)
-            cusp_pv, cusp_h = KrylovInterface.arnoldi(init_sparse)
-
-            self.assertTrue(np.allclose(cusp_h, krypy_h), "Cusp h matrix incorrect")
-            self.assertTrue(np.allclose(cusp_pv, krypy_v), "Cusp v matrix incorrect")
-
     def test_lanczos(self):
-        'compare the krypy implementation with the python and cusp implementations'
+        'compare the krypy implementation against the python version'
 
         dims = 5
         iterations = 3
@@ -322,19 +311,8 @@ class TestKrylov(unittest.TestCase):
             self.assertTrue(np.allclose(python_h, krypy_h), "Python h matrix incorrect")
             self.assertTrue(np.allclose(python_pv, krypy_v), "Python v matrix incorrect")
 
-            # using cusp
-            KrylovInterface.preallocate_memory(iterations, dims, key_dir_mat.shape[0], True, False)
-            KrylovInterface.load_a_matrix(a_matrix)
-            KrylovInterface.load_key_dir_matrix(key_dir_mat)
-
-            cusp_pv, cusp_h = KrylovInterface.lanczos(init_sparse)
-            cusp_h = cusp_h.toarray()
-
-            self.assertTrue(np.allclose(cusp_h, krypy_h), "Cusp h matrix incorrect")
-            self.assertTrue(np.allclose(cusp_pv, krypy_v), "Cusp v matrix incorrect")
-
     def test_lanczos_sim(self):
-        'compare simulation vs python_lanczos vs cusp_lanczos'
+        'compare simulation vs python_lanczos'
 
         dims = 1000
         iterations = 50
@@ -356,17 +334,6 @@ class TestKrylov(unittest.TestCase):
 
         python_result = np.dot(python_pv, expm_multiply(python_h * sim_time, e1_dense))
 
-        # using cusp lanczos
-        KrylovInterface.preallocate_memory(iterations, dims, key_dir_mat.shape[0], True, True)
-        KrylovInterface.load_a_matrix(a_matrix_sparse)
-        KrylovInterface.load_key_dir_matrix(key_dir_mat)
-        cusp_pv, cusp_h = KrylovInterface.lanczos(e1_sparse)
-
-        cusp_pv = cusp_pv[:, :iterations]
-        cusp_h = cusp_h[:iterations, :iterations]
-
-        cusp_result = np.dot(cusp_pv, expm_multiply(cusp_h * sim_time, e1_dense))
-
         # using odeint
         a_matrix = a_matrix_sparse.toarray()
         der_func = lambda state, _: np.dot(a_matrix, state)
@@ -379,45 +346,6 @@ class TestKrylov(unittest.TestCase):
         proj_odeint_result = key_dir_mat * odeint_result
 
         self.assertTrue(np.allclose(python_result, proj_odeint_result, atol=1e-3), "python result incorrect")
-        self.assertTrue(np.allclose(cusp_result, proj_odeint_result, atol=1e-3), "cusp result incorrect")
-
-    def test_lanczos_profile(self):
-        'test my implementation of lanczos with a large system'
-
-        # laptop, 2e7, allocate 24.5 secs, lanczos ~3.6 secs
-        # desktop, 2e7, allocate 24.2 secs, lanczos ~2.9 secs
-        # 1e8, allocate 122 secs, lanczos ~15 secs
-        # 1e9, allocate 22 mins, lanczos ~150 secs (10 secs per iteration)
-
-        dims = int(1e9)
-        iterations = 100
-
-        a_matrix = random_five_diag_sym_matrix(dims, True)
-        k_mat = csr_matrix(([1.0], [0], [0, 1]), shape=(1, dims)) # first coordinate
-        e1_sparse = csr_matrix(([1.0], [0], [0, 1]), shape=(1, dims))
-
-        # using python
-        start = time.time()
-        python_pv, python_h = python_lanczos(a_matrix, e1_sparse, iterations, k_mat, profile=True)
-        print "python lanczos time = {}\n".format(time.time() - start)
-
-        # using cusp
-        start = time.time()
-        KrylovInterface.set_use_profiling(True)
-        KrylovInterface.set_print_output(True)
-        KrylovInterface.preallocate_memory(iterations, dims, k_mat.shape[0], True, True)
-        KrylovInterface.load_a_matrix(a_matrix)
-        KrylovInterface.load_key_dir_matrix(k_mat)
-        iter_start = time.time()
-        cusp_pv, cusp_h = KrylovInterface.lanczos(e1_sparse)
-
-        KrylovInterface.print_profiling_data()
-
-        print "cusp lanczos time = {}".format(time.time() - iter_start)
-        print "cusp total time = {}\n".format(time.time() - start)
-
-        self.assertEqual(cusp_h.shape, python_h.shape)
-        self.assertEqual(cusp_pv.shape, python_pv.shape)
 
     def test_arnoldi_vec(self):
         'test arnoldi simulation with a passed in initial vector'
