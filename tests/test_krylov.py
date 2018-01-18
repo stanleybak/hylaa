@@ -15,7 +15,7 @@ from scipy.sparse import csr_matrix, csc_matrix
 from scipy.sparse.linalg import expm, expm_multiply
 from scipy.integrate import odeint
 
-from hylaa.krylov_python import python_arnoldi, python_lanczos, pdot, paxpy, pmult
+from hylaa.krylov_python import python_arnoldi, python_lanczos
 from hylaa.krylov_interface import KrylovInterface
 
 from hylaa.containers import HylaaSettings
@@ -258,83 +258,6 @@ class TestKrylov(unittest.TestCase):
         #for x in xrange(dims):
         #    print "{}, res1={}, res2={}".format(x, res1[x], res2[x])
         #    self.assertAlmostEqual(res1[x], res2[x], places=3, msg='result[{}] differs'.format(x))
-
-    def test_pmult(self):
-        'test parallel csr matrix mult'
-
-        dims = int(1e6) # 1e7, par = 0.4, serial = 0.1
-
-        a_matrix = random_five_diag_sym_matrix(dims, True)
-
-        start = time.time()
-        vec = np.random.random_sample((dims,))
-        print "allocated vector in {}s".format(time.time() - start)
-
-        start = time.time()
-        res_parallel = pmult(a_matrix, vec, force_parallel=True)
-        print "parallel time = {}s".format(time.time() - start)
-
-        start = time.time()
-        vec.shape = (dims, 1)
-        res_serial = a_matrix * vec
-        res_serial.shape = (dims,)
-        print "serial time = {}s".format(time.time() - start)
-
-        self.assertTrue(np.allclose(res_parallel, res_serial))
-
-    def test_paxpy(self):
-        'test parallel axpy function'
-
-        dims = int(1e8)
-
-        start = time.time()
-        a = np.random.random_sample((dims,))
-        print "allocated first vector in {}s".format(time.time() - start)
-
-        start = time.time()
-        par_a = a.copy()
-        print "copied first vector in {}s".format(time.time() - start)
-
-        start = time.time()
-        b = np.random.random_sample((dims,))
-        print "allocated second vector in {}s".format(time.time() - start)
-
-        start = time.time()
-        paxpy(par_a, -0.5, b, force_parallel=True)
-        print "parallel time = {}s".format(time.time() - start)
-
-        start = time.time()
-        a += -0.5 * b
-        print "serial time = {}s".format(time.time() - start)
-
-        self.assertTrue(np.allclose(par_a, a))
-
-    def test_pdot(self):
-        'test parallel dot function'
-
-        dims = int(1e9)
-
-        start = time.time()
-        
-        #a = np.zeros((dims,), dtype=float)
-        #for i in xrange(dims):
-        #    a[i] = random.random()
-        a = np.random.random_sample((dims,))
-        print "allocated first vector in {}s".format(time.time() - start)
-
-        start = time.time()
-        b = np.random.random_sample((dims,))
-        print "allocated second vector in {}s".format(time.time() - start)
-
-        start = time.time()
-        res_parallel = pdot(a, b, force_parallel=True)
-        print "parallel time = {}s".format(time.time() - start)
-
-        start = time.time()
-        res_serial = np.dot(a, b)
-        print "serial time = {}s".format(time.time() - start)
-
-        self.assertTrue(np.allclose(res_parallel, res_serial))
 
     def test_arnoldi(self):
         'compare the krypy implementation with the python and cusp implementations'
