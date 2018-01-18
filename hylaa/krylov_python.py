@@ -19,6 +19,101 @@ from multiprocessing.pool import ThreadPool
 print "Note: krylov_python using global thread_pool"
 global_thread_pool = ThreadPool(multiprocessing.cpu_count())
 
+def pmult(a_mat, vec, force_parallel=False):
+    'parallel dot product'
+
+    global global_thread_pool
+    assert isinstance(a_mat, csr_matrix)
+    dims = a_mat.shape[0]
+
+    # will change back after
+    preshape = vec.shape
+    vec.shape = (dims, 1) 
+
+    if a_mat.shape[0] < 150 and not force_parallel:
+        # single-threaded is fast if dims < 150
+        rv = a_mat * vec
+    else:
+        # multi-threaded version
+
+        def mult_func((sub_mat, vec)):
+            'multiplication of matrices, for parallel map'
+
+            return sub_mat * vec
+
+        split = multiprocessing.cpu_count()
+        args = []
+
+        for i in xrange(split):
+            start_row = i * dims / split
+            end_row = (i+1) * dims / split
+
+            if start_row == end_row:
+                continue
+            
+            # I think this way would make a copy of the data, which we want to avoid
+            #sub_a_mat = a_mat[start_row:end_row, :]
+
+            # construct a sub csr_matrix (no copy... hopefully)
+            start = a_mat.indptr[start_row]
+            end = a_mat.indptr[end_row]
+
+            # I think sub_ind_ptr we have to copy
+            sub_ind_ptr = a_mat.indptr[start_row:end_row+1].copy()
+
+            for j in xrange(sub_ind_ptr.shape[0]):
+                sub_ind_ptr[j] -= start
+            
+            sub_a_mat_tuple = (a_mat.data[start:end], a_mat.indices[start:end], sub_ind_ptr)
+            sub_a_mat = csr_matrix(sub_a_mat_tuple, dtype=a_mat.dtype, shape=(end_row-start_row, a_mat.shape[1]))
+
+            print "share mem? {}".format(np.may_share_memory(sub_a_mat.data, a_mat.data))
+
+            args.append((sub_a_mat, vec))
+
+        result = global_thread_pool.map(mult_func, args)
+
+        rv = np.concatenate(result)
+
+    rv.shape = (dims,)
+    vec.shape = preshape
+    
+    return rv
+
+def paxpy(a, alpha, b, force_parallel=False):
+    'parallel version of: a += alpha * b'
+
+    global global_thread_pool
+    assert len(a.shape) == 1
+    assert len(b.shape) == 1
+    assert a.shape == b.shape
+
+    if a.shape[0] < 150 and not force_parallel:
+        # single-threaded is fast if dims < 150
+        a += alpha * b
+    else:
+        # multi-threaded version
+
+        def axpy_func((a, alpha, b)):
+            'axpy function, for parallel map'
+
+            a += alpha * b
+
+        size = a.shape[0]
+        split = multiprocessing.cpu_count()
+        args = []
+
+        for i in xrange(split):
+            start_index = i * size / split
+            end_index = (i+1) * size / split
+
+            if start_index == end_index:
+                continue
+
+            args.append((a[start_index:end_index], alpha, b[start_index:end_index]))
+
+        global_thread_pool.map(axpy_func, args)
+
 def pdot(a, b, force_parallel=False):
     'parallel dot product'
 
@@ -123,7 +218,7 @@ def python_arnoldi(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9):
 
     return pv_mat, h_mat
 
-def python_lanczos(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, compat=False, profile=False):
+def python_lanczos(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, profile=False):
     '''run the lanczos algorithm, tailored to very large sparse systems
 
     This will project each of the v vectors using the key directions matrix, to make pv_mat, a k x n matrix
@@ -152,9 +247,6 @@ def python_lanczos(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, compat=Fa
 
     scaled_vec, init_norm = normalize_sparse(init_vec)
 
-    # sparse assignment of initial vector
-    pv_mat[0, :] = (key_dir_mat * scaled_vec.T).toarray()[:, 0]
-
     cur_vec = scaled_vec.toarray()
     prev_vec = None
     prev_prev_vec = None
@@ -166,17 +258,16 @@ def python_lanczos(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, compat=Fa
     if profile:
         print "lanczos a_mat nonzeros: {}".format(nonzeros)
 
-    dot_ops = 0
     dot_secs = 0.0
-
-    sub_ops = 0
-    sub_secs = 0.0
-
-    mult_ops = 0
+    axpy_secs = 0.0
     mult_secs = 0.0
-
-    norm_ops = 0
     norm_secs = 0.0
+    proj_secs = 0.0
+
+    start = time.time()
+    # sparse assignment of initial vector
+    pv_mat[0, :] = (key_dir_mat * scaled_vec.T).toarray()[:, 0]
+    proj_secs += time.time() - start
 
     for cur_it in xrange(1, iterations + 1):
         if profile:
@@ -186,66 +277,36 @@ def python_lanczos(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, compat=Fa
         prev_prev_vec = prev_vec
         prev_vec = cur_vec
 
-        if profile:
-            start = time.time()
-
+        start = time.time()
         cur_vec = (a_mat * prev_vec.T).T
-
-        if profile:
-            mult_secs += time.time() - start
-            mult_ops += 2 * nonzeros
+        mult_secs += time.time() - start
 
         if prev_prev_vec is not None:
             dot_val = prev_norm # reuse norm from previous iteration
             h_data.append(dot_val)
             h_inds.append(cur_it-2)
 
-            if profile:
-                start = time.time()
-
-            cur_vec -= prev_prev_vec * dot_val
-
-            if profile:
-                sub_secs += time.time() - start
-                sub_ops += 2 * dims
-
-        if profile:
             start = time.time()
+            #cur_vec -= prev_prev_vec * dot_val
+            paxpy(cur_vec[0], -1 * dot_val, prev_prev_vec[0])
+            axpy_secs += time.time() - start
 
-        if compat:
-            dot_val = np.dot(prev_vec[0].T.conj(), cur_vec[0])
-        else:
-            #dot_val = np.dot(prev_vec[0], cur_vec[0])
-            dot_val = pdot(prev_vec[0], cur_vec[0])
-
-        if profile:
-            dot_secs += time.time() - start
-            dot_ops += 2 * dims
+        start = time.time()
+        #dot_val = np.dot(prev_vec[0], cur_vec[0])
+        dot_val = pdot(prev_vec[0], cur_vec[0])
+        dot_secs += time.time() - start
 
         h_data.append(dot_val)
         h_inds.append(cur_it-1)
 
-        if profile:
-            start = time.time()
+        start = time.time()
+        #cur_vec -= prev_vec * dot_val
+        paxpy(cur_vec[0], -1 * dot_val, prev_vec[0])
+        axpy_secs += time.time() - start
 
-        cur_vec -= prev_vec * dot_val
-
-        if profile:
-            sub_secs += time.time() - start
-            sub_ops += 2 * dims
-
-        if profile:
-            start = time.time()
-
-        if compat:
-            ip = np.dot(cur_vec.conj(), cur_vec.T)
-            prev_norm = norm = np.sqrt(np.linalg.norm(ip, 2))
-        else:
-            prev_norm = norm = np.linalg.norm(cur_vec, 2)
-
-        if profile:
-            norm_secs += time.time() - start
-            norm_ops += 2 * dims
+        start = time.time()
+        prev_norm = norm = np.linalg.norm(cur_vec)
+        norm_secs += time.time() - start
 
         h_data.append(norm)
         h_inds.append(cur_it)
@@ -253,19 +314,23 @@ def python_lanczos(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, compat=Fa
 
         if norm >= tol:
             cur_vec = cur_vec / norm
+
+            start = time.time()
             pv_mat[cur_it, :] = (key_dir_mat * cur_vec[0])
+            proj_secs = time.time() - start
         else:
             break
 
     if profile:
-        names = ['dot', 'sub', 'mult', 'norm']
-        ops = [dot_ops, sub_ops, mult_ops, norm_ops]
-        secs = [dot_secs, sub_secs, mult_secs, norm_secs]
+        names = ['dot', 'axpy', 'mult', 'norm', 'proj']
+        secs = [dot_secs, axpy_secs, mult_secs, norm_secs, proj_secs]
+        sum_secs = 0.0
 
         for i in xrange(len(names)):
-            mflops = ops[i] / secs[i] / 1e6
+            print "{}: {} ms".format(names[i], secs[i] * 1000)
+            sum_secs += secs[i]
 
-            print "{}: {} MOPS in {} ms ({} MFLOPS)".format(names[i], ops[i] / 1e6, secs[i] * 1000, mflops)
+        print "Profiled Total seconds: {}s".format(sum_secs)
 
     # scale back
     pv_mat *= init_norm

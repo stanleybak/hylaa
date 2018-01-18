@@ -3,7 +3,6 @@ Unit tests for Hylass's gpu_interface.py
 Stanley Bak
 August 2017
 '''
-import array
 
 import unittest
 import random
@@ -16,7 +15,7 @@ from scipy.sparse import csr_matrix, csc_matrix
 from scipy.sparse.linalg import expm, expm_multiply
 from scipy.integrate import odeint
 
-from hylaa.krylov_python import python_arnoldi, python_lanczos, pdot
+from hylaa.krylov_python import python_arnoldi, python_lanczos, pdot, paxpy, pmult
 from hylaa.krylov_interface import KrylovInterface
 
 from hylaa.containers import HylaaSettings
@@ -121,7 +120,7 @@ def random_five_diag_sym_matrix(dims, print_progress=False):
             float(total_bytes) / 1024. / 1024. / 1024.)
 
     for row in xrange(dims):
-        if print_progress and row > 0 and row % 1000000 == 0 and time.time() - last_print > 1.0:
+        if print_progress and row > 0 and row % 100000 == 0 and time.time() - last_print > 1.0:
             last_print = time.time()
             elapsed = last_print - start
 
@@ -260,12 +259,66 @@ class TestKrylov(unittest.TestCase):
         #    print "{}, res1={}, res2={}".format(x, res1[x], res2[x])
         #    self.assertAlmostEqual(res1[x], res2[x], places=3, msg='result[{}] differs'.format(x))
 
+    def test_pmult(self):
+        'test parallel csr matrix mult'
+
+        dims = int(1e6) # 1e7, par = 0.4, serial = 0.1
+
+        a_matrix = random_five_diag_sym_matrix(dims, True)
+
+        start = time.time()
+        vec = np.random.random_sample((dims,))
+        print "allocated vector in {}s".format(time.time() - start)
+
+        start = time.time()
+        res_parallel = pmult(a_matrix, vec, force_parallel=True)
+        print "parallel time = {}s".format(time.time() - start)
+
+        start = time.time()
+        vec.shape = (dims, 1)
+        res_serial = a_matrix * vec
+        res_serial.shape = (dims,)
+        print "serial time = {}s".format(time.time() - start)
+
+        self.assertTrue(np.allclose(res_parallel, res_serial))
+
+    def test_paxpy(self):
+        'test parallel axpy function'
+
+        dims = int(1e8)
+
+        start = time.time()
+        a = np.random.random_sample((dims,))
+        print "allocated first vector in {}s".format(time.time() - start)
+
+        start = time.time()
+        par_a = a.copy()
+        print "copied first vector in {}s".format(time.time() - start)
+
+        start = time.time()
+        b = np.random.random_sample((dims,))
+        print "allocated second vector in {}s".format(time.time() - start)
+
+        start = time.time()
+        paxpy(par_a, -0.5, b, force_parallel=True)
+        print "parallel time = {}s".format(time.time() - start)
+
+        start = time.time()
+        a += -0.5 * b
+        print "serial time = {}s".format(time.time() - start)
+
+        self.assertTrue(np.allclose(par_a, a))
+
     def test_pdot(self):
         'test parallel dot function'
 
-        dims = 5e8
+        dims = int(1e9)
 
         start = time.time()
+        
+        #a = np.zeros((dims,), dtype=float)
+        #for i in xrange(dims):
+        #    a[i] = random.random()
         a = np.random.random_sample((dims,))
         print "allocated first vector in {}s".format(time.time() - start)
 
@@ -414,7 +467,7 @@ class TestKrylov(unittest.TestCase):
         # 1e9, allocate 22 mins, lanczos ~150 secs (10 secs per iteration)
 
         dims = int(1e9)
-        iterations = 10
+        iterations = 100
 
         a_matrix = random_five_diag_sym_matrix(dims, True)
         k_mat = csr_matrix(([1.0], [0], [0, 1]), shape=(1, dims)) # first coordinate
@@ -422,7 +475,7 @@ class TestKrylov(unittest.TestCase):
 
         # using python
         start = time.time()
-        python_pv, python_h = python_lanczos(a_matrix, e1_sparse, iterations, k_mat, compat=True, profile=True)
+        python_pv, python_h = python_lanczos(a_matrix, e1_sparse, iterations, k_mat, profile=True)
         print "python lanczos time = {}\n".format(time.time() - start)
 
         # using cusp
