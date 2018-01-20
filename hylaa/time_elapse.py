@@ -16,12 +16,11 @@ from hylaa.hybrid_automaton import LinearAutomatonMode
 from hylaa.containers import HylaaSettings, PlotSettings, SimulationSettings
 from hylaa.timerutil import Timers
 from hylaa.time_elapse_krylov import make_cur_time_elapse_mat_list, compress_fixed
-from hylaa.krylov_interface import KrylovInterface
 
 class TimeElapser(Freezable):
     'Object which computes the time-elapse function for a single mode at multiples of the time step'
 
-    def __init__(self, mode, hylaa_settings, var_lists=None, fixed_tuples=None):
+    def __init__(self, mode, hylaa_settings, init_space_csr):
         assert isinstance(mode, LinearAutomatonMode)
         assert isinstance(hylaa_settings, HylaaSettings)
 
@@ -58,24 +57,6 @@ class TimeElapser(Freezable):
         # used for Krylov method
         if self.settings.simulation.sim_mode == SimulationSettings.KRYLOV:
             self.cur_time_elapse_mat_list = None
-
-            if self.settings.simulation.krylov_seperate_constant_vars:
-                assert var_lists is not None and fixed_tuples is not None
-
-                self.var_lists = var_lists
-                self.fixed_tuples = fixed_tuples
-
-                self.fixed_init_vec = np.zeros((self.dims, 1))
-
-                for dim, val in self.fixed_tuples:
-                    self.fixed_init_vec[dim, 0] = val
-
-                self.dim_to_lp_var = self.create_dim_to_lp_var()
-            else:
-                assert var_lists is None and fixed_tuples is None, "seperate_constant_vars=False but var_lists was used"
-        else:
-            assert var_lists is None, "var_lists is not None but method is not Krylov"
-            assert fixed_tuples is None, "fixed tuples is not None buy method is not Krylov"
 
         # -- performance statistics --
         # arnoldi_iter -> list, with 0 = fixed-effect, others are the tuned arnoldi iterations
@@ -134,27 +115,6 @@ class TimeElapser(Freezable):
             indptr += [i + offset for i in t.guard_matrix.indptr[1:]]
 
         self.key_dir_mat = csr_matrix((data, cols, indptr), shape=(num_directions, self.dims), dtype=float)
-
-    def create_dim_to_lp_var(self):
-        'create a mapping of dimention -> variable in the LP. For use with Krylov sim and seperate_fixed_vars'
-
-        dims = self.dims
-        fixed_tuples = self.fixed_tuples
-        rv = [-1] * dims
-
-        counter = 0
-        next_fixed_dim = -1 if len(fixed_tuples) == 0 else fixed_tuples[0][0]
-        fixed_dim_index = 0
-
-        for dim in xrange(dims):
-            if dim == next_fixed_dim:
-                fixed_dim_index += 1
-                next_fixed_dim = -1 if fixed_dim_index >= len(fixed_tuples) else fixed_tuples[fixed_dim_index][0]
-            else:
-                rv[dim] = counter
-                counter += 1
-
-        return rv
 
     def step_exp_mult(self):
         'first step matrix exp, other steps matrix multiplication'

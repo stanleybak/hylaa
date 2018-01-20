@@ -29,33 +29,28 @@ class Star(Freezable):
     for plotting that states if requested in the settings.
     '''
 
-    def __init__(self, hylaa_settings, mode, init_mat_csr, init_rhs, input_mat_csr=None, input_rhs=None,
-                 var_lists=None, fixed_tuples=None):
+    def __init__(self, hylaa_settings, mode, init_space_csr, init_mat, init_rhs, input_mat_csr=None, input_rhs=None):
         assert isinstance(hylaa_settings, HylaaSettings)
+        assert isinstance(mode, LinearAutomatonMode)
+        assert isinstance(init_space_csr, csr_matrix)
+        assert isinstance(init_mat, np.ndarray)
+        assert isinstance(init_rhs, np.ndarray)
+
+        init_rhs.shape = (len(init_rhs), ) # flatten init_rhs into a 1-d array
+        assert init_rhs.shape == (init_mat.shape[0],)
+        assert init_mat.shape[1] == init_space_csr.shape[0]
+        self.dims = mode.parent.dims
+        assert init_space_csr.shape[1] == self.dims
 
         self.settings = hylaa_settings
-
-        assert isinstance(mode, LinearAutomatonMode)
         self.mode = mode
-        self.dims = mode.parent.dims
         self.inputs = mode.parent.inputs
-
-        self.fixed_tuples = fixed_tuples
-        self.var_lists = var_lists
         self.lp_dims = self.dims
 
-        if self.var_lists is not None and len(self.var_lists) > 0:
-            assert hylaa_settings.simulation.sim_mode == SimulationSettings.KRYLOV, \
-                    "var_lists not null, but sim_mode != KRYLOV"
-            assert isinstance(var_lists[0], list), "var_lists should be a list of lists of grouped dimensions"
-            self.lp_dims = 1 + sum([len(sublist) for sublist in var_lists])
+        self.time_elapse = TimeElapser(mode, hylaa_settings, init_space_csr)
 
-        self.time_elapse = TimeElapser(mode, hylaa_settings, var_lists=var_lists, fixed_tuples=fixed_tuples)
-
-        assert isinstance(init_mat_csr, csr_matrix)
-        assert isinstance(init_rhs, np.ndarray)
-        assert init_rhs.shape == (init_mat_csr.shape[0],)
-        self.init_mat_csr = init_mat_csr
+        self.init_space_csr = init_space_csr
+        self.init_mat = init_mat
         self.init_rhs = init_rhs
 
         if self.inputs == 0:
@@ -77,7 +72,7 @@ class Star(Freezable):
         self._verts = None # for plotting optimization, a cached copy of this star's projected polygon verts
 
         self._guard_opt_data = []
-        
+
         for i in xrange(len(mode.transitions)):
             self._guard_opt_data.append(GuardOptData(self, mode, i))
 

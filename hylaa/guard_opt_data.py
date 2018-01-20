@@ -37,7 +37,7 @@ class GuardOptData(Freezable):
 
         if self.settings.simulation.guard_mode == SimulationSettings.GUARD_FULL_LP:
             self.lpi = LpInstance(self.num_constraints, star.lp_dims, self.inputs)
-            self.lpi.set_init_constraints_csr(star.init_mat_csr, star.init_rhs)
+            self.lpi.set_init_constraints_csr(star.init_mat, star.init_rhs)
             self.lpi.set_cur_time_constraint_bounds(self.transition.guard_rhs)
 
             if star.inputs > 0:

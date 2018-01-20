@@ -5,21 +5,19 @@
 /*
  * The set of linear constraints (after 2 steps) is organized as follows:
  *
- * init_constriants 0                    | 0          | 0          <= init_constraints_vec
- * 0                identity_matrix      | 0          | 0          <= cur_time_constraints_vec
- * curTimeMatrix    -1 * identity_matrix | input_ef1  | input_ef2  == 0
+ * init_constraints 0                    | 0          | 0          <= init_constraints_vec
+ * 0                output_constraints   | 0          | 0          <= output_constraints_vec
+ * basisMatrix      -1 * identity_matrix | input_ef1  | input_ef2  == 0
  * --------------------------------------------------------------
  * 0                0                    | input_cons | 0          <= input_constraints_vec
  * 0                0                    | 0          | input_cons <= input_constraints_vec
  *
- * The first columns (numInitVars) are the initial variables, full number of dimensions
- * the second set of variables (numCurTimeVars), are equal to the number of linear constraints
- * in the safety condition. The second row set is an identity matrix because we don't
- * store the variables at the current time, only the projection of the variables on to the
- * set of linear constraints.
+ * The first set of columns are the initial variables (count is numInitVars).
+ * The second set of columns are the output variables (count is numOutputVars).
  *
- * The third set of variables encodes each components contribution to the curTimeVars. I need
- * to experiment on optimizing this (setting sit column by column vs row by row. Currently, we
+ * Based on this, the width of the basis matrix is numInitVars, and the height is numOutputVars.
+ *
+ * The third+ set of columns variables encodes each step's input contribution. Currently, we
  * store this in curTimeData (offset at 1) and curTimeIndices (offset at 1). It actually gets
  * set upon calling commitCurTimeRows() (seperated out so profiling can be done).
  */
@@ -43,13 +41,13 @@ extern GlobalLpData global;
 class LpData
 {
    public:
-    LpData(int numCurTimeVars, int numInitVars, int numInputs)
-        : numCurTimeVars(numCurTimeVars), numInitVars(numInitVars), numInputs(numInputs)
+    LpData(int numOutputVars, int numInitVars, int numInputs)
+        : numOutputVars(numOutputVars), numInitVars(numInitVars), numInputs(numInputs)
     {
-        if (numCurTimeVars <= 0 || numInitVars <= 0)
+        if (numOutputVars <= 0 || numInitVars <= 0)
         {
-            printf("Fatal Error: numCurTimeVars(%d) and numInitVars(%d) must be positive.\n",
-                   numCurTimeVars, numInitVars);
+            printf("Fatal Error: numOutputVars(%d) and numInitVars(%d) must be positive.\n",
+                   numOutputVars, numInitVars);
             exit(1);
         }
 
@@ -67,13 +65,13 @@ class LpData
 
         // the first n variables are the init variables
         // the first m variables are the standard variables
-        glp_add_cols(lp, numCurTimeVars + numInitVars);
+        glp_add_cols(lp, numOutputVars + numInitVars);
 
-        for (int i = 0; i < numCurTimeVars + numInitVars; ++i)
+        for (int i = 0; i < numOutputVars + numInitVars; ++i)
             glp_set_col_bnds(lp, i + 1, GLP_FR, 0, 0);  // free variable (bounds -inf to inf)
 
-        curTimeData.resize(numCurTimeVars);
-        curTimeIndices.resize(numCurTimeVars);
+        curTimeData.resize(numOutputVars);
+        curTimeIndices.resize(numOutputVars);
 
         // rows are added to the lp instance once time-elapse matrix is updated
     };
@@ -176,12 +174,12 @@ class LpData
 
     void addInputEffectsMatrix(double* matrix, int w, int h)
     {
-        if (w != numInputs || h != numCurTimeVars)
+        if (w != numInputs || h != numOutputVars)
         {
             printf(
                 "Fatal Error: Matrix dimensions mismatch in addInputEffectsMatrix: "
-                "w(%d) != numInputs(%d) || h(%d) != numCurTimeVars(%d)\n",
-                w, numInputs, h, numCurTimeVars);
+                "w(%d) != numInputs(%d) || h(%d) != numOutputVars(%d)\n",
+                w, numInputs, h, numOutputVars);
             exit(1);
         }
 
@@ -204,7 +202,7 @@ class LpData
         int precols = glp_get_num_cols(lp);
         int prerows = glp_get_num_rows(lp);
 
-        if (prerows == numInitConstraints + numCurTimeConstraints)
+        if (prerows == numInitConstraints + numOutputConstraints)
         {
             printf(
                 "Fatal Error: updateTimeElpaseMatrix() should be called before "
@@ -246,7 +244,7 @@ class LpData
 
         // finally, set the values for the input effects matrix that was passed in
         // this will be in row (numInitConstraints + row#), and column (precols + col#)
-        for (int r = 0; r < numCurTimeVars; ++r)
+        for (int r = 0; r < numOutputVars; ++r)
         {
             for (int c = 0; c < numInputs; ++c)
             {
@@ -279,9 +277,9 @@ class LpData
         }
 
         // assign from curTimeData and curTimeVertices
-        for (int r = 0; r < numCurTimeVars; ++r)
+        for (int r = 0; r < numOutputVars; ++r)
         {
-            int lpRow = numInitConstraints + numCurTimeConstraints + r + 1;
+            int lpRow = numInitConstraints + numOutputConstraints + r + 1;
 
             double* vals = &curTimeData[r][0];
             int* inds = &curTimeIndices[r][0];
@@ -295,12 +293,12 @@ class LpData
 
     void updateTimeElapseMatrix(double* matrix, int w, int h)
     {
-        if (w != numInitVars || h != numCurTimeVars)
+        if (w != numInitVars || h != numOutputVars)
         {
             printf(
                 "Fatal Error: Matrix dimensions mismatch in updateTimeElapseMatrix: "
-                "w(%d) != numInitVars(%d) || h(%d) != numCurTimeVars(%d)\n",
-                w, numInitVars, h, numCurTimeVars);
+                "w(%d) != numInitVars(%d) || h(%d) != numOutputVars(%d)\n",
+                w, numInitVars, h, numOutputVars);
             exit(1);
         }
 
@@ -311,15 +309,15 @@ class LpData
         }
 
         // add rows, if new instance
-        if (glp_get_num_rows(lp) == numInitConstraints + numCurTimeConstraints)
+        if (glp_get_num_rows(lp) == numInitConstraints + numOutputConstraints)
         {
             // new problem instance, create one constraint row for each equality constraint
-            glp_add_rows(lp, numCurTimeVars);
+            glp_add_rows(lp, numOutputVars);
 
             // set bounds == 0
-            for (int r = 0; r < numCurTimeVars; ++r)
+            for (int r = 0; r < numOutputVars; ++r)
             {
-                int row = numInitConstraints + numCurTimeConstraints + r + 1;
+                int row = numInitConstraints + numOutputConstraints + r + 1;
                 glp_set_row_bnds(lp, row, GLP_FX, 0, 0);
             }
         }
@@ -328,7 +326,7 @@ class LpData
         if (curTimeData[0].size() == 0)
         {
             // initialize each row
-            for (int r = 0; r < numCurTimeVars; ++r)
+            for (int r = 0; r < numOutputVars; ++r)
             {
                 curTimeData[r].resize(numInitVars + 2);  // 0 unused & 1 for the -1 * Identity part
                 curTimeIndices[r].resize(numInitVars + 2);
@@ -449,8 +447,8 @@ class LpData
             glp_set_row_bnds(lp, i + 1, GLP_UP, 0, rhs[i]);
 
         // worst case entries in one row is dataLen
-        vector <int> rowIndices(dataLen + 1, 0);
-        vector <double> rowData(dataLen + 1, 0.0);
+        vector<int> rowIndices(dataLen + 1, 0);
+        vector<double> rowData(dataLen + 1, 0.0);
 
         for (int row = 0; row < rhsLen; ++row)
         {
@@ -468,13 +466,13 @@ class LpData
 
     void setCurTimeConstraintBounds(double* rhs, int rhsLen)
     {
-        if (rhsLen != numCurTimeVars)
+        if (rhsLen != numOutputVars)
         {
             printf(
                 "Fatal Error: num constraints being set in setCurTimeConstraints(..., %d) should "
                 "be equal "
                 "to the number of curTime variables (%d).\n",
-                rhsLen, numCurTimeVars);
+                rhsLen, numOutputVars);
             exit(1);
         }
 
@@ -486,7 +484,7 @@ class LpData
             exit(1);
         }
 
-        numCurTimeConstraints = rhsLen;
+        numOutputConstraints = rhsLen;
 
         // create new row for the constraint
         glp_add_rows(lp, rhsLen);
@@ -517,16 +515,16 @@ class LpData
             exit(1);
         }
 
-        if (dirLen != numCurTimeVars)
+        if (dirLen != numOutputVars)
         {
             printf(
-                "Fatal Error: dirLen(%d) is not equal to numCurTimeVars(%d) in call to "
+                "Fatal Error: dirLen(%d) is not equal to numOutputVars(%d) in call to "
                 "minimize()\n",
-                dirLen, numCurTimeVars);
+                dirLen, numOutputVars);
             exit(1);
         }
 
-        for (int i = 0; i < numCurTimeVars; ++i)
+        for (int i = 0; i < numOutputVars; ++i)
             glp_set_obj_coef(lp, 1 + numInitVars + i, direction[i]);
 
         int startIterations = glp_get_it_cnt(lp);
@@ -543,12 +541,12 @@ class LpData
 
     /////////////////////////////////
    private:
-    int numCurTimeVars = 0;  // number of standard variables
-    int numInitVars = 0;     // number of basis variables
+    int numOutputVars = 0;
+    int numInitVars = 0;
     int numInputs = 0;
 
     int numInitConstraints = 0;
-    int numCurTimeConstraints = 0;
+    int numOutputConstraints = 0;
 
     // the curTimeMatrix & input_effect rows are assigned piece by piece, then committed all at once
     // these are offset by 1 (0th element is not used), so they can directly be used with glpk

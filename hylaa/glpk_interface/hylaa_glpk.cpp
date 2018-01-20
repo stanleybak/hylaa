@@ -39,10 +39,9 @@ void addInputEffectsMatrix(LpData* lpd, double* matrix, int w, int h)
     return lpd->addInputEffectsMatrix(matrix, w, h);
 }
 
-void setInitConstraintsCsr(LpData* lpd, double* data, int dataLen, int* indices, int indicesLen,
-                           int* indptr, int indptrLen, double* rhs, int rhsLen)
+void setInitConstraints(LpData* lpd, double* matrix, int w, int h, double* rhs, int rhsLen)
 {
-    lpd->setInitConstraintsCsr(data, dataLen, indices, indicesLen, indptr, indptrLen, rhs, rhsLen);
+    lpd->setInitConstraints(matrix, w, h, rhs, rhsLen);
 }
 
 void setInputConstraintsCsr(LpData* lpd, double* data, int dataLen, int* indices, int indicesLen,
@@ -104,11 +103,9 @@ void addInputEffectsMatrix(void* lpdata, double* matrix, int w, int h)
     hylaa_glpk::addInputEffectsMatrix((LpData*)lpdata, matrix, w, h);
 }
 
-void setInitConstraintsCsr(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,
-                           int* indptr, int indptrLen, double* rhs, int rhsLen)
+void setInitConstraints(void* lpdata, double* matrix, int w, int h, double* rhs, int rhsLen)
 {
-    hylaa_glpk::setInitConstraintsCsr((LpData*)lpdata, data, dataLen, indices, indicesLen, indptr,
-                                      indptrLen, rhs, rhsLen);
+    hylaa_glpk::setInitConstraints((LpData*)lpdata, matrix, w, h, rhs, rhsLen);
 }
 
 void setInputConstraintsCsr(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,

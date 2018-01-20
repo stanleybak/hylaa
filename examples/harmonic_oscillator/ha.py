@@ -7,7 +7,7 @@ import math
 import numpy as np
 from scipy.sparse import csr_matrix
 
-from hylaa.hybrid_automaton import LinearHybridAutomaton, make_constraint_matrix, make_seperated_constraints
+from hylaa.hybrid_automaton import LinearHybridAutomaton
 from hylaa.engine import HylaaSettings
 from hylaa.engine import HylaaEngine
 from hylaa.containers import PlotSettings, SimulationSettings
@@ -40,41 +40,22 @@ def make_init_star(ha, hylaa_settings):
     '''returns a star'''
 
     rv = None
-    bounds_list = [] # bounds on each dimension
 
-    for dim in xrange(ha.dims):
-        if dim == 0: # x == -5
-            lb = -5.0
-            ub = -5.0
-        elif dim == 1: # y in [0, 1]
-            lb = 0
-            ub = 1
-        elif dim == 2: # t == 0
-            lb = 0
-            ub = 0
-        elif dim == 3: # a == 1
-            lb = 1
-            ub = 1
-        else:
-            raise RuntimeError('Unknown dimension: {}'.format(dim))
+    # vec1 is <0, 1, 0, 0> with the constraint that 0 <= vec1 <= 1
+    # vec2 is <-5, 0, 0, 1> with the constraint that vec2 == 1
 
-        bounds_list.append((lb, ub))
+    init_space = csr_matrix(np.array([[0., 1, 0, 0], [-5, 0, 0, 1]], dtype=float))
+    init_mat = np.array([[1., 0], [-1, 0], [0, 1], [0, -1]], dtype=float)
+    init_rhs = np.array([[1], [0], [1], [-1.]], dtype=float)
 
-    if not hylaa_settings.simulation.krylov_seperate_constant_vars:
-        init_mat, init_rhs = make_constraint_matrix(bounds_list)
-        rv = Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs)
-    else:
-        init_mat, init_rhs, variable_dim_list, fixed_dim_tuples = make_seperated_constraints(bounds_list)
-
-        rv = Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs, \
-                  var_lists=[variable_dim_list], fixed_tuples=fixed_dim_tuples)
+    rv = Star(hylaa_settings, ha.modes['mode'], init_space, init_mat, init_rhs)
 
     return rv
 
 def define_settings():
     'get the hylaa settings object'
     plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
+    plot_settings.plot_mode = PlotSettings.PLOT_INTERACTIVE
     plot_settings.xdim_dir = 0
     plot_settings.ydim_dir = 1
 
@@ -99,7 +80,7 @@ def define_settings():
     #settings.simulation.sim_mode = SimulationSettings.MATRIX_EXP
 
     settings.simulation.guard_mode = SimulationSettings.GUARD_FULL_LP
-    settings.simulation.sim_mode = SimulationSettings.KRYLOV
+    settings.simulation.sim_mode = SimulationSettings.MATRIX_EXP
     settings.simulation.krylov_seperate_constant_vars = False
 
     settings.simulation.check_answer = True

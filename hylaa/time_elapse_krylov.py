@@ -13,7 +13,6 @@ from scipy.sparse import csr_matrix, csc_matrix
 from scipy.sparse.linalg import expm
 from scipy.integrate import odeint
 
-from hylaa.krylov_interface import KrylovInterface
 from hylaa.timerutil import Timers
 
 def projected_odeint_sim(arg):

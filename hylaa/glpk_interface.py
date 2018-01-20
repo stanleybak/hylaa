@@ -51,15 +51,12 @@ class LpInstance(Freezable):
             LpInstance._add_input_effects_matrix.argtypes = \
                 [ctypes.c_void_p, ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, ctypes.c_int]
 
-            # void setInitConstraintsCsr(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,
-            #                         int* indptr, int indptrLen, double* rhs, int rhsLen)
-            LpInstance._set_init_constraints_csr = lib.setInitConstraintsCsr
-            LpInstance._set_init_constraints_csr.restype = None
-            LpInstance._set_init_constraints_csr.argtypes = \
+            # void setInitConstraints(void* lpdata, double* dataMatrix, int w, int h, double* rhs, int rhsLen)
+            LpInstance._set_init_constraints = lib.setInitConstraints
+            LpInstance._set_init_constraints.restype = None
+            LpInstance._set_init_constraints.argtypes = \
                 [ctypes.c_void_p, \
-                 ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, \
-                 ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, \
-                 ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, \
+                 ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, ctypes.c_int, \
                  ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int]
 
             # void setInputConstraintsCsr(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,
@@ -185,23 +182,19 @@ class LpInstance(Freezable):
         self.added_time_elapse_matrix = True
         self.committed = False
 
-    def set_init_constraints_csr(self, constraint_mat, rhs):
+    def set_init_constraints(self, constraint_mat, rhs):
         '''set the initial state constraints'''
 
         assert not self.added_init_constraints
         assert not self.added_cur_time_constraints
         assert not self.added_time_elapse_matrix
-        assert isinstance(constraint_mat, csr_matrix)
+        assert isinstance(constraint_mat, np.ndarray)
         assert isinstance(rhs, np.ndarray)
         assert rhs.shape == (constraint_mat.shape[0],)
 
         Timers.tic("lp overhead")
-        data = constraint_mat.data
-        indices = constraint_mat.indices
-        indptr = constraint_mat.indptr
-
-        LpInstance._set_init_constraints_csr(self.lp_data, data, data.shape[0], indices, indices.shape[0],
-                                             indptr, indptr.shape[0], rhs, rhs.shape[0])
+        LpInstance._set_init_constraints(self.lp_data, constraint_mat, constraint_mat.shape[1], \
+                                        constraint_mat.shape[0], rhs, rhs.shape[0])
 
         Timers.toc("lp overhead")
 
