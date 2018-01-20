@@ -1,6 +1,7 @@
 // Stanley Bak
 // Hylaa GLPK interface header
-// Nov 2016
+// Original: Nov 2016
+// Reorganized in Jan 2018 based on Input / Output spaces
 
 /*
  * The set of linear constraints (after 2 steps) is organized as follows:
@@ -73,7 +74,7 @@ class LpData
         curTimeData.resize(numOutputVars);
         curTimeIndices.resize(numOutputVars);
 
-        // rows are added to the lp instance once time-elapse matrix is updated
+        // rows are added to the lp instance once the basis matrix is updated
     };
 
     ~LpData()

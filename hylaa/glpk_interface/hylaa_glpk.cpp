@@ -11,9 +11,9 @@ GlobalLpData global;
 
 namespace hylaa_glpk
 {
-LpData* initLp(int numCurTimeVars, int numInitVars, int numInputs)
+LpData* initLp(int numOutputVars, int numInitVars, int numInputs)
 {
-    LpData* data = new (std::nothrow) LpData(numCurTimeVars, numInitVars, numInputs);
+    LpData* data = new (std::nothrow) LpData(numOutputVars, numInitVars, numInputs);
 
     if (data == nullptr)
     {
@@ -29,9 +29,9 @@ void delLp(LpData* ptr)
     delete ptr;
 }
 
-void updateTimeElapseMatrix(LpData* lpd, double* matrix, int w, int h)
+void updateBasisMatrix(LpData* lpd, double* matrix, int w, int h)
 {
-    return lpd->updateTimeElapseMatrix(matrix, w, h);
+    return lpd->updateBasisMatrix(matrix, w, h);
 }
 
 void addInputEffectsMatrix(LpData* lpd, double* matrix, int w, int h)
@@ -82,9 +82,9 @@ void test()
 /////////////////////////
 extern "C" {
 // returns a LpData* instance
-void* initLp(int numCurTimeVars, int numInitVars, int numInputs)
+void* initLp(int numOutputVars, int numInitVars, int numInputs)
 {
-    return (void*)hylaa_glpk::initLp(numCurTimeVars, numInitVars, numInputs);
+    return (void*)hylaa_glpk::initLp(numOutputVars, numInitVars, numInputs);
 }
 
 // frees a LpData* instance
@@ -93,9 +93,9 @@ void delLp(void* lpdata)
     hylaa_glpk::delLp((LpData*)lpdata);
 }
 
-void updateTimeElapseMatrix(void* lpdata, double* matrix, int w, int h)
+void updateBasisMatrix(void* lpdata, double* matrix, int w, int h)
 {
-    hylaa_glpk::updateTimeElapseMatrix((LpData*)lpdata, matrix, w, h);
+    hylaa_glpk::updateBasisMatrix((LpData*)lpdata, matrix, w, h);
 }
 
 void addInputEffectsMatrix(void* lpdata, double* matrix, int w, int h)
