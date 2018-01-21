@@ -4,23 +4,32 @@
 // Reorganized in Jan 2018 based on Input / Output spaces
 
 /*
- * The set of linear constraints (after 2 steps) is organized as follows:
+ * The set of linear constraints is organized as follows:
  *
- * init_constraints 0                    | 0          | 0          <= init_constraints_vec
- * 0                output_constraints   | 0          | 0          <= output_constraints_vec
- * basisMatrix      -1 * identity_matrix | input_ef1  | input_ef2  == 0
- * --------------------------------------------------------------
- * 0                0                    | input_cons | 0          <= input_constraints_vec
- * 0                0                    | 0          | input_cons <= input_constraints_vec
+ * init_constraints | 0                    | <= init_constraints_vec
+ * -----------------+----------------------+--------------------------
+ * 0                | output_constraints   | <= output_constraints_vec
+ * -----------------+----------------------+--------------------------
+ * basisMatrix      | -1 * identity_matrix | == 0
  *
  * The first set of columns are the initial variables (count is numInitVars).
  * The second set of columns are the output variables (count is numOutputVars).
  *
  * Based on this, the width of the basis matrix is numInitVars, and the height is numOutputVars.
  *
- * The third+ set of columns variables encodes each step's input contribution. Currently, we
- * store this in curTimeData (offset at 1) and curTimeIndices (offset at 1). It actually gets
- * set upon calling commitCurTimeRows() (seperated out so profiling can be done).
+ * When you add input effects, you probably want to add new variables for total input effects, so
+ * that updating the basis matrix can be done without re-setting the init constraints or input
+ * basis matrices. Something like this (after two steps):
+ *
+ * init_cons | 0           | 0          | 0            | 0            | <= init_cons_rhs
+ * ----------+-------------+------------+--------------+--------------+-------
+ * 0         | output_cons | 0          | 0            | 0            | <= output_cons_rhs
+ * ----------+-------------+------------+--------------+--------------+-------
+ * basis_mat | -1 * ident  | ident      | 0            |              | == 0
+ * ----------+-------------+------------+-------------------------------------
+ * 0         | 0           | -1 * ident | input_basis1 | input_basis2 | == 0
+ * 0         | 0           | 0          | input_cons   | 0            | <= input_cons_rhs
+ * 0         | 0           | 0          | 0            | input_cons   | <= input_cons_rhs
  */
 
 #include <glpk.h>
@@ -52,6 +61,12 @@ class LpData
             exit(1);
         }
 
+        if (numInputs != 0)
+        {
+            printf("Fatal Error: Inputs not supported (numInputs > 0)\n");
+            exit(1);
+        }
+
         // setup lp
         lp = glp_create_prob();
         glp_set_obj_dir(lp, GLP_MIN);
@@ -65,14 +80,11 @@ class LpData
         // params.meth = GLP_DUALP;
 
         // the first n variables are the init variables
-        // the first m variables are the standard variables
+        // the first m variables are the output variables
         glp_add_cols(lp, numOutputVars + numInitVars);
 
         for (int i = 0; i < numOutputVars + numInitVars; ++i)
             glp_set_col_bnds(lp, i + 1, GLP_FR, 0, 0);  // free variable (bounds -inf to inf)
-
-        curTimeData.resize(numOutputVars);
-        curTimeIndices.resize(numOutputVars);
 
         // rows are added to the lp instance once the basis matrix is updated
     };
@@ -99,14 +111,6 @@ class LpData
 
     void printLp()
     {
-        if (!committed)
-        {
-            printf(
-                "Fatal Error: printLp() called but matrix was not committed with "
-                "commitCurTimeRows()\n");
-            exit(1);
-        }
-
         int rows = glp_get_num_rows(lp);
         int cols = glp_get_num_cols(lp);
 
@@ -173,131 +177,12 @@ class LpData
         }
     }
 
-    void addInputEffectsMatrix(double* matrix, int w, int h)
-    {
-        if (w != numInputs || h != numOutputVars)
-        {
-            printf(
-                "Fatal Error: Matrix dimensions mismatch in addInputEffectsMatrix: "
-                "w(%d) != numInputs(%d) || h(%d) != numOutputVars(%d)\n",
-                w, numInputs, h, numOutputVars);
-            exit(1);
-        }
-
-        if (inputRhs.size() == 0)
-        {
-            printf(
-                "Fatal Error: input constraints should be set before calling "
-                "addInputEffectsMatrix()\n");
-            exit(1);
-        }
-
-        if (curTimeData[0].size() == 0)
-        {
-            printf(
-                "Fatal Error: Time elapse matrix should be set before calling "
-                "addInputEffectsMatrix()\n");
-            exit(1);
-        }
-
-        int precols = glp_get_num_cols(lp);
-        int prerows = glp_get_num_rows(lp);
-
-        if (prerows == numInitConstraints + numOutputConstraints)
-        {
-            printf(
-                "Fatal Error: updateTimeElpaseMatrix() should be called before "
-                "addInputEffectsMatrix()\n");
-            exit(1);
-        }
-
-        // add new columns (for input variables)
-        glp_add_cols(lp, numInputs);
-
-        for (int i = 0; i < numInputs; ++i)
-            glp_set_col_bnds(lp, precols + i + 1, GLP_FR, 0,
-                             0);  // free variable (bounds -inf to inf)
-
-        // add new rows (for input constraints)
-        int numInputConstraints = (int)inputRhs.size();
-
-        glp_add_rows(lp, numInputConstraints);
-
-        for (int i = 0; i < numInputConstraints; ++i)
-            glp_set_row_bnds(lp, prerows + i + 1, GLP_UP, 0, inputRhs[i]);
-
-        // worst case entries in one row is dataLen
-        int rowIndices[inputCsrData.size() + 1];
-        double rowData[inputCsrData.size() + 1];
-
-        for (int row = 0; row < numInputConstraints; ++row)
-        {
-            int rowIndex = 1;
-
-            for (int i = inputCsrIndptr[row]; i < inputCsrIndptr[row + 1]; ++i)
-            {
-                rowIndices[rowIndex] = precols + inputCsrIndices[i] + 1;
-                rowData[rowIndex++] = inputCsrData[i];
-            }
-
-            glp_set_mat_row(lp, prerows + row + 1, rowIndex - 1, rowIndices, rowData);
-        }
-
-        // finally, set the values for the input effects matrix that was passed in
-        // this will be in row (numInitConstraints + row#), and column (precols + col#)
-        for (int r = 0; r < numOutputVars; ++r)
-        {
-            for (int c = 0; c < numInputs; ++c)
-            {
-                double value = matrix[r * w + c];
-                curTimeData[r].push_back(value);
-                curTimeIndices[r].push_back(precols + c + 1);
-            }
-        }
-
-        committed = false;
-    }
-
-    /*
-     * commit the cur-time rows (curTimeMatirx + input-effects matrices) to the lp instance
-     */
-    void commitCurTimeRows()
-    {
-        if (committed)
-        {
-            printf("Fatal Error: commitCurTimeRows() called twice without any changes.\n");
-            exit(1);
-        }
-
-        if (curTimeData[0].size() == 0)
-        {
-            printf(
-                "Fatal Error: updateTimeElapseMatrix() should be called before "
-                "commitCurTimeRows().\n");
-            exit(1);
-        }
-
-        // assign from curTimeData and curTimeVertices
-        for (int r = 0; r < numOutputVars; ++r)
-        {
-            int lpRow = numInitConstraints + numOutputConstraints + r + 1;
-
-            double* vals = &curTimeData[r][0];
-            int* inds = &curTimeIndices[r][0];
-            int len = curTimeData[r].size() - 1;  // these are offset by one
-
-            glp_set_mat_row(lp, lpRow, len, inds, vals);
-        }
-
-        committed = true;
-    }
-
-    void updateTimeElapseMatrix(double* matrix, int w, int h)
+    void updateBasisMatrix(double* matrix, int w, int h)
     {
         if (w != numInitVars || h != numOutputVars)
         {
             printf(
-                "Fatal Error: Matrix dimensions mismatch in updateTimeElapseMatrix: "
+                "Fatal Error: Matrix dimensions mismatch in updateBasisMatrix: "
                 "w(%d) != numInitVars(%d) || h(%d) != numOutputVars(%d)\n",
                 w, numInitVars, h, numOutputVars);
             exit(1);
@@ -305,7 +190,7 @@ class LpData
 
         if (numInitConstraints == 0)
         {
-            printf("Fatal Error: Init Constraints should be set before updateTimeElapseMatrix.\n");
+            printf("Fatal Error: Init Constraints should be set before updateBasisMatrix.\n");
             exit(1);
         }
 
@@ -322,30 +207,6 @@ class LpData
                 glp_set_row_bnds(lp, row, GLP_FX, 0, 0);
             }
         }
-
-        // create curTimeData and curTimeIndices
-        if (curTimeData[0].size() == 0)
-        {
-            // initialize each row
-            for (int r = 0; r < numOutputVars; ++r)
-            {
-                curTimeData[r].resize(numInitVars + 2);  // 0 unused & 1 for the -1 * Identity part
-                curTimeIndices[r].resize(numInitVars + 2);
-
-                curTimeData[r][numInitVars + 1] = -1;
-                curTimeIndices[r][numInitVars + 1] = numInitVars + r + 1;
-
-                for (int i = 0; i < numInitVars; ++i)
-                    curTimeIndices[r][i + 1] = i + 1;
-            }
-        }
-
-        // assign to curTimeData and curTimeIndices
-        for (int row = 0; row < h; ++row)
-            for (int col = 0; col < w; ++col)
-                curTimeData[row][1 + col] = matrix[row * w + col];
-
-        committed = false;
     }
 
     // Set the input constraints (Csr matrix)
@@ -399,8 +260,7 @@ class LpData
      * Set the constraints on the initial states. A CSR sparse matrix is passed in, along with
      * a right-hand side vector
      */
-    void setInitConstraintsCsr(double* data, int dataLen, int* indices, int indicesLen, int* indptr,
-                               int indptrLen, double* rhs, int rhsLen)
+    void setInitConstraints(double* mat, int w, int h, double* rhs, int rhsLen)
     {
         if (numInitConstraints != 0)
         {
@@ -465,14 +325,14 @@ class LpData
         }
     }
 
-    void setCurTimeConstraintBounds(double* rhs, int rhsLen)
+    void setOutputConstraints(double* mat, int w, int h, double* rhs, int rhsLen)
     {
         if (rhsLen != numOutputVars)
         {
             printf(
-                "Fatal Error: num constraints being set in setCurTimeConstraints(..., %d) should "
+                "Fatal Error: num constraints being set in setOutputConstraints(..., %d) should "
                 "be equal "
-                "to the number of curTime variables (%d).\n",
+                "to the number of output variables (%d).\n",
                 rhsLen, numOutputVars);
             exit(1);
         }
@@ -481,7 +341,7 @@ class LpData
         {
             printf(
                 "Fatal Error: Cur-time constraints should be set before time-elapse matrix "
-                "is updated in setCurTimeConstraints().\n");
+                "is updated in setOutputConstraints().\n");
             exit(1);
         }
 
@@ -510,12 +370,6 @@ class LpData
     // returns 1 on unsat
     int minimize(double* direction, int dirLen, double* result, int resLen)
     {
-        if (!committed)
-        {
-            printf("Fatal Error: minimize called without commitCurTimeRows()\n");
-            exit(1);
-        }
-
         if (dirLen != numOutputVars)
         {
             printf(
@@ -548,12 +402,6 @@ class LpData
 
     int numInitConstraints = 0;
     int numOutputConstraints = 0;
-
-    // the curTimeMatrix & input_effect rows are assigned piece by piece, then committed all at once
-    // these are offset by 1 (0th element is not used), so they can directly be used with glpk
-    vector<vector<double>> curTimeData;
-    vector<vector<int>> curTimeIndices;
-    bool committed = false;  // tracks if commitCurTimeRows() was called after updating data
 
     // saved input constraints (need to be set at each step, if input is present)
     vector<double> inputCsrData;

@@ -34,30 +34,14 @@ void updateBasisMatrix(LpData* lpd, double* matrix, int w, int h)
     return lpd->updateBasisMatrix(matrix, w, h);
 }
 
-void addInputEffectsMatrix(LpData* lpd, double* matrix, int w, int h)
-{
-    return lpd->addInputEffectsMatrix(matrix, w, h);
-}
-
 void setInitConstraints(LpData* lpd, double* matrix, int w, int h, double* rhs, int rhsLen)
 {
     lpd->setInitConstraints(matrix, w, h, rhs, rhsLen);
 }
 
-void setInputConstraintsCsr(LpData* lpd, double* data, int dataLen, int* indices, int indicesLen,
-                            int* indptr, int indptrLen, double* rhs, int rhsLen)
+void setOutputConstraints(LpData* lpd, double* matrix, int w, int h, double* rhs, int rhsLen)
 {
-    lpd->setInputConstraintsCsr(data, dataLen, indices, indicesLen, indptr, indptrLen, rhs, rhsLen);
-}
-
-void setCurTimeConstraintBounds(LpData* lpd, double* rhs, int rhsLen)
-{
-    lpd->setCurTimeConstraintBounds(rhs, rhsLen);
-}
-
-void commitCurTimeRows(LpData* lpd)
-{
-    lpd->commitCurTimeRows();
+    lpd->setOutputConstraits(matrix, w, h, rhs, rhsLen);
 }
 
 int minimize(LpData* lpd, double* direction, int dirLen, double* result, int resLen)
@@ -108,21 +92,9 @@ void setInitConstraints(void* lpdata, double* matrix, int w, int h, double* rhs,
     hylaa_glpk::setInitConstraints((LpData*)lpdata, matrix, w, h, rhs, rhsLen);
 }
 
-void setInputConstraintsCsr(void* lpdata, double* data, int dataLen, int* indices, int indicesLen,
-                            int* indptr, int indptrLen, double* rhs, int rhsLen)
+void setOutputConstraints(void* lpdata, double* matrix, int w, int h, double* rhs, int rhsLen)
 {
-    hylaa_glpk::setInputConstraintsCsr((LpData*)lpdata, data, dataLen, indices, indicesLen, indptr,
-                                       indptrLen, rhs, rhsLen);
-}
-
-void setCurTimeConstraintBounds(void* lpdata, double* rhs, int rhsLen)
-{
-    hylaa_glpk::setCurTimeConstraintBounds((LpData*)lpdata, rhs, rhsLen);
-}
-
-void commitCurTimeRows(void* lpdata)
-{
-    hylaa_glpk::commitCurTimeRows((LpData*)lpdata);
+    hylaa_glpk::setOutputConstraints((LpData*)lpdata, matrix, w, h, rhs, rhsLen);
 }
 
 int minimize(void* lpdata, double* direction, int dirLen, double* result, int resLen)
