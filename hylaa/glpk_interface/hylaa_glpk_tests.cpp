@@ -12,17 +12,17 @@ void test1d()
 {
     LpData lpd(1, 1, 0);
 
-    double data[] = {1, -1};
-    int indices[] = {0, 0};
-    int indptr[] = {0, 1, 2};
+    // 1 <= x <= 2
+    double mat[] = {1, -1};
     double rhs[] = {2, -1};
 
-    lpd.setInitConstraintsCsr(data, 2, indices, 2, indptr, 3, rhs, 2);
+    lpd.setInitConstraints(mat, 1, 2, rhs, 2);
+
+    // simple maximization problem (no constraints)
+    lpd.setNoOutputConstraints();
 
     double basis[] = {0.1};
-    lpd.updateTimeElapseMatrix(basis, 1, 1);
-
-    lpd.commitCurTimeRows();
+    lpd.updateBasisMatrix(basis, 1, 1);
 
     double result[2] = {0, 0};
     double direction1[] = {1};
@@ -67,25 +67,23 @@ void test1d_constraint()
 {
     LpData lpd(1, 1, 0);
 
-    double initData[] = {1, -1};
-    int initIndices[] = {0, 0};
-    int initIndPtr[] = {0, 1, 2};
+    double initMat[] = {1, -1};
     double initRhs[] = {2, -1};
-    // 1 <= x <= 2
 
-    lpd.setInitConstraintsCsr(initData, 2, initIndices, 2, initIndPtr, 3, initRhs, 2);
+    lpd.setInitConstraints(initMat, 1, 2, initRhs, 2);
+    // 1 <= x_0 <= 2
 
-    double curTimeRhs[] = {1.5};
+    // x_now <= 1.5
+    double outputMat[] = {1};
+    double outputRhs[] = {1.5};
 
-    lpd.setCurTimeConstraintBounds(curTimeRhs, 1);
+    lpd.setOutputConstraints(outputMat, 1, 1, outputRhs, 1);
 
     double basis[] = {1};
-    lpd.updateTimeElapseMatrix(basis, 1, 1);
+    lpd.updateBasisMatrix(basis, 1, 1);
 
     double result[1] = {0};
     double direction[] = {-1};
-
-    lpd.commitCurTimeRows();
 
     if (lpd.minimize(direction, 1, result, 1))
     {

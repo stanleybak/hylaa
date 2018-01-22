@@ -229,7 +229,7 @@ class LpData
      */
     void setInitConstraints(double* mat, int w, int h, double* rhs, int rhsLen)
     {
-        if (numInitConstraints != 0)
+        if (numInitConstraints != -1)
         {
             printf("Fatal Error: setInitConstraints() called twice.\n");
             exit(1);
@@ -286,9 +286,23 @@ class LpData
         }
     }
 
+    // indicate that there are not constraints on the output variables (for plotting)
+    void setNoOutputConstraints()
+    {
+        if (numOutputConstraints != -1)
+        {
+            printf(
+                "Fatal Error: setNoOutputConstraints() called, but numOutputConstraints was "
+                "already set\n");
+            exit(1);
+        }
+
+        setOutputConstraints(0, numOutputVars, 0, 0, 0);
+    }
+
     void setOutputConstraints(double* mat, int w, int h, double* rhs, int rhsLen)
     {
-        if (numOutputConstraints != 0)
+        if (numOutputConstraints != -1)
         {
             printf("Fatal Error: setOutputConstraints() called twice\n");
             exit(1);
@@ -313,33 +327,37 @@ class LpData
             exit(1);
         }
 
-        // create new rows for the output constraints
-        glp_add_rows(lp, rhsLen);
-
-        for (int r = 0; r < rhsLen; ++r)
-            glp_set_row_bnds(lp, numInitConstraints + r + 1, GLP_UP, 0, rhs[r]);  // '<=' constraint
-
-        // use memory on the heap (stack may be too small)
-        vector<int> rowIndices(w + 1, 0);
-        vector<double> rowData(w + 1, 0.0);
-
-        for (int row = 0; row < rhsLen; ++row)
+        if (numOutputConstraints > 0)
         {
-            int rowIndex = 1;
+            // create new rows for the output constraints
+            glp_add_rows(lp, rhsLen);
 
-            for (int i = 0; i < w; ++i)
+            for (int r = 0; r < rhsLen; ++r)
+                glp_set_row_bnds(lp, numInitConstraints + r + 1, GLP_UP, 0,
+                                 rhs[r]);  // '<=' constraint
+
+            // use memory on the heap (stack may be too small)
+            vector<int> rowIndices(w + 1, 0);
+            vector<double> rowData(w + 1, 0.0);
+
+            for (int row = 0; row < rhsLen; ++row)
             {
-                double d = mat[row * w + i];
+                int rowIndex = 1;
 
-                if (d != 0)
+                for (int i = 0; i < w; ++i)
                 {
-                    rowIndices[rowIndex] = i + 1;
-                    rowData[rowIndex++] = d;
-                }
-            }
+                    double d = mat[row * w + i];
 
-            glp_set_mat_row(lp, numInitConstriants + row + 1, rowIndex - 1, &rowIndices[0],
-                            &rowData[0]);
+                    if (d != 0)
+                    {
+                        rowIndices[rowIndex] = i + 1;
+                        rowData[rowIndex++] = d;
+                    }
+                }
+
+                glp_set_mat_row(lp, numInitConstraints + row + 1, rowIndex - 1, &rowIndices[0],
+                                &rowData[0]);
+            }
         }
 
         // at this point, we can also create new rows for the basis matrix
@@ -365,7 +383,7 @@ class LpData
             exit(1);
         }
 
-        if (numOutputConstraints == 0)
+        if (numOutputConstraints == -1)
         {
             printf("Fatal Error: Output Constraints should be set before updateBasisMatrix.\n");
             exit(1);
@@ -384,16 +402,12 @@ class LpData
                 if (r == 0)  // no sense in re-assigning the indices
                     rowIndices[i + 1] = 1 + i;
 
-                rowData[i + 1] = mat[i];
+                rowData[i + 1] = mat[r * w + i];
             }
 
             // negative inverse entry
             rowIndices[w + 1] = 1 + w + r;
             rowData[w + 1] = -1;
-
-            double* vals = &curTimeData[r][0];
-            int* inds = &curTimeIndices[r][0];
-            int len = curTimeData[r].size() - 1;  // these are offset by one
 
             glp_set_mat_row(lp, lpRow, w + 1, &rowIndices[0], &rowData[0]);
         }
@@ -403,7 +417,7 @@ class LpData
     // returns 1 on unsat
     int minimize(double* direction, int dirLen, double* result, int resLen)
     {
-        if (numInitConstraints == 0 || numOutputConstraints == 0)
+        if (numInitConstraints == -1 || numOutputConstraints == -1)
         {
             printf("Fatal Error: minimize() called without setting init or output constraints\n");
             exit(1);
@@ -439,8 +453,8 @@ class LpData
     int numInitVars = 0;
     int numInputs = 0;
 
-    int numInitConstraints = 0;
-    int numOutputConstraints = 0;
+    int numInitConstraints = -1;
+    int numOutputConstraints = -1;
 
     // saved input constraints (need to be set at each step, if input is present)
     vector<double> inputCsrData;

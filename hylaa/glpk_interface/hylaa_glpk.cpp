@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+
 #include "hylaa_glpk.h"
 #include "hylaa_glpk_tests.h"
 
@@ -41,7 +42,12 @@ void setInitConstraints(LpData* lpd, double* matrix, int w, int h, double* rhs, 
 
 void setOutputConstraints(LpData* lpd, double* matrix, int w, int h, double* rhs, int rhsLen)
 {
-    lpd->setOutputConstraits(matrix, w, h, rhs, rhsLen);
+    lpd->setOutputConstraints(matrix, w, h, rhs, rhsLen);
+}
+
+void setNoOutputConstraints(LpData* lpd)
+{
+    lpd->setNoOutputConstraints();
 }
 
 int minimize(LpData* lpd, double* direction, int dirLen, double* result, int resLen)
@@ -82,11 +88,6 @@ void updateBasisMatrix(void* lpdata, double* matrix, int w, int h)
     hylaa_glpk::updateBasisMatrix((LpData*)lpdata, matrix, w, h);
 }
 
-void addInputEffectsMatrix(void* lpdata, double* matrix, int w, int h)
-{
-    hylaa_glpk::addInputEffectsMatrix((LpData*)lpdata, matrix, w, h);
-}
-
 void setInitConstraints(void* lpdata, double* matrix, int w, int h, double* rhs, int rhsLen)
 {
     hylaa_glpk::setInitConstraints((LpData*)lpdata, matrix, w, h, rhs, rhsLen);
@@ -95,6 +96,11 @@ void setInitConstraints(void* lpdata, double* matrix, int w, int h, double* rhs,
 void setOutputConstraints(void* lpdata, double* matrix, int w, int h, double* rhs, int rhsLen)
 {
     hylaa_glpk::setOutputConstraints((LpData*)lpdata, matrix, w, h, rhs, rhsLen);
+}
+
+void setNoOutputConstraints(void* lpdata)
+{
+    hylaa_glpk::setNoOutputConstraints((LpData*)lpdata);
 }
 
 int minimize(void* lpdata, double* direction, int dirLen, double* result, int resLen)

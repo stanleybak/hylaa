@@ -21,12 +21,11 @@ These instructions are made for an Ubuntu system, such as the Amazon EC2 GPU ins
 # Install Packages #
 
 sudo apt-get update
-sudo apt-get install python-numpy python-scipy python-matplotlib make nvidia-cuda-toolkit
+sudo apt-get install python-numpy python-scipy python-matplotlib make
 
 
-For unit tests: python-krypy
-
-Not sure (check): libblas-dev
+For python_krylov unit tests: python-krypy
+For glpk_interface unit tests: cvxopt
 
 # Compile GLPK Interface as Shared Library #
 
