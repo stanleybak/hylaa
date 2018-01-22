@@ -79,6 +79,9 @@ class HylaaEngine(object):
             lp_solution = self.cur_star.get_guard_intersection(i)
 
             if lp_solution is not None:
+                self.result.init_vars = lp_solution[:self.cur_star.num_init_vars]
+                self.result.output_vars = lp_solution[self.cur_star.num_init_vars:]
+
                 if self.settings.print_lp_on_error:
                     # print the LP solution and exit
                     lpi = self.cur_star.get_guard_lpi(i)
@@ -91,38 +94,28 @@ class HylaaEngine(object):
                     mode = star.mode
                     step_size = self.settings.step
                     total_steps = star.time_elapse.next_step - 1
-                    start_pt = lp_solution[:star.lp_dims]
 
-                    #print ".engine start point from lp = {}".format(start_pt)
+                    output_space_first_row = self.cur_star.mode.transitions[i].output_space_csr[0].toarray()[0]
+                    init_space_csr = self.cur_star.init_space_csr
 
-                    if self.cur_star.var_lists is not None:
-                        # reconstruct start_pt based on the fixed and non-fixed dims
-                        start_pt = self.reconstruct_full_start_pt(start_pt)
+                    guard_threshold = self.cur_star.mode.transitions[i].guard_rhs[0]
 
-                    #print ".engine reconstructed start point = {}".format(start_pt)
+                    end_first_output_val = self.result.output_vars[0]
 
-                    norm_vec_sparse = self.cur_star.mode.transitions[i].guard_matrix[0]
-                    normal_vec = np.array(norm_vec_sparse.toarray(), dtype=float)
-                    normal_vec.shape = (self.cur_star.dims,)
-                    normal_val = self.cur_star.mode.transitions[i].guard_rhs[0]
-
-                    end_val = lp_solution[self.cur_star.lp_dims]
-
-                    num_constraints = len(self.cur_star.mode.transitions[i].guard_rhs)
-                    input_vals = lp_solution[self.cur_star.lp_dims + num_constraints:]
+                    # construct inputs, which are in backwards order
+                    inputs = []
+                    
+                    #input_vals = lp_solution[self.cur_star.lp_dims + num_constraints:]
+                    #
+                    #for step in xrange(total_steps):
+                    #    offset = len(input_vals) - (self.cur_star.inputs * (1 + step))
+                    #    inputs.append(input_vals[offset:offset+self.cur_star.inputs])
 
                     if self.settings.print_output:
                         print 'Writing counter-example trace file: "{}"'.format(filename)
 
-                    # construct inputs, which are in backwards order
-                    inputs = []
-
-                    for step in xrange(total_steps):
-                        offset = len(input_vals) - (self.cur_star.inputs * (1 + step))
-                        inputs.append(input_vals[offset:offset+self.cur_star.inputs])
-
-                    write_counter_example(filename, mode, step_size, total_steps, start_pt, inputs,
-                                          normal_vec, normal_val, end_val)
+                    write_counter_example(filename, mode, step_size, total_steps, self.result.init_vars, 
+                        init_space_csr, inputs, output_space_first_row, guard_threshold, end_first_output_val)
 
                 self.result.safe = False
                 break # no need to keep checking
@@ -197,5 +190,8 @@ class HylaaResult(Freezable):
 
         self.krylov_stats = None # krylov statistics, map of string -> value, copy of TimerElapse.stats
         self.reachable_poly_data = None # set to the vertices of the reachble plot (if plot mode is GNUPLOT or MATLAB)
+
+        self.init_vars = None # counterexample: assigned when unsafe state is reachable
+        self.output_vars = None # counterexample: assigned when unsafe state is reachable
 
         self.freeze_attrs()

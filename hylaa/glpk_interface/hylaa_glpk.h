@@ -350,7 +350,7 @@ class LpData
 
                     if (d != 0)
                     {
-                        rowIndices[rowIndex] = i + 1;
+                        rowIndices[rowIndex] = numInitVars + i + 1;
                         rowData[rowIndex++] = d;
                     }
                 }
@@ -438,6 +438,18 @@ class LpData
         int startIterations = glp_get_it_cnt(lp);
 
         int simplexRes = glp_simplex(lp, &params);
+
+        if (simplexRes != 0)
+        {
+            // sometimes the previous solution is singular wrt. current constraints... need to reset
+            printf(
+                "Warning: hylaa_glpk.h - simplexRes was nonzero (%d). Resetting statuses and "
+                "retrying.\n",
+                simplexRes);
+            resetLp();
+
+            simplexRes = glp_simplex(lp, &params);
+        }
 
         int newIterations = glp_get_it_cnt(lp) - startIterations;
         global.iterations += newIterations;

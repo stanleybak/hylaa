@@ -44,7 +44,7 @@ class GuardOptData(Freezable):
     def update_full_lp(self):
         '''update the LP solution and, if it's feasible, get its solution, for GUARD_FULL_LP'''
 
-        cur_basis_mat = self.star.time_elapse.cur_time_elapse_mat
+        cur_basis_mat = self.star.time_elapse.cur_basis_mat
 
         # start and end rows of key-dir matrices
         start = self.key_dir_offset
@@ -65,6 +65,8 @@ class GuardOptData(Freezable):
 
         result = np.zeros((result_len), dtype=float)
         direction = np.zeros((self.num_output_vars,), dtype=float)
+
+        # self.lpi.reset_lp()
 
         is_feasible = self.lpi.minimize(direction, result, error_if_infeasible=False)
 

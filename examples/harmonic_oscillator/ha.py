@@ -28,10 +28,10 @@ def define_ha():
     error = ha.new_mode('error')
 
     # x1 >= 4.0 & x1 <= 4.0
-    output_space = csr_matrix(([1.], [1], [0, 1]), shape=(1, 4), dtype=float)
+    output_space = csr_matrix(([1.], [0], [0, 1]), shape=(1, 4), dtype=float)
 
     mat = np.array([[1.], [-1.]], dtype=float)
-    rhs = np.array([-4.0, 4.0], dtype=float)
+    rhs = np.array([4.0, -4.0], dtype=float)
     trans1 = ha.new_transition(mode, error)
     trans1.set_guard(output_space, mat, rhs)
 
@@ -45,7 +45,7 @@ def make_init_star(ha, hylaa_settings):
     # vec1 is <0, 1, 0, 0> with the constraint that 0 <= vec1 <= 1
     # vec2 is <-5, 0, 0, 1> with the constraint that vec2 == 1
 
-    init_space = csr_matrix(np.array([[0., 1, 0, 0], [-5, 0, 0, 1]], dtype=float))
+    init_space = csr_matrix(np.array([[0., 1, 0, 0], [-5, 0, 0, 1]], dtype=float).transpose())
     init_mat = np.array([[1., 0], [-1, 0], [0, 1], [0, -1]], dtype=float)
     init_rhs = np.array([[1], [0], [1], [-1.]], dtype=float)
 
@@ -77,11 +77,10 @@ def define_settings():
     plot_settings.extra_lines_width = 4
 
     settings = HylaaSettings(step=math.pi/4, max_time=3 * math.pi / 4, plot_settings=plot_settings)
-    #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
+    settings.simulation.sim_mode = SimulationSettings.EXP_MULT
     #settings.simulation.sim_mode = SimulationSettings.MATRIX_EXP
 
-    settings.simulation.sim_mode = SimulationSettings.MATRIX_EXP
-
+    #settings.simulation.exp_mult_output_vec = False
     settings.simulation.check_answer = True
 
     return settings

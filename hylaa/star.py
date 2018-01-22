@@ -38,10 +38,10 @@ class Star(Freezable):
 
         init_rhs.shape = (len(init_rhs), ) # flatten init_rhs into a 1-d array
         assert init_rhs.shape == (init_mat.shape[0],)
-        assert init_mat.shape[1] == init_space_csr.shape[0]
-        assert init_space_csr.shape[1] == mode.parent.dims
+        assert init_mat.shape[1] == init_space_csr.shape[1]
+        assert init_space_csr.shape[0] == mode.parent.dims
 
-        self.num_init_vars = init_space_csr.shape[0]
+        self.num_init_vars = init_space_csr.shape[1]
 
         self.settings = hylaa_settings
         self.mode = mode
@@ -91,7 +91,7 @@ class Star(Freezable):
     def get_plot_lpi(self):
         'get (maybe create) the LpInstance object for this star, and return it'
 
-        assert self.time_elapse.cur_time_elapse_mat is not None
+        assert self.time_elapse.cur_basis_mat is not None
 
         rv = self._plot_lpi
 
@@ -100,7 +100,7 @@ class Star(Freezable):
             rv.set_init_constraints(self.init_mat, self.init_rhs)
             rv.set_no_output_constraints()
 
-            rv.update_basis_matrix(self.time_elapse.cur_time_elapse_mat[:2])
+            rv.update_basis_matrix(self.time_elapse.cur_basis_mat[:2])
 
             if self.inputs > 0:
                 rv.set_input_constraints_csr(self.input_mat_csr, self.input_rhs)
@@ -115,7 +115,7 @@ class Star(Freezable):
         self.time_elapse.step()
 
         if self._plot_lpi is not None:
-            self._plot_lpi.update_basis_matrix(self.time_elapse.cur_time_elapse_mat[:2])
+            self._plot_lpi.update_basis_matrix(self.time_elapse.cur_basis_mat[:2])
 
             if self.time_elapse.cur_input_effects_matrix is not None:
                 self._plot_lpi.add_input_effects_matrix(self.time_elapse.cur_input_effects_matrix[:2])
@@ -154,8 +154,6 @@ class Star(Freezable):
         assert Star.plot_settings is not None, "init_plot_vecs() should be called before verts()"
 
         if self._verts is None:
-            self.get_plot_lpi().commit_cur_time_rows()
-
             use_binary_search = True
 
             if Star.high_vert_mode:

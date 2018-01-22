@@ -102,18 +102,20 @@ end
 
         f.write("hold off;\n")
 
-def write_counter_example(filename, mode, step_size, total_steps, start_pt, inputs, normal_vec, normal_val, end_val):
+def write_counter_example(filename, mode, step_size, total_steps, init_pt, init_space_csr, inputs, normal_vec,
+                          normal_val, end_val):
     'write a counter-example to a file which can be run using the HyLAA trace generator'
 
     a_matrix_csc = csc_matrix(mode.a_matrix)
     assert isinstance(normal_vec, np.ndarray)
+    assert len(normal_vec.shape) == 1
 
     with open(filename, 'w') as f:
 
         f.write('''"Counter-example trace generated using HyLAA"
 
 import sys
-from scipy.sparse import csc_matrix
+from scipy.sparse import csc_matrix, csr_matrix
 from hylaa.check_trace import check, plot
 
 def check_instance(stdout=True, skip_plot=False):
@@ -163,7 +165,16 @@ def check_instance(stdout=True, skip_plot=False):
 
         ###
 
-        f.write('    start_point = {}\n'.format([n for n in start_pt]))
+        f.write('    data = {}\n'.format([n for n in init_space_csr.data]))
+        f.write('    indices = {}\n'.format([n for n in init_space_csr.indices]))
+        f.write('    indptr = {}\n'.format([n for n in init_space_csr.indptr]))
+        f.write('    init_space_csr = csr_matrix((data, indices, indptr), dtype=float, shape=({}, {}))\n\n'.format(
+            init_space_csr.shape[0], init_space_csr.shape[1]))
+
+        ###
+
+        f.write('    init_point = {}\n'.format([n for n in init_pt]))
+        f.write('    start_point = init_space_csr * init_point\n')
         f.write('    normal_vec = {}\n'.format([n for n in normal_vec]))
         f.write('    normal_val = {}\n\n'.format(normal_val))
         f.write('    end_val = {}\n'.format(end_val))

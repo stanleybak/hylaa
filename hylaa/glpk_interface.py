@@ -10,8 +10,6 @@ import os
 import numpy as np
 from numpy.ctypeslib import ndpointer
 
-from scipy.sparse import csr_matrix
-
 from hylaa.timerutil import Timers
 from hylaa.util import Freezable, get_script_path
 
@@ -77,6 +75,11 @@ class LpInstance(Freezable):
             LpInstance._print_lp = lib.printLp
             LpInstance._print_lp.restype = None
             LpInstance._print_lp.argtypes = [ctypes.c_void_p]
+
+            # void resetLp(void* lpdata)
+            LpInstance._reset_lp = lib.resetLp
+            LpInstance._reset_lp.restype = None
+            LpInstance._reset_lp.argtypes = [ctypes.c_void_p]
 
             # int totalIterations()
             LpInstance._total_iterations = lib.totalIterations
@@ -160,7 +163,9 @@ class LpInstance(Freezable):
         assert self.num_output_vars is not None
         assert self.num_init_vars is not None
         assert isinstance(matrix, np.ndarray)
-        assert matrix.shape == (self.num_output_vars, self.num_init_vars)
+
+        assert matrix.shape == (self.num_output_vars, self.num_init_vars), "Expected {}x{} basis mat, got {}x{}".format(
+            self.num_output_vars, self.num_init_vars, matrix.shape[0], matrix.shape[1])
 
         Timers.tic("lp overhead")
         LpInstance._update_basis_matrix(self.lp_data, matrix, matrix.shape[1], matrix.shape[0])
@@ -173,6 +178,14 @@ class LpInstance(Freezable):
         assert self.num_init_vars is not None
 
         LpInstance._print_lp(self.lp_data)
+
+    def reset_lp(self):
+        '''reset the lp statuses'''
+
+        assert self.num_output_vars is not None
+        assert self.num_init_vars is not None
+
+        LpInstance._reset_lp(self.lp_data)
 
     def minimize(self, direction, result, error_if_infeasible=False):
         '''

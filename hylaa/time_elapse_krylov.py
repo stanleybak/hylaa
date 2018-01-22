@@ -48,43 +48,6 @@ def projected_odeint_sim(arg):
 
     return rv
 
-def compress_fixed(key_dir_mat, fixed_tuples):
-    'compress the fixed variables in the time_elapse matrix'
-
-    assert isinstance(key_dir_mat, csr_matrix)
-
-    csc_mat = csc_matrix(key_dir_mat)
-
-    # we need to create a new dense matrix based on the variable reordering
-    num_vars = csc_mat.shape[1] - len(fixed_tuples) + 1
-    rv = np.zeros((csc_mat.shape[0], num_vars), dtype=float)
-
-    compressed_var_index = 0
-    uncompressed_dim = 0
-
-    for dim in xrange(csc_mat.shape[1]):
-        if compressed_var_index >= len(fixed_tuples) or dim < fixed_tuples[compressed_var_index][0]:
-            # uncompressed dim
-
-            for index in xrange(csc_mat.indptr[dim], csc_mat.indptr[dim+1]):
-                row = csc_mat.indices[index]
-                n = csc_mat.data[index]
-                rv[row, uncompressed_dim] = n
-
-            uncompressed_dim += 1
-        else:
-            # compressed dim
-            fixed_val = fixed_tuples[compressed_var_index][1]
-
-            for index in xrange(csc_mat.indptr[dim], csc_mat.indptr[dim+1]):
-                row = csc_mat.indices[index]
-                n = csc_mat.data[index]
-                rv[row, uncompressed_dim] += fixed_val * n
-
-            compressed_var_index += 1
-
-    return rv
-
 def format_secs(sec):
     'convert seconds (float) to a human-readable string'
 
@@ -230,10 +193,7 @@ def init_krylov(time_elapser, arnoldi_iter):
 
     Timers.tic('initilaizing step zero from key dir mat')
 
-    if settings.simulation.krylov_seperate_constant_vars:
-        dense_key_dir_mat = compress_fixed(key_dir_mat, time_elapser.fixed_tuples)
-    else:
-        dense_key_dir_mat = np.array(key_dir_mat.todense(), dtype=float)
+    dense_key_dir_mat = np.array(key_dir_mat.todense(), dtype=float)
 
     rv.append(dense_key_dir_mat) # step zero
 

@@ -60,6 +60,11 @@ void printLp(LpData* lpd)
     lpd->printLp();
 }
 
+void resetLp(LpData* lpd)
+{
+    lpd->resetLp();
+}
+
 void test()
 {
     run_hylaa_glpk_tests();
@@ -121,6 +126,11 @@ int totalOptimizations()
 void printLp(void* lpdata)
 {
     hylaa_glpk::printLp((LpData*)lpdata);
+}
+
+void resetLp(void* lpdata)
+{
+    hylaa_glpk::resetLp((LpData*)lpdata);
 }
 
 void test()
