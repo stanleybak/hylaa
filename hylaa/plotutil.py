@@ -20,7 +20,7 @@ from matplotlib.lines import Line2D
 
 from hylaa.file_io import write_matlab, write_gnuplot
 from hylaa.timerutil import Timers
-from hylaa.containers import PlotSettings
+from hylaa.settings import PlotSettings
 from hylaa.util import Freezable
 from hylaa.glpk_interface import LpInstance
 

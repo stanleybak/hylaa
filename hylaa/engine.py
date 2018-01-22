@@ -10,8 +10,9 @@ from hylaa.plotutil import PlotManager
 from hylaa.star import Star
 from hylaa.hybrid_automaton import LinearHybridAutomaton
 from hylaa.timerutil import Timers
-from hylaa.containers import HylaaSettings, PlotSettings, HylaaResult
+from hylaa.settings import HylaaSettings, PlotSettings
 from hylaa.file_io import write_counter_example
+from hylaa.util import Freezable
 
 class HylaaEngine(object):
     'main computation object. initialize and call run()'
@@ -186,3 +187,15 @@ class HylaaEngine(object):
 
         if self.plotman.reach_poly_data is not None:
             self.result.reachable_poly_data = self.plotman.reach_poly_data
+
+class HylaaResult(Freezable):
+    'Result, assigned to engine.result after computation'
+
+    def __init__(self):
+        self.timers = None # map of string (timer name) -> TimerData
+        self.safe = True # was the verification result safe?
+
+        self.krylov_stats = None # krylov statistics, map of string -> value, copy of TimerElapse.stats
+        self.reachable_poly_data = None # set to the vertices of the reachble plot (if plot mode is GNUPLOT or MATLAB)
+
+        self.freeze_attrs()

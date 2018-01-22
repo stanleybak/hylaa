@@ -10,7 +10,7 @@ from scipy.sparse import csr_matrix
 from hylaa.hybrid_automaton import LinearHybridAutomaton
 from hylaa.engine import HylaaSettings
 from hylaa.engine import HylaaEngine
-from hylaa.containers import PlotSettings, SimulationSettings
+from hylaa.settings import PlotSettings, SimulationSettings
 from hylaa.star import Star
 
 def define_ha():

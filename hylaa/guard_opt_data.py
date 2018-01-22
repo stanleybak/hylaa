@@ -8,7 +8,7 @@ import numpy as np
 
 from hylaa.util import Freezable
 from hylaa.hybrid_automaton import LinearAutomatonMode
-from hylaa.containers import SimulationSettings, PlotSettings
+from hylaa.settings import SimulationSettings, PlotSettings
 from hylaa.glpk_interface import LpInstance
 
 class GuardOptData(Freezable):
@@ -37,7 +37,9 @@ class GuardOptData(Freezable):
 
         if self.settings.simulation.guard_mode == SimulationSettings.GUARD_FULL_LP:
             self.lpi = LpInstance(self.num_constraints, star.lp_dims, self.inputs)
-            self.lpi.set_init_constraints_csr(star.init_mat, star.init_rhs)
+
+
+            self.lpi.set_init_constraints(star.init_mat, star.init_rhs)
             self.lpi.set_cur_time_constraint_bounds(self.transition.guard_rhs)
 
             if star.inputs > 0:

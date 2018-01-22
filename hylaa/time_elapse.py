@@ -13,7 +13,7 @@ from scipy.sparse.linalg import expm, expm_multiply
 
 from hylaa.util import Freezable
 from hylaa.hybrid_automaton import LinearAutomatonMode
-from hylaa.containers import HylaaSettings, PlotSettings, SimulationSettings
+from hylaa.settings import HylaaSettings, PlotSettings, SimulationSettings
 from hylaa.timerutil import Timers
 from hylaa.time_elapse_krylov import make_cur_time_elapse_mat_list, compress_fixed
 
