@@ -100,7 +100,7 @@ void test1d_constraint()
     }
 }
 
-void test1d_inputs()
+/*void test1d_inputs()
 {
     LpData lpd(1, 1, 1);
 
@@ -173,7 +173,7 @@ void test1d_inputs()
             expected2[3]);
         exit(1);
     }
-}
+    }*/
 
 }  //  end namespace hylaa_glpk_tests
 
@@ -181,5 +181,5 @@ void run_hylaa_glpk_tests()
 {
     hylaa_glpk_tests::test1d();
     hylaa_glpk_tests::test1d_constraint();
-    hylaa_glpk_tests::test1d_inputs();
+    // hylaa_glpk_tests::test1d_inputs();
 }

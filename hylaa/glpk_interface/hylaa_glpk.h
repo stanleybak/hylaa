@@ -177,39 +177,7 @@ class LpData
         }
     }
 
-    void updateBasisMatrix(double* matrix, int w, int h)
-    {
-        if (w != numInitVars || h != numOutputVars)
-        {
-            printf(
-                "Fatal Error: Matrix dimensions mismatch in updateBasisMatrix: "
-                "w(%d) != numInitVars(%d) || h(%d) != numOutputVars(%d)\n",
-                w, numInitVars, h, numOutputVars);
-            exit(1);
-        }
-
-        if (numInitConstraints == 0)
-        {
-            printf("Fatal Error: Init Constraints should be set before updateBasisMatrix.\n");
-            exit(1);
-        }
-
-        // add rows, if new instance
-        if (glp_get_num_rows(lp) == numInitConstraints + numOutputConstraints)
-        {
-            // new problem instance, create one constraint row for each equality constraint
-            glp_add_rows(lp, numOutputVars);
-
-            // set bounds == 0
-            for (int r = 0; r < numOutputVars; ++r)
-            {
-                int row = numInitConstraints + numOutputConstraints + r + 1;
-                glp_set_row_bnds(lp, row, GLP_FX, 0, 0);
-            }
-        }
-    }
-
-    // Set the input constraints (Csr matrix)
+    // Set the input constraints
     void setInputConstraintsCsr(double* data, int dataLen, int* indices, int indicesLen,
                                 int* indptr, int indptrLen, double* rhs, int rhsLen)
     {
@@ -257,47 +225,35 @@ class LpData
     }
 
     /**
-     * Set the constraints on the initial states. A CSR sparse matrix is passed in, along with
-     * a right-hand side vector
+     * Set the constraints on the initial states.
      */
     void setInitConstraints(double* mat, int w, int h, double* rhs, int rhsLen)
     {
         if (numInitConstraints != 0)
         {
-            printf("Fatal Error: setInitConstraintsCsr() called twice.\n");
+            printf("Fatal Error: setInitConstraints() called twice.\n");
             exit(1);
         }
 
         numInitConstraints = rhsLen;
 
-        if (dataLen != indicesLen)
+        if (h != rhsLen)
         {
-            printf(
-                "Fatal Error: setInitConstraintsCsr() expected CSR matrix with dataLen == "
-                "indicesLen.\n");
+            printf("Fatal Error: setInitConstraints() matrix h != rhsLen.\n");
             exit(1);
         }
 
-        if (indptrLen != rhsLen + 1)
+        if (w != numInitVars)
         {
             printf(
-                "Fatal Error: setInitConstraintsCsr() CSR matrix should have indptrLen (%d) == "
-                "rhsLen(%d) + 1.\n",
-                indptrLen, rhsLen);
-            exit(1);
-        }
-
-        if (indptr[indptrLen - 1] != dataLen)
-        {
-            printf(
-                "Fatal Error: setInitConstraintsCsr() CSR matrix should have indptr[-1] == "
-                "dataLen.\n");
+                "Fatal Error: setInitConstraints() matrix w (%d) should equal numInitVars (%d)\n",
+                w, numInitVars);
             exit(1);
         }
 
         if (glp_get_num_rows(lp) != 0)
         {
-            printf("Fatal Error: setInitConstraintsCsr() should be called with 0 rows in the lp\n");
+            printf("Fatal Error: setInitConstraints() should be called with 0 rows in the lp\n");
             exit(1);
         }
 
@@ -305,20 +261,25 @@ class LpData
         glp_add_rows(lp, rhsLen);
 
         for (int i = 0; i < rhsLen; ++i)
-            glp_set_row_bnds(lp, i + 1, GLP_UP, 0, rhs[i]);
+            glp_set_row_bnds(lp, i + 1, GLP_UP, 0, rhs[i]);  // '<=' constraint
 
-        // worst case entries in one row is dataLen
-        vector<int> rowIndices(dataLen + 1, 0);
-        vector<double> rowData(dataLen + 1, 0.0);
+        // use memory on the heap (stack may be too small)
+        vector<int> rowIndices(w + 1, 0);
+        vector<double> rowData(w + 1, 0.0);
 
         for (int row = 0; row < rhsLen; ++row)
         {
             int rowIndex = 1;
 
-            for (int i = indptr[row]; i < indptr[row + 1]; ++i)
+            for (int i = 0; i < w; ++i)
             {
-                rowIndices[rowIndex] = indices[i] + 1;
-                rowData[rowIndex++] = data[i];
+                double d = mat[row * w + i];
+
+                if (d != 0)
+                {
+                    rowIndices[rowIndex] = i + 1;
+                    rowData[rowIndex++] = d;
+                }
             }
 
             glp_set_mat_row(lp, row + 1, rowIndex - 1, &rowIndices[0], &rowData[0]);
@@ -327,42 +288,114 @@ class LpData
 
     void setOutputConstraints(double* mat, int w, int h, double* rhs, int rhsLen)
     {
-        if (rhsLen != numOutputVars)
+        if (numOutputConstraints != 0)
+        {
+            printf("Fatal Error: setOutputConstraints() called twice\n");
+            exit(1);
+        }
+
+        numOutputConstraints = rhsLen;
+
+        if (w != numOutputVars)
         {
             printf(
-                "Fatal Error: num constraints being set in setOutputConstraints(..., %d) should "
-                "be equal "
-                "to the number of output variables (%d).\n",
-                rhsLen, numOutputVars);
+                "Fatal Error: matrix width in setOutputConstraints (%d) should "
+                "be equal to the number of output variables (%d).\n",
+                w, numOutputVars);
             exit(1);
         }
 
         if (glp_get_num_rows(lp) != numInitConstraints)
         {
             printf(
-                "Fatal Error: Cur-time constraints should be set before time-elapse matrix "
-                "is updated in setOutputConstraints().\n");
+                "Fatal Error: setOutputConstraints() should be called right after "
+                "setInitConstraints()\n");
             exit(1);
         }
 
-        numOutputConstraints = rhsLen;
-
-        // create new row for the constraint
+        // create new rows for the output constraints
         glp_add_rows(lp, rhsLen);
 
         for (int r = 0; r < rhsLen; ++r)
-            glp_set_row_bnds(lp, numInitConstraints + r + 1, GLP_UP, 0, rhs[r]);
+            glp_set_row_bnds(lp, numInitConstraints + r + 1, GLP_UP, 0, rhs[r]);  // '<=' constraint
 
-        // assign identity matrix
-        int inds[2];
-        double vals[2];
+        // use memory on the heap (stack may be too small)
+        vector<int> rowIndices(w + 1, 0);
+        vector<double> rowData(w + 1, 0.0);
 
         for (int row = 0; row < rhsLen; ++row)
         {
-            inds[1] = 1 + numInitVars + row;
-            vals[1] = 1;
+            int rowIndex = 1;
 
-            glp_set_mat_row(lp, numInitConstraints + row + 1, 1, inds, vals);
+            for (int i = 0; i < w; ++i)
+            {
+                double d = mat[row * w + i];
+
+                if (d != 0)
+                {
+                    rowIndices[rowIndex] = i + 1;
+                    rowData[rowIndex++] = d;
+                }
+            }
+
+            glp_set_mat_row(lp, numInitConstriants + row + 1, rowIndex - 1, &rowIndices[0],
+                            &rowData[0]);
+        }
+
+        // at this point, we can also create new rows for the basis matrix
+        // new problem instance, create one constraint row for each equality constraint
+        glp_add_rows(lp, numOutputVars);
+
+        // set bounds == 0
+        for (int r = 0; r < numOutputVars; ++r)
+        {
+            int row = numInitConstraints + numOutputConstraints + r + 1;
+            glp_set_row_bnds(lp, row, GLP_FX, 0, 0);
+        }
+    }
+
+    void updateBasisMatrix(double* mat, int w, int h)
+    {
+        if (w != numInitVars || h != numOutputVars)
+        {
+            printf(
+                "Fatal Error: Matrix dimensions mismatch in updateBasisMatrix: "
+                "w(%d) != numInitVars(%d) || h(%d) != numOutputVars(%d)\n",
+                w, numInitVars, h, numOutputVars);
+            exit(1);
+        }
+
+        if (numOutputConstraints == 0)
+        {
+            printf("Fatal Error: Output Constraints should be set before updateBasisMatrix.\n");
+            exit(1);
+        }
+
+        // use memory on the heap (stack may be too small)
+        vector<int> rowIndices(w + 2, 0);
+        vector<double> rowData(w + 2, 0.0);
+
+        for (int r = 0; r < numOutputVars; ++r)
+        {
+            int lpRow = numInitConstraints + numOutputConstraints + r + 1;
+
+            for (int i = 0; i < w; ++i)
+            {
+                if (r == 0)  // no sense in re-assigning the indices
+                    rowIndices[i + 1] = 1 + i;
+
+                rowData[i + 1] = mat[i];
+            }
+
+            // negative inverse entry
+            rowIndices[w + 1] = 1 + w + r;
+            rowData[w + 1] = -1;
+
+            double* vals = &curTimeData[r][0];
+            int* inds = &curTimeIndices[r][0];
+            int len = curTimeData[r].size() - 1;  // these are offset by one
+
+            glp_set_mat_row(lp, lpRow, w + 1, &rowIndices[0], &rowData[0]);
         }
     }
 
@@ -370,6 +403,12 @@ class LpData
     // returns 1 on unsat
     int minimize(double* direction, int dirLen, double* result, int resLen)
     {
+        if (numInitConstraints == 0 || numOutputConstraints == 0)
+        {
+            printf("Fatal Error: minimize() called without setting init or output constraints\n");
+            exit(1);
+        }
+
         if (dirLen != numOutputVars)
         {
             printf(
