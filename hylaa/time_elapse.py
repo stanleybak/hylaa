@@ -4,18 +4,17 @@ l * e^{At} where l is some direction of interest, and t is a multiple of some ti
 '''
 
 import sys
-import time
 
 import numpy as np
 
-from scipy.sparse import lil_matrix, csr_matrix, csc_matrix
+from scipy.sparse import csr_matrix, csc_matrix
 from scipy.sparse.linalg import expm, expm_multiply
 
 from hylaa.util import Freezable
 from hylaa.hybrid_automaton import LinearAutomatonMode
 from hylaa.settings import HylaaSettings, PlotSettings, SimulationSettings
 from hylaa.timerutil import Timers
-from hylaa.time_elapse_krylov import make_cur_time_elapse_mat_list, compress_fixed
+from hylaa.time_elapse_krylov import make_cur_basis_mat_list, compress_fixed
 
 class TimeElapser(Freezable):
     'Object which computes the time-elapse function for a single mode at multiples of the time step'
@@ -42,7 +41,7 @@ class TimeElapser(Freezable):
 
         self.next_step = 0
         self.key_dir_mat = None # csr_matrix
-        self.cur_time_elapse_mat = None # assigned on step()
+        self.cur_basis_mat = None # assigned on step()
         self.cur_input_effects_matrix = None # assigned on step() if inputs exist
         self.cur_input_projection_matrix = None
 
@@ -56,7 +55,7 @@ class TimeElapser(Freezable):
 
         # used for Krylov method
         if self.settings.simulation.sim_mode == SimulationSettings.KRYLOV:
-            self.cur_time_elapse_mat_list = None
+            self.cur_basis_mat_list = None
 
         # -- performance statistics --
         # arnoldi_iter -> list, with 0 = fixed-effect, others are the tuned arnoldi iterations
@@ -107,12 +106,16 @@ class TimeElapser(Freezable):
                 indptr.append(len(data))
 
         for t in mode.transitions:
-            assert isinstance(t.guard_matrix, csr_matrix)
-
             offset = len(data)
-            data += [n for n in t.guard_matrix.data]
-            cols += [n for n in t.guard_matrix.indices]
-            indptr += [i + offset for i in t.guard_matrix.indptr[1:]]
+            data += [n for n in t.output_space_csr.data]
+            cols += [n for n in t.output_space_csr.indices]
+            indptr += [i + offset for i in t.output_space_csr.indptr[1:]]
+
+        # finally, add a row of all 1's for the 1-norm of the state
+        dims = mode.a_matrix.shape[0]
+        data += dims * [1.0]
+        cols += [d for d in xrange(dims)]
+        indptr.append(len(data))
 
         self.key_dir_mat = csr_matrix((data, cols, indptr), shape=(num_directions, self.dims), dtype=float)
 
@@ -120,7 +123,7 @@ class TimeElapser(Freezable):
         'first step matrix exp, other steps matrix multiplication'
 
         if self.next_step == 0:
-            self.cur_time_elapse_mat = np.array(self.key_dir_mat.todense(), dtype=float)
+            self.cur_basis_mat = np.array(self.key_dir_mat.todense(), dtype=float)
         elif self.one_step_matrix_exp is None:
             assert self.next_step == 1
             assert isinstance(self.key_dir_mat, csr_matrix)
@@ -140,7 +143,7 @@ class TimeElapser(Freezable):
             if print_status:
                 print "done"
 
-            self.cur_time_elapse_mat = self.key_dir_mat * self.one_step_matrix_exp
+            self.cur_basis_mat = self.key_dir_mat * self.one_step_matrix_exp
 
             if self.inputs > 0:
                 self.one_step_input_effects_matrix = np.zeros(self.b_matrix.shape, dtype=float)
@@ -178,7 +181,7 @@ class TimeElapser(Freezable):
         else:
             Timers.tic('time_elapse.step other steps')
 
-            self.cur_time_elapse_mat = np.dot(self.cur_time_elapse_mat, self.one_step_matrix_exp)
+            self.cur_basis_mat = np.dot(self.cur_basis_mat, self.one_step_matrix_exp)
 
             # inputs
             if self.inputs > 0:
@@ -196,7 +199,7 @@ class TimeElapser(Freezable):
         time_mat = self.a_matrix_csc * cur_time
         exp = expm(time_mat)
 
-        self.cur_time_elapse_mat = np.array((self.key_dir_mat * exp).todense(), dtype=float)
+        self.cur_basis_mat = np.array((self.key_dir_mat * exp).todense(), dtype=float)
 
         if self.inputs != 0 and self.next_step > 0:
             input_effects_matrix = np.zeros(self.b_matrix.shape, dtype=float)
@@ -228,10 +231,10 @@ class TimeElapser(Freezable):
     def step_krylov(self):
         'krylov-based step function'
 
-        if self.cur_time_elapse_mat_list is None:
-            self.cur_time_elapse_mat_list = make_cur_time_elapse_mat_list(self)
+        if self.cur_basis_mat_list is None:
+            self.cur_basis_mat_list = make_cur_basis_mat_list(self)
 
-        self.cur_time_elapse_mat = self.cur_time_elapse_mat_list[self.next_step].copy()
+        self.cur_basis_mat = self.cur_basis_mat_list[self.next_step].copy()
 
     def step(self):
         'perform the computation to obtain the values of the key directions the current time'
@@ -252,8 +255,8 @@ class TimeElapser(Freezable):
         Timers.toc('time_elapse.step Total')
 
         # post-conditions check
-        assert isinstance(self.cur_time_elapse_mat, np.ndarray), "cur_time_elapse_mat should be an np.array, " + \
-            "but it was {}".format(type(self.cur_time_elapse_mat))
+        assert isinstance(self.cur_basis_mat, np.ndarray), "cur_basis_mat should be an np.array, " + \
+            "but it was {}".format(type(self.cur_basis_mat))
 
         cur_time_mat_width = self.key_dir_mat.shape[1]
 
@@ -263,8 +266,8 @@ class TimeElapser(Freezable):
 
         cur_time_mat_shape = (self.key_dir_mat.shape[0], cur_time_mat_width)
 
-        assert self.cur_time_elapse_mat.shape == cur_time_mat_shape, \
-            "cur_time_elapse mat shape({}) should be {}".format(self.cur_time_elapse_mat.shape, cur_time_mat_shape)
+        assert self.cur_basis_mat.shape == cur_time_mat_shape, \
+            "cur_basis mat shape({}) should be {}".format(self.cur_basis_mat.shape, cur_time_mat_shape)
 
         if self.inputs == 0 or self.next_step == 1: # 0-th step input should be null
             assert self.cur_input_effects_matrix is None
@@ -290,15 +293,15 @@ class TimeElapser(Freezable):
         if self.settings.simulation.krylov_seperate_constant_vars:
             expected = compress_fixed(csr_matrix(expected, dtype=float), self.fixed_tuples)
 
-        assert self.cur_time_elapse_mat.shape == expected.shape, \
-            "wrong shape in check_answer(), got {}, expected {}".format(self.cur_time_elapse_mat.shape, expected.shape)
+        assert self.cur_basis_mat.shape == expected.shape, \
+            "wrong shape in check_answer(), got {}, expected {}".format(self.cur_basis_mat.shape, expected.shape)
 
         #print "expected:\n{}".format(expected)
-        #print "got:\n{}".format(self.cur_time_elapse_mat)
+        #print "got:\n{}".format(self.cur_basis_mat)
 
         for dim in xrange(expected.shape[1]):
             col_expected = expected[:, dim]
-            col_got = self.cur_time_elapse_mat[:, dim]
+            col_got = self.cur_basis_mat[:, dim]
 
             same = True
 

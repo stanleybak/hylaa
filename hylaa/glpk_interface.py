@@ -108,6 +108,7 @@ class LpInstance(Freezable):
         # for very minor error checking
         self.num_init_vars = num_init_vars
         self.num_output_vars = num_output_vars
+        self.added_init_constraints = False
 
         self.freeze_attrs()
 
@@ -119,6 +120,7 @@ class LpInstance(Freezable):
     def set_init_constraints(self, constraint_mat, rhs):
         '''set the initial state constraints'''
 
+        assert not self.added_init_constraints, "Init constraints attempted to be set twice"
         assert isinstance(constraint_mat, np.ndarray)
         assert isinstance(rhs, np.ndarray)
         assert rhs.shape == (constraint_mat.shape[0],)
@@ -129,6 +131,7 @@ class LpInstance(Freezable):
                                         constraint_mat.shape[0], rhs, rhs.shape[0])
 
         Timers.toc("lp overhead")
+        self.added_init_constraints = True
 
     def set_output_constraints(self, constraint_mat, rhs):
         '''set the output state constraints'''
@@ -139,7 +142,7 @@ class LpInstance(Freezable):
         assert self.num_output_vars == constraint_mat.shape[1], "incorrect output constraints width"
 
         Timers.tic("lp overhead")
-        LpInstance._set_init_constraints(self.lp_data, constraint_mat, constraint_mat.shape[1], \
+        LpInstance._set_output_constraints(self.lp_data, constraint_mat, constraint_mat.shape[1], \
                                         constraint_mat.shape[0], rhs, rhs.shape[0])
 
         Timers.toc("lp overhead")
@@ -214,6 +217,16 @@ class LpInstance(Freezable):
             raise RuntimeError('minimize LP was infeasible when error_if_infeasible=True')
 
         return is_feasible
+
+    def set_input_constraints_csr(self, input_mat_csr, input_rhs):
+        '''removed input function'''
+
+        raise RuntimeError("inputs currently unsupported")
+
+    def add_input_effects_matrix(self, mat):
+        '''removed input function'''
+
+        raise RuntimeError("inputs currently unsupported")
 
     @staticmethod
     def total_iterations():

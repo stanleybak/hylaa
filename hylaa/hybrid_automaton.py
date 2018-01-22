@@ -123,9 +123,6 @@ class LinearAutomatonMode(Freezable):
         else:
             assert b_matrix.shape[1] == self.parent.inputs
 
-        assert a_matrix.shape[0] == self.parent.dims, \
-            "Hybrid Automaton has {} dimensions, but a_matrix.shape was {}".format(self.parent.dims, a_matrix.shape)
-
         self.a_matrix = a_matrix
         self.b_matrix = b_matrix
 
@@ -140,26 +137,30 @@ class LinearAutomatonTransition(Freezable):
         self.from_mode = from_mode
         self.to_mode = to_mode
 
-        # mat * vars <= rhs
+        # matrix * (output_space * var_list) <= rhs
         self.guard_matrix = None
         self.guard_rhs = None
+        self.output_space_csr = None
 
         self.freeze_attrs()
 
         from_mode.transitions.append(self)
 
-    def set_guard(self, matrix, rhs):
+    def set_guard(self, output_space_csr, matrix, rhs):
         '''set the guard matrix and right-hand side. The transition is enabled if
-        matrix * var_list <= rhs
+        matrix * (output_space * var_list) <= rhs
         '''
 
-        assert isinstance(matrix, csr_matrix)
+        assert isinstance(matrix, np.ndarray)
         assert isinstance(rhs, np.ndarray)
+        assert isinstance(output_space_csr, csr_matrix)
 
         assert rhs.shape == (matrix.shape[0],)
-        assert matrix.shape[1] == self.parent.dims, "guard constraint len({}) does not equal matrix dims ({})".format(
-            matrix.shape[1], self.parent.dims)
+        assert output_space_csr.shape[0] == matrix.shape[1]
+        assert output_space_csr.shape[1] == self.parent.dims, "output space width {} should equal dims {}".format(
+            output_space_csr.shape[1], self.parent.dims)
 
+        self.output_space_csr = output_space_csr
         self.guard_matrix = matrix
         self.guard_rhs = rhs
 

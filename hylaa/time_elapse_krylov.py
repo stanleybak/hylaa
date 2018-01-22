@@ -767,9 +767,9 @@ def remove_no_effect_variables(var_list, dims_to_compute):
 
     return rv
 
-def make_cur_time_elapse_mat_list(time_elapser):
+def make_cur_basis_mat_list(time_elapser):
     '''
-    Get the cur_time_elapse matrix at every step.
+    Get the cur_basis matrix at every step.
 
     This is called one time, and returns a list, element N is the time_elapse_mat at step N
     '''

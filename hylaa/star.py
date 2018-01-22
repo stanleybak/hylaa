@@ -39,13 +39,13 @@ class Star(Freezable):
         init_rhs.shape = (len(init_rhs), ) # flatten init_rhs into a 1-d array
         assert init_rhs.shape == (init_mat.shape[0],)
         assert init_mat.shape[1] == init_space_csr.shape[0]
-        self.dims = mode.parent.dims
-        assert init_space_csr.shape[1] == self.dims
+        assert init_space_csr.shape[1] == mode.parent.dims
+
+        self.num_init_vars = init_space_csr.shape[0]
 
         self.settings = hylaa_settings
         self.mode = mode
         self.inputs = mode.parent.inputs
-        self.lp_dims = self.dims
 
         self.time_elapse = TimeElapser(mode, hylaa_settings, init_space_csr)
 
@@ -96,10 +96,11 @@ class Star(Freezable):
         rv = self._plot_lpi
 
         if rv is None:
-            rv = LpInstance(2, self.lp_dims, self.inputs)
-            rv.set_init_constraints_csr(self.init_mat_csr, self.init_rhs)
+            rv = LpInstance(2, self.num_init_vars, self.inputs)
+            rv.set_init_constraints(self.init_mat, self.init_rhs)
+            rv.set_no_output_constraints()
 
-            rv.update_time_elapse_matrix(self.time_elapse.cur_time_elapse_mat[:2])
+            rv.update_basis_matrix(self.time_elapse.cur_time_elapse_mat[:2])
 
             if self.inputs > 0:
                 rv.set_input_constraints_csr(self.input_mat_csr, self.input_rhs)
@@ -114,7 +115,7 @@ class Star(Freezable):
         self.time_elapse.step()
 
         if self._plot_lpi is not None:
-            self._plot_lpi.update_time_elapse_matrix(self.time_elapse.cur_time_elapse_mat[:2])
+            self._plot_lpi.update_basis_matrix(self.time_elapse.cur_time_elapse_mat[:2])
 
             if self.time_elapse.cur_input_effects_matrix is not None:
                 self._plot_lpi.add_input_effects_matrix(self.time_elapse.cur_input_effects_matrix[:2])
