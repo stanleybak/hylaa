@@ -19,13 +19,13 @@ from hylaa.time_elapse_krylov import make_cur_basis_mat_list
 class TimeElapser(Freezable):
     'Object which computes the time-elapse function for a single mode at multiples of the time step'
 
-    def __init__(self, mode, hylaa_settings, init_space_csr):
+    def __init__(self, mode, hylaa_settings, init_space_csc):
         assert isinstance(mode, LinearAutomatonMode)
         assert isinstance(hylaa_settings, HylaaSettings)
-        assert isinstance(init_space_csr, csr_matrix)
+        assert isinstance(init_space_csc, csc_matrix)
 
         self.settings = hylaa_settings
-        self.init_space_csr = init_space_csr
+        self.init_space_csc = init_space_csc
 
         if self.settings.simulation.sim_mode == SimulationSettings.MATRIX_EXP or \
            self.settings.simulation.sim_mode == SimulationSettings.EXP_MULT or \
@@ -63,13 +63,6 @@ class TimeElapser(Freezable):
         # -- performance statistics --
         # arnoldi_iter -> list, with 0 = fixed-effect, others are the tuned arnoldi iterations
         # arnoldi_mem_start -> mb, total amount of memory on device
-        # arnoldi_mem_choose -> mb, amount of memory after allocating maximum amount during choose_arnoldi_iterations
-        #
-        # -- if krylov_profiling is set --
-        # dots_axpy_ms - time for dots and axpy portion of arnoldi
-        # dots_axpy_gflops - gflops for dots and axpy
-        # a_mult_ms - time for multiplying a times cur_vec
-        # a_mult_gflops - gflops for multiplying a times cur_vec
         #
         self.stats = {} # performance statistics, map name -> value
 
@@ -128,13 +121,13 @@ class TimeElapser(Freezable):
 
         if self.next_step == 0:
 
-            self.cur_basis_mat = (self.key_dir_mat * self.init_space_csr).toarray()
+            self.cur_basis_mat = (self.key_dir_mat * self.init_space_csc).toarray()
 
             # store either output_vec or input_vec
             if self.settings.simulation.exp_mult_output_vec:
                 self.stored_vec = self.key_dir_mat.toarray()
             else:
-                self.stored_vec = self.init_space_csr.toarray()
+                self.stored_vec = self.init_space_csc.toarray()
         elif self.one_step_matrix_exp is None:
             assert self.next_step == 1
             assert isinstance(self.key_dir_mat, csr_matrix)
@@ -156,7 +149,7 @@ class TimeElapser(Freezable):
 
             if self.settings.simulation.exp_mult_output_vec:
                 self.stored_vec = np.dot(self.stored_vec, self.one_step_matrix_exp)
-                self.cur_basis_mat = self.stored_vec * self.init_space_csr
+                self.cur_basis_mat = self.stored_vec * self.init_space_csc
             else:
                 self.stored_vec = np.dot(self.one_step_matrix_exp, self.stored_vec)
                 self.cur_basis_mat = self.key_dir_mat * self.stored_vec
@@ -202,7 +195,7 @@ class TimeElapser(Freezable):
 
             if self.settings.simulation.exp_mult_output_vec:
                 self.stored_vec = np.dot(self.stored_vec, self.one_step_matrix_exp)
-                self.cur_basis_mat = self.stored_vec * self.init_space_csr
+                self.cur_basis_mat = self.stored_vec * self.init_space_csc
             else:
                 self.stored_vec = np.dot(self.one_step_matrix_exp, self.stored_vec)
                 self.cur_basis_mat = self.key_dir_mat * self.stored_vec
@@ -225,7 +218,7 @@ class TimeElapser(Freezable):
         time_mat = self.a_matrix_csc * cur_time
         exp = expm(time_mat)
 
-        self.cur_basis_mat = np.array((self.key_dir_mat * exp * self.init_space_csr).todense(), dtype=float)
+        self.cur_basis_mat = np.array((self.key_dir_mat * exp * self.init_space_csc).todense(), dtype=float)
 
         if self.inputs != 0 and self.next_step > 0:
             input_effects_matrix = np.zeros(self.b_matrix.shape, dtype=float)
@@ -284,7 +277,7 @@ class TimeElapser(Freezable):
         assert isinstance(self.cur_basis_mat, np.ndarray), "cur_basis_mat should be an np.array, " + \
             "but it was {}".format(type(self.cur_basis_mat))
 
-        expected_basis_shape = (self.key_dir_mat.shape[0], self.init_space_csr.shape[1])
+        expected_basis_shape = (self.key_dir_mat.shape[0], self.init_space_csc.shape[1])
 
         assert self.cur_basis_mat.shape == expected_basis_shape, \
             "cur_basis mat shape({}) should be {}".format(self.cur_basis_mat.shape, expected_basis_shape)
@@ -308,7 +301,7 @@ class TimeElapser(Freezable):
 
         t = self.settings.step * (self.next_step - 1)
         exp = expm(self.a_matrix_csc * t)
-        expected = np.array((self.key_dir_mat * exp * self.init_space_csr).todense(), dtype=float)
+        expected = np.array((self.key_dir_mat * exp * self.init_space_csc).todense(), dtype=float)
 
         assert self.cur_basis_mat.shape == expected.shape, \
             "wrong shape in check_answer(), got {}, expected {}".format(self.cur_basis_mat.shape, expected.shape)

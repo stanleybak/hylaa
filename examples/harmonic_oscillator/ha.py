@@ -5,7 +5,7 @@ Harmonic Oscillator (with time) Example in Hylaa-Continuous
 import math
 
 import numpy as np
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, csc_matrix
 
 from hylaa.hybrid_automaton import LinearHybridAutomaton
 from hylaa.engine import HylaaSettings
@@ -45,7 +45,7 @@ def make_init_star(ha, hylaa_settings):
     # vec1 is <0, 1, 0, 0> with the constraint that 0 <= vec1 <= 1
     # vec2 is <-5, 0, 0, 1> with the constraint that vec2 == 1
 
-    init_space = csr_matrix(np.array([[0., 1, 0, 0], [-5, 0, 0, 1]], dtype=float).transpose())
+    init_space = csc_matrix(np.array([[0., 1, 0, 0], [-5, 0, 0, 1]], dtype=float).transpose())
     init_mat = np.array([[1., 0], [-1, 0], [0, 1], [0, -1]], dtype=float)
     init_rhs = np.array([[1], [0], [1], [-1.]], dtype=float)
 
@@ -56,7 +56,7 @@ def make_init_star(ha, hylaa_settings):
 def define_settings():
     'get the hylaa settings object'
     plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_NONE
+    plot_settings.plot_mode = PlotSettings.PLOT_INTERACTIVE
     plot_settings.xdim_dir = 0
     plot_settings.ydim_dir = 1
 
@@ -77,8 +77,9 @@ def define_settings():
     plot_settings.extra_lines_width = 4
 
     settings = HylaaSettings(step=math.pi/4, max_time=3 * math.pi / 4, plot_settings=plot_settings)
-    settings.simulation.sim_mode = SimulationSettings.EXP_MULT
+    #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
     #settings.simulation.sim_mode = SimulationSettings.MATRIX_EXP
+    settings.simulation.sim_mode = SimulationSettings.KRYLOV
 
     #settings.simulation.exp_mult_output_vec = False
     settings.simulation.check_answer = True

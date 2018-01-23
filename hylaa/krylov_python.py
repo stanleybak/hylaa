@@ -7,12 +7,22 @@ Simulating a linear system x' = Ax using krylov supspace methods (arnoldi and la
 
 import math
 import time
+import os
 
 import numpy as np
 from scipy.sparse import csr_matrix, csc_matrix
 from scipy.sparse.linalg import norm as sparse_norm
 
 from hylaa.timerutil import Timers
+
+def get_free_memory_mb():
+    'get the amount of free memory available'
+
+    # one-liner to get free memory from:
+    # https://stackoverflow.com/questions/276052/how-to-get-current-cpu-and-ram-usage-in-python
+    _, _, available_mb = map(int, os.popen('free -t -m').readlines()[-1].split()[1:])
+
+    return available_mb
 
 def normalize_sparse(vec):
     'normalize a sparse vector (passed in as a 1xn csr_matrix), and return a tuple: scaled_vec, original_norm'
@@ -28,6 +38,19 @@ def normalize_sparse(vec):
     rv = vec / norm
 
     return rv, norm
+
+def check_available_memory_arnoldi(stdout, a, n):
+    'check if enough memory is available to store the V and H matrix'
+
+    required_mb = (((a+1) * n) + (a*(a+1))) * 8 / 1024.0 / 1024.0
+    available_mb = get_free_memory_mb()
+
+    if stdout:
+        print "Arnoldi Required GB = {:.3f} (+1), available GB = {:.3f} (a = {}, n = {})".format(
+            required_mb / 1024.0, available_mb / 1024.0, a, n)
+
+    if required_mb + 1024 > available_mb: # add 1024 mb since we want 1 GB free for other things
+        raise MemoryError("Not enogh memory for arnoldi computation.")
 
 def python_arnoldi(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, print_status=False):
     '''run the arnoldi algorithm
@@ -45,6 +68,8 @@ def python_arnoldi(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, print_sta
     scaled_vec, init_norm = normalize_sparse(init_vec)
 
     dims = a_mat.shape[0]
+
+    check_available_memory_arnoldi(print_status, iterations, dims)
 
     v_mat = np.zeros((iterations + 1, dims))
     h_mat = np.zeros((iterations + 1, iterations))
@@ -83,6 +108,10 @@ def python_arnoldi(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, print_sta
         if norm >= tol:
             cur_vec = cur_vec / norm
             v_mat[cur_it] = cur_vec
+        else:
+            v_mat = v_mat[:cur_it+1, :]
+            h_mat = h_mat[:cur_it+1, :cur_it]
+            break
 
     pv_mat = key_dir_mat * v_mat.transpose()
 

@@ -54,8 +54,6 @@ class SimulationSettings(Freezable):
         self.krylov_use_odeint = True # use odeint instead of expm for computing expm(t*v)
         self.krylov_odeint_simtol = 1e-9 # if using odeint, use this simulation error tolerance for atol and rtol
 
-        self.krylov_fixed_arnoldi_iter = None # use fixed arnoldi iteration count rather than relative error tuning
-
         self.freeze_attrs()
 
 class PlotSettings(Freezable):

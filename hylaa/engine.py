@@ -96,7 +96,7 @@ class HylaaEngine(object):
                     total_steps = star.time_elapse.next_step - 1
 
                     output_space_first_row = self.cur_star.mode.transitions[i].output_space_csr[0].toarray()[0]
-                    init_space_csr = self.cur_star.init_space_csr
+                    init_space_csc = self.cur_star.init_space_csc
 
                     guard_threshold = self.cur_star.mode.transitions[i].guard_rhs[0]
 
@@ -115,7 +115,7 @@ class HylaaEngine(object):
                         print 'Writing counter-example trace file: "{}"'.format(filename)
 
                     write_counter_example(filename, mode, step_size, total_steps, self.result.init_vars, 
-                        init_space_csr, inputs, output_space_first_row, guard_threshold, end_first_output_val)
+                        init_space_csc, inputs, output_space_first_row, guard_threshold, end_first_output_val)
 
                 self.result.safe = False
                 break # no need to keep checking

@@ -12,7 +12,7 @@ from numpy import array_repr
 from numpy.linalg import lstsq
 from numpy.testing import assert_array_almost_equal
 
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, csc_matrix
 
 from hylaa.glpk_interface import LpInstance
 from hylaa.hybrid_automaton import HyperRectangle, LinearAutomatonTransition
@@ -29,27 +29,27 @@ class Star(Freezable):
     for plotting that states if requested in the settings.
     '''
 
-    def __init__(self, hylaa_settings, mode, init_space_csr, init_mat, init_rhs, input_mat_csr=None, input_rhs=None):
+    def __init__(self, hylaa_settings, mode, init_space_csc, init_mat, init_rhs, input_mat_csr=None, input_rhs=None):
         assert isinstance(hylaa_settings, HylaaSettings)
         assert isinstance(mode, LinearAutomatonMode)
-        assert isinstance(init_space_csr, csr_matrix)
+        assert isinstance(init_space_csc, csc_matrix)
         assert isinstance(init_mat, np.ndarray)
         assert isinstance(init_rhs, np.ndarray)
 
         init_rhs.shape = (len(init_rhs), ) # flatten init_rhs into a 1-d array
         assert init_rhs.shape == (init_mat.shape[0],)
-        assert init_mat.shape[1] == init_space_csr.shape[1]
-        assert init_space_csr.shape[0] == mode.parent.dims
+        assert init_mat.shape[1] == init_space_csc.shape[1]
+        assert init_space_csc.shape[0] == mode.parent.dims
 
-        self.num_init_vars = init_space_csr.shape[1]
+        self.num_init_vars = init_space_csc.shape[1]
 
         self.settings = hylaa_settings
         self.mode = mode
         self.inputs = mode.parent.inputs
 
-        self.time_elapse = TimeElapser(mode, hylaa_settings, init_space_csr)
+        self.time_elapse = TimeElapser(mode, hylaa_settings, init_space_csc)
 
-        self.init_space_csr = init_space_csr
+        self.init_space_csc = init_space_csc
         self.init_mat = init_mat
         self.init_rhs = init_rhs
 
