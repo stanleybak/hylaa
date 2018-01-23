@@ -10,6 +10,8 @@ import os
 import numpy as np
 from numpy.ctypeslib import ndpointer
 
+from scipy.sparse import csr_matrix
+
 from hylaa.timerutil import Timers
 from hylaa.util import Freezable, get_script_path
 
@@ -43,20 +45,25 @@ class LpInstance(Freezable):
             LpInstance._update_basis_matrix.argtypes = \
                 [ctypes.c_void_p, ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, ctypes.c_int]
 
-            # void setInitConstraints(void* lpdata, double* dataMatrix, int w, int h, double* rhs, int rhsLen)
-            LpInstance._set_init_constraints = lib.setInitConstraints
-            LpInstance._set_init_constraints.restype = None
-            LpInstance._set_init_constraints.argtypes = \
-                [ctypes.c_void_p, \
-                 ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, ctypes.c_int, \
+            #void setInitConstraintsCsr(LpData* lpd, int w, int h, double* data, int dataLen, int* inds,
+            #               int indsLen, int* indptr, int indptrLen, double* rhs, int rhsLen)
+            LpInstance._set_init_constraints_csr = lib.setInitConstraintsCsr
+            LpInstance._set_init_constraints_csr.restype = None
+            LpInstance._set_init_constraints_csr.argtypes = \
+                [ctypes.c_void_p, ctypes.c_int, ctypes.c_int,\
+                 ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, \
+                 ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, \
+                 ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, \
                  ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int]
 
             # void setOutputConstraints(void* lpdata, double* matrix, int w, int h, double* rhs, int rhsLen)
-            LpInstance._set_output_constraints = lib.setOutputConstraints
-            LpInstance._set_output_constraints.restype = None
-            LpInstance._set_output_constraints.argtypes = \
-                [ctypes.c_void_p, \
-                 ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, ctypes.c_int, \
+            LpInstance._set_output_constraints_csr = lib.setOutputConstraintsCsr
+            LpInstance._set_output_constraints_csr.restype = None
+            LpInstance._set_output_constraints_csr.argtypes = \
+                [ctypes.c_void_p, ctypes.c_int, ctypes.c_int,\
+                 ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, \
+                 ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, \
+                 ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, \
                  ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int]
 
             # void setNoOutputConstraints(LpData* lpd)
@@ -124,14 +131,15 @@ class LpInstance(Freezable):
         '''set the initial state constraints'''
 
         assert not self.added_init_constraints, "Init constraints attempted to be set twice"
-        assert isinstance(constraint_mat, np.ndarray)
+        assert isinstance(constraint_mat, csr_matrix)
         assert isinstance(rhs, np.ndarray)
         assert rhs.shape == (constraint_mat.shape[0],)
         assert self.num_init_vars == constraint_mat.shape[1], "incorrect init constraints width"
 
         Timers.tic("lp overhead")
-        LpInstance._set_init_constraints(self.lp_data, constraint_mat, constraint_mat.shape[1], \
-                                        constraint_mat.shape[0], rhs, rhs.shape[0])
+        LpInstance._set_init_constraints_csr(self.lp_data, constraint_mat.shape[1], constraint_mat.shape[0], \
+            constraint_mat.data, len(constraint_mat.data), constraint_mat.indices, len(constraint_mat.indices), \
+            constraint_mat.indptr, len(constraint_mat.indptr), rhs, rhs.shape[0])
 
         Timers.toc("lp overhead")
         self.added_init_constraints = True
@@ -139,14 +147,15 @@ class LpInstance(Freezable):
     def set_output_constraints(self, constraint_mat, rhs):
         '''set the output state constraints'''
 
-        assert isinstance(constraint_mat, np.ndarray)
+        assert isinstance(constraint_mat, csr_matrix)
         assert isinstance(rhs, np.ndarray)
         assert rhs.shape == (constraint_mat.shape[0],)
         assert self.num_output_vars == constraint_mat.shape[1], "incorrect output constraints width"
 
         Timers.tic("lp overhead")
-        LpInstance._set_output_constraints(self.lp_data, constraint_mat, constraint_mat.shape[1], \
-                                        constraint_mat.shape[0], rhs, rhs.shape[0])
+        LpInstance._set_output_constraints_csr(self.lp_data, constraint_mat.shape[1], constraint_mat.shape[0], \
+            constraint_mat.data, len(constraint_mat.data), constraint_mat.indices, len(constraint_mat.indices), \
+            constraint_mat.indptr, len(constraint_mat.indptr), rhs, rhs.shape[0])
 
         Timers.toc("lp overhead")
 

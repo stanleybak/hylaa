@@ -181,6 +181,10 @@ class LpData
     void setInputConstraintsCsr(double* data, int dataLen, int* indices, int indicesLen,
                                 int* indptr, int indptrLen, double* rhs, int rhsLen)
     {
+        printf("TODO: modify setInputConstraintsCsr to take in w and h of matrix\n");
+        checkCsr("setInputConstraintsCsr", rhsLen, data, dataLen, indices, indicesLen, indptr,
+                 indptrLen);
+
         if (dataLen != indicesLen)
         {
             printf(
@@ -225,10 +229,13 @@ class LpData
     }
 
     /**
-     * Set the constraints on the initial states.
+     * Set the constraints on the initial states as a csr matrix
      */
-    void setInitConstraints(double* mat, int w, int h, double* rhs, int rhsLen)
+    void setInitConstraintsCsr(int w, int h, double* data, int dataLen, int* inds, int indsLen,
+                               int* indptr, int indptrLen, double* rhs, int rhsLen)
     {
+        checkCsr("setInitConstraintsCsr", h, data, dataLen, inds, indsLen, indptr, indptrLen);
+
         if (numInitConstraints != -1)
         {
             printf("Fatal Error: setInitConstraints() called twice.\n");
@@ -271,15 +278,13 @@ class LpData
         {
             int rowIndex = 1;
 
-            for (int i = 0; i < w; ++i)
+            for (int i = indptr[row]; i < indptr[row + 1]; ++i)
             {
-                double d = mat[row * w + i];
+                int col = inds[i];
+                double d = data[i];
 
-                if (d != 0)
-                {
-                    rowIndices[rowIndex] = i + 1;
-                    rowData[rowIndex++] = d;
-                }
+                rowIndices[rowIndex] = col + 1;
+                rowData[rowIndex++] = d;
             }
 
             glp_set_mat_row(lp, row + 1, rowIndex - 1, &rowIndices[0], &rowData[0]);
@@ -297,11 +302,16 @@ class LpData
             exit(1);
         }
 
-        setOutputConstraints(0, numOutputVars, 0, 0, 0);
+        int indptr[] = {0};
+
+        setOutputConstraintsCsr(numOutputVars, 0, 0, 0, 0, 0, indptr, 1, 0, 0);
     }
 
-    void setOutputConstraints(double* mat, int w, int h, double* rhs, int rhsLen)
+    void setOutputConstraintsCsr(int w, int h, double* data, int dataLen, int* inds, int indsLen,
+                                 int* indptr, int indptrLen, double* rhs, int rhsLen)
     {
+        checkCsr("setOutputConstraintsCsr", h, data, dataLen, inds, indsLen, indptr, indptrLen);
+
         if (numOutputConstraints != -1)
         {
             printf("Fatal Error: setOutputConstraints() called twice\n");
@@ -344,15 +354,13 @@ class LpData
             {
                 int rowIndex = 1;
 
-                for (int i = 0; i < w; ++i)
+                for (int i = indptr[row]; i < indptr[row + 1]; ++i)
                 {
-                    double d = mat[row * w + i];
+                    int col = inds[i];
+                    double d = data[i];
 
-                    if (d != 0)
-                    {
-                        rowIndices[rowIndex] = numInitVars + i + 1;
-                        rowData[rowIndex++] = d;
-                    }
+                    rowIndices[rowIndex] = numInitVars + col + 1;
+                    rowData[rowIndex++] = d;
                 }
 
                 glp_set_mat_row(lp, numInitConstraints + row + 1, rowIndex - 1, &rowIndices[0],
@@ -361,7 +369,6 @@ class LpData
         }
 
         // at this point, we can also create new rows for the basis matrix
-        // new problem instance, create one constraint row for each equality constraint
         glp_add_rows(lp, numOutputVars);
 
         // set bounds == 0
@@ -625,6 +632,23 @@ class LpData
         }
 
         return rv;
+    }
+
+    void checkCsr(const char* label, int h, double* data, int dataLen, int* indices, int indicesLen,
+                  int* indptr, int indptrLen)
+    {
+        if (dataLen != indicesLen)
+        {
+            printf("Fatal Error: %s sparse matrix should have dataLen == indicesLen.\n", label);
+            exit(1);
+        }
+
+        if (indptrLen != h + 1)
+        {
+            printf("Fatal Error: %s sparse matrix should have indptrLen (%d) == h + 1 (%d).\n",
+                   label, indptrLen, h + 1);
+            exit(1);
+        }
     }
 };
 

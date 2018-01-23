@@ -6,7 +6,10 @@ November 2016
 
 import unittest
 
+from scipy.sparse import csr_matrix
+
 import cvxopt
+
 from hylaa.glpk_interface import LpInstance
 import numpy as np
 
@@ -60,7 +63,7 @@ class TestGlpkInterface(unittest.TestCase):
 
         lp = LpInstance(num_vars, num_vars)
 
-        lp.set_init_constraints(np.array(a_ub, dtype=float), np.array(b_ub, dtype=float))
+        lp.set_init_constraints(csr_matrix(np.array(a_ub, dtype=float)), np.array(b_ub, dtype=float))
         lp.set_no_output_constraints()
         lp.update_basis_matrix(np.identity(num_vars))
 
@@ -114,7 +117,7 @@ class TestGlpkInterface(unittest.TestCase):
         # solve it with the glpk <-> hylaa interface
         lp = LpInstance(num_vars, num_vars)
 
-        lp.set_init_constraints(np.array(a_ub, dtype=float), np.array(b_ub, dtype=float))
+        lp.set_init_constraints(csr_matrix(np.array(a_ub, dtype=float)), np.array(b_ub, dtype=float))
         lp.set_no_output_constraints()
         lp.update_basis_matrix(np.identity(num_vars))
 
@@ -138,7 +141,7 @@ class TestGlpkInterface(unittest.TestCase):
 
         lp = LpInstance(num_vars, num_vars)
 
-        lp.set_init_constraints(np.array(a_ub, dtype=float), np.array(b_ub, dtype=float))
+        lp.set_init_constraints(csr_matrix(np.array(a_ub, dtype=float)), np.array(b_ub, dtype=float))
         lp.set_no_output_constraints()
 
         basis_mat = np.array([[-1, 0], [0, 1]], dtype=float)
@@ -161,7 +164,7 @@ class TestGlpkInterface(unittest.TestCase):
         lp = LpInstance(1, 1)
 
         # x == 1
-        lp.set_init_constraints(np.array([[1], [-1]], dtype=float), np.array([1, -1], dtype=float))
+        lp.set_init_constraints(csr_matrix(np.array([[1], [-1]], dtype=float)), np.array([1, -1], dtype=float))
         lp.set_no_output_constraints()
 
         basis = np.array([[0.5]], dtype=float)

@@ -13,10 +13,12 @@ void test1d()
     LpData lpd(1, 1, 0);
 
     // 1 <= x <= 2
-    double mat[] = {1, -1};
+    double data[] = {1, -1};
+    int inds[] = {0, 0};
+    int indptr[] = {0, 1, 2};
     double rhs[] = {2, -1};
 
-    lpd.setInitConstraints(mat, 1, 2, rhs, 2);
+    lpd.setInitConstraintsCsr(1, 2, data, 2, inds, 2, indptr, 3, rhs, 2);
 
     // simple maximization problem (no constraints)
     lpd.setNoOutputConstraints();
@@ -67,17 +69,21 @@ void test1d_constraint()
 {
     LpData lpd(1, 1, 0);
 
-    double initMat[] = {1, -1};
-    double initRhs[] = {2, -1};
+    // 1 <= x <= 2
+    double data[] = {1, -1};
+    int inds[] = {0, 0};
+    int indptr[] = {0, 1, 2};
+    double rhs[] = {2, -1};
 
-    lpd.setInitConstraints(initMat, 1, 2, initRhs, 2);
-    // 1 <= x_0 <= 2
+    lpd.setInitConstraintsCsr(1, 2, data, 2, inds, 2, indptr, 3, rhs, 2);
 
     // x_now <= 1.5
-    double outputMat[] = {1};
+    double outputData[] = {1};
+    int outputInds[] = {0};
+    int outputIndptr[] = {0, 1};
     double outputRhs[] = {1.5};
 
-    lpd.setOutputConstraints(outputMat, 1, 1, outputRhs, 1);
+    lpd.setOutputConstraintsCsr(1, 1, outputData, 1, outputInds, 1, outputIndptr, 2, outputRhs, 1);
 
     double basis[] = {1};
     lpd.updateBasisMatrix(basis, 1, 1);
