@@ -95,16 +95,22 @@ class HylaaEngine(object):
                     step_size = self.settings.step
                     total_steps = star.time_elapse.next_step - 1
 
-                    output_space_first_row = self.cur_star.mode.transitions[i].output_space_csr[0].toarray()[0]
+                    output_space = self.cur_star.mode.transitions[i].output_space_csr
+                    guard_mat = self.cur_star.mode.transitions[i].guard_matrix
+
+                    first_constraint = (guard_mat * output_space)[0]
+
                     init_space_csc = self.cur_star.init_space_csc
 
                     guard_threshold = self.cur_star.mode.transitions[i].guard_rhs[0]
 
                     end_first_output_val = self.result.output_vars[0]
 
+                    output_space = self.cur_star.mode.transitions[i].output_space_csr
+
                     # construct inputs, which are in backwards order
                     inputs = []
-                    
+
                     #input_vals = lp_solution[self.cur_star.lp_dims + num_constraints:]
                     #
                     #for step in xrange(total_steps):
@@ -114,8 +120,8 @@ class HylaaEngine(object):
                     if self.settings.print_output:
                         print 'Writing counter-example trace file: "{}"'.format(filename)
 
-                    write_counter_example(filename, mode, step_size, total_steps, self.result.init_vars, 
-                        init_space_csc, inputs, output_space_first_row, guard_threshold, end_first_output_val)
+                    write_counter_example(filename, mode, step_size, total_steps, self.result.init_vars, \
+                        init_space_csc, inputs, first_constraint, guard_threshold, end_first_output_val)
 
                 self.result.safe = False
                 break # no need to keep checking

@@ -50,9 +50,11 @@ class SimulationSettings(Freezable):
         self.check_answer_abs_tol = 1e-6 # absolute tolerance when checking answer
 
         # accuracy settings. If you don't have enough accuracy, decrease rel error and increase samples
+        self.krylov_use_lanczos = False # use the lanczos iteration instead of arnoldi
         self.krylov_rel_error = 1e-7 # desired relative error of projV * exmp(H * end_time)
         self.krylov_use_odeint = True # use odeint instead of expm for computing expm(t*v)
         self.krylov_odeint_simtol = 1e-9 # if using odeint, use this simulation error tolerance for atol and rtol
+        self.krylov_stdout = False
 
         self.freeze_attrs()
 

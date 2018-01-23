@@ -1,5 +1,5 @@
 '''
-Harmonic Oscillator (with time) Example in Hylaa-Continuous
+2d symmetric Example in Hylaa-Continuous
 '''
 
 import math
@@ -19,7 +19,7 @@ def define_ha():
     ha = LinearHybridAutomaton()
 
     # with time and affine variable
-    a_matrix = np.array([[0, 1, 0, 0], [-1, 0, 0, 0], [0, 0, 0, 1], [0, 0, 0, 0]], dtype=float)
+    a_matrix = np.array([[0.5, 1], [1, 0.5]], dtype=float)
     a_matrix = csr_matrix(a_matrix, dtype=float)
 
     mode = ha.new_mode('mode')
@@ -27,11 +27,11 @@ def define_ha():
 
     error = ha.new_mode('error')
 
-    # x1 >= 4.0 & x1 <= 4.0
-    output_space = csr_matrix(([1.], [0], [0, 1]), shape=(1, 4), dtype=float)
+    # x <= -20.0
+    output_space = csr_matrix(([1.], [0], [0, 1]), shape=(1, 2), dtype=float)
 
-    mat = np.array([[1.], [-1.]], dtype=float)
-    rhs = np.array([4.0, -4.0], dtype=float)
+    mat = np.array([[1.]], dtype=float)
+    rhs = np.array([-20.0], dtype=float)
     trans1 = ha.new_transition(mode, error)
     trans1.set_guard(output_space, mat, rhs)
 
@@ -42,12 +42,12 @@ def make_init_star(ha, hylaa_settings):
 
     rv = None
 
-    # vec1 is <0, 1, 0, 0> with the constraint that 0 <= vec1 <= 1
-    # vec2 is <-5, 0, 0, 1> with the constraint that vec2 == 1
+    # vec1 is <1, 0> with the constraint that -2 <= vec1 <= -1.5
+    # vec2 is <0, 1> with the constraint that 0.5 <= vec2 <= 1
 
-    init_space = csc_matrix(np.array([[0., 1, 0, 0], [-5, 0, 0, 1]], dtype=float).transpose())
+    init_space = csc_matrix(np.array([[1., 0], [0, 1]], dtype=float).transpose())
     init_mat = np.array([[1., 0], [-1, 0], [0, 1], [0, -1]], dtype=float)
-    init_rhs = np.array([[1], [0], [1], [-1.]], dtype=float)
+    init_rhs = np.array([[-1.5], [2], [1], [-0.5]], dtype=float)
 
     rv = Star(hylaa_settings, ha.modes['mode'], init_space, init_mat, init_rhs)
 
@@ -69,21 +69,17 @@ def define_settings():
     plot_settings.label.x_label = '$x$'
     plot_settings.label.title = 'Reachable States'
     plot_settings.plot_size = (12, 7)
-    plot_settings.label.big(size=48)
-
-    plot_settings.reachable_poly_width = 10
-    plot_settings.extra_lines = [[(4.0, 10.0), (4.0, -10.0)]]
-    plot_settings.extra_lines_color = 'red'
-    plot_settings.extra_lines_width = 4
+    #plot_settings.label.big(size=48)
+    
 
     settings = HylaaSettings(step=math.pi/4, max_time=3 * math.pi / 4, plot_settings=plot_settings)
     #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
     #settings.simulation.sim_mode = SimulationSettings.MATRIX_EXP
     settings.simulation.sim_mode = SimulationSettings.KRYLOV
-    #settings.simulation.krylov_use_lanczos = True
+    settings.simulation.krylov_use_lanczos = True
 
     #settings.simulation.exp_mult_output_vec = False
-    #settings.simulation.check_answer = True
+    settings.simulation.check_answer = True
 
     return settings
 

@@ -11,7 +11,7 @@ from scipy.sparse.linalg import expm
 from scipy.integrate import odeint
 
 from hylaa.timerutil import Timers
-from hylaa.krylov_python import get_free_memory_mb, python_arnoldi
+from hylaa.krylov_python import get_free_memory_mb, python_arnoldi, python_lanczos
 from hylaa.settings import HylaaSettings
 
 def projected_odeint_sim(arg):
@@ -24,7 +24,6 @@ def projected_odeint_sim(arg):
 
     pv_matrix, a_matrix, start_vec, settings = arg
 
-    assert isinstance(a_matrix, np.ndarray)
     assert a_matrix.shape[1] > 0
     assert isinstance(pv_matrix, np.ndarray)
     assert isinstance(start_vec, np.ndarray)
@@ -34,9 +33,16 @@ def projected_odeint_sim(arg):
     num_steps = settings.num_steps
     sim_tol = settings.simulation.krylov_odeint_simtol
 
-    der_func = lambda state, _: np.dot(a_matrix, state)
-    a_transpose = a_matrix.transpose().copy()
-    jac_func = lambda dummy_state, dummy_t: a_transpose
+    if isinstance(a_matrix, np.ndarray):
+        # was arnoldi iteration, a_matrix (H) is a dense matrix
+        der_func = lambda state, _: np.dot(a_matrix, state)
+        a_transpose = a_matrix.transpose().copy()
+        jac_func = lambda dummy_state, dummy_t: a_transpose
+    else:
+        # was lanczos iteration, a_matrix (H) is a sparse matrix
+        assert isinstance(a_matrix, csr_matrix)
+        der_func = lambda state, _: (a_matrix * state)
+        jac_func = None
 
     times = np.linspace(0, step * num_steps, num=num_steps+1)
 
@@ -328,20 +334,28 @@ def arnoldi_sim_with_max_rel_error(time_elapser, init_vec_csr, iterations, rel_e
     Run an arnoldi simulation with a fixed number of iterations and a target max relative error.
     If rel_error_limit is None, just run the whole simulation.
 
-    returns the projected simulation at each step, or None if the error limit is exceeded.
+    returns a 2-tuple (a, b) with:
+    a: projected simulation at each step, or None if the error limit is exceeded.
+    b: the number of arnoldi iterations actually used
     '''
 
     settings = time_elapser.settings
     a_mat = time_elapser.a_matrix
     key_dir_mat = time_elapser.key_dir_mat
-    stdout = settings.print_output
+    stdout = settings.simulation.krylov_stdout
 
-    Timers.tic('arnoldi')
-    pv_mat, h_mat = python_arnoldi(a_mat, init_vec_csr, iterations, key_dir_mat, print_status=stdout)
-    Timers.toc('arnoldi')
+    if settings.simulation.krylov_use_lanczos:
+        Timers.tic('lanczos')
+        pv_mat, h_mat = python_lanczos(a_mat, init_vec_csr, iterations, key_dir_mat, print_status=stdout)
+        Timers.toc('lanczos')
+    else:
+        Timers.tic('arnoldi')
+        pv_mat, h_mat = python_arnoldi(a_mat, init_vec_csr, iterations, key_dir_mat, print_status=stdout)
+        Timers.toc('arnoldi')
 
     if h_mat.shape[0] < iterations:
         rel_error_limit = None
+        iterations = h_mat.shape[0]
 
         if stdout:
             print "Arnoldi terminated early. Simulating without relative error limit."
@@ -359,7 +373,7 @@ def arnoldi_sim_with_max_rel_error(time_elapser, init_vec_csr, iterations, rel_e
     else:
         rv = None
 
-    return rv
+    return rv, iterations
 
 # projected_simulation = arnoldi_projected_simulation(time_elapser, init_vec)
 def arnoldi_sim_autotune(time_elapser, init_vec_csr):
@@ -371,6 +385,7 @@ def arnoldi_sim_autotune(time_elapser, init_vec_csr):
     '''
 
     settings = time_elapser.settings
+    stdout = settings.simulation.krylov_stdout
     n = time_elapser.a_matrix.shape[0]
 
     error_limit = settings.simulation.krylov_rel_error
@@ -378,24 +393,26 @@ def arnoldi_sim_autotune(time_elapser, init_vec_csr):
     arnoldi_iter = 2
     sim = None
 
-    while sim is None:
+    while True:
         arnoldi_iter = arnoldi_iter * 2
 
         if arnoldi_iter >= n:
-            if settings.print_output:
-                print "Arnoldi iter ({}) reached system dimension; skipping relative error".format(arnoldi_iter)
-
             arnoldi_iter = n
             error_limit = None # do not target any relative error in this case
 
-        if settings.print_output:
+            if stdout:
+                print "Arnoldi iter ({}) reached system dimension; skipping relative error".format(arnoldi_iter)
+
+        if stdout:
             print "Trying {} arnoldi iterations...".format(arnoldi_iter)
 
-        sim = arnoldi_sim_with_max_rel_error(time_elapser, init_vec_csr, arnoldi_iter, error_limit)
+        sim, arnoldi_iter = arnoldi_sim_with_max_rel_error(time_elapser, init_vec_csr, arnoldi_iter, error_limit)
 
-        if arnoldi_iter == n:
-            assert sim is not None
+        if sim is not None:
             break
+
+    if stdout:
+        print "Simulation was accurate enough with {} arnoldi iterations...".format(arnoldi_iter)
 
     time_elapser.stats['arnoldi_iter'].append(arnoldi_iter)
 

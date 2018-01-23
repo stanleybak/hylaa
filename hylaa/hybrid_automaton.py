@@ -138,7 +138,7 @@ class LinearAutomatonTransition(Freezable):
         self.to_mode = to_mode
 
         # matrix * (output_space * var_list) <= rhs
-        self.guard_matrix = None
+        self.guard_matrix_csr = None
         self.guard_rhs = None
         self.output_space_csr = None
 
@@ -146,22 +146,22 @@ class LinearAutomatonTransition(Freezable):
 
         from_mode.transitions.append(self)
 
-    def set_guard(self, output_space_csr, matrix, rhs):
+    def set_guard(self, output_space_csr, matrix_csr, rhs):
         '''set the guard matrix and right-hand side. The transition is enabled if
         matrix * (output_space * var_list) <= rhs
         '''
 
-        assert isinstance(matrix, np.ndarray)
+        assert isinstance(matrix_csr, csr_matrix)
         assert isinstance(rhs, np.ndarray)
         assert isinstance(output_space_csr, csr_matrix)
 
-        assert rhs.shape == (matrix.shape[0],)
-        assert output_space_csr.shape[0] == matrix.shape[1]
+        assert rhs.shape == (matrix_csr.shape[0],)
+        assert output_space_csr.shape[0] == matrix_csr.shape[1]
         assert output_space_csr.shape[1] == self.parent.dims, "output space width {} should equal dims {}".format(
             output_space_csr.shape[1], self.parent.dims)
 
         self.output_space_csr = output_space_csr
-        self.guard_matrix = matrix
+        self.guard_matrix_csr = matrix_csr
         self.guard_rhs = rhs
 
     def __str__(self):
