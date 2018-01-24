@@ -42,20 +42,20 @@ def define_ha():
     dims = combined_mat.shape[0]
 
     # error condition x1 >= 0.2 and x2 >= 0.15
+    output_space = csr_matrix(([1., 1.], [0, 1], [0, 1, 2]), shape=(2, dims))
+
     # x1 >= 0.2
-    mat = csr_matrix(([-1], [0], [0, 1]), dtype=float, shape=(1, 1))
-    rhs = np.array([-0.2], dtype=float) # safe
-    #rhs = np.array([-0.1], dtype=float) # unsafe
+    mat = csr_matrix(([-1], [0], [0, 1]), dtype=float, shape=(1, 2))
+    #rhs = np.array([-0.2], dtype=float) # safe
+    rhs = np.array([-0.1], dtype=float) # unsafe
     trans1 = ha.new_transition(mode, error)
-    output_space1 = csr_matrix(([1.], [0], [0, 1]), shape=(1, dims))
-    trans1.set_guard(output_space1, mat, rhs)
+    trans1.set_guard(output_space, mat, rhs)
 
     # x2 >= 0.15
-    mat = csr_matrix(([-1], [0], [0, 1]), dtype=float, shape=(1, 1))
+    mat = csr_matrix(([-1], [1], [0, 1]), dtype=float, shape=(1, 2))
     rhs = np.array([-0.15], dtype=float)
     trans2 = ha.new_transition(mode, error)
-    output_space2 = csr_matrix(([1.], [0], [0, 1]), shape=(1, dims))
-    trans2.set_guard(output_space2, mat, rhs)
+    trans2.set_guard(output_space, mat, rhs)
 
     return ha
 

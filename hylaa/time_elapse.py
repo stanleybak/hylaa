@@ -109,6 +109,9 @@ class TimeElapser(Freezable):
             cols += [n for n in t.output_space_csr.indices]
             indptr += [i + offset for i in t.output_space_csr.indptr[1:]]
 
+            # actually, we just need to add one of the transitions since they must share the same output space
+            break
+
         self.key_dir_mat = csr_matrix((data, cols, indptr), shape=(num_directions, self.dims), dtype=float)
 
     def step_exp_mult(self):

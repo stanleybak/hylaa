@@ -46,8 +46,8 @@ def define_ha():
     y3 = csc_matrix((y3.data, y3.indices, col_ptr), shape=(1, y3.shape[1] + num_inputs))
     output_space = csr_matrix(y3)
 
-    #limit = 0.0005
-    limit = 0.00017
+    limit = 0.0005
+    #limit = 0.00017
     trans1 = ha.new_transition(mode, error)
     mat = csr_matrix(([1], [0], [0, 1]), dtype=float, shape=(1, 1))
     rhs = np.array([-limit], dtype=float) # safe

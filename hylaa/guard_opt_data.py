@@ -27,8 +27,8 @@ class GuardOptData(Freezable):
 
         self.key_dir_offset = 0 if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE else 2
 
-        for t_index in xrange(transition_index):
-            self.key_dir_offset += self.mode.transitions[t_index].guard_matrix_csr.shape[0]
+        #for t_index in xrange(transition_index):
+        #    self.key_dir_offset += self.mode.transitions[t_index].guard_matrix_csr.shape[0]
 
         self.lpi = LpInstance(self.num_output_vars, star.num_init_vars, self.inputs)
 

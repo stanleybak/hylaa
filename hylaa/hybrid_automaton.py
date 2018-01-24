@@ -236,6 +236,10 @@ class LinearAutomatonTransition(Freezable):
         assert output_space_csr.shape[1] == self.parent.dims, "output space width {} should equal dims {}".format(
             output_space_csr.shape[1], self.parent.dims)
 
+        for transition in self.from_mode.transitions:
+            if transition.output_space_csr is not None:
+                assert output_space_csr is transition.output_space_csr, "all guards must have the same output space"
+
         self.output_space_csr = output_space_csr
         self.guard_matrix_csr = matrix_csr
         self.guard_rhs = rhs
