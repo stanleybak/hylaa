@@ -4,9 +4,85 @@ Stanley Bak (Sept 2016)
 '''
 
 import numpy as np
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, csc_matrix
 
 from hylaa.util import Freezable
+
+def bounds_list_to_init(bounds_list):
+    '''convert a list of upper and lower bound tuples for each dimension into:
+
+    (init_space, init_mat, init_mat_rhs)
+    '''
+
+    dims = len(bounds_list)
+    fixed_dims = []
+
+    space_data = []
+    space_inds = []
+    space_indptrs = [0]
+    mat_data = []
+    mat_inds = []
+    mat_indptrs = [0]
+    rhs = []
+
+    # each dimension with a range gets its own vector
+    # all the fixed dimensions get a single vector
+    for dim in xrange(dims):
+        lb, ub = bounds_list[dim]
+
+        assert lb <= ub, "expected lower bound ({}) <= upper bonud ({}) in dim {}".format(lb, ub, dim)
+
+        if lb == ub and lb != 0:
+            fixed_dims.append(dim)
+        elif lb != ub:
+            cur_space_dimension = len(space_data)
+            space_data.append(1)
+            space_inds.append(dim)
+            space_indptrs.append(len(space_data))
+
+            mat_data.append(1)
+            mat_inds.append(cur_space_dimension)
+            mat_indptrs.append(len(mat_data))
+            rhs.append(ub)
+
+            mat_data.append(-1)
+            mat_inds.append(cur_space_dimension)
+            mat_indptrs.append(len(mat_data))
+            rhs.append(-lb)
+
+    # if there were non-zero fixed dimensions, add one space dimension for that
+    if len(fixed_dims) > 0:
+        cur_space_dimension = len(space_data)
+
+        for dim in fixed_dims:
+            space_data.append(bounds_list[dim][0])
+            space_inds.append(dim)
+
+        space_indptrs.append(len(space_data))
+
+        mat_data.append(1)
+        mat_inds.append(cur_space_dimension)
+        mat_indptrs.append(len(mat_data))
+        rhs.append(1)
+
+        mat_data.append(-1)
+        mat_inds.append(cur_space_dimension)
+        mat_indptrs.append(len(mat_data))
+        rhs.append(-1)
+
+    space_dims = len(space_indptrs) - 1
+    init_space = csc_matrix((space_data, space_inds, space_indptrs), dtype=float, shape=(dims, space_dims))
+
+    mat_height = len(mat_indptrs) - 1
+    init_mat = csr_matrix((mat_data, mat_inds, mat_indptrs), dtype=float, shape=(mat_height, space_dims))
+
+    init_mat_rhs = np.array(rhs, dtype=float)
+
+    print "init_space shape = {}".format(init_space.shape)
+    print "init_mat shape = {}".format(init_mat.shape)
+    print "init_mat_rhs shape = {}".format(init_mat_rhs.shape)
+
+    return (init_space, init_mat, init_mat_rhs)
 
 class HyperRectangle(object):
     'An n-dimensional box'

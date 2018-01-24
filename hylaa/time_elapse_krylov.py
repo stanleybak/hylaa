@@ -14,18 +14,17 @@ from hylaa.timerutil import Timers
 from hylaa.krylov_python import get_free_memory_mb, python_arnoldi, python_lanczos
 from hylaa.settings import HylaaSettings
 
-def projected_odeint_sim(arg):
+def odeint_sim(arg):
     '''
     simulate a given dense a-matrix with the provided initial vector, for a certain number of steps,
-    returning the projected result at each step (excluding step zero)
+    returning the result at each step
 
-    arg is tuple (pv_matrix, a_matrix, start_vec, settings)
+    arg is tuple (a_matrix, start_vec, settings)
     '''
 
-    pv_matrix, a_matrix, start_vec, settings = arg
+    a_matrix, start_vec, settings = arg
 
     assert a_matrix.shape[1] > 0
-    assert isinstance(pv_matrix, np.ndarray)
     assert isinstance(start_vec, np.ndarray)
     assert isinstance(settings, HylaaSettings)
 
@@ -46,15 +45,12 @@ def projected_odeint_sim(arg):
 
     times = np.linspace(0, step * num_steps, num=num_steps+1)
 
+    Timers.tic('odeint')
     result = odeint(der_func, start_vec, times, Dfun=jac_func, col_deriv=True, atol=sim_tol, rtol=sim_tol, \
             mxstep=int(1e8)) # mxstep = maximum number of internal steps
+    Timers.toc('odeint')
 
-    rv = []
-
-    for i in xrange(1, len(result)): # skip step zero
-        rv.append(np.dot(pv_matrix, result[i]))
-
-    return rv
+    return result
 
 def format_secs(sec):
     'convert seconds (float) to a human-readable string'
@@ -71,80 +67,6 @@ def format_secs(sec):
         rv = "{:.2f} days".format(sec / 60.0 / 60.0 / 24.0)
 
     return rv
-
-def get_krylov_result(arg_tuple):
-    '''
-    Compute the krylov result.
-
-    Expected arguments (a single tuple):
-    (num_steps, time_step, dim, h_mat, pv_mat, compute_rel_error)
-
-    Returns a tuple:
-    first element: list of tuples (step, dim, col_vec)
-    second element: None or the relative error, if compute_rel_error was True
-    '''
-
-    settings, dim, h_mat, pv_mat = arg_tuple
-
-    num_steps = settings.num_steps
-    time_step = settings.step
-    compute_rel_error = settings.simulation.krylov_check_all_rel_error
-
-    rv = []
-    rel_error = None
-
-    h_mat = h_mat[:-1, :].copy()
-    pv_mat = pv_mat[:, :-1].copy()
-
-    if compute_rel_error is not None:
-        small_h_mat = h_mat[:-1, :-1].copy()
-        small_pv_mat = pv_mat[:, :-1].copy()
-
-    if settings.simulation.krylov_use_odeint:
-        start_vec = np.array([1.0 if d == 0 else 0.0 for d in xrange(h_mat.shape[0])], dtype=float)
-        small_start_vec = start_vec[:-1].copy()
-
-        arg = pv_mat, h_mat, start_vec, settings
-        sim = projected_odeint_sim(arg)
-
-        if compute_rel_error:
-            arg = small_pv_mat, small_h_mat, small_start_vec, settings
-            small_sim = projected_odeint_sim(arg)
-
-        for step in xrange(len(sim)):
-            cur_result = sim[step]
-
-            rv.append((1 + step, dim, cur_result))
-
-            if compute_rel_error:
-                small_result = small_sim[step]
-                rel_error = max(rel_error, relative_error(cur_result, small_result))
-    else:
-        # use matrix exp
-        matrix_exp = np.array(expm(h_mat * time_step), dtype=float)
-        cur_col = matrix_exp[:, 0]
-
-        cur_result = np.dot(pv_mat, cur_col)
-        rv.append((1, dim, cur_result))
-
-        if compute_rel_error is not None:
-            small_matrix_exp = np.array(expm(small_h_mat * time_step), dtype=float)
-            small_col = small_matrix_exp[:, 0]
-
-            small_result = np.dot(small_pv_mat, small_col)
-            rel_error = relative_error(cur_result, small_result)
-
-        for s in xrange(2, num_steps + 1):
-            cur_col = np.dot(matrix_exp, cur_col)
-            cur_result = np.dot(pv_mat, cur_col)
-            rv.append((s, dim, cur_result))
-
-            if compute_rel_error is not None:
-                small_col = np.dot(small_matrix_exp, small_col)
-                small_result = np.dot(small_pv_mat, small_col)
-                rel_error = max(rel_error, relative_error(cur_result, small_result))
-
-    return rv, rel_error
 
 def check_available_memory_basis(stdout, s, k, i):
     'check if enough memory is available to store the basis matrix'
@@ -246,20 +168,47 @@ def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, 
         rel_error = 0
 
         if limit is None:
-            sim = projected_odeint_sim((pv_mat, h_mat, start_vec, settings))
+            full_sim = odeint_sim((h_mat, start_vec, settings))
+
+            sim = np.zeros((full_sim.shape[0] - 1, pv_mat.shape[0]), dtype=float)
+
+            for i in xrange(1, full_sim.shape[0]): # skip step zero
+                sim[i-1] = np.dot(pv_mat, full_sim[i])
         else:
             small_start_vec = start_vec[:-1].copy()
-            args = [(pv_mat, h_mat, start_vec, settings), (small_pv_mat, small_h_mat, small_start_vec, settings)]
-            sim, small_sim = [projected_odeint_sim(a) for a in args]
+            args = [(h_mat, start_vec, settings), (small_h_mat, small_start_vec, settings)]
 
-            for step in xrange(len(sim)):
-                cur_result = sim[step]
-                small_result = small_sim[step]
+            full_sim, small_full_sim = [odeint_sim(a) for a in args]
+
+            # sample last / middle / first before going through the whole thing
+            steps = full_sim.shape[0]
+            for step in [steps-1, steps / 2, 1]:
+                cur_result = np.dot(pv_mat, full_sim[step])
+                small_result = np.dot(small_pv_mat, small_full_sim[step])
 
                 rel_error = max(rel_error, relative_error(cur_result, small_result))
 
                 if rel_error > limit:
                     break
+
+            if rel_error < limit: # go through each step
+                Timers.tic('krylov multiply by PV')
+
+                sim = np.dot(full_sim[1:], pv_mat.T)
+                #small_sim = np.dot(small_full_sim[1:], small_pv_mat.T)
+                #sim = np.zeros((steps-1, pv_mat.shape[0]), dtype=float)
+
+                for step in xrange(0, sim.shape[0], 10): # check every 10th step since this was taking non-trivial time
+                    cur_result = sim[step]
+                    small_result = np.dot(small_pv_mat, small_full_sim[step + 1])
+
+                    rel_error = max(rel_error, relative_error(cur_result, small_result))
+
+                    if rel_error > limit:
+                        sim = None
+                        break
+
+                Timers.toc('krylov multiply by PV')
 
         Timers.toc('get_rel_error odeint')
     else:
@@ -329,7 +278,7 @@ def print_rel_error_at_each_step(settings, h_list, pv_list):
 
     print "print_rel_error_at_each_step data written to {}, exiting".format(filename)
 
-def arnoldi_sim_with_max_rel_error(time_elapser, init_vec_csr, iterations, rel_error_limit):
+def arnoldi_sim_with_max_rel_error(time_elapser, sys_mat, output_mat, init_vec_csr, iterations, rel_error_limit):
     '''
     Run an arnoldi simulation with a fixed number of iterations and a target max relative error.
     If rel_error_limit is None, just run the whole simulation.
@@ -340,18 +289,12 @@ def arnoldi_sim_with_max_rel_error(time_elapser, init_vec_csr, iterations, rel_e
     '''
 
     settings = time_elapser.settings
-    a_mat = time_elapser.a_matrix
-    key_dir_mat = time_elapser.key_dir_mat
     stdout = settings.simulation.krylov_stdout
 
     if settings.simulation.krylov_use_lanczos:
-        Timers.tic('lanczos')
-        pv_mat, h_mat = python_lanczos(a_mat, init_vec_csr, iterations, key_dir_mat, print_status=stdout)
-        Timers.toc('lanczos')
+        pv_mat, h_mat = python_lanczos(sys_mat, init_vec_csr, iterations, output_mat, print_status=stdout)
     else:
-        Timers.tic('arnoldi')
-        pv_mat, h_mat = python_arnoldi(a_mat, init_vec_csr, iterations, key_dir_mat, print_status=stdout)
-        Timers.toc('arnoldi')
+        pv_mat, h_mat = python_arnoldi(sys_mat, init_vec_csr, iterations, output_mat, print_status=stdout)
 
     if h_mat.shape[0] < iterations:
         rel_error_limit = None
@@ -376,7 +319,7 @@ def arnoldi_sim_with_max_rel_error(time_elapser, init_vec_csr, iterations, rel_e
     return rv, iterations
 
 # projected_simulation = arnoldi_projected_simulation(time_elapser, init_vec)
-def arnoldi_sim_autotune(time_elapser, init_vec_csr):
+def arnoldi_sim_autotune(time_elapser, sys_mat, output_mat, init_vec_csr):
     '''
     Perform a projected simulation from a given initial vector. This auto-tunes the number
     of arnoldi iterations based on the relative error.
@@ -406,7 +349,8 @@ def arnoldi_sim_autotune(time_elapser, init_vec_csr):
         if stdout:
             print "Trying {} arnoldi iterations...".format(arnoldi_iter)
 
-        sim, arnoldi_iter = arnoldi_sim_with_max_rel_error(time_elapser, init_vec_csr, arnoldi_iter, error_limit)
+        sim, arnoldi_iter = arnoldi_sim_with_max_rel_error(time_elapser, sys_mat, output_mat, init_vec_csr, \
+            arnoldi_iter, error_limit)
 
         if sim is not None:
             break
@@ -423,14 +367,17 @@ def arnoldi_sim_autotune(time_elapser, init_vec_csr):
 
     return sim
 
-def assign_from_sim(rv, sim, index):
+def assign_from_sim(rv, sim, index, transpose_dynamics):
     'assign a simulation to the result object'
 
     assert len(sim) == len(rv) - 1, "Got sim of length {}, expected {}".format(len(sim), len(rv) - 1)
     Timers.tic('update result list')
 
     for i in xrange(len(sim)):
-        rv[i+1][:, index] = sim[i]
+        if transpose_dynamics:
+            rv[i+1][index] = sim[i][:-1]
+        else:
+            rv[i+1][:, index] = sim[i][:-1]
 
     Timers.toc('update result list')
 
@@ -452,6 +399,35 @@ def update_result_list(list_of_results, settings, rv):
 
     Timers.toc('update result list')
 
+def setup_krylov_spaces(time_elapser):
+    '''
+    set up sys_mat, init, and output spaces for the krylov simulation
+    '''
+
+    settings = time_elapser.settings
+
+    Timers.tic('krylov setup spaces')
+
+    if settings.simulation.krylov_transpose:
+        init_space = time_elapser.key_dir_mat
+        sys_mat = time_elapser.a_matrix_transpose
+
+        output_mat = csr_matrix(time_elapser.init_space_csc.transpose())
+    else:
+        init_space = csr_matrix(time_elapser.init_space_csc.transpose())
+        sys_mat = time_elapser.a_matrix
+        output_mat = time_elapser.key_dir_mat
+
+    # add a row of all 1's to the output mat to have 1-norm as part of relative error
+    data = np.concatenate((output_mat.data, [1.] * output_mat.shape[1]))
+    indices = np.concatenate((output_mat.indices, [i for i in xrange(output_mat.shape[1])]))
+    indptr = np.concatenate((output_mat.indptr, [len(data)]))
+    output_mat = csr_matrix((data, indices, indptr), shape=(output_mat.shape[0] + 1, output_mat.shape[1]))
+
+    Timers.toc('krylov setup spaces')
+
+    return sys_mat, init_space, output_mat
+
 def make_cur_basis_mat_list(time_elapser):
     '''
     Main work function. This returns the basis matrix at every step.
@@ -459,32 +435,32 @@ def make_cur_basis_mat_list(time_elapser):
     This is called one time, and returns a list, element N is the basis matrix at step N
     '''
 
-    # numpy raise errors on floating point errors (these should be caught and handled explicitly)
-    np.seterr(all='warn', over='raise')
+    # numpy raise errors overflow errors, ignore underflow
+    np.seterr(all='warn', over='raise', under='ignore')
 
     settings = time_elapser.settings
-    init_space_csc = time_elapser.init_space_csc
 
     rv = init_krylov(time_elapser)
 
+    sys_mat, init_space, output_mat = setup_krylov_spaces(time_elapser)
+
     start = last_print = time.time()
+    num_init_vecs = init_space.shape[0]
 
-    for init_index in xrange(init_space_csc.shape[1]):
-        # this seems unnecessary... check if it hurts performance
-        Timers.tic('debug convert csc init to csr')
-        init_vec_csr = csr_matrix(init_space_csc[:, init_index].transpose())
-        Timers.toc('debug convert csc init to csr')
+    if settings.print_output:
+        print "Simulating from {} initial vector(s)".format(num_init_vecs)
 
-        sim = arnoldi_sim_autotune(time_elapser, init_vec_csr)
+    for init_index in xrange(num_init_vecs):
+        sim = arnoldi_sim_autotune(time_elapser, sys_mat, output_mat, init_space[init_index])
 
-        assign_from_sim(rv, sim, init_index)
+        assign_from_sim(rv, sim, init_index, settings.simulation.krylov_transpose)
 
         if settings.print_output:
             now = time.time()
 
             if now - last_print > 1.0: # print every second
                 last_print = now
-                frac = float(init_index) / init_space_csc.shape[1]
+                frac = float(init_index) / num_init_vecs
 
                 if frac > 1e-9:
                     elapsed_sec = now - start
@@ -493,10 +469,13 @@ def make_cur_basis_mat_list(time_elapser):
                     eta = format_secs(eta_sec)
 
                     print "Arnoldi {} / {} ({:.2f}%, ETA: {})".format(
-                        init_index, init_space_csc.shape[1], 100.0 * frac, eta)
+                        init_index, num_init_vecs, 100.0 * frac, eta)
 
     if settings.print_output:
         elapsed = format_secs(time.time() - start)
-        print "Krylov Computation Total Time: {}\n".format(elapsed)
+        print "Krylov Simulation Total Time: {}\n".format(elapsed)
+
+    # restore numpy error
+    np.seterr(all='warn')
 
     return rv

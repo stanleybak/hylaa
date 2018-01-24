@@ -96,9 +96,10 @@ class HylaaEngine(object):
                     total_steps = star.time_elapse.next_step - 1
 
                     output_space = self.cur_star.mode.transitions[i].output_space_csr
-                    guard_mat = self.cur_star.mode.transitions[i].guard_matrix
+                    guard_mat = self.cur_star.mode.transitions[i].guard_matrix_csr
 
-                    first_constraint = (guard_mat * output_space)[0]
+                    first_constraint = (guard_mat * output_space)[0].toarray()
+                    first_constraint.shape = (first_constraint.shape[1],)
 
                     init_space_csc = self.cur_star.init_space_csc
 

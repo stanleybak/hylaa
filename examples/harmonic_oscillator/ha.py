@@ -30,7 +30,7 @@ def define_ha():
     # x1 >= 4.0 & x1 <= 4.0
     output_space = csr_matrix(([1.], [0], [0, 1]), shape=(1, 4), dtype=float)
 
-    mat = np.array([[1.], [-1.]], dtype=float)
+    mat = csr_matrix(np.array([[1.], [-1.]], dtype=float))
     rhs = np.array([4.0, -4.0], dtype=float)
     trans1 = ha.new_transition(mode, error)
     trans1.set_guard(output_space, mat, rhs)
@@ -46,7 +46,7 @@ def make_init_star(ha, hylaa_settings):
     # vec2 is <-5, 0, 0, 1> with the constraint that vec2 == 1
 
     init_space = csc_matrix(np.array([[0., 1, 0, 0], [-5, 0, 0, 1]], dtype=float).transpose())
-    init_mat = np.array([[1., 0], [-1, 0], [0, 1], [0, -1]], dtype=float)
+    init_mat = csr_matrix(np.array([[1., 0], [-1, 0], [0, 1], [0, -1]], dtype=float))
     init_rhs = np.array([[1], [0], [1], [-1.]], dtype=float)
 
     rv = Star(hylaa_settings, ha.modes['mode'], init_space, init_mat, init_rhs)

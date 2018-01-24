@@ -182,7 +182,7 @@ class LpData
                                 int* indptr, int indptrLen, double* rhs, int rhsLen)
     {
         printf("TODO: modify setInputConstraintsCsr to take in w and h of matrix\n");
-        checkCsr("setInputConstraintsCsr", rhsLen, data, dataLen, indices, indicesLen, indptr,
+        checkCsr("setInputConstraintsCsr", -1, rhsLen, data, dataLen, indices, indicesLen, indptr,
                  indptrLen);
 
         if (dataLen != indicesLen)
@@ -234,7 +234,7 @@ class LpData
     void setInitConstraintsCsr(int w, int h, double* data, int dataLen, int* inds, int indsLen,
                                int* indptr, int indptrLen, double* rhs, int rhsLen)
     {
-        checkCsr("setInitConstraintsCsr", h, data, dataLen, inds, indsLen, indptr, indptrLen);
+        checkCsr("setInitConstraintsCsr", w, h, data, dataLen, inds, indsLen, indptr, indptrLen);
 
         if (numInitConstraints != -1)
         {
@@ -310,7 +310,7 @@ class LpData
     void setOutputConstraintsCsr(int w, int h, double* data, int dataLen, int* inds, int indsLen,
                                  int* indptr, int indptrLen, double* rhs, int rhsLen)
     {
-        checkCsr("setOutputConstraintsCsr", h, data, dataLen, inds, indsLen, indptr, indptrLen);
+        checkCsr("setOutputConstraintsCsr", w, h, data, dataLen, inds, indsLen, indptr, indptrLen);
 
         if (numOutputConstraints != -1)
         {
@@ -634,8 +634,8 @@ class LpData
         return rv;
     }
 
-    void checkCsr(const char* label, int h, double* data, int dataLen, int* indices, int indicesLen,
-                  int* indptr, int indptrLen)
+    void checkCsr(const char* label, int w, int h, double* data, int dataLen, int* indices,
+                  int indicesLen, int* indptr, int indptrLen)
     {
         if (dataLen != indicesLen)
         {
@@ -648,6 +648,19 @@ class LpData
             printf("Fatal Error: %s sparse matrix should have indptrLen (%d) == h + 1 (%d).\n",
                    label, indptrLen, h + 1);
             exit(1);
+        }
+
+        // make sure each index is less than width
+        for (int i = 0; i < indicesLen; ++i)
+        {
+            if (indices[i] >= w)
+            {
+                printf(
+                    "Fatal Error: %s sparse matrix has indices[%d]=%d, which is >= matrix "
+                    "width (%d)\n",
+                    label, i, indices[i], w);
+                exit(1);
+            }
         }
     }
 };

@@ -55,6 +55,9 @@ class TimeElapser(Freezable):
         # method-specific settings
         if self.settings.simulation.sim_mode == SimulationSettings.KRYLOV:
             self.cur_basis_mat_list = None
+
+            if self.settings.simulation.krylov_transpose:
+                self.a_matrix_transpose = csr_matrix(self.a_matrix.transpose())
         elif self.settings.simulation.sim_mode == SimulationSettings.EXP_MULT:
             self.stored_vec = None
             self.one_step_matrix_exp = None # one step matrix exponential
@@ -105,14 +108,6 @@ class TimeElapser(Freezable):
             data += [n for n in t.output_space_csr.data]
             cols += [n for n in t.output_space_csr.indices]
             indptr += [i + offset for i in t.output_space_csr.indptr[1:]]
-
-        # finally, add a row of all 1's for the 1-norm of the state
-        if add_one_norm:
-            num_directions += 1
-            dims = mode.a_matrix.shape[0]
-            data += dims * [1.0]
-            cols += [d for d in xrange(dims)]
-            indptr.append(len(data))
 
         self.key_dir_mat = csr_matrix((data, cols, indptr), shape=(num_directions, self.dims), dtype=float)
 

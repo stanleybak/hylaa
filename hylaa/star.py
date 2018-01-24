@@ -33,7 +33,7 @@ class Star(Freezable):
         assert isinstance(hylaa_settings, HylaaSettings)
         assert isinstance(mode, LinearAutomatonMode)
         assert isinstance(init_space_csc, csc_matrix)
-        assert isinstance(init_mat, np.ndarray)
+        assert isinstance(init_mat, csr_matrix)
         assert isinstance(init_rhs, np.ndarray)
 
         init_rhs.shape = (len(init_rhs), ) # flatten init_rhs into a 1-d array

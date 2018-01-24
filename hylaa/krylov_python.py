@@ -108,7 +108,7 @@ def python_arnoldi(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, print_sta
         if norm >= tol:
             cur_vec = cur_vec / norm
             v_mat[cur_it] = cur_vec
-        else:
+        elif cur_it > 1:
             v_mat = v_mat[:cur_it+1, :]
             h_mat = h_mat[:cur_it+1, :cur_it]
             break
@@ -198,7 +198,10 @@ def python_lanczos(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, print_sta
             cur_vec = cur_vec / norm
 
             pv_mat[cur_it, :] = (key_dir_mat * cur_vec[0])
-        else:
+        elif cur_it > 1:
+            # ugggg figure out what to do here
+            #v_mat = v_mat[:cur_it+1, :]
+            #h_mat = h_mat[:cur_it+1, :cur_it]
             break
 
     # scale back

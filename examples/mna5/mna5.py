@@ -6,10 +6,10 @@ import numpy as np
 from scipy.io import loadmat
 from scipy.sparse import csr_matrix, csc_matrix
 
-from hylaa.hybrid_automaton import LinearHybridAutomaton, make_constraint_matrix, make_seperated_constraints
+from hylaa.hybrid_automaton import LinearHybridAutomaton, bounds_list_to_init
 from hylaa.engine import HylaaSettings
 from hylaa.engine import HylaaEngine
-from hylaa.containers import PlotSettings, SimulationSettings
+from hylaa.settings import PlotSettings, SimulationSettings
 from hylaa.star import Star
 
 def define_ha():
@@ -41,18 +41,21 @@ def define_ha():
     error = ha.new_mode('error')
     dims = combined_mat.shape[0]
 
+    # error condition x1 >= 0.2 and x2 >= 0.15
     # x1 >= 0.2
-    mat = csr_matrix(([-1], [0], [0, 1]), dtype=float, shape=(1, dims))
-    #rhs = np.array([-0.2], dtype=float) # safe
-    rhs = np.array([-0.1], dtype=float) # unsafe
+    mat = csr_matrix(([-1], [0], [0, 1]), dtype=float, shape=(1, 1))
+    rhs = np.array([-0.2], dtype=float) # safe
+    #rhs = np.array([-0.1], dtype=float) # unsafe
     trans1 = ha.new_transition(mode, error)
-    trans1.set_guard(mat, rhs)
+    output_space1 = csr_matrix(([1.], [0], [0, 1]), shape=(1, dims))
+    trans1.set_guard(output_space1, mat, rhs)
 
     # x2 >= 0.15
-    mat = csr_matrix(([-1], [1], [0, 1]), dtype=float, shape=(1, dims))
+    mat = csr_matrix(([-1], [0], [0, 1]), dtype=float, shape=(1, 1))
     rhs = np.array([-0.15], dtype=float)
     trans2 = ha.new_transition(mode, error)
-    trans2.set_guard(mat, rhs)
+    output_space2 = csr_matrix(([1.], [0], [0, 1]), shape=(1, dims))
+    trans2.set_guard(output_space2, mat, rhs)
 
     return ha
 
@@ -80,17 +83,9 @@ def make_init_star(ha, hylaa_settings):
 
         bounds_list.append((lb, ub))
 
-    if not hylaa_settings.simulation.krylov_seperate_constant_vars or \
-            hylaa_settings.simulation.sim_mode != SimulationSettings.KRYLOV:
-        init_mat, init_rhs = make_constraint_matrix(bounds_list)
-        rv = Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs)
-    else:
-        init_mat, init_rhs, variable_dim_list, fixed_dim_tuples = make_seperated_constraints(bounds_list)
+    init_space, init_mat, init_mat_rhs = bounds_list_to_init(bounds_list)
 
-        rv = Star(hylaa_settings, ha.modes['mode'], init_mat, init_rhs, \
-                  var_lists=[variable_dim_list], fixed_tuples=fixed_dim_tuples)
-
-    return rv
+    return Star(hylaa_settings, ha.modes['mode'], init_space, init_mat, init_mat_rhs)
 
 def define_settings():
     'get the hylaa settings object'
@@ -99,6 +94,9 @@ def define_settings():
 
     settings = HylaaSettings(step=0.001, max_time=20.0, plot_settings=plot_settings)
     settings.simulation.sim_mode = SimulationSettings.KRYLOV
+
+    #settings.simulation.krylov_stdout = True
+    settings.simulation.krylov_transpose = True
 
     return settings
 
