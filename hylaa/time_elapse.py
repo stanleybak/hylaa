@@ -71,35 +71,30 @@ class TimeElapser(Freezable):
 
         self.freeze_attrs()
 
-    def _extract_key_directions(self, mode, add_one_norm=False):
+    def _extract_key_directions(self, mode):
         'extract the key directions for lp solving'
 
-        num_directions = 0 if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE else 2
+        num_directions = 0
 
         data = []
         cols = []
         indptr = [0]
 
         if self.settings.plot.plot_mode != PlotSettings.PLOT_NONE:
-            if isinstance(self.settings.plot.xdim_dir, int):
-                data.append(1.0)
-                cols.append(self.settings.plot.xdim_dir)
-                indptr.append(len(data))
-            else:
-                xdir = csr_matrix(self.settings.plot.xdim_dir)
-                data += [n for n in xdir.data]
-                cols += [n for n in xdir.cols]
-                indptr.append(len(data))
+            dirs = [self.settings.plot.xdim_dir, self.settings.plot.ydim_dir]
 
-            if isinstance(self.settings.plot.ydim_dir, int):
-                data.append(1.0)
-                cols.append(self.settings.plot.ydim_dir)
-                indptr.append(len(data))
-            else:
-                ydir = csr_matrix(self.settings.plot.ydim_dir)
-                data += [n for n in ydir.data]
-                cols += [n for n in ydir.cols]
-                indptr.append(len(data))
+            for plot_dir in dirs:
+                if isinstance(plot_dir, int):
+                    data.append(1.0)
+                    cols.append(plot_dir)
+                    indptr.append(len(data))
+                    num_directions += 1
+                elif plot_dir is not None:
+                    xdir = csr_matrix(plot_dir)
+                    data += [n for n in xdir.data]
+                    cols += [n for n in xdir.cols]
+                    indptr.append(len(data))
+                    num_directions += 1
 
         for t in mode.transitions:
             num_directions += t.output_space_csr.shape[0]

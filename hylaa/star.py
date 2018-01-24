@@ -76,6 +76,11 @@ class Star(Freezable):
         for i in xrange(len(mode.transitions)):
             self._guard_opt_data.append(GuardOptData(self, mode, i))
 
+        self.num_plot_vars = 0
+        for d in [self.settings.plot.xdim_dir, self.settings.plot.ydim_dir]:
+            if d is not None:
+                self.num_plot_vars += 1
+
         self.freeze_attrs()
 
     def get_guard_intersection(self, transition_index):
@@ -96,11 +101,11 @@ class Star(Freezable):
         rv = self._plot_lpi
 
         if rv is None:
-            rv = LpInstance(2, self.num_init_vars, self.inputs)
+            rv = LpInstance(self.num_plot_vars, self.num_init_vars, self.inputs)
             rv.set_init_constraints(self.init_mat, self.init_rhs)
             rv.set_no_output_constraints()
 
-            rv.update_basis_matrix(self.time_elapse.cur_basis_mat[:2])
+            rv.update_basis_matrix(self.time_elapse.cur_basis_mat[:self.num_plot_vars])
 
             if self.inputs > 0:
                 rv.set_input_constraints_csr(self.input_mat_csr, self.input_rhs)
@@ -115,7 +120,7 @@ class Star(Freezable):
         self.time_elapse.step()
 
         if self._plot_lpi is not None:
-            self._plot_lpi.update_basis_matrix(self.time_elapse.cur_basis_mat[:2])
+            self._plot_lpi.update_basis_matrix(self.time_elapse.cur_basis_mat[:self.num_plot_vars])
 
             if self.time_elapse.cur_input_effects_matrix is not None:
                 self._plot_lpi.add_input_effects_matrix(self.time_elapse.cur_input_effects_matrix[:2])
@@ -133,20 +138,32 @@ class Star(Freezable):
     def init_plot_vecs(plot_settings):
         'initialize plot_vecs'
 
+        num_plot_vars = 0
+        for d in [plot_settings.xdim_dir, plot_settings.ydim_dir]:
+            if d is not None:
+                num_plot_vars += 1
+
+        assert num_plot_vars > 0, "both plot.xdim_dir and plot.ydim_dir are None: not allowed"
+
         Star.plot_settings = plot_settings
         Star.plot_vecs = []
 
-        assert plot_settings.num_angles >= 3, "needed at least 3 directions in plot_settings.num_angles"
+        if num_plot_vars == 1:
+            # single dimensional optimization (other dimension is time)
+            Star.plot_vecs.append(np.array([1.], dtype=float))
+            Star.plot_vecs.append(np.array([-1.], dtype=float))
+        else:
+            assert plot_settings.num_angles >= 3, "needed at least 3 directions in plot_settings.num_angles"
 
-        step = 2.0 * math.pi / plot_settings.num_angles
+            step = 2.0 * math.pi / plot_settings.num_angles
 
-        for theta in np.arange(0.0, 2.0*math.pi, step):
-            x = math.cos(theta)
-            y = math.sin(theta)
+            for theta in np.arange(0.0, 2.0*math.pi, step):
+                x = math.cos(theta)
+                y = math.sin(theta)
 
-            vec = np.array([x, y], dtype=float)
+                vec = np.array([x, y], dtype=float)
 
-            Star.plot_vecs.append(vec)
+                Star.plot_vecs.append(vec)
 
     def verts(self):
         'get the verticies of the polygon projection of the star used for plotting'
@@ -160,6 +177,14 @@ class Star(Freezable):
                 use_binary_search = False
 
             pts = self._find_star_boundaries(use_binary_search=use_binary_search)
+
+            # add time to point
+            cur_time = self.time_elapse.next_step * self.settings.step
+
+            if self.settings.plot.xdim_dir is None:
+                pts = [[cur_time, pt[0]] for pt in pts]
+            elif self.settings.plot.ydim_dir is None:
+                pts = [[pt[0], cur_time] for pt in pts]
 
             if len(pts) > len(Star.plot_vecs)/2 and not Star.high_vert_mode:
                 # don't use binary search anymore, and reduce the number of directions being plotted
@@ -225,11 +250,11 @@ class Star(Freezable):
 
         star_lpi = self.get_plot_lpi()
 
-        point = np.zeros(2)
+        point = np.zeros(self.num_plot_vars)
         direction_list = Star.plot_vecs
         rv = []
 
-        assert len(direction_list) > 2
+        assert len(direction_list) >= 2
 
         if not use_binary_search or len(direction_list) < 8:
             # straightforward approach: minimize in each direction

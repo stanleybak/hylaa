@@ -74,8 +74,8 @@ class PlotSettings(Freezable):
     def __init__(self):
         self.plot_mode = PlotSettings.PLOT_NONE
 
-        self.xdim_dir = 0 # plotting x dimension direction
-        self.ydim_dir = 1 # plotting y dimension direction
+        self.xdim_dir = 0 # plotting x dimension direction (if None, use time)
+        self.ydim_dir = 1 # plotting y dimension direction (if None, use time)
 
         self.plot_size = (12, 8) # inches
         self.label = LabelSettings() # plot title, axis labels, font sizes, ect.

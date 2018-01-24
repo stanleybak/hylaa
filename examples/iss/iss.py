@@ -88,8 +88,6 @@ def make_init_star(ha, hylaa_settings):
 
     return Star(hylaa_settings, ha.modes['mode'], init_space, init_mat, init_mat_rhs)
 
-    return rv
-
 def define_settings(_):
     'get the hylaa settings object'
     plot_settings = PlotSettings()

@@ -366,6 +366,12 @@ class PlotManager(Freezable):
             y_label = self.settings.label.y_label
             y_label = y_label if y_label is not None else '$x_{{ {} }}$'.format(self.settings.ydim_dir)
 
+            if self.settings.label.x_label is None and self.settings.xdim_dir is None:
+                x_label = 'Time'
+
+            if self.settings.label.y_label is None and self.settings.ydim_dir is None:
+                y_label = 'Time'
+
             self.axes.set_xlabel(x_label, fontsize=self.settings.label.label_size)
             self.axes.set_ylabel(y_label, fontsize=self.settings.label.label_size)
             self.axes.set_title(title, fontsize=self.settings.label.title_size)

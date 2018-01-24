@@ -42,20 +42,20 @@ def define_ha():
     if combined_error_condition:
         #error: average of all helicopter's x8 >= 0.45
         data = [1. for _ in xrange(num_heli)]
-        indices = [8 + 30*h for h in xrange(num_heli)]
+        indices = [8 + 28*h for h in xrange(num_heli)]
         indptrs = [0, len(data)]
 
-        output_space = csr_matrix((data, indices, indptrs), shape=(1, 30 * num_heli), dtype=float)
+        output_space = csr_matrix((data, indices, indptrs), shape=(1, 28 * num_heli), dtype=float)
 
         mat = csr_matrix(([-1.0], [0], [0, 1]), shape=(1, 1))
         rhs = np.array([-error_threshold * num_heli], dtype=float)
     else:
         # error: x8 >= 0.45 for each helicopter
         data = [1.] * num_heli
-        indices = [8 + 30*h for h in xrange(num_heli)]
+        indices = [8 + 28*h for h in xrange(num_heli)]
         indptrs = xrange(num_heli + 1)
 
-        output_space = csr_matrix((data, indices, indptrs), shape=(num_heli, 30 * num_heli), dtype=float)
+        output_space = csr_matrix((data, indices, indptrs), shape=(num_heli, 28 * num_heli), dtype=float)
 
         # -x8 <= -0.45 -> x8 >= 0.45
         data = [-1.] * num_heli
@@ -73,17 +73,19 @@ def define_ha():
 def heli_a_matrix(num_heli):
     'make the helicopter a matrix'
 
-    dims = 30 * num_heli
+    dims = 28 * num_heli
     rv = lil_matrix((dims, dims), dtype=float)
 
-    mat = loadmat('heli.mat')['A']
+    mat = loadmat('heli.mat')['A'][1:29,1:29]
+
+    print "mat shape = {}".format(mat.shape)
 
     for instance in xrange(num_heli):
         if instance > 0 and instance % 1000 == 0:
             print "making a matrix {} / {}".format(instance, num_heli)
 
-        offset = instance * 30
-        rv[offset:offset+30, offset:offset+30] = mat
+        offset = instance * 28
+        rv[offset:offset+28, offset:offset+28] = mat
 
     if num_heli > 1000:
         print "converting a_mat to csr_matrix..."
@@ -93,80 +95,18 @@ def heli_a_matrix(num_heli):
 def make_init_star(ha, hylaa_settings):
     '''returns a star'''
 
-    # dim0 = time (initially 0)
-    # dim1-28 = heli dynamics
-    # dim29 = affine dimension (initially 1)
+    bounds_list = []
 
-    # vec1 is <0, 1, 0, 0> with the constraint that 0 <= vec1 <= 1
-    # vec2 is <-5, 0, 0, 1> with the constraint that vec2 == 1
+    for h in xrange(ha.dims):
+        ub = lb = 0.0
 
-    num_heli = ha.dims / 30
+        if h % 30 >= 0 and h % 30 <= 7:
+            ub = 0.1
+            lb = -0.1
 
-    if True:
-        bounds_list = []
+        bounds_list.append((lb, ub))
 
-        for h in xrange(ha.dims):
-            ub = lb = 0.0
-
-            if h % 30 == 29: # affine term
-                ub = lb = 1.0
-            elif h % 30 >= 1 and h % 30 <= 8:
-                ub = 0.1
-                lb = -0.1
-
-            bounds_list.append((lb, ub))
-
-        init_space, mat, init_rhs = bounds_list_to_init(bounds_list)
-    else: # old way
-
-        data = []
-        indices = []
-        indptrs = [0]
-
-        # each column of init space (csc_matrix) is a vector of the initial space
-
-        # first vector is all the fixed terms, with the constraint that vec1 == 1
-        for h in xrange(num_heli):
-            data.append(1.0)
-            indices.append(30 * h + 29)
-
-        indptrs.append(len(data))
-
-        rhs_row = []
-
-        mat_data = []
-        mat_indices = []
-        mat_indptrs = [0]
-
-        # initial (affine) row
-        rhs_row.append(1)
-        rhs_row.append(-1)
-
-        # and eight dims for each helicopter
-        for h in xrange(num_heli):
-            for i in xrange(1, 9):
-                data.append(1.0)
-                indices.append(30 * h + i)
-                indptrs.append(len(data))
-
-                rhs_row.append(0.1)
-                rhs_row.append(0.1)
-
-        for c in xrange(1 + 8 * num_heli):
-            mat_data.append(1.)
-            mat_indptrs.append(len(mat_data))
-            mat_data.append(-1.)
-            mat_indptrs.append(len(mat_data))
-
-            mat_indices.append(c)
-            mat_indices.append(c)
-
-        mat_width = 8 * num_heli + 1
-        mat_height = 2 + 8 * num_heli * 2
-        mat = csr_matrix((mat_data, mat_indices, mat_indptrs), dtype=float, shape=(mat_height, mat_width))
-
-        init_space = csc_matrix((data, indices, indptrs), shape=(30*num_heli, 8 * num_heli + 1))
-        init_rhs = np.array(rhs_row, dtype=float)
+    init_space, mat, init_rhs = bounds_list_to_init(bounds_list)
 
     return Star(hylaa_settings, ha.modes['mode'], init_space, mat, init_rhs)
 
@@ -175,8 +115,8 @@ def define_settings(_):
     plot_settings = PlotSettings()
     plot_settings.plot_mode = PlotSettings.PLOT_FULL
 
-    plot_settings.xdim_dir = 0
-    plot_settings.ydim_dir = 8
+    plot_settings.xdim_dir = None
+    plot_settings.ydim_dir = 7
 
     settings = HylaaSettings(step=0.1, max_time=30.0, plot_settings=plot_settings)
 
@@ -189,7 +129,7 @@ def define_settings(_):
     #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
 
     settings.simulation.krylov_transpose = True
-    settings.simulation.check_answer = True
+    #settings.simulation.check_answer = True
     #settings.simulation.guard_mode = SimulationSettings.GUARD_FULL_LP
 
     return settings
