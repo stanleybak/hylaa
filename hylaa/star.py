@@ -40,6 +40,7 @@ class Star(Freezable):
         assert init_rhs.shape == (init_mat.shape[0],)
         assert init_mat.shape[1] == init_space_csc.shape[1]
         assert init_space_csc.shape[0] == mode.parent.dims
+        assert init_space_csc.shape[1] > 0, "initial states are zero-dimensional"
 
         self.num_init_vars = init_space_csc.shape[1]
 

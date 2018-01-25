@@ -180,6 +180,12 @@ def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, 
 
             full_sim, small_full_sim = [odeint_sim(a) for a in args]
 
+            if np.allclose(full_sim[1], np.zeros(full_sim[1].shape)):
+                if settings.print_output:
+                    print "First step of simulation was almost all zeros... increasing num iterations"
+
+                rel_error = limit + 1
+
             # sample last / middle / first before going through the whole thing
             steps = full_sim.shape[0]
             for step in [steps-1, steps / 2, 1]:
@@ -189,6 +195,7 @@ def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, 
                 rel_error = max(rel_error, relative_error(cur_result, small_result))
 
                 if rel_error > limit:
+                    print "Simulation relative error at step {}: {} (limit: {})".format(step, rel_error, limit)
                     break
 
             if rel_error < limit: # go through each step
@@ -205,6 +212,7 @@ def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, 
                     rel_error = max(rel_error, relative_error(cur_result, small_result))
 
                     if rel_error > limit:
+                        print "Simulation relative error at step {}: {} (limit: {})".format(step, rel_error, limit)
                         sim = None
                         break
 
@@ -290,11 +298,17 @@ def arnoldi_sim_with_max_rel_error(time_elapser, sys_mat, output_mat, init_vec_c
 
     settings = time_elapser.settings
     stdout = settings.simulation.krylov_stdout
+    stdout_full = stdout and sys_mat.shape[0] > int(1e6)
+    rel_error = None
 
-    if settings.simulation.krylov_use_lanczos:
-        pv_mat, h_mat = python_lanczos(sys_mat, init_vec_csr, iterations, output_mat, print_status=stdout)
+    if settings.simulation.krylov_lanczos:
+        pv_mat, h_mat = python_lanczos(sys_mat, init_vec_csr, iterations, output_mat, print_status=stdout_full)
     else:
-        pv_mat, h_mat = python_arnoldi(sys_mat, init_vec_csr, iterations, output_mat, print_status=stdout)
+        pv_mat, h_mat = python_arnoldi(sys_mat, init_vec_csr, iterations, output_mat, print_status=stdout_full)
+
+    if stdout:
+        print "Finished {}... checking rel_error at each step".format( \
+            "Lanczos" if settings.simulation.krylov_lanczos else "Arnoldi")
 
     if h_mat.shape[0] < iterations:
         rel_error_limit = None
