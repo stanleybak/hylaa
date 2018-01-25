@@ -47,7 +47,7 @@ class SimulationSettings(Freezable):
         self.exp_mult_output_vec = True # for EXP_MULT: store output_mat * mat_exp? (otherwise mat_exp * input_mat)
 
         self.check_answer = False # double-check answer using MATRIX_EXP at each step (slow!)
-        self.check_answer_abs_tol = 1e-6 # absolute tolerance when checking answer
+        self.check_answer_abs_tol = 1e-5 # absolute tolerance when checking answer
 
         # accuracy settings. If you don't have enough accuracy, decrease rel error and increase samples
         self.krylov_lanczos = False # use the lanczos iteration instead of arnoldi
