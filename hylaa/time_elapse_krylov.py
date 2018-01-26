@@ -433,9 +433,9 @@ def make_cur_basis_mat_list(time_elapser):
     rv = init_krylov(time_elapser)
 
     if settings.simulation.krylov_transpose:
-        init_space = csr_matrix(time_elapser.init_space_csc.transpose())
-    else:
         init_space = time_elapser.key_dir_mat
+    else:
+        init_space = csr_matrix(time_elapser.init_space_csc.transpose())
 
     start = last_print = time.time()
     num_init_vecs = init_space.shape[0]

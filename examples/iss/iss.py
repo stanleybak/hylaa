@@ -103,7 +103,7 @@ def define_settings(_):
 
     #settings.simulation.krylov_check_all_rel_error = True
     #settings.simulation.krylov_rel_error = 1e-6
-    #settings.simulation.krylov_transpose = True
+    settings.simulation.krylov_transpose = True
     settings.simulation.krylov_stdout = True
 
     #settings.skip_step_times = False

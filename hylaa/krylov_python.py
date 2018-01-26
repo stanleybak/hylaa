@@ -69,9 +69,10 @@ class KrylovIterator(Freezable):
 
         if self.settings.simulation.krylov_transpose and not self.lanczos:
             # we need to compute with the transpose of the a matrix
-            self.a_matrix = csr_matrix(self.a_matrix.transpose())
+            self.a_matrix = csr_matrix(a_matrix.transpose())
+        else:
+            self.a_matrix = a_matrix
 
-        self.a_matrix = a_matrix
         self.key_dir_mat = key_dir_mat
         self.tol = 1e-9
 
@@ -237,7 +238,7 @@ class KrylovIterator(Freezable):
                 cur_vec = cur_vec / norm
                 self.v_mat[self.cur_it] = cur_vec
             elif self.cur_it > 1:
-                print "break! norm {} <= tol {}".format(norm, self.tol)
+                #print "break! norm {} <= tol {}".format(norm, self.tol)
                 self.v_mat = self.v_mat[:self.cur_it+1, :]
                 self.h_mat = self.h_mat[:self.cur_it+1, :self.cur_it]
                 break
