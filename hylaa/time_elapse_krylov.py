@@ -441,11 +441,14 @@ def setup_krylov_spaces(time_elapser):
         sys_mat = time_elapser.a_matrix
         output_mat = time_elapser.key_dir_mat
 
+    print "removed 1-norm in key_dir_mat to save memory... re-add it manually inside iterations"
     # add a row of all 1's to the output mat to have 1-norm as part of relative error
-    data = np.concatenate((output_mat.data, [1.] * output_mat.shape[1]))
-    indices = np.concatenate((output_mat.indices, [i for i in xrange(output_mat.shape[1])]))
-    indptr = np.concatenate((output_mat.indptr, [len(data)]))
-    output_mat = csr_matrix((data, indices, indptr), shape=(output_mat.shape[0] + 1, output_mat.shape[1]))
+    #print ".tek adding row of all 1's: size = {}".format(output_mat.shape[1])
+    #data = np.concatenate((output_mat.data, np.ones((output_mat.shape[1],), dtype=float)))
+    #indices = np.concatenate((output_mat.indices, np.ones((output_mat.shape[1],), dtype=output_mat.indices.dtype)))
+    #indptr = np.concatenate((output_mat.indptr, [len(data)]))
+    
+    #output_mat = csr_matrix((data, indices, indptr), shape=(output_mat.shape[0] + 1, output_mat.shape[1]))
 
     Timers.toc('krylov setup spaces')
 
