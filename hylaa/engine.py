@@ -79,6 +79,10 @@ class HylaaEngine(object):
             lp_solution = self.cur_star.get_guard_intersection(i)
 
             if lp_solution is not None:
+                step_num = self.cur_star.time_elapse.next_step - 1
+                print "Unsafe at Step: {} / {} ({})".format(step_num, self.settings.num_steps, \
+                                                            self.settings.step * step_num)
+
                 self.result.init_vars = lp_solution[:self.cur_star.num_init_vars]
                 self.result.output_vars = lp_solution[self.cur_star.num_init_vars:]
 

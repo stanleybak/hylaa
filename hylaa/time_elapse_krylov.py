@@ -11,7 +11,6 @@ from scipy.sparse.linalg import expm
 from scipy.integrate import odeint
 
 from hylaa.timerutil import Timers
-from hylaa.krylov_python import python_arnoldi, python_lanczos
 from hylaa.settings import HylaaSettings
 
 def odeint_sim(arg):
@@ -93,8 +92,7 @@ def init_krylov(time_elapser):
     init_space_csc = time_elapser.init_space_csc
 
     # check available memory before computing
-    i = time_elapser.init_space_csc.shape[1]
-
+    #i = time_elapser.init_space_csc.shape[1]
     #check_available_memory_basis(settings.print_output, time_elapser.settings.num_steps, key_dir_mat.shape[0], i)
 
     time_elapser.stats['arnoldi_iter'] = []
@@ -165,10 +163,11 @@ def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, 
         small_h_mat = h_mat[:-1, :-1].copy()
         small_pv_mat = pv_mat[:, :-1].copy()
 
-    print "debug save matrix to h_mat.pyz and pv_mat.pyz"
-    np.savez('h_mat.npz', data=h_mat.data, indices=h_mat.indices,
-             indptr=h_mat.indptr, shape=h_mat.shape)
-    np.savez('pv_mat.npz', pv_mat)
+    if isinstance(h_mat, csr_matrix):
+        print ".time_elapse_krylov debug save matrix to h_mat.pyz and pv_mat.pyz"
+        np.savez('h_mat.npz', data=h_mat.data, indices=h_mat.indices,
+                 indptr=h_mat.indptr, shape=h_mat.shape)
+        np.savez('pv_mat.npz', pv_mat)
 
     if settings.simulation.krylov_use_odeint:
         Timers.tic('get_rel_error odeint')
@@ -294,7 +293,7 @@ def print_rel_error_at_each_step(settings, h_list, pv_list):
 
     print "print_rel_error_at_each_step data written to {}, exiting".format(filename)
 
-def arnoldi_sim_with_max_rel_error(time_elapser, sys_mat, output_mat, init_vec_csr, iterations, rel_error_limit):
+def arnoldi_sim_with_max_rel_error(time_elapser, init_vec_csr, iterations, rel_error_limit):
     '''
     Run an arnoldi simulation with a fixed number of iterations and a target max relative error.
     If rel_error_limit is None, just run the whole simulation.
@@ -306,13 +305,9 @@ def arnoldi_sim_with_max_rel_error(time_elapser, sys_mat, output_mat, init_vec_c
 
     settings = time_elapser.settings
     stdout = settings.simulation.krylov_stdout
-    stdout_full = stdout and sys_mat.shape[0] > int(1e6)
     rel_error = None
 
-    if settings.simulation.krylov_lanczos:
-        pv_mat, h_mat = python_lanczos(sys_mat, init_vec_csr, iterations, output_mat, print_status=stdout_full)
-    else:
-        pv_mat, h_mat = python_arnoldi(sys_mat, init_vec_csr, iterations, output_mat, print_status=stdout_full)
+    pv_mat, h_mat = time_elapser.krylov_iterator.run_iteration(init_vec_csr, iterations)
 
     if stdout:
         print "Finished {}... checking rel_error at each step".format( \
@@ -341,7 +336,7 @@ def arnoldi_sim_with_max_rel_error(time_elapser, sys_mat, output_mat, init_vec_c
     return rv, iterations
 
 # projected_simulation = arnoldi_projected_simulation(time_elapser, init_vec)
-def arnoldi_sim_autotune(time_elapser, sys_mat, output_mat, init_vec_csr):
+def arnoldi_sim_autotune(time_elapser, init_vec_csr):
     '''
     Perform a projected simulation from a given initial vector. This auto-tunes the number
     of arnoldi iterations based on the relative error.
@@ -372,11 +367,12 @@ def arnoldi_sim_autotune(time_elapser, sys_mat, output_mat, init_vec_csr):
             print "Trying {} {} iterations...".format(arnoldi_iter, \
                 "Arnoldi" if not settings.simulation.krylov_lanczos else "Lanczos")
 
-        sim, arnoldi_iter = arnoldi_sim_with_max_rel_error(time_elapser, sys_mat, output_mat, init_vec_csr, \
-            arnoldi_iter, error_limit)
+        sim, arnoldi_iter = arnoldi_sim_with_max_rel_error(time_elapser, init_vec_csr, arnoldi_iter, error_limit)
 
         if sim is not None:
             break
+
+    time_elapser.krylov_iterator.reset() # done with the current start vector, free memory
 
     if stdout:
         print "Simulation was accurate enough with {} arnoldi iterations...".format(arnoldi_iter)
@@ -422,38 +418,6 @@ def update_result_list(list_of_results, settings, rv):
 
     Timers.toc('update result list')
 
-def setup_krylov_spaces(time_elapser):
-    '''
-    set up sys_mat, init, and output spaces for the krylov simulation
-    '''
-
-    settings = time_elapser.settings
-
-    Timers.tic('krylov setup spaces')
-
-    if settings.simulation.krylov_transpose:
-        init_space = time_elapser.key_dir_mat
-        sys_mat = time_elapser.a_matrix_transpose
-
-        output_mat = csr_matrix(time_elapser.init_space_csc.transpose())
-    else:
-        init_space = csr_matrix(time_elapser.init_space_csc.transpose())
-        sys_mat = time_elapser.a_matrix
-        output_mat = time_elapser.key_dir_mat
-
-    print "removed 1-norm in key_dir_mat to save memory... re-add it manually inside iterations"
-    # add a row of all 1's to the output mat to have 1-norm as part of relative error
-    #print ".tek adding row of all 1's: size = {}".format(output_mat.shape[1])
-    #data = np.concatenate((output_mat.data, np.ones((output_mat.shape[1],), dtype=float)))
-    #indices = np.concatenate((output_mat.indices, np.ones((output_mat.shape[1],), dtype=output_mat.indices.dtype)))
-    #indptr = np.concatenate((output_mat.indptr, [len(data)]))
-    
-    #output_mat = csr_matrix((data, indices, indptr), shape=(output_mat.shape[0] + 1, output_mat.shape[1]))
-
-    Timers.toc('krylov setup spaces')
-
-    return sys_mat, init_space, output_mat
-
 def make_cur_basis_mat_list(time_elapser):
     '''
     Main work function. This returns the basis matrix at every step.
@@ -468,7 +432,10 @@ def make_cur_basis_mat_list(time_elapser):
 
     rv = init_krylov(time_elapser)
 
-    sys_mat, init_space, output_mat = setup_krylov_spaces(time_elapser)
+    if settings.simulation.krylov_transpose:
+        init_space = time_elapser.key_dir_mat
+    else:
+        init_space = csr_matrix(time_elapser.init_space_csc.transpose())
 
     start = last_print = time.time()
     num_init_vecs = init_space.shape[0]
@@ -477,7 +444,7 @@ def make_cur_basis_mat_list(time_elapser):
         print "Simulating from {} initial vector(s)".format(num_init_vecs)
 
     for init_index in xrange(num_init_vecs):
-        sim = arnoldi_sim_autotune(time_elapser, sys_mat, output_mat, init_space[init_index])
+        sim = arnoldi_sim_autotune(time_elapser, init_space[init_index])
 
         assign_from_sim(rv, sim, init_index, settings.simulation.krylov_transpose)
 

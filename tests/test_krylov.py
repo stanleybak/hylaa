@@ -14,9 +14,18 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import expm_multiply
 from scipy.integrate import odeint
 
-from hylaa.krylov_python import python_arnoldi, python_lanczos
+from hylaa.settings import HylaaSettings
+from hylaa.krylov_python import KrylovIterator
 
 from krypy.utils import arnoldi as krypy_arnoldi # krypy is used for testing
+
+def make_settings(lanczos=False):
+    'make a hylaa settings object'
+
+    h = HylaaSettings(0.1, 1.0)
+    h.simulation.krylov_lanczos = lanczos
+
+    return h
 
 def random_five_diag_sym_matrix(dims, print_progress=False):
     '''make a random symmetric csr_matrix 5-diagonal matrix
@@ -63,7 +72,7 @@ def random_five_diag_sym_matrix(dims, print_progress=False):
             eta = elapsed / (row / float(dims)) - elapsed
             print "Row {} / {} ({:.2f}%). Elapsed: {:.1f}s, ETA: {:.1f}m".format(row, dims, 100.0 * row / dims, \
                 elapsed, eta / 60.0)
-            
+
 
         if row > 1:
             data[data_index] = q_n_minus_2
@@ -215,7 +224,8 @@ class TestKrylov(unittest.TestCase):
             krypy_v *= norm
 
             # using python
-            python_pv, python_h = python_arnoldi(a_matrix, init_sparse, iterations, key_dir_mat)
+            ksim = KrylovIterator(make_settings(), a_matrix, key_dir_mat)
+            python_pv, python_h = ksim.run_iteration(init_sparse, iterations)
 
             self.assertTrue(np.allclose(python_h, krypy_h), "Python h matrix incorrect")
             self.assertTrue(np.allclose(python_pv, krypy_v), "Python v matrix incorrect")
@@ -242,7 +252,8 @@ class TestKrylov(unittest.TestCase):
             krypy_v *= norm
 
             # using python
-            python_pv, python_h = python_lanczos(a_matrix, init_sparse, iterations, key_dir_mat)
+            ksim = KrylovIterator(make_settings(True), a_matrix, key_dir_mat)
+            python_pv, python_h = ksim.run_iteration(init_sparse, iterations)
             python_h = python_h.toarray()
 
             self.assertTrue(np.allclose(python_h, krypy_h), "Python h matrix incorrect")
@@ -264,7 +275,8 @@ class TestKrylov(unittest.TestCase):
         key_dir_mat = csr_matrix([[1.0 for _ in xrange(dims)], [1.0 if i == 0 else 0.0 for i in xrange(dims)]])
 
         # using python lanczos
-        python_pv, python_h = python_lanczos(a_matrix_sparse, e1_sparse, iterations, key_dir_mat)
+        ksim = KrylovIterator(make_settings(True), a_matrix_sparse, key_dir_mat)
+        python_pv, python_h = ksim.run_iteration(e1_sparse, iterations)
 
         python_pv = python_pv[:, :iterations]
         python_h = python_h[:iterations, :iterations]
@@ -283,6 +295,128 @@ class TestKrylov(unittest.TestCase):
         proj_odeint_result = key_dir_mat * odeint_result
 
         self.assertTrue(np.allclose(python_result, proj_odeint_result, atol=1e-3), "python result incorrect")
+
+    def test_lanczos_reinit(self):
+        'compare simulation vs python_lanczos'
+
+        dims = 1000
+        iterations = 50
+        sim_time = 0.1
+
+        e1_sparse = csr_matrix(([1.0], [0], [0, 1]), shape=(1, dims))
+        e1_dense = np.array([1.0 if d == 0 else 0.0 for d in xrange(iterations)], dtype=float)
+
+        a_matrix_sparse = random_sparse_matrix(dims, entries_per_row=50, symmetric=True)
+
+        # two key directions
+        key_dir_mat = csr_matrix([[1.0 for _ in xrange(dims)], [1.0 if i == 0 else 0.0 for i in xrange(dims)]])
+
+        # using python lanczos
+        ksim = KrylovIterator(make_settings(True), a_matrix_sparse, key_dir_mat)
+        python_pv, python_h = ksim.run_iteration(e1_sparse, iterations)
+
+        python_pv = python_pv[:, :iterations]
+        python_h = python_h[:iterations, :iterations]
+
+        python_result = np.dot(python_pv, expm_multiply(python_h * sim_time, e1_dense))
+
+        ###########
+        # continue for more iterations
+        reinit_pv, reinit_h = ksim.run_iteration(e1_sparse, 2*iterations)
+
+        reinit_pv = reinit_pv[:, :iterations]
+        reinit_h = reinit_h[:iterations, :iterations]
+
+        reinit_result = np.dot(reinit_pv, expm_multiply(reinit_h * sim_time, e1_dense))
+        ##########
+        # reset and restart
+        ksim.reset()
+
+        reset_pv, reset_h = ksim.run_iteration(e1_sparse, iterations)
+
+        reset_pv = reset_pv[:, :iterations]
+        reset_h = reset_h[:iterations, :iterations]
+
+        reset_result = np.dot(reset_pv, expm_multiply(reset_h * sim_time, e1_dense))
+
+        # using odeint
+        a_matrix = a_matrix_sparse.toarray()
+        der_func = lambda state, _: np.dot(a_matrix, state)
+        a_transpose = a_matrix.transpose().copy()
+        jac_func = lambda dummy_state, dummy_t: a_transpose
+
+        times = np.linspace(0, sim_time)
+        start_vec = np.array([1.0 if d == 0 else 0.0 for d in xrange(dims)], dtype=float)
+        odeint_result = odeint(der_func, start_vec, times, Dfun=jac_func, col_deriv=True, mxstep=int(1e8))[-1]
+        proj_odeint_result = key_dir_mat * odeint_result
+
+        self.assertTrue(np.allclose(python_result, proj_odeint_result, atol=1e-3), "python result incorrect")
+        self.assertTrue(np.allclose(reinit_result, proj_odeint_result, atol=1e-3), "reinit result incorrect")
+        self.assertTrue(np.allclose(reset_result, proj_odeint_result, atol=1e-3), "reset result incorrect")
+
+    def test_arnoldi_one_norm(self):
+        'test arnoldi computaiton with one norm setting'
+
+        dims = 10
+        iterations = 5
+        a_matrix = random_sparse_matrix(dims, entries_per_row=3)
+        key_dir_mat = csr_matrix(np.identity(dims))
+
+        data = key_dir_mat.data
+        indices = key_dir_mat.indices
+        indptr = key_dir_mat.indptr
+
+        data = np.concatenate((data, [1.0 for _ in xrange(dims)]))
+        indices = np.concatenate((indices, [i for i in xrange(dims)]))
+        indptr = np.concatenate((indptr, [len(data)]))
+        key_dir_mat_with_one_norm = csr_matrix((data, indices, indptr), shape=(dims + 1, dims))
+
+        init_dense = np.array([[2.] if d == 1 else [.4] if d == dims-1 else [0.0] for d in xrange(dims)], dtype=float)
+        #init_dense = np.array([[1.] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
+
+        init_sparse = csr_matrix(init_dense.T)
+
+        ksim = KrylovIterator(make_settings(), a_matrix, key_dir_mat, add_ones_key_dir=True)
+        python_pv_auto, python_h_auto = ksim.run_iteration(init_sparse, iterations)
+
+        # using python
+        ksim = KrylovIterator(make_settings(), a_matrix, key_dir_mat_with_one_norm, add_ones_key_dir=False)
+        python_pv, python_h = ksim.run_iteration(init_sparse, iterations)
+
+        self.assertTrue(np.allclose(python_h, python_h_auto), "H matrices don't match")
+        self.assertTrue(np.allclose(python_pv, python_pv_auto), "PV matrices don't match")
+
+    def test_lanczos_one_norm(self):
+        'test lanczos computaiton with one norm setting'
+
+        dims = 10
+        iterations = 5
+        a_matrix = random_sparse_matrix(dims, entries_per_row=2, symmetric=True)
+        key_dir_mat = csr_matrix(np.identity(dims))
+
+        data = key_dir_mat.data
+        indices = key_dir_mat.indices
+        indptr = key_dir_mat.indptr
+
+        data = np.concatenate((data, [1.0 for _ in xrange(dims)]))
+        indices = np.concatenate((indices, [i for i in xrange(dims)]))
+        indptr = np.concatenate((indptr, [len(data)]))
+        key_dir_mat_with_one_norm = csr_matrix((data, indices, indptr), shape=(dims + 1, dims))
+
+        #init_dense = np.array([[2.] if d == 1 else [.4] if d == dims-1 else [0.0] for d in xrange(dims)], dtype=float)
+        init_dense = np.array([[1.] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
+
+        init_sparse = csr_matrix(init_dense.T)
+
+        ksim = KrylovIterator(make_settings(True), a_matrix, key_dir_mat, add_ones_key_dir=True)
+        python_pv_auto, python_h_auto = ksim.run_iteration(init_sparse, iterations)
+
+        # using python
+        ksim = KrylovIterator(make_settings(), a_matrix, key_dir_mat_with_one_norm, add_ones_key_dir=False)
+        python_pv, python_h = ksim.run_iteration(init_sparse, iterations)
+
+        self.assertTrue(np.allclose(python_h, python_h_auto.toarray()), "H matrices don't match")
+        self.assertTrue(np.allclose(python_pv, python_pv_auto), "PV matrices don't match")
 
 if __name__ == '__main__':
     unittest.main()

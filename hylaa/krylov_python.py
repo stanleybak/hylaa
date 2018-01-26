@@ -14,6 +14,7 @@ from scipy.sparse import csr_matrix, csc_matrix
 from scipy.sparse.linalg import norm as sparse_norm
 
 from hylaa.timerutil import Timers
+from hylaa.util import Freezable
 
 def get_free_memory_mb_deprecated():
     'get the amount of free memory available'
@@ -52,166 +53,287 @@ def normalize_sparse(vec):
 #    if required_mb + 1024 > available_mb: # add 1024 mb since we want 1 GB free for other things
 #        raise MemoryError("Not enogh memory for arnoldi computation.")
 
-def python_arnoldi(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, print_status=False):
-    '''run the arnoldi algorithm
+class KrylovIterator(Freezable):
+    'Krylov Iterator container class'
 
-    this returns pv_mat, h_mat
-    '''
+    def __init__(self, hylaa_settings, a_matrix, key_dir_mat, add_ones_key_dir=False):
+        assert a_matrix.shape[0] == a_matrix.shape[1], "a_mat should be square"
+        assert key_dir_mat.shape[1] == a_matrix.shape[0], "key_dir_mat width should equal number of dims"
+        assert isinstance(a_matrix, csr_matrix), "a_matrix should be a csr_matrix"
+        assert isinstance(key_dir_mat, csr_matrix), "key_dir_mat should be a csr_matrix"
 
-    Timers.tic('python_arnoldi')
+        self.settings = hylaa_settings
+        self.lanczos = self.settings.simulation.krylov_lanczos
+        self.print_status = self.settings.simulation.krylov_stdout# and a_matrix.shape[0] >= int(1e6)
+        self.add_ones_key_dir = add_ones_key_dir
 
-    assert isinstance(key_dir_mat, csr_matrix), "key_dir_mat should be a csr_matrix"
-    assert isinstance(a_mat, csr_matrix), "a_mat should be a csr_matrix"
-    assert isinstance(init_vec, csr_matrix), "init_vec should be csr_matrix"
-    assert init_vec.shape[0] == 1
+        if self.settings.simulation.krylov_transpose and not self.lanczos:
+            # we need to compute with the transpose of the a matrix
+            self.a_matrix = csr_matrix(a_matrix.transpose())
+        else:
+            self.a_matrix = a_matrix
 
-    scaled_vec, init_norm = normalize_sparse(init_vec)
+        self.key_dir_mat = key_dir_mat
+        self.tol = 1e-9
 
-    dims = a_mat.shape[0]
+        # from reset
+        self.init_norm = None
+        self.pv_mat = None
+        self.h_data = None
+        self.h_inds = None
+        self.h_indptrs = None
+        self.cur_vec = None
+        self.prev_vec = None
+        self.prev_prev_vec = None
+        self.prev_norm = None
+        self.v_mat = None
+        self.h_mat = None
 
-    #check_available_memory_arnoldi(print_status, iterations, dims)
+        self.elapsed = 0
+        self.reinit = True
+        self.cur_it = None
 
-    v_mat = np.zeros((iterations + 1, dims))
-    h_mat = np.zeros((iterations + 1, iterations))
+        self.freeze_attrs()
 
-    # sparse assignment of initial vector
-    for i in xrange(len(scaled_vec.data)):
-        v_mat[0, scaled_vec.indices[i]] = scaled_vec.data[i]
+    def reset(self):
+        'free memory from earlier runs'
 
-    start = time.time()
+        self.init_norm = None
 
-    for cur_it in xrange(1, iterations + 1):
-        if print_status:
-            elapsed = time.time() - start
+        self.pv_mat = None
+        self.h_data = None
+        self.h_inds = None
+        self.h_indptrs = None
 
-            # we expect quadratic scalability for arnoldi
-            frac = cur_it * cur_it / float(iterations * iterations)
-            eta = elapsed / frac - elapsed
+        self.cur_vec = None
+        self.prev_vec = None
+        self.prev_prev_vec = None
+        self.prev_norm = None
+        self.v_mat = None
+        self.h_mat = None
 
-            print "arnoldi iteration {} / {}, Elapsed: {:.2f}m, ETA: {:.2f}m".format(cur_it, iterations, \
-                elapsed / 60.0, eta / 60.0)
+        self.elapsed = 0
+        self.reinit = True
+        self.cur_it = None
 
-        cur_vec = a_mat * v_mat[cur_it - 1]
+    def _realloc(self, init_vec, iterations):
+        'allocate (or re-allocate) h, v, and pv storage'
 
-        for c in xrange(cur_it):
-            prev_vec = v_mat[c]
+        dims = self.a_matrix.shape[0]
+        key_dirs = self.key_dir_mat.shape[0]
 
-            dot_val = np.dot(prev_vec, cur_vec)
-            h_mat[c, cur_it - 1] = dot_val
+        if self.add_ones_key_dir:
+            key_dirs += 1
 
-            cur_vec -= prev_vec * dot_val
+        if self.reinit:
+            scaled_vec, self.init_norm = normalize_sparse(init_vec)
 
-        norm = np.linalg.norm(cur_vec, 2)
+            self.cur_it = 1
 
-        h_mat[cur_it, cur_it-1] = norm
+            #check_available_memory_arnoldi(print_status, iterations, dims)
+            if self.lanczos:
 
-        if norm >= tol:
-            cur_vec = cur_vec / norm
-            v_mat[cur_it] = cur_vec
-        elif cur_it > 1:
-            v_mat = v_mat[:cur_it+1, :]
-            h_mat = h_mat[:cur_it+1, :cur_it]
-            break
+                self.pv_mat = np.zeros((iterations + 1, key_dirs))
+                self.h_data = []
+                self.h_inds = []
+                self.h_indptrs = [0]
 
-    pv_mat = key_dir_mat * v_mat.transpose()
+                self.cur_vec = scaled_vec.toarray()
+                self.prev_vec = None
+                self.prev_prev_vec = None
+                self.prev_norm = None
+                self.prev_norm = None
 
-    pv_mat *= init_norm
+                self.cur_vec.shape = (self.cur_vec.shape[1],)
 
-    Timers.toc('python_arnoldi')
+                # sparse assignment of initial vector
+                if self.add_ones_key_dir:
+                    self.pv_mat[0, :-1] = (self.key_dir_mat * scaled_vec.T).toarray()[:, 0]
+                    self.pv_mat[0, -1] = sum(self.cur_vec)
+                else:
+                    self.pv_mat[0, :] = (self.key_dir_mat * scaled_vec.T).toarray()[:, 0]
+            else:
+                # arnoldi
 
-    return pv_mat, h_mat
+                self.v_mat = np.zeros((iterations + 1, dims))
+                self.h_mat = np.zeros((iterations + 1, iterations))
 
-def python_lanczos(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, print_status=False):
-    '''run the lanczos algorithm, tailored to very large sparse systems
+                # sparse assignment of initial vector
+                for i in xrange(len(scaled_vec.data)):
+                    self.v_mat[0, scaled_vec.indices[i]] = scaled_vec.data[i]
 
-    This will project each of the v vectors using the key directions matrix, to make pv_mat, a k x n matrix
+            self.reinit = False # next time don't reinitialize
+        else:
+            # continue the computation (allocate more memory)
 
-    further, h_mat is returned as a csr_matrix
+            if self.lanczos:
+                new_pv_mat = np.zeros((iterations + 1, key_dirs))
+                new_pv_mat[:self.pv_mat.shape[0], :self.pv_mat.shape[1]] = self.pv_mat
+                self.pv_mat = new_pv_mat
+            else:
+                # arnoldi
+                new_v_mat = np.zeros((iterations + 1, dims))
+                new_h_mat = np.zeros((iterations + 1, iterations))
 
-    this returns pv_mat, h_mat
-    '''
+                # copy from old
+                new_v_mat[:self.v_mat.shape[0], :self.v_mat.shape[1]] = self.v_mat
+                new_h_mat[:self.h_mat.shape[0], :self.h_mat.shape[1]] = self.h_mat
 
-    Timers.tic('python_lanczos')
+                # replace
+                self.v_mat = new_v_mat
+                self.h_mat = new_h_mat
 
-    assert isinstance(a_mat, csr_matrix), "a_mat should be a csr_matrix"
-    assert isinstance(key_dir_mat, csr_matrix), "key_dir_mat should be a csr_matrix"
-    assert isinstance(init_vec, csr_matrix), "init_vec should be csr_matrix"
-    assert init_vec.shape[0] == 1
-    assert a_mat.shape[0] == a_mat.shape[1], "a_mat should be square"
-    assert key_dir_mat.shape[1] == a_mat.shape[0], "key_dir_mat width should equal number of dims"
+    def run_iteration(self, init_vec, iterations):
+        '''run arnoldi or lanczos'''
 
-    key_dirs = key_dir_mat.shape[0]
+        assert isinstance(init_vec, csr_matrix), "init_vec should be csr_matrix"
+        assert init_vec.shape[0] == 1
 
-    pv_mat = np.zeros((iterations + 1, key_dirs))
-    h_data = []
-    h_inds = []
-    h_indptrs = [0]
+        self._realloc(init_vec, iterations)
+        rv = None
 
-    scaled_vec, init_norm = normalize_sparse(init_vec)
+        if self.lanczos:
+            rv = self._lanczos(iterations)
+        else:
+            rv = self._arnoldi(iterations)
 
-    cur_vec = scaled_vec.toarray()
-    prev_vec = None
-    prev_prev_vec = None
-    prev_norm = None
+        return rv
 
-    # sparse assignment of initial vector
-    pv_mat[0, :] = (key_dir_mat * scaled_vec.T).toarray()[:, 0]
+    def _arnoldi(self, iterations):
+        '''run the arnoldi algorithm
 
-    start = time.time()
+        this returns pv_mat, h_mat
+        '''
 
-    for cur_it in xrange(1, iterations + 1):
-        if print_status:
-            elapsed = time.time() - start
+        Timers.tic('arnoldi')
 
-            eta = elapsed / (cur_it / float(iterations)) - elapsed
+        start = time.time() - self.elapsed
 
-            print "lanczos iteration {} / {}, Elapsed: {:.2f}m, ETA: {:.2f}m".format(cur_it, iterations, \
-                elapsed / 60.0, eta / 60.0)
+        while self.cur_it < iterations + 1:
+            if self.print_status:
+                elapsed = time.time() - start
 
-        # three-term recurrance relation
-        prev_prev_vec = prev_vec
-        prev_vec = cur_vec
+                # we expect quadratic scalability for arnoldi
+                frac = self.cur_it * self.cur_it / float(iterations * iterations)
+                eta = elapsed / frac - elapsed
 
-        cur_vec = (a_mat * prev_vec.T).T
+                print "arnoldi iteration {} / {}, Elapsed: {:.2f}m, ETA: {:.2f}m".format(self.cur_it-1, iterations, \
+                    elapsed / 60.0, eta / 60.0)
 
-        if prev_prev_vec is not None:
-            dot_val = prev_norm # reuse norm from previous iteration
-            h_data.append(dot_val)
-            h_inds.append(cur_it-2)
+            cur_vec = self.a_matrix * self.v_mat[self.cur_it - 1]
 
-            cur_vec -= prev_prev_vec * dot_val
+            for c in xrange(self.cur_it):
+                prev_vec = self.v_mat[c]
 
-        dot_val = np.dot(prev_vec[0], cur_vec[0])
+                dot_val = np.dot(prev_vec, cur_vec)
+                self.h_mat[c, self.cur_it - 1] = dot_val
 
-        h_data.append(dot_val)
-        h_inds.append(cur_it-1)
+                cur_vec -= prev_vec * dot_val
 
-        cur_vec -= prev_vec * dot_val
+            norm = np.linalg.norm(cur_vec, 2)
 
-        prev_norm = norm = np.linalg.norm(cur_vec)
+            self.h_mat[self.cur_it, self.cur_it-1] = norm
 
-        h_data.append(norm)
-        h_inds.append(cur_it)
-        h_indptrs.append(len(h_data))
+            if norm >= self.tol:
+                cur_vec = cur_vec / norm
+                self.v_mat[self.cur_it] = cur_vec
+            elif self.cur_it > 1:
+                #print "break! norm {} <= tol {}".format(norm, self.tol)
+                self.v_mat = self.v_mat[:self.cur_it+1, :]
+                self.h_mat = self.h_mat[:self.cur_it+1, :self.cur_it]
+                break
 
-        if norm >= tol:
-            cur_vec = cur_vec / norm
+            self.cur_it += 1
 
-            pv_mat[cur_it, :] = (key_dir_mat * cur_vec[0])
-        elif cur_it > 1:
-            # ugggg figure out what to do here
-            #v_mat = v_mat[:cur_it+1, :]
-            #h_mat = h_mat[:cur_it+1, :cur_it]
-            break
+        self.elapsed += time.time() - start
 
-    # scale back
-    pv_mat *= init_norm
+        if self.add_ones_key_dir:
+            pv_mat = np.zeros((self.key_dir_mat.shape[0] + 1, self.v_mat.shape[0]), dtype=float)
+            pv_mat[:-1] = self.key_dir_mat * self.v_mat.transpose()
 
-    # h is easier to construct as a csc matrix, but we want to use it as a csr_matrix
-    h_csc = csc_matrix((h_data, h_inds, h_indptrs), shape=(iterations + 1, iterations))
-    h_csr = csr_matrix(h_csc)
-    rv_pv = pv_mat.transpose()
+            for i in xrange(self.v_mat.shape[0]):
+                pv_mat[-1, i] = sum(self.v_mat[i])
+        else:
+            pv_mat = self.key_dir_mat * self.v_mat.transpose()
 
-    Timers.toc('python_lanczos')
+        pv_mat *= self.init_norm
 
-    return rv_pv, h_csr
+        Timers.toc('arnoldi')
+
+        return pv_mat, self.h_mat
+
+    def _lanczos(self, iterations):
+        '''run the lanczos algorithm, tailored to very large sparse systems
+
+        This will project each of the v vectors using the key directions matrix, to make pv_mat, a k x n matrix
+
+        further, h_mat is returned as a csr_matrix
+
+        this returns pv_mat, h_mat
+        '''
+
+        Timers.tic('lanczos')
+
+        start = time.time() - self.elapsed
+
+        while self.cur_it < iterations + 1:
+            if self.print_status:
+                elapsed = time.time() - start
+
+                eta = elapsed / (self.cur_it / float(iterations)) - elapsed
+
+                print "lanczos iteration {} / {}, Elapsed: {:.2f}m, ETA: {:.2f}m".format(self.cur_it-1, iterations, \
+                    elapsed / 60.0, eta / 60.0)
+
+            # three-term recurrance relation
+            self.prev_prev_vec = self.prev_vec
+            self.prev_vec = self.cur_vec
+
+            self.cur_vec = self.a_matrix * self.prev_vec
+
+            if self.prev_prev_vec is not None:
+                dot_val = self.prev_norm # reuse norm from previous iteration
+                self.h_data.append(dot_val)
+                self.h_inds.append(self.cur_it-2)
+
+                self.cur_vec -= self.prev_prev_vec * dot_val
+
+            dot_val = np.dot(self.prev_vec, self.cur_vec)
+
+            self.h_data.append(dot_val)
+            self.h_inds.append(self.cur_it-1)
+
+            self.cur_vec -= self.prev_vec * dot_val
+            self.prev_norm = norm = np.linalg.norm(self.cur_vec)
+
+            self.h_data.append(norm)
+            self.h_inds.append(self.cur_it)
+            self.h_indptrs.append(len(self.h_data))
+
+            if norm >= self.tol:
+                self.cur_vec = self.cur_vec / norm
+
+                if self.add_ones_key_dir:
+                    self.pv_mat[self.cur_it, :-1] = (self.key_dir_mat * self.cur_vec)
+                    self.pv_mat[self.cur_it, -1] = sum(self.cur_vec)
+                else:
+                    self.pv_mat[self.cur_it, :] = (self.key_dir_mat * self.cur_vec)
+
+            elif self.cur_it > 1:
+                # ugggg figure out what to do here... probably safe to ignore
+                #v_mat = v_mat[:cur_it+1, :]
+                #h_mat = h_mat[:cur_it+1, :cur_it]
+                break
+
+            self.cur_it += 1
+
+        self.elapsed += time.time() - start
+
+        # h is easier to construct as a csc matrix, but we want to use it as a csr_matrix
+        h_csc = csc_matrix((self.h_data, self.h_inds, self.h_indptrs), shape=(iterations + 1, iterations))
+        h_csr = csr_matrix(h_csc)
+        rv_pv = (self.pv_mat * self.init_norm).transpose()
+
+        Timers.toc('lanczos')
+
+        return rv_pv, h_csr
