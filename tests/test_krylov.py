@@ -376,11 +376,11 @@ class TestKrylov(unittest.TestCase):
 
         init_sparse = csr_matrix(init_dense.T)
 
-        ksim = KrylovIterator(make_settings(), a_matrix, key_dir_mat, add_one_norm=True)
+        ksim = KrylovIterator(make_settings(), a_matrix, key_dir_mat, add_ones_key_dir=True)
         python_pv_auto, python_h_auto = ksim.run_iteration(init_sparse, iterations)
 
         # using python
-        ksim = KrylovIterator(make_settings(), a_matrix, key_dir_mat_with_one_norm, add_one_norm=False)
+        ksim = KrylovIterator(make_settings(), a_matrix, key_dir_mat_with_one_norm, add_ones_key_dir=False)
         python_pv, python_h = ksim.run_iteration(init_sparse, iterations)
 
         self.assertTrue(np.allclose(python_h, python_h_auto), "H matrices don't match")
@@ -408,11 +408,11 @@ class TestKrylov(unittest.TestCase):
 
         init_sparse = csr_matrix(init_dense.T)
 
-        ksim = KrylovIterator(make_settings(True), a_matrix, key_dir_mat, add_one_norm=True)
+        ksim = KrylovIterator(make_settings(True), a_matrix, key_dir_mat, add_ones_key_dir=True)
         python_pv_auto, python_h_auto = ksim.run_iteration(init_sparse, iterations)
 
         # using python
-        ksim = KrylovIterator(make_settings(), a_matrix, key_dir_mat_with_one_norm, add_one_norm=False)
+        ksim = KrylovIterator(make_settings(), a_matrix, key_dir_mat_with_one_norm, add_ones_key_dir=False)
         python_pv, python_h = ksim.run_iteration(init_sparse, iterations)
 
         self.assertTrue(np.allclose(python_h, python_h_auto.toarray()), "H matrices don't match")

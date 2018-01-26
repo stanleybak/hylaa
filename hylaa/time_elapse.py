@@ -62,7 +62,7 @@ class TimeElapser(Freezable):
             else:
                 output_mat = self.key_dir_mat
 
-            self.krylov_iterator = KrylovIterator(hylaa_settings, self.a_matrix, output_mat, add_one_norm=True)
+            self.krylov_iterator = KrylovIterator(hylaa_settings, self.a_matrix, output_mat, add_ones_key_dir=True)
 
         elif self.settings.simulation.sim_mode == SimulationSettings.EXP_MULT:
             self.stored_vec = None

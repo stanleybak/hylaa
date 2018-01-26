@@ -56,7 +56,7 @@ def normalize_sparse(vec):
 class KrylovIterator(Freezable):
     'Krylov Iterator container class'
 
-    def __init__(self, hylaa_settings, a_matrix, key_dir_mat, add_one_norm=False):
+    def __init__(self, hylaa_settings, a_matrix, key_dir_mat, add_ones_key_dir=False):
         assert a_matrix.shape[0] == a_matrix.shape[1], "a_mat should be square"
         assert key_dir_mat.shape[1] == a_matrix.shape[0], "key_dir_mat width should equal number of dims"
         assert isinstance(a_matrix, csr_matrix), "a_matrix should be a csr_matrix"
@@ -65,7 +65,7 @@ class KrylovIterator(Freezable):
         self.settings = hylaa_settings
         self.lanczos = self.settings.simulation.krylov_lanczos
         self.print_status = self.settings.simulation.krylov_stdout# and a_matrix.shape[0] >= int(1e6)
-        self.add_one_norm = add_one_norm
+        self.add_ones_key_dir = add_ones_key_dir
 
         if self.settings.simulation.krylov_transpose and not self.lanczos:
             # we need to compute with the transpose of the a matrix
@@ -122,7 +122,7 @@ class KrylovIterator(Freezable):
         dims = self.a_matrix.shape[0]
         key_dirs = self.key_dir_mat.shape[0]
 
-        if self.add_one_norm:
+        if self.add_ones_key_dir:
             key_dirs += 1
 
         if self.reinit:
@@ -147,7 +147,7 @@ class KrylovIterator(Freezable):
                 self.cur_vec.shape = (self.cur_vec.shape[1],)
 
                 # sparse assignment of initial vector
-                if self.add_one_norm:
+                if self.add_ones_key_dir:
                     self.pv_mat[0, :-1] = (self.key_dir_mat * scaled_vec.T).toarray()[:, 0]
                     self.pv_mat[0, -1] = sum(self.cur_vec)
                 else:
@@ -247,7 +247,7 @@ class KrylovIterator(Freezable):
 
         self.elapsed += time.time() - start
 
-        if self.add_one_norm:
+        if self.add_ones_key_dir:
             pv_mat = np.zeros((self.key_dir_mat.shape[0] + 1, self.v_mat.shape[0]), dtype=float)
             pv_mat[:-1] = self.key_dir_mat * self.v_mat.transpose()
 
@@ -313,7 +313,7 @@ class KrylovIterator(Freezable):
             if norm >= self.tol:
                 self.cur_vec = self.cur_vec / norm
 
-                if self.add_one_norm:
+                if self.add_ones_key_dir:
                     self.pv_mat[self.cur_it, :-1] = (self.key_dir_mat * self.cur_vec)
                     self.pv_mat[self.cur_it, -1] = sum(self.cur_vec)
                 else:
