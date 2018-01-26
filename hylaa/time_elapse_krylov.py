@@ -325,7 +325,13 @@ def arnoldi_sim_with_max_rel_error(time_elapser, init_vec_csr, iterations, rel_e
 
     rel_error, projected_sim = get_rel_error(settings, h_mat, pv_mat, return_sim=True, limit=rel_error_limit)
 
-    if rel_error_limit is None or rel_error < rel_error_limit:
+    if rel_error == 0 and not settings.simulation.krylov_add_ones_key_dir:
+        if stdout:
+            print "Relative error was zero and didn't add ones row to key directions. Increasing iterations."
+            
+        rv = None
+
+    elif rel_error_limit is None or rel_error < rel_error_limit:
         if stdout and rel_error_limit is not None:
             print "Relative error {} was below threshold: {}".format(rel_error, rel_error_limit)
 
@@ -386,17 +392,23 @@ def arnoldi_sim_autotune(time_elapser, init_vec_csr):
 
     return sim
 
-def assign_from_sim(rv, sim, index, transpose_dynamics):
+def assign_from_sim(rv, sim, index, settings):
     'assign a simulation to the result object'
 
     assert len(sim) == len(rv) - 1, "Got sim of length {}, expected {}".format(len(sim), len(rv) - 1)
     Timers.tic('update result list')
 
     for i in xrange(len(sim)):
-        if transpose_dynamics:
-            rv[i+1][index] = sim[i][:-1]
+
+        if settings.simulation.krylov_add_ones_key_dir:
+            piece = sim[i][:-1]
         else:
-            rv[i+1][:, index] = sim[i][:-1]
+            piece = sim[i][:]
+        
+        if settings.simulation.krylov_transpose:
+            rv[i+1][index] = piece
+        else:
+            rv[i+1][:, index] = piece
 
     Timers.toc('update result list')
 
@@ -446,7 +458,7 @@ def make_cur_basis_mat_list(time_elapser):
     for init_index in xrange(num_init_vecs):
         sim = arnoldi_sim_autotune(time_elapser, init_space[init_index])
 
-        assign_from_sim(rv, sim, init_index, settings.simulation.krylov_transpose)
+        assign_from_sim(rv, sim, init_index, settings)
 
         if settings.print_output:
             now = time.time()

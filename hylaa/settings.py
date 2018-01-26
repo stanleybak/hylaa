@@ -52,6 +52,7 @@ class SimulationSettings(Freezable):
         # accuracy settings. If you don't have enough accuracy, decrease rel error and increase samples
         self.krylov_lanczos = False # use the lanczos iteration instead of arnoldi
         self.krylov_transpose = False # compute basis matrix using transpose of dynamics (swaps init and output spaces)
+        self.krylov_add_ones_key_dir = True
 
         self.krylov_rel_error = 1e-6 # desired relative error of projV * exmp(H * end_time)
         self.krylov_use_odeint = True # use odeint instead of expm for computing expm(t*v)

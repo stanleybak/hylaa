@@ -40,6 +40,16 @@ def normalize_sparse(vec):
 
     return rv, norm
 
+def ones_dot(vec):
+    'dot the vector with a row of ones'
+
+    total = 0
+
+    for i in xrange(0, len(vec)):
+        total += vec[i]
+
+    return total
+
 #def check_available_memory_arnoldi(stdout, a, n):
 #    'check if enough memory is available to store the V and H matrix'
 
@@ -56,7 +66,7 @@ def normalize_sparse(vec):
 class KrylovIterator(Freezable):
     'Krylov Iterator container class'
 
-    def __init__(self, hylaa_settings, a_matrix, key_dir_mat, add_ones_key_dir=False):
+    def __init__(self, hylaa_settings, a_matrix, key_dir_mat):
         assert a_matrix.shape[0] == a_matrix.shape[1], "a_mat should be square"
         assert key_dir_mat.shape[1] == a_matrix.shape[0], "key_dir_mat width should equal number of dims"
         assert isinstance(a_matrix, csr_matrix), "a_matrix should be a csr_matrix"
@@ -65,7 +75,7 @@ class KrylovIterator(Freezable):
         self.settings = hylaa_settings
         self.lanczos = self.settings.simulation.krylov_lanczos
         self.print_status = self.settings.simulation.krylov_stdout# and a_matrix.shape[0] >= int(1e6)
-        self.add_ones_key_dir = add_ones_key_dir
+        self.add_ones_key_dir = self.settings.simulation.krylov_add_ones_key_dir
 
         if self.settings.simulation.krylov_transpose and not self.lanczos:
             # we need to compute with the transpose of the a matrix
@@ -149,7 +159,7 @@ class KrylovIterator(Freezable):
                 # sparse assignment of initial vector
                 if self.add_ones_key_dir:
                     self.pv_mat[0, :-1] = (self.key_dir_mat * scaled_vec.T).toarray()[:, 0]
-                    self.pv_mat[0, -1] = sum(self.cur_vec)
+                    self.pv_mat[0, -1] = ones_dot(self.cur_vec)
                 else:
                     self.pv_mat[0, :] = (self.key_dir_mat * scaled_vec.T).toarray()[:, 0]
             else:
@@ -207,11 +217,11 @@ class KrylovIterator(Freezable):
 
         Timers.tic('arnoldi')
 
-        start = time.time() - self.elapsed
+        start = time.time()
 
         while self.cur_it < iterations + 1:
             if self.print_status:
-                elapsed = time.time() - start
+                elapsed = time.time() - start + self.elapsed
 
                 # we expect quadratic scalability for arnoldi
                 frac = self.cur_it * self.cur_it / float(iterations * iterations)
@@ -252,7 +262,7 @@ class KrylovIterator(Freezable):
             pv_mat[:-1] = self.key_dir_mat * self.v_mat.transpose()
 
             for i in xrange(self.v_mat.shape[0]):
-                pv_mat[-1, i] = sum(self.v_mat[i])
+                pv_mat[-1, i] = ones_dot(self.v_mat[i])
         else:
             pv_mat = self.key_dir_mat * self.v_mat.transpose()
 
@@ -274,11 +284,11 @@ class KrylovIterator(Freezable):
 
         Timers.tic('lanczos')
 
-        start = time.time() - self.elapsed
+        start = time.time()
 
         while self.cur_it < iterations + 1:
             if self.print_status:
-                elapsed = time.time() - start
+                elapsed = time.time() - start + self.elapsed
 
                 eta = elapsed / (self.cur_it / float(iterations)) - elapsed
 
@@ -315,7 +325,7 @@ class KrylovIterator(Freezable):
 
                 if self.add_ones_key_dir:
                     self.pv_mat[self.cur_it, :-1] = (self.key_dir_mat * self.cur_vec)
-                    self.pv_mat[self.cur_it, -1] = sum(self.cur_vec)
+                    self.pv_mat[self.cur_it, -1] = ones_dot(self.cur_vec)
                 else:
                     self.pv_mat[self.cur_it, :] = (self.key_dir_mat * self.cur_vec)
 
