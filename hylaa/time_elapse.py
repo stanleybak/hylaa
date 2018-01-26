@@ -15,6 +15,7 @@ from hylaa.hybrid_automaton import LinearAutomatonMode
 from hylaa.settings import HylaaSettings, PlotSettings, SimulationSettings
 from hylaa.timerutil import Timers
 from hylaa.time_elapse_krylov import make_cur_basis_mat_list
+from hylaa.krylov_python import KrylovIterator
 
 class TimeElapser(Freezable):
     'Object which computes the time-elapse function for a single mode at multiples of the time step'
@@ -57,11 +58,12 @@ class TimeElapser(Freezable):
             self.cur_basis_mat_list = None
 
             if self.settings.simulation.krylov_transpose:
+                output_mat = csr_matrix(self.init_space_csc.transpose())
+            else:
+                output_mat = self.key_dir_mat
 
-                if self.settings.simulation.krylov_lanczos:
-                    self.a_matrix_transpose = self.a_matrix
-                else:
-                    self.a_matrix_transpose = csr_matrix(self.a_matrix.transpose())
+            self.krylov_iterator = KrylovIterator(hylaa_settings, self.a_matrix, output_mat, add_one_norm=True)
+
         elif self.settings.simulation.sim_mode == SimulationSettings.EXP_MULT:
             self.stored_vec = None
             self.one_step_matrix_exp = None # one step matrix exponential
