@@ -1,6 +1,6 @@
 '''
 A set of performance measurements for various linear algebra operations. These tests print output.
-You can run them one-by-one using: python test_performance.py TestPerformance.test_norm
+You can run them one-by-one using: python -m unittest test_performance.TestPerformance.test_pdot
 '''
 
 import time
@@ -12,6 +12,8 @@ import numpy as np
 from scipy.sparse import csr_matrix
 
 from test_krylov import random_five_diag_sym_matrix
+
+from np_dot_benchmark import get_num_threads
 
 # used for the multi-threadded cases
 global_thread_pool = ThreadPool(multiprocessing.cpu_count())
@@ -155,7 +157,7 @@ class TestPerformance(unittest.TestCase):
     def test_norm(self):
         '''compare numpy's norm and norm(2)'''
 
-        dims = int(1e8)
+        dims = int(5e7)
         vec = np.random.random_sample((1, dims))
 
         start = time.time()
@@ -221,7 +223,9 @@ class TestPerformance(unittest.TestCase):
     def test_pdot(self):
         'test parallel dot function'
 
-        dims = int(1e8)
+        print "openblas threads = {}".format(get_num_threads())
+
+        dims = int(5e8)
 
         start = time.time()
         

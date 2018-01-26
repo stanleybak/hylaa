@@ -15,7 +15,7 @@ from scipy.sparse.linalg import norm as sparse_norm
 
 from hylaa.timerutil import Timers
 
-def get_free_memory_mb():
+def get_free_memory_mb_deprecated():
     'get the amount of free memory available'
 
     # one-liner to get free memory from:
@@ -39,18 +39,18 @@ def normalize_sparse(vec):
 
     return rv, norm
 
-def check_available_memory_arnoldi(stdout, a, n):
-    'check if enough memory is available to store the V and H matrix'
+#def check_available_memory_arnoldi(stdout, a, n):
+#    'check if enough memory is available to store the V and H matrix'
 
-    required_mb = (((a+1) * n) + (a*(a+1))) * 8 / 1024.0 / 1024.0
-    available_mb = get_free_memory_mb()
+#    required_mb = (((a+1) * n) + (a*(a+1))) * 8 / 1024.0 / 1024.0
+#    available_mb = get_free_memory_mb()
 
-    if stdout:
-        print "Arnoldi Required GB = {:.3f} (+1), available GB = {:.3f} (a = {}, n = {})".format(
-            required_mb / 1024.0, available_mb / 1024.0, a, n)
+#    if stdout:
+#        print "Arnoldi Required GB = {:.3f} (+1), available GB = {:.3f} (a = {}, n = {})".format(
+#            required_mb / 1024.0, available_mb / 1024.0, a, n)
 
-    if required_mb + 1024 > available_mb: # add 1024 mb since we want 1 GB free for other things
-        raise MemoryError("Not enogh memory for arnoldi computation.")
+#    if required_mb + 1024 > available_mb: # add 1024 mb since we want 1 GB free for other things
+#        raise MemoryError("Not enogh memory for arnoldi computation.")
 
 def python_arnoldi(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, print_status=False):
     '''run the arnoldi algorithm
@@ -69,7 +69,7 @@ def python_arnoldi(a_mat, init_vec, iterations, key_dir_mat, tol=1e-9, print_sta
 
     dims = a_mat.shape[0]
 
-    check_available_memory_arnoldi(print_status, iterations, dims)
+    #check_available_memory_arnoldi(print_status, iterations, dims)
 
     v_mat = np.zeros((iterations + 1, dims))
     h_mat = np.zeros((iterations + 1, iterations))

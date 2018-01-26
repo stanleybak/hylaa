@@ -11,7 +11,7 @@ from scipy.sparse.linalg import expm
 from scipy.integrate import odeint
 
 from hylaa.timerutil import Timers
-from hylaa.krylov_python import get_free_memory_mb, python_arnoldi, python_lanczos
+from hylaa.krylov_python import python_arnoldi, python_lanczos
 from hylaa.settings import HylaaSettings
 
 def odeint_sim(arg):
@@ -68,18 +68,18 @@ def format_secs(sec):
 
     return rv
 
-def check_available_memory_basis(stdout, s, k, i):
-    'check if enough memory is available to store the basis matrix'
+#def check_available_memory_basis(stdout, s, k, i):
+#    'check if enough memory is available to store the basis matrix'
 
-    required_mb = (s * k * i * 8) / 1024.0 / 1024.0
-    available_mb = get_free_memory_mb()
+#    required_mb = (s * k * i * 8) / 1024.0 / 1024.0
+#    available_mb = get_free_memory_mb()
 
-    if stdout:
-        print "Basis Matrix Required GB = {:.3f} (+1), available GB = {:.3f} (s = {}, k = {}, i+1 = {})".format(
-            required_mb / 1024.0, available_mb / 1024.0, s, k, i)
+#    if stdout:
+#        print "Basis Matrix Required GB = {:.3f} (+1), available GB = {:.3f} (s = {}, k = {}, i+1 = {})".format(
+#            required_mb / 1024.0, available_mb / 1024.0, s, k, i)
 
-    if required_mb + 1024 > available_mb: # add 1024 mb since we want 1 GB free for other things
-        raise MemoryError("Not enogh memory for storing the basis matrices.")
+#    if required_mb + 1024 > available_mb: # add 1024 mb since we want 1 GB free for other things
+#        raise MemoryError("Not enogh memory for storing the basis matrices.")
 
 def init_krylov(time_elapser):
     '''
@@ -93,18 +93,21 @@ def init_krylov(time_elapser):
     init_space_csc = time_elapser.init_space_csc
 
     # check available memory before computing
-    i = time_elapser.init_space_csc.shape[0]
+    i = time_elapser.init_space_csc.shape[1]
 
-    check_available_memory_basis(settings.print_output, time_elapser.settings.num_steps, key_dir_mat.shape[0], i)
+    #check_available_memory_basis(settings.print_output, time_elapser.settings.num_steps, key_dir_mat.shape[0], i)
 
     time_elapser.stats['arnoldi_iter'] = []
-    time_elapser.stats['arnoldi_mem_start'] = get_free_memory_mb()
+    #time_elapser.stats['arnoldi_mem_start'] = get_free_memory_mb()
 
     rv = []
 
     # initialize step zero
     step_zero_mat = (key_dir_mat * init_space_csc).toarray()
     rv.append(step_zero_mat)
+
+    if settings.print_output:
+        print "Basis matrix shape: {}".format(step_zero_mat.shape)
 
     # add zeros (allocate storage for result)
     for _ in xrange(0, time_elapser.settings.num_steps):
@@ -161,6 +164,11 @@ def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, 
     if limit is not None:
         small_h_mat = h_mat[:-1, :-1].copy()
         small_pv_mat = pv_mat[:, :-1].copy()
+
+    print "debug save matrix to h_mat.pyz and pv_mat.pyz"
+    np.savez('h_mat.npz', data=h_mat.data, indices=h_mat.indices,
+             indptr=h_mat.indptr, shape=h_mat.shape)
+    np.savez('pv_mat.npz', pv_mat)
 
     if settings.simulation.krylov_use_odeint:
         Timers.tic('get_rel_error odeint')
@@ -361,7 +369,8 @@ def arnoldi_sim_autotune(time_elapser, sys_mat, output_mat, init_vec_csr):
                 print "Arnoldi iter ({}) reached system dimension; skipping relative error".format(arnoldi_iter)
 
         if stdout:
-            print "Trying {} arnoldi iterations...".format(arnoldi_iter)
+            print "Trying {} {} iterations...".format(arnoldi_iter, \
+                "Arnoldi" if not settings.simulation.krylov_lanczos else "Lanczos")
 
         sim, arnoldi_iter = arnoldi_sim_with_max_rel_error(time_elapser, sys_mat, output_mat, init_vec_csr, \
             arnoldi_iter, error_limit)

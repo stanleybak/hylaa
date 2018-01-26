@@ -57,7 +57,11 @@ class TimeElapser(Freezable):
             self.cur_basis_mat_list = None
 
             if self.settings.simulation.krylov_transpose:
-                self.a_matrix_transpose = csr_matrix(self.a_matrix.transpose())
+
+                if self.settings.simulation.krylov_lanczos:
+                    self.a_matrix_transpose = self.a_matrix
+                else:
+                    self.a_matrix_transpose = csr_matrix(self.a_matrix.transpose())
         elif self.settings.simulation.sim_mode == SimulationSettings.EXP_MULT:
             self.stored_vec = None
             self.one_step_matrix_exp = None # one step matrix exponential
@@ -244,6 +248,9 @@ class TimeElapser(Freezable):
         'krylov-based step function'
 
         if self.cur_basis_mat_list is None:
+            if self.settings.print_output:
+                print "Using Krylov method to make basis matrices"
+                
             self.cur_basis_mat_list = make_cur_basis_mat_list(self)
 
         self.cur_basis_mat = self.cur_basis_mat_list[self.next_step].copy()
