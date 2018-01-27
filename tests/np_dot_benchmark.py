@@ -140,5 +140,3 @@ if __name__ == "__main__":
     mult(1000)
     mult(2000)
     mult(4000)
-
-
