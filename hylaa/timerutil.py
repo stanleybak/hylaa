@@ -21,6 +21,8 @@ class TimerData(object):
     def tic(self):
         'start the timer'
 
+        #print "Tic({})".format(self.name)
+
         if self.last_start_time is not None:
             raise RuntimeError("Timer started twice: {}".format(self.name))
 
@@ -29,6 +31,8 @@ class TimerData(object):
 
     def toc(self):
         'stop the timer'
+
+        #print "Toc({})".format(self.name)
 
         if self.last_start_time is None:
             raise RuntimeError("Timer stopped without being started: {}".format(self.name))

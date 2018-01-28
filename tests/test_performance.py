@@ -3,12 +3,14 @@ A set of performance measurements for various linear algebra operations. These t
 You can run them one-by-one using: python -m unittest test_performance.TestPerformance.test_pdot
 '''
 
+import ctypes
 import math
 import time
 import unittest
 import multiprocessing
 from multiprocessing.pool import ThreadPool
 
+from numpy.ctypeslib import ndpointer
 import numpy as np
 from scipy.sparse import csr_matrix, lil_matrix, dia_matrix
 
@@ -326,6 +328,13 @@ def my_dia_mult(dia, vec):
         else:
             result[offset:] += vec[:-offset] * dia.data[index, offset:]
 
+    #print "py result: ",
+
+    #for num in result:
+    #    print "{:.6f} ".format(num),
+
+    #print ""
+
     return result
 
 class TestPerformance(unittest.TestCase):
@@ -335,7 +344,65 @@ class TestPerformance(unittest.TestCase):
         np.random.seed(1)
         np.set_printoptions(suppress=True) # suppress floating point printing
 
-    def test_heat3d_mult(self):
+    def test_heat3d_dia_mult(self):
+        '''test multiplication using different versions of the heat3d matrix'''
+
+        # load the c library
+        lib = ctypes.CDLL('test_performance_c.so')
+
+        c_dia_mult = lib.diaMult
+        c_dia_mult.restype = None
+
+        #double* result, double* vec, int matW, int matH, double* data, int* offsets, int numOffsets
+        c_dia_mult.argtypes = \
+            [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), \
+             ctypes.c_int, ctypes.c_int,\
+             ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+             ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, ctypes.c_int]
+
+        init = lib.init
+        init.restype = None
+        init.argtypes = [ctypes.c_int]
+
+        splits = 2 #
+        init(multiprocessing.cpu_count()) # initialize worker threads
+
+        diffusity_const = 0.01
+        heat_exchange_const = 0.5
+        samples = 320
+        dims = samples**3
+
+        print "making {} dim random vector".format(dims)
+        vec = np.random.random_sample((dims,))
+
+        print "Making dynamics with dia function"
+        start = time.time()
+        a_mat_dia = heat3d_dia(samples, diffusity_const, heat_exchange_const)
+        print "Dia construct time {:.3f}s".format(time.time() - start)
+
+        ##################
+
+        print "Multiplying dia"
+        start = time.time()
+        result_dia = a_mat_dia * vec
+        print "Dia mult time {:.3f}s".format(time.time() - start)
+
+        print "my_dia_mult with diagonal matrix"
+        start = time.time()
+        result_dot = my_dia_mult(a_mat_dia, vec)
+        print "my_dia_mult time {:.3f}s".format(time.time() - start)
+
+        result_c = np.zeros((dims,), dtype=float)
+        print "C-based multiplication"
+        start = time.time()
+        c_dia_mult(result_c, vec, dims, dims, a_mat_dia.data, a_mat_dia.offsets, len(a_mat_dia.offsets), splits)
+        print "C-based time {:.3f}s".format(time.time() - start)
+
+        # check result matches
+        self.assertTrue(np.allclose(result_dia, result_dot))
+        self.assertTrue(np.allclose(result_dia, result_c))
+
+    def test_heat3d_dia_vs_csr(self):
         '''test multiplication using different versions of the heat3d matrix'''
 
         diffusity_const = 0.01
@@ -368,31 +435,25 @@ class TestPerformance(unittest.TestCase):
         result_csr = a_mat_csr * vec
         print "Csr mult time {:.3f}s".format(time.time() - start)
 
-        print "my_dia_mult with diagonal matrix"
-        start = time.time()
-        result_dot = my_dia_mult(a_mat_dia, vec)
-        print "my_dia_mult time {:.3f}s".format(time.time() - start)
-
         # check result matches
-        assert np.allclose(result_dia, result_csr)
-        assert np.allclose(result_dia, result_dot)
+        self.assertTrue(np.allclose(result_dia, result_csr))
 
     def test_heat3d_make(self):
         '''test making heat3d orignal vs diag_matrix'''
 
         diffusity_const = 0.01
         heat_exchange_const = 0.5
-        samples = 20
+        samples = 20 #563 = limit on laptop (takes 3 secs) ~170 million dims
+
+        print "Making {} dimensional dynamics with dia function".format(samples**3)
+        start = time.time()
+        a_mat_dia = heat3d_dia(samples, diffusity_const, heat_exchange_const)
+        print "Dia construct time {:.3f}s".format(time.time() - start)
 
         print "Making dynamics with tran function"
         start = time.time()
         a_mat_tran, _ = heat3d_tran(samples, diffusity_const, heat_exchange_const)
         print "Tran construct time {:.3f}s".format(time.time() - start)
-
-        print "Making dynamics with dia function"
-        start = time.time()
-        a_mat_dia = heat3d_dia(samples, diffusity_const, heat_exchange_const)
-        print "Dia construct time {:.3f}s".format(time.time() - start)
 
         print "Checking matrix equality..."
         a_mat_tran = dia_matrix(a_mat_tran)

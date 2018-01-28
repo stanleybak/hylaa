@@ -252,7 +252,7 @@ class TimeElapser(Freezable):
         if self.cur_basis_mat_list is None:
             if self.settings.print_output:
                 print "Using Krylov method to make basis matrices"
-                
+
             self.cur_basis_mat_list = make_cur_basis_mat_list(self)
 
         self.cur_basis_mat = self.cur_basis_mat_list[self.next_step].copy()

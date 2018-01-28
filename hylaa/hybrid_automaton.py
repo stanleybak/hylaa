@@ -175,7 +175,7 @@ class LinearAutomatonMode(Freezable):
     def set_dynamics(self, a_matrix, b_matrix=None):
         'sets the autonomous system dynamics'
 
-        assert isinstance(a_matrix, csr_matrix)
+        assert not isinstance(a_matrix, np.ndarray), "dynamics a_matrix should be be sparse matrix"
         assert len(a_matrix.shape) == 2
         assert a_matrix.shape[0] == a_matrix.shape[1]
 

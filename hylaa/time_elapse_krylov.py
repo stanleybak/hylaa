@@ -101,7 +101,9 @@ def init_krylov(time_elapser):
     rv = []
 
     # initialize step zero
+
     step_zero_mat = (key_dir_mat * init_space_csc).toarray()
+
     rv.append(step_zero_mat)
 
     if settings.print_output:
@@ -110,6 +112,23 @@ def init_krylov(time_elapser):
     # add zeros (allocate storage for result)
     for _ in xrange(0, time_elapser.settings.num_steps):
         rv.append(np.zeros(rv[0].shape, dtype=float))
+
+    return rv
+
+def compute_error(correct, estimate, is_relative):
+    '''compute the error between two vectors
+    if is_relative is False, then this computes the maximum absolute error
+    '''
+
+    return relative_error(correct, estimate) if is_relative else absolute_error(correct, estimate)
+
+def absolute_error(correct, estimate):
+    'compute maximum absolute error between entries in two vectors'
+
+    rv = abs(correct[0] - estimate[0])
+
+    for i in xrange(2, len(correct)):
+        rv = max(rv, abs(correct[i] - estimate[i]))
 
     return rv
 
@@ -126,6 +145,7 @@ def relative_error(correct, estimate):
                 rel_error = norm
             else:
                 diff = correct - estimate
+
                 abs_error = np.linalg.norm(diff)
 
                 if not math.isinf(abs_error) and not math.isnan(abs_error):
@@ -137,9 +157,9 @@ def relative_error(correct, estimate):
 
     return rel_error
 
-def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, limit=None):
+def get_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, limit=None):
     '''
-    Get the relative error given the h and pv matrices, for the given number of arnoldi_iterations.
+    Get the error given the h and pv matrices, for the given number of arnoldi_iterations.
     If arnoldi_iter is None, then use the full passed-in matrices.
 
     This compares the error at all time steps.
@@ -147,12 +167,13 @@ def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, 
     If return_sim is True, then a tuple is returned where the second element is list of the
     sim points at each time step.
 
-    if limit is not None, this will break as soon as the relative error exceeds the limit
+    if limit is not None, this will break as soon as the error exceeds the limit
     '''
 
     assert h_mat.shape[0] > 1
 
     sim = None
+    use_rel_error = settings.simulation.krylov_use_rel_error
 
     # use less arnoldi iterations than what's in the matrices
     if arnoldi_iter is not None:
@@ -170,9 +191,9 @@ def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, 
         np.savez('pv_mat.npz', pv_mat)
 
     if settings.simulation.krylov_use_odeint:
-        Timers.tic('get_rel_error odeint')
+        Timers.tic('get_error odeint')
         start_vec = np.array([1.0 if d == 0 else 0.0 for d in xrange(h_mat.shape[0])], dtype=float)
-        rel_error = 0
+        error = 0
 
         if limit is None:
             full_sim = odeint_sim((h_mat, start_vec, settings))
@@ -191,21 +212,22 @@ def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, 
                 if settings.print_output:
                     print "First step of simulation was almost all zeros... increasing num iterations"
 
-                rel_error = limit + 1
+                error = limit + 1
 
             # sample last / middle / first before going through the whole thing
             steps = full_sim.shape[0]
+
             for step in [steps-1, steps / 2, 1]:
                 cur_result = np.dot(pv_mat, full_sim[step])
                 small_result = np.dot(small_pv_mat, small_full_sim[step])
 
-                rel_error = max(rel_error, relative_error(cur_result, small_result))
+                error = max(error, compute_error(cur_result, small_result, use_rel_error))
 
-                if rel_error > limit:
-                    print "Simulation relative error at step {}: {} (limit: {})".format(step, rel_error, limit)
+                if error > limit:
+                    print "Simulation error at step {}: {} (limit: {})".format(step, error, limit)
                     break
 
-            if rel_error < limit: # go through each step
+            if error < limit: # go through each step
                 Timers.tic('krylov multiply by PV')
 
                 sim = np.dot(full_sim[1:], pv_mat.T)
@@ -216,32 +238,32 @@ def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, 
                     cur_result = sim[step]
                     small_result = np.dot(small_pv_mat, small_full_sim[step + 1])
 
-                    rel_error = max(rel_error, relative_error(cur_result, small_result))
+                    error = max(error, compute_error(cur_result, small_result, use_rel_error))
 
-                    if rel_error > limit:
-                        print "Simulation relative error at step {}: {} (limit: {})".format(step, rel_error, limit)
+                    if error > limit:
+                        print "Simulation error at step {}: {} (limit: {})".format(step, error, limit)
                         sim = None
                         break
 
                 Timers.toc('krylov multiply by PV')
 
-        Timers.toc('get_rel_error odeint')
+        Timers.toc('get_error odeint')
     else:
-        Timers.tic('get_rel_error expm')
+        Timers.tic('get_error expm')
         matrix_exp = expm(settings.step * h_mat)
         cur_col = matrix_exp[:, 0]
-        Timers.toc('get_rel_error expm')
+        Timers.toc('get_error expm')
 
         # for accuracy check
-        Timers.tic('get_rel_error expm')
+        Timers.tic('get_error expm')
         small_matrix_exp = expm(settings.step * small_h_mat) # step time is already included in loaded a_mat
         small_col = small_matrix_exp[:, 0]
-        Timers.toc('get_rel_error expm')
+        Timers.toc('get_error expm')
 
         # do the comparison at the first step
         cur_result = np.dot(pv_mat, cur_col)
         small_result = np.dot(small_pv_mat, small_col)
-        rel_error = relative_error(cur_result, small_result)
+        error = max(error, compute_error(cur_result, small_result, use_rel_error))
 
         if return_sim:
             sim = [cur_result]
@@ -250,53 +272,53 @@ def get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, 
             cur_col = np.dot(matrix_exp, cur_col)
             small_col = np.dot(small_matrix_exp, small_col)
 
-            # maybe we want to check relative error in the middle as well
+            # maybe we want to check error in the middle as well
             cur_result = np.dot(pv_mat, cur_col)
             small_result = np.dot(small_pv_mat, small_col)
-            rel_error = max(rel_error, relative_error(cur_result, small_result))
+            error = max(error, compute_error(cur_result, small_result, use_rel_error))
 
             if return_sim:
                 sim.append(cur_result)
 
-            if limit is not None and rel_error > limit:
+            if limit is not None and error > limit:
                 if settings.print_output:
-                    print "Relative Error {} exceeded limit {} at step {}".format(rel_error, limit, step)
+                    print "Error {} exceeded limit {} at step {}".format(error, limit, step)
 
                 break
 
-    return rel_error if not return_sim else (rel_error, sim)
+    return error if not return_sim else (error, sim)
 
-def print_rel_error_at_each_step(settings, h_list, pv_list):
+def print_error_at_each_step(settings, h_list, pv_list):
     '''
-    a profiling function. If this is used, output a file with the relative error for every number of
+    a profiling function. If this is used, output a file with the error for every number of
     arnoldi iteartions, and then quit.
     '''
 
-    filename = settings.simulation.krylov_print_rel_error_filename
+    filename = settings.simulation.krylov_print_error_filename
 
-    print "Printing relative errors to file: {}".format(filename)
+    print "Printing errors to file: {}".format(filename)
 
     max_iter = h_list[0].shape[0]
 
     with open(filename, 'w') as f:
 
         for aiter in xrange(2, max_iter):
-            max_rel_error = 0.0
+            max_error = 0.0
 
             for h_mat, pv_mat in zip(h_list, pv_list):
-                rel_error = get_rel_error(settings, h_mat, pv_mat, arnoldi_iter=aiter)
-                max_rel_error = max(max_rel_error, rel_error)
+                error = get_error(settings, h_mat, pv_mat, arnoldi_iter=aiter)
+                max_error = max(max_error, error)
 
-            line = "{}\t{:.20f}\n".format(aiter, max_rel_error)
+            line = "{}\t{:.20f}\n".format(aiter, max_error)
             print line,
             f.write(line)
 
-    print "print_rel_error_at_each_step data written to {}, exiting".format(filename)
+    print "print_error_at_each_step data written to {}, exiting".format(filename)
 
-def arnoldi_sim_with_max_rel_error(time_elapser, init_vec_csr, iterations, rel_error_limit):
+def arnoldi_sim_with_max_error(time_elapser, init_vec_csr, iterations, error_limit):
     '''
-    Run an arnoldi simulation with a fixed number of iterations and a target max relative error.
-    If rel_error_limit is None, just run the whole simulation.
+    Run an arnoldi simulation with a fixed number of iterations and a target max error.
+    If error_limit is None, just run the whole simulation.
 
     returns a 2-tuple (a, b) with:
     a: projected simulation at each step, or None if the error limit is exceeded.
@@ -305,35 +327,35 @@ def arnoldi_sim_with_max_rel_error(time_elapser, init_vec_csr, iterations, rel_e
 
     settings = time_elapser.settings
     stdout = settings.simulation.krylov_stdout
-    rel_error = None
+    error = None
 
     pv_mat, h_mat = time_elapser.krylov_iterator.run_iteration(init_vec_csr, iterations)
 
     if stdout:
-        print "Finished {}... checking rel_error at each step".format( \
+        print "Finished {}... checking error at each step".format( \
             "Lanczos" if settings.simulation.krylov_lanczos else "Arnoldi")
 
     if h_mat.shape[0] < iterations:
-        rel_error_limit = None
+        error_limit = None
         iterations = h_mat.shape[0]
 
         if stdout:
-            print "Arnoldi terminated early. Simulating without relative error limit."
+            print "Arnoldi terminated early. Simulating without error limit."
 
     h_mat = h_mat[:-1, :].copy()
     pv_mat = pv_mat[:, :-1].copy()
 
-    rel_error, projected_sim = get_rel_error(settings, h_mat, pv_mat, return_sim=True, limit=rel_error_limit)
+    error, projected_sim = get_error(settings, h_mat, pv_mat, return_sim=True, limit=error_limit)
 
-    if rel_error == 0 and not settings.simulation.krylov_add_ones_key_dir:
+    if error == 0 and not settings.simulation.krylov_add_ones_key_dir:
         if stdout:
-            print "Relative error was zero and didn't add ones row to key directions. Increasing iterations."
-            
+            print "Error was zero and didn't add ones row to key directions. Increasing iterations."
+
         rv = None
 
-    elif rel_error_limit is None or rel_error < rel_error_limit:
-        if stdout and rel_error_limit is not None:
-            print "Relative error {} was below threshold: {}".format(rel_error, rel_error_limit)
+    elif error_limit is None or error < error_limit:
+        if stdout and error_limit is not None:
+            print "Error {} was below threshold: {}".format(error, error_limit)
 
         rv = projected_sim
     else:
@@ -345,7 +367,7 @@ def arnoldi_sim_with_max_rel_error(time_elapser, init_vec_csr, iterations, rel_e
 def arnoldi_sim_autotune(time_elapser, init_vec_csr):
     '''
     Perform a projected simulation from a given initial vector. This auto-tunes the number
-    of arnoldi iterations based on the relative error.
+    of arnoldi iterations based on the error.
 
     returns the projected simulation at each step.
     '''
@@ -354,29 +376,29 @@ def arnoldi_sim_autotune(time_elapser, init_vec_csr):
     stdout = settings.simulation.krylov_stdout
     n = time_elapser.a_matrix.shape[0]
 
-    error_limit = settings.simulation.krylov_rel_error
+    error_limit = settings.simulation.krylov_target_error
 
-    arnoldi_iter = 2
+    arnoldi_iter = 4
     sim = None
 
     while True:
-        arnoldi_iter = arnoldi_iter * 2
-
         if arnoldi_iter >= n:
             arnoldi_iter = n
-            error_limit = None # do not target any relative error in this case
+            error_limit = None # do not target any error in this case
 
             if stdout:
-                print "Arnoldi iter ({}) reached system dimension; skipping relative error".format(arnoldi_iter)
+                print "Arnoldi iter ({}) reached system dimension; skipping error".format(arnoldi_iter)
 
         if stdout:
             print "Trying {} {} iterations...".format(arnoldi_iter, \
                 "Arnoldi" if not settings.simulation.krylov_lanczos else "Lanczos")
 
-        sim, arnoldi_iter = arnoldi_sim_with_max_rel_error(time_elapser, init_vec_csr, arnoldi_iter, error_limit)
+        sim, arnoldi_iter = arnoldi_sim_with_max_error(time_elapser, init_vec_csr, arnoldi_iter, error_limit)
 
         if sim is not None:
             break
+        else:
+            arnoldi_iter = int(arnoldi_iter * 1.5)
 
     time_elapser.krylov_iterator.reset() # done with the current start vector, free memory
 
@@ -385,9 +407,9 @@ def arnoldi_sim_autotune(time_elapser, init_vec_csr):
 
     time_elapser.stats['arnoldi_iter'].append(arnoldi_iter)
 
-    #if settings.simulation.krylov_print_rel_error_filename is not None:
-    #    print_rel_error_at_each_step(settings, h_list, pv_list)
-    #    print "Exiting because settings.simulation.krylov_print_rel_error_filename was set"
+    #if settings.simulation.krylov_print_error_filename is not None:
+    #    print_error_at_each_step(settings, h_list, pv_list)
+    #    print "Exiting because settings.simulation.krylov_print_error_filename was set"
     #    exit(0)
 
     return sim
@@ -404,29 +426,11 @@ def assign_from_sim(rv, sim, index, settings):
             piece = sim[i][:-1]
         else:
             piece = sim[i][:]
-        
+
         if settings.simulation.krylov_transpose:
             rv[i+1][index] = piece
         else:
             rv[i+1][:, index] = piece
-
-    Timers.toc('update result list')
-
-def update_result_list(list_of_results, settings, rv):
-    'populate rv based on the list of results'
-
-    Timers.tic('update result list')
-
-    for krylov_result in list_of_results:
-        result_list, rel_error = krylov_result
-
-        if rel_error is not None and settings.simulation.krylov_check_all_rel_error is not None:
-            assert rel_error < settings.simulation.krylov_check_all_rel_error, \
-                "Got rel error {} > {} (max) in dimension {}".format(rel_error, \
-                settings.simulation.krylov_rel_error, result_list[0][1])
-
-        for (step, lp_var, col_vec) in result_list:
-            rv[step][:, lp_var] = col_vec
 
     Timers.toc('update result list')
 

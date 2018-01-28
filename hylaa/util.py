@@ -29,3 +29,12 @@ def matrix_to_string(m):
     'get a matrix as a string'
 
     return "\n".join([", ".join([str(val) for val in row]) for row in m])
+
+def get_free_memory_mb_deprecated():
+    'get the amount of free memory available'
+
+    # one-liner to get free memory from:
+    # https://stackoverflow.com/questions/276052/how-to-get-current-cpu-and-ram-usage-in-python
+    _, _, available_mb = map(int, os.popen('free -t -m').readlines()[-1].split()[1:])
+
+    return available_mb
