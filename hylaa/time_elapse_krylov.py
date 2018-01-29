@@ -185,10 +185,12 @@ def get_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, limi
         small_pv_mat = pv_mat[:, :-1].copy()
 
     if isinstance(h_mat, csr_matrix):
+        Timers.tic("debug save h and pv")
         print ".time_elapse_krylov debug save matrix to h_mat.pyz and pv_mat.pyz"
         np.savez('h_mat.npz', data=h_mat.data, indices=h_mat.indices,
                  indptr=h_mat.indptr, shape=h_mat.shape)
         np.savez('pv_mat.npz', pv_mat)
+        Timers.toc("debug save h and pv")
 
     if settings.simulation.krylov_use_odeint:
         Timers.tic('get_error odeint')

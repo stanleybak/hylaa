@@ -146,9 +146,7 @@ class KrylovIterator(Freezable):
         dims = mat.shape[0]
         
         if isinstance(mat, dia_matrix):
-            Timers.tic("krylov_alloc")
-            rv = np.zeros((dims,), dtype=float)
-            Timers.toc("krylov_alloc")
+            rv = np.empty((dims,), dtype=float)
             cpus = multiprocessing.cpu_count()
             
             self.dia_fast_mult(rv, vec, dims, dims, mat.data, mat.offsets, len(mat.offsets), cpus)
@@ -309,7 +307,10 @@ class KrylovIterator(Freezable):
             self.h_mat[self.cur_it, self.cur_it-1] = norm
 
             if norm >= self.tol:
+                Timers.tic('arnoldi norm div')
                 cur_vec = cur_vec / norm
+                Timers.tic('arnoldi norm div')
+                            
                 self.v_mat[self.cur_it] = cur_vec
             elif self.cur_it > 1:
                 #print "break! norm {} <= tol {}".format(norm, self.tol)
@@ -398,8 +399,10 @@ class KrylovIterator(Freezable):
                 self.h_data.append(norm)
                 self.h_inds.append(self.cur_it)
                 self.h_indptrs.append(len(self.h_data))
-                
-                self.cur_vec = self.cur_vec / norm
+
+                Timers.tic('lanczos norm div')
+                self.cur_vec /= norm
+                Timers.toc('lanczos norm div')
 
                 #if self.add_ones_key_dir:
                 #    self.pv_mat[self.cur_it, :-1] = (self.key_dir_mat * self.cur_vec)
