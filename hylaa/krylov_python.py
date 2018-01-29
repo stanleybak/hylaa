@@ -7,13 +7,17 @@ Simulating a linear system x' = Ax using krylov supspace methods (arnoldi and la
 
 import math
 import time
+import ctypes
+import multiprocessing
+import os
 
 import numpy as np
-from scipy.sparse import csr_matrix, csc_matrix
+from numpy.ctypeslib import ndpointer
+from scipy.sparse import csr_matrix, csc_matrix, dia_matrix
 from scipy.sparse.linalg import norm as sparse_norm
 
 from hylaa.timerutil import Timers
-from hylaa.util import Freezable
+from hylaa.util import Freezable, get_script_path
 
 def normalize_sparse(vec):
     'normalize a sparse vector (passed in as a 1xn csr_matrix), and return a tuple: scaled_vec, original_norm'
@@ -116,7 +120,42 @@ class KrylovIterator(Freezable):
         self.reinit = True
         self.cur_it = None
 
+        self._init_fast_mult()
+
         self.freeze_attrs()
+
+    def _init_fast_mult(self):
+        'intialize fast parallel multiplication in C++ for diag_matrix'
+
+        lib_path = os.path.join(get_script_path(__file__), 'fast_mult', 'fast_mult.so')
+        lib = ctypes.CDLL(lib_path)
+
+        self.dia_fast_mult = lib.diaFastMult
+        self.dia_fast_mult.restype = None
+
+        #double* result, double* vec, int matW, int matH, double* data, int* offsets, int numOffsets, int numSplit
+        self.dia_fast_mult.argtypes = \
+            [ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), \
+             ctypes.c_int, ctypes.c_int,\
+             ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
+             ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, ctypes.c_int]
+
+    def mult(self, mat, vec):
+        'fast matrix vector multiplication'
+
+        dims = mat.shape[0]
+        
+        if isinstance(mat, dia_matrix):
+            Timers.tic("krylov_alloc")
+            rv = np.zeros((dims,), dtype=float)
+            Timers.toc("krylov_alloc")
+            cpus = multiprocessing.cpu_count()
+            
+            self.dia_fast_mult(rv, vec, dims, dims, mat.data, mat.offsets, len(mat.offsets), cpus)
+        else:
+            rv = mat * vec
+
+        return rv
 
     def reset(self):
         'free memory from earlier runs'
@@ -244,17 +283,28 @@ class KrylovIterator(Freezable):
                 print "arnoldi iteration {} / {}, Elapsed: {:.2f}m, ETA: {:.2f}m".format(self.cur_it-1, iterations, \
                     elapsed / 60.0, eta / 60.0)
 
-            cur_vec = self.a_matrix * self.v_mat[self.cur_it - 1]
+            Timers.tic('arnoldi mult')
+            cur_vec = self.mult(self.a_matrix, self.v_mat[self.cur_it - 1])
+            Timers.toc('arnoldi mult')
 
             for c in xrange(self.cur_it):
                 prev_vec = self.v_mat[c]
 
+                Timers.tic('arnoldi dot')
                 dot_val = np.dot(prev_vec, cur_vec)
+                Timers.toc('arnoldi dot')
+                
                 self.h_mat[c, self.cur_it - 1] = dot_val
 
+                Timers.tic('arnoldi axpy')
                 cur_vec -= prev_vec * dot_val
+                Timers.toc('arnoldi axpy')
 
+            Timers.tic('arnoldi norm')
             norm = np.linalg.norm(cur_vec, 2)
+            Timers.toc('arnoldi norm')
+            
+            assert not math.isinf(norm) and not math.isnan(norm), "vector norm was infinite in arnoldi"
 
             self.h_mat[self.cur_it, self.cur_it-1] = norm
 
@@ -315,7 +365,7 @@ class KrylovIterator(Freezable):
             self.prev_vec = self.cur_vec
 
             Timers.tic('lanczos mult')
-            self.cur_vec = self.a_matrix * self.prev_vec
+            self.cur_vec = self.mult(self.a_matrix, self.prev_vec)
             Timers.toc('lanczos mult')
 
             if self.prev_prev_vec is not None:
@@ -342,11 +392,13 @@ class KrylovIterator(Freezable):
             self.prev_norm = norm = np.linalg.norm(self.cur_vec)
             Timers.toc('lanczos norm')
 
-            self.h_data.append(norm)
-            self.h_inds.append(self.cur_it)
-            self.h_indptrs.append(len(self.h_data))
+            assert not math.isinf(norm) and not math.isnan(norm), "vector norm was infinite in lanczos"
 
             if norm >= self.tol:
+                self.h_data.append(norm)
+                self.h_inds.append(self.cur_it)
+                self.h_indptrs.append(len(self.h_data))
+                
                 self.cur_vec = self.cur_vec / norm
 
                 #if self.add_ones_key_dir:
@@ -357,9 +409,9 @@ class KrylovIterator(Freezable):
                 self.pv_mat[self.cur_it, :] = (self.key_dir_mat * self.cur_vec)
 
             elif self.cur_it > 1:
-                # ugggg figure out what to do here... probably safe to ignore
-                #v_mat = v_mat[:cur_it+1, :]
-                #h_mat = h_mat[:cur_it+1, :cur_it]
+                # break early
+                iterations = self.cur_it - 1
+                self.pv_mat = self.pv_mat[:iterations + 1, :]
                 break
 
             self.cur_it += 1

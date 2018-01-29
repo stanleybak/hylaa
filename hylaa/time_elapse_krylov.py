@@ -335,7 +335,7 @@ def arnoldi_sim_with_max_error(time_elapser, init_vec_csr, iterations, error_lim
         print "Finished {}... checking error at each step".format( \
             "Lanczos" if settings.simulation.krylov_lanczos else "Arnoldi")
 
-    if h_mat.shape[0] < iterations:
+    if h_mat.shape[0] <= iterations:
         error_limit = None
         iterations = h_mat.shape[0]
 
@@ -347,7 +347,7 @@ def arnoldi_sim_with_max_error(time_elapser, init_vec_csr, iterations, error_lim
 
     error, projected_sim = get_error(settings, h_mat, pv_mat, return_sim=True, limit=error_limit)
 
-    if error == 0 and not settings.simulation.krylov_add_ones_key_dir:
+    if error_limit is not None and error == 0 and not settings.simulation.krylov_add_ones_key_dir:
         if stdout:
             print "Error was zero and didn't add ones row to key directions. Increasing iterations."
 

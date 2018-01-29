@@ -362,7 +362,7 @@ class TestPerformance(unittest.TestCase):
 
         diffusity_const = 0.01
         heat_exchange_const = 0.5
-        samples = 100
+        samples = 50
         dims = samples**3
 
         print "making {} dim random vector".format(dims)
@@ -378,9 +378,9 @@ class TestPerformance(unittest.TestCase):
         print "C-based multiplication"
         start = time.time()
         splits = multiprocessing.cpu_count() #
+        result_c = np.zeros((dims,), dtype=float)
 
-        for _ in xrange(100):
-            result_c = np.zeros((dims,), dtype=float)
+        for _ in xrange(10):
             c_dia_mult(result_c, vec, dims, dims, a_mat_dia.data, a_mat_dia.offsets, len(a_mat_dia.offsets), splits)
             
         print "C-based time {:.3f}s".format(time.time() - start)
@@ -390,7 +390,7 @@ class TestPerformance(unittest.TestCase):
         print "Multiplying dia"
         start = time.time()
 
-        for _ in xrange(100):
+        for _ in xrange(10):
             result_dia = a_mat_dia * vec
             
         print "Dia mult time {:.3f}s".format(time.time() - start)
