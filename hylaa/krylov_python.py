@@ -309,7 +309,7 @@ class KrylovIterator(Freezable):
             if norm >= self.tol:
                 Timers.tic('arnoldi norm div')
                 cur_vec = cur_vec / norm
-                Timers.tic('arnoldi norm div')
+                Timers.toc('arnoldi norm div')
                             
                 self.v_mat[self.cur_it] = cur_vec
             elif self.cur_it > 1:
