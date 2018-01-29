@@ -348,7 +348,7 @@ class TestPerformance(unittest.TestCase):
         '''test multiplication using different versions of the heat3d matrix'''
 
         # load the c library
-        lib = ctypes.CDLL('test_performance_c.so')
+        lib = ctypes.CDLL('./test_performance_c.so')
 
         c_dia_mult = lib.diaMult
         c_dia_mult.restype = None
@@ -360,16 +360,9 @@ class TestPerformance(unittest.TestCase):
              ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"),
              ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, ctypes.c_int]
 
-        init = lib.init
-        init.restype = None
-        init.argtypes = [ctypes.c_int]
-
-        splits = 2 #
-        init(multiprocessing.cpu_count()) # initialize worker threads
-
         diffusity_const = 0.01
         heat_exchange_const = 0.5
-        samples = 320
+        samples = 100
         dims = samples**3
 
         print "making {} dim random vector".format(dims)
@@ -382,25 +375,35 @@ class TestPerformance(unittest.TestCase):
 
         ##################
 
-        print "Multiplying dia"
-        start = time.time()
-        result_dia = a_mat_dia * vec
-        print "Dia mult time {:.3f}s".format(time.time() - start)
-
-        print "my_dia_mult with diagonal matrix"
-        start = time.time()
-        result_dot = my_dia_mult(a_mat_dia, vec)
-        print "my_dia_mult time {:.3f}s".format(time.time() - start)
-
-        result_c = np.zeros((dims,), dtype=float)
         print "C-based multiplication"
         start = time.time()
-        c_dia_mult(result_c, vec, dims, dims, a_mat_dia.data, a_mat_dia.offsets, len(a_mat_dia.offsets), splits)
+        splits = multiprocessing.cpu_count() #
+
+        for _ in xrange(100):
+            result_c = np.zeros((dims,), dtype=float)
+            c_dia_mult(result_c, vec, dims, dims, a_mat_dia.data, a_mat_dia.offsets, len(a_mat_dia.offsets), splits)
+            
         print "C-based time {:.3f}s".format(time.time() - start)
 
+        ##################
+
+        print "Multiplying dia"
+        start = time.time()
+
+        for _ in xrange(100):
+            result_dia = a_mat_dia * vec
+            
+        print "Dia mult time {:.3f}s".format(time.time() - start)
+
+        #print "my_dia_mult with diagonal matrix"
+        #start = time.time()
+        #result_python = my_dia_mult(a_mat_dia, vec)
+        #print "my_dia_mult time {:.3f}s".format(time.time() - start)
+
         # check result matches
-        self.assertTrue(np.allclose(result_dia, result_dot))
+        #self.assertTrue(np.allclose(result_dia, result_python))
         self.assertTrue(np.allclose(result_dia, result_c))
+        
 
     def test_heat3d_dia_vs_csr(self):
         '''test multiplication using different versions of the heat3d matrix'''

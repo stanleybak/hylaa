@@ -5,11 +5,8 @@
 #include <stdlib.h>
 #include <thread>
 #include <vector>
-#include "ctpl_stl.h"
 
 using namespace std;
-
-ctpl::thread_pool* pool = 0;
 
 void* amalloc(size_t size)
 {
@@ -79,66 +76,65 @@ void diaMultRecSplitOffsets(double* result, double* vec, int matW, int matH, dou
 }
 
 // base case for split range
-void diaMultRecSplitRangeBase(int id, double* result, const double* const vec, const int matW,
-                              const int matH, const double* const data, const int* const offsets,
-                              const int numOffsets, const int startIndex, const int endIndex)
+void diaMultRecSplitRangeBase(double* result, double* vec, long matW, long matH, double* data,
+                              int* offsets, int numOffsets, long startIndex, long endIndex)
 {
-    for (int o = 0; o < numOffsets; ++o)
+    if (startIndex < 0 || endIndex < 0)
     {
-        int offset = offsets[o];
+        printf("Invalid index range in split multiplication: %ld to %ld\n", startIndex, endIndex);
+        exit(1);
+    }
 
-        int start = 0 > offset ? 0 : offset;
-        int end = matH < matH + offset ? matH : matH + offset;
+    for (long o = 0; o < numOffsets; ++o)
+    {
+        long offset = offsets[o];
+
+        long start = 0 > offset ? 0 : offset;
+        long end = matH < matH + offset ? matH : matH + offset;
 
         // limit it between startIndex and endIndex
         start = start < startIndex ? startIndex : start;
         end = end > endIndex ? endIndex : end;
 
-        for (int i = start; i < end; ++i)
+        for (long i = start; i < end; ++i)
             result[i] += vec[i - offset] * data[o * matW + i];
     }
 }
 
-void diaMultRecSplitRange(double* result, double* const vec, const int matW, const int matH,
-                          double* const data, const int* const offsets, const int numOffsets,
-                          const int numSplits)
+void diaMultRecSplitRange(double* result, double* vec, long matW, long matH, double* data,
+                          int* offsets, int numOffsets, int numSplits)
 {
-    std::vector<std::future<void>> results(numSplits);
+    std::thread threads[numSplits];
 
-    for (int s = 0; s < numSplits; ++s)
+    if (sizeof(long) < 8)
     {
-        int startIndex = s * matH / numSplits;
-        int endIndex = (s + 1) * matH / numSplits;
+        printf("Expected sizeof(long) >= 8, got %lu\n", sizeof(long));
+        exit(1);
+    }
 
-        results[s] = pool->push(diaMultRecSplitRangeBase, result, vec, matW, matH, data, offsets,
-                                numOffsets, startIndex, endIndex);
+    for (long s = 0; s < numSplits; ++s)
+    {
+        long startIndex = s * matH / numSplits;
+        long endIndex = (s + 1) * matH / numSplits;
 
-        // threads[s] = std::thread(diaMultRecSplitRangeBase, result, vec, matW, matH, data,
-        // offsets,
-        //                         numOffsets, startIndex, endIndex);
-
-        // diaMultRecSplitRangeBase(result, vec, matW, matH, data, offsets, numOffsets, startIndex,
-        // endIndex);
+        threads[s] = std::thread(diaMultRecSplitRangeBase, result, vec, matW, matH, data, offsets,
+                                 numOffsets, startIndex, endIndex);
     }
 
     for (int s = 0; s < numSplits; ++s)
-        results[s].get();
-}
-
-void poolInit(int num)
-{
-    pool = new ctpl::thread_pool(num);
+        // results[s].get();
+        threads[s].join();
 }
 
 extern "C" {
-void init(int num)
-{
-    poolInit(num);
-}
 
 void diaMult(double* result, double* vec, int matW, int matH, double* data, int* offsets,
              int numOffsets, int numSplits)
 {
-    diaMultRecSplitRange(result, vec, matW, matH, data, offsets, numOffsets, numSplits);
+    if (matW < 50 * 50 * 50)  // for small matrices it's quicker to do it in one thread
+        diaMultRecSplitRangeBase(result, vec, matW, matH, data, offsets, numOffsets, 0, matW);
+    else
+        diaMultRecSplitRange(result, vec, (long)matW, (long)matH, data, offsets, numOffsets,
+                             numSplits);
 }
 }
