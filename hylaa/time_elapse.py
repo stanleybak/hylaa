@@ -70,10 +70,10 @@ class TimeElapser(Freezable):
             self.one_step_input_effects_matrix = None # one step input effects matrix, if inputs exist
 
         # -- performance statistics --
-        # arnoldi_iter -> list, with 0 = fixed-effect, others are the tuned arnoldi iterations
-        # arnoldi_mem_start -> mb, total amount of memory on device
+        # arnoldi_iter -> list of the number of arnoldi iterations for each initial vector
         #
         self.stats = {} # performance statistics, map name -> value
+        #self.stats['min_free_memory'] = get_free_memory_mb('init')
 
         self.freeze_attrs()
 

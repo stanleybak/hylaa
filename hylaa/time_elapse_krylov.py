@@ -12,6 +12,7 @@ from scipy.integrate import odeint
 
 from hylaa.timerutil import Timers
 from hylaa.settings import HylaaSettings
+from hylaa.util import safe_zeros
 
 def odeint_sim(arg):
     '''
@@ -109,9 +110,12 @@ def init_krylov(time_elapser):
     if settings.print_output:
         print "Basis matrix shape: {}".format(step_zero_mat.shape)
 
+    safe_zeros('full_basis_matrix', (time_elapser.settings.num_steps * rv[0].shape[0], rv[0].shape[1]), \
+                   dtype=float, alloc=False)
+        
     # add zeros (allocate storage for result)
     for _ in xrange(0, time_elapser.settings.num_steps):
-        rv.append(np.zeros(rv[0].shape, dtype=float))
+        rv.append(safe_zeros('basis_matrix', rv[0].shape, dtype=float))
 
     return rv
 
@@ -200,7 +204,7 @@ def get_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, limi
         if limit is None:
             full_sim = odeint_sim((h_mat, start_vec, settings))
 
-            sim = np.zeros((full_sim.shape[0] - 1, pv_mat.shape[0]), dtype=float)
+            sim = safe_zeros('projected_sim', (full_sim.shape[0] - 1, pv_mat.shape[0]), dtype=float)
 
             for i in xrange(1, full_sim.shape[0]): # skip step zero
                 sim[i-1] = np.dot(pv_mat, full_sim[i])
@@ -210,7 +214,7 @@ def get_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, limi
 
             full_sim, small_full_sim = [odeint_sim(a) for a in args]
 
-            if np.allclose(full_sim[1], np.zeros(full_sim[1].shape)):
+            if np.all(abs(full_sim[1]) < 1e-9): # was compare with new zeros vec
                 if settings.print_output:
                     print "First step of simulation was almost all zeros... increasing num iterations"
 
@@ -233,8 +237,6 @@ def get_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, limi
                 Timers.tic('krylov multiply by PV')
 
                 sim = np.dot(full_sim[1:], pv_mat.T)
-                #small_sim = np.dot(small_full_sim[1:], small_pv_mat.T)
-                #sim = np.zeros((steps-1, pv_mat.shape[0]), dtype=float)
 
                 for step in xrange(0, sim.shape[0], 10): # check every 10th step since this was taking non-trivial time
                     cur_result = sim[step]
@@ -402,6 +404,10 @@ def arnoldi_sim_autotune(time_elapser, init_vec_csr):
         else:
             arnoldi_iter = int(arnoldi_iter * 1.5)
 
+    # update max used memory
+    #prev_mem = time_elapser.stats['min_free_memory']
+    #time_elapser.stats['min_free_memory'] = min(prev_mem, get_free_memory_mb('update_mem'))
+    
     time_elapser.krylov_iterator.reset() # done with the current start vector, free memory
 
     if stdout:

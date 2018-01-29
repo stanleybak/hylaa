@@ -17,7 +17,7 @@ from scipy.sparse import csr_matrix, csc_matrix, dia_matrix
 from scipy.sparse.linalg import norm as sparse_norm
 
 from hylaa.timerutil import Timers
-from hylaa.util import Freezable, get_script_path
+from hylaa.util import Freezable, get_script_path, safe_zeros
 
 def normalize_sparse(vec):
     'normalize a sparse vector (passed in as a 1xn csr_matrix), and return a tuple: scaled_vec, original_norm'
@@ -64,11 +64,12 @@ def add_ones_row(mat):
 
     w = mat.shape[1]
 
-    new_data = np.ones((w,), dtype=float)
-    new_inds = np.zeros((w,), dtype=mat.indices.dtype)
+    new_data = safe_zeros('new_data', (w,), dtype=float)
+    new_inds = safe_zeros('new_inds', (w,), dtype=mat.indices.dtype)
 
     for n in xrange(w):
         new_inds[n] = n
+        new_data[n] = 1.0
 
     data = np.concatenate((mat.data, new_data))
     indices = np.concatenate((mat.indices, new_inds))
@@ -87,7 +88,8 @@ class KrylovIterator(Freezable):
 
         self.settings = hylaa_settings
         self.lanczos = self.settings.simulation.krylov_lanczos
-        self.print_status = self.settings.simulation.krylov_stdout and a_matrix.shape[0] > int(1e6)
+        self.print_status = self.settings.simulation.krylov_stdout and a_matrix.shape[0] >= int(1e6)
+        
         #self.add_ones_key_dir = self.settings.simulation.krylov_add_ones_key_dir
 
         if self.settings.simulation.krylov_transpose and not self.lanczos:
@@ -146,7 +148,7 @@ class KrylovIterator(Freezable):
         dims = mat.shape[0]
         
         if isinstance(mat, dia_matrix):
-            rv = np.empty((dims,), dtype=float)
+            rv = safe_zeros('mult_result', (dims,), dtype=float, use_empty=True)
             cpus = multiprocessing.cpu_count()
             
             self.dia_fast_mult(rv, vec, dims, dims, mat.data, mat.offsets, len(mat.offsets), cpus)
@@ -190,10 +192,9 @@ class KrylovIterator(Freezable):
 
             self.cur_it = 1
 
-            #check_available_memory_arnoldi(print_status, iterations, dims)
             if self.lanczos:
 
-                self.pv_mat = np.zeros((iterations + 1, key_dirs))
+                self.pv_mat = safe_zeros('krylov pv_mat', (iterations + 1, key_dirs))
                 self.h_data = []
                 self.h_inds = []
                 self.h_indptrs = [0]
@@ -216,8 +217,8 @@ class KrylovIterator(Freezable):
             else:
                 # arnoldi
 
-                self.v_mat = np.zeros((iterations + 1, dims))
-                self.h_mat = np.zeros((iterations + 1, iterations))
+                self.v_mat = safe_zeros('krylov v_mat', (iterations + 1, dims))
+                self.h_mat = safe_zeros('krylov h_mat', (iterations + 1, iterations))
 
                 # sparse assignment of initial vector
                 for i in xrange(len(scaled_vec.data)):
@@ -228,13 +229,13 @@ class KrylovIterator(Freezable):
             # continue the computation (allocate more memory)
 
             if self.lanczos:
-                new_pv_mat = np.zeros((iterations + 1, key_dirs))
+                new_pv_mat = safe_zeros('krylov new pv_mat', (iterations + 1, key_dirs))
                 new_pv_mat[:self.pv_mat.shape[0], :self.pv_mat.shape[1]] = self.pv_mat
                 self.pv_mat = new_pv_mat
             else:
                 # arnoldi
-                new_v_mat = np.zeros((iterations + 1, dims))
-                new_h_mat = np.zeros((iterations + 1, iterations))
+                new_v_mat = safe_zeros('krylov new_v_mat', (iterations + 1, dims))
+                new_h_mat = safe_zeros('krylov new_h_mat', (iterations + 1, iterations))
 
                 # copy from old
                 new_v_mat[:self.v_mat.shape[0], :self.v_mat.shape[1]] = self.v_mat
