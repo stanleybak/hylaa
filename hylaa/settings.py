@@ -107,6 +107,8 @@ class PlotSettings(Freezable):
         self.max_shown_polys = 512 # thin out the reachable set if we go over this number of polys (optimization)
         self.draw_stride = 1 # draw every 2nd poly, 4th, ect.
 
+        self.use_markers_for_small = True # draw markers when the reachable set is tiny instead of invisible polygons
+
         # these are useful for testing / debugging
         self.skip_frames = 0 # number of frames to process before we start drawing
         self.skip_show_gui = False # should we skip showing the graphical interface

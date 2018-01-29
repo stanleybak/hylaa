@@ -292,7 +292,7 @@ class KrylovIterator(Freezable):
                 Timers.tic('arnoldi dot')
                 dot_val = np.dot(prev_vec, cur_vec)
                 Timers.toc('arnoldi dot')
-                
+
                 self.h_mat[c, self.cur_it - 1] = dot_val
 
                 Timers.tic('arnoldi axpy')
@@ -302,7 +302,7 @@ class KrylovIterator(Freezable):
             Timers.tic('arnoldi norm')
             norm = np.linalg.norm(cur_vec, 2)
             Timers.toc('arnoldi norm')
-            
+
             assert not math.isinf(norm) and not math.isnan(norm), "vector norm was infinite in arnoldi"
 
             self.h_mat[self.cur_it, self.cur_it-1] = norm
@@ -311,7 +311,7 @@ class KrylovIterator(Freezable):
                 Timers.tic('arnoldi norm div')
                 cur_vec = cur_vec / norm
                 Timers.toc('arnoldi norm div')
-                            
+
                 self.v_mat[self.cur_it] = cur_vec
             elif self.cur_it > 1:
                 #print "break! norm {} <= tol {}".format(norm, self.tol)

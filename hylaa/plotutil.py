@@ -217,7 +217,7 @@ class DrawnShapes(Freezable):
     def add_reachable_poly(self, poly_verts, mode_name):
         '''add a polygon which was reachable'''
 
-        if len(poly_verts) <= 2:
+        if len(poly_verts) <= 2 and self.plotman.settings.use_markers_for_small:
             markers = self.parent_to_markers.get(mode_name)
 
             if markers is None:
