@@ -78,10 +78,6 @@ def bounds_list_to_init(bounds_list):
 
     init_mat_rhs = np.array(rhs, dtype=float)
 
-    print "init_space shape = {}".format(init_space.shape)
-    print "init_mat shape = {}".format(init_mat.shape)
-    print "init_mat_rhs shape = {}".format(init_mat_rhs.shape)
-
     return (init_space, init_mat, init_mat_rhs)
 
 class HyperRectangle(object):

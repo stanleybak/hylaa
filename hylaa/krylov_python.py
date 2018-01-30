@@ -89,7 +89,7 @@ class KrylovIterator(Freezable):
         self.settings = hylaa_settings
         self.lanczos = self.settings.simulation.krylov_lanczos
         self.print_status = self.settings.simulation.krylov_stdout and a_matrix.shape[0] >= int(1e6)
-        
+
         #self.add_ones_key_dir = self.settings.simulation.krylov_add_ones_key_dir
 
         if self.settings.simulation.krylov_transpose and not self.lanczos:
