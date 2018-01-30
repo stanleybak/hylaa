@@ -188,14 +188,6 @@ def get_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, limi
         small_h_mat = h_mat[:-1, :-1].copy()
         small_pv_mat = pv_mat[:, :-1].copy()
 
-    if isinstance(h_mat, csr_matrix):
-        Timers.tic("debug save h and pv")
-        print ".time_elapse_krylov debug save matrix to h_mat.pyz and pv_mat.pyz"
-        np.savez('h_mat.npz', data=h_mat.data, indices=h_mat.indices,
-                 indptr=h_mat.indptr, shape=h_mat.shape)
-        np.savez('pv_mat.npz', pv_mat)
-        Timers.toc("debug save h and pv")
-
     if settings.simulation.krylov_use_odeint:
         Timers.tic('get_error odeint')
         start_vec = np.array([1.0 if d == 0 else 0.0 for d in xrange(h_mat.shape[0])], dtype=float)
@@ -230,24 +222,36 @@ def get_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, limi
                 error = max(error, compute_error(cur_result, small_result, use_rel_error))
 
                 if error > limit:
-                    print "Simulation error at step {}: {} (limit: {})".format(step, error, limit)
+                    if settings.print_output:
+                        print "Simulation error with {} krylov iterations exceeds threshold: {} (limit: {})".format(
+                            h_mat.shape[0], error, limit)
                     break
 
             if error < limit: # go through each step
                 Timers.tic('krylov multiply by PV')
 
+                if settings.print_output:
+                    print "Simulation error with {} iter at sampled times was low enough, checking all steps...".format(
+                        h_mat.shape[0])
+
                 sim = np.dot(full_sim[1:], pv_mat.T)
 
-                for step in xrange(0, sim.shape[0], 10): # check every 10th step since this was taking non-trivial time
+                for step in xrange(0, sim.shape[0]):
                     cur_result = sim[step]
                     small_result = np.dot(small_pv_mat, small_full_sim[step + 1])
 
                     error = max(error, compute_error(cur_result, small_result, use_rel_error))
 
                     if error > limit:
-                        print "Simulation error at step {}: {} (limit: {})".format(step, error, limit)
+                        if settings.print_output:
+                            print "Simulation error at step {} exceeds threshold: {} (limit: {})".format(
+                                step, error, limit)
+
                         sim = None
                         break
+
+                if settings.print_output and error < limit:
+                    print "Simulation error was low enough at all steps: {} (limit: {})".format(error, limit)
 
                 Timers.toc('krylov multiply by PV')
 
