@@ -178,20 +178,20 @@ def get_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, limi
 
     sim = None
     use_rel_error = settings.simulation.krylov_use_rel_error
+    error = 0
 
     # use less arnoldi iterations than what's in the matrices
     if arnoldi_iter is not None:
         h_mat = h_mat[:arnoldi_iter, :arnoldi_iter].copy()
         pv_mat = pv_mat[:, :arnoldi_iter].copy()
 
-    if limit is not None:
+    if limit is not None or arnoldi_iter is not None:
         small_h_mat = h_mat[:-1, :-1].copy()
         small_pv_mat = pv_mat[:, :-1].copy()
 
     if settings.simulation.krylov_use_odeint:
         Timers.tic('get_error odeint')
         start_vec = np.array([1.0 if d == 0 else 0.0 for d in xrange(h_mat.shape[0])], dtype=float)
-        error = 0
 
         if limit is None:
             full_sim = odeint_sim((h_mat, start_vec, settings))
@@ -296,32 +296,35 @@ def get_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, limi
 
     return error if not return_sim else (error, sim)
 
-def print_error_at_each_step(settings, h_list, pv_list):
+def print_error_at_each_step(settings, h_mat, pv_mat):
     '''
     a profiling function. If this is used, output a file with the error for every number of
     arnoldi iteartions, and then quit.
     '''
 
-    filename = settings.simulation.krylov_print_error_filename
+    filename = 'error.dat'
 
     print "Printing errors to file: {}".format(filename)
 
-    max_iter = h_list[0].shape[0]
+    max_iter = h_mat.shape[0]
 
     with open(filename, 'w') as f:
 
         for aiter in xrange(2, max_iter):
             max_error = 0.0
 
-            for h_mat, pv_mat in zip(h_list, pv_list):
-                error = get_error(settings, h_mat, pv_mat, arnoldi_iter=aiter)
-                max_error = max(max_error, error)
+            error = get_error(settings, h_mat, pv_mat, arnoldi_iter=aiter)
+            max_error = max(max_error, error)
 
-            line = "{}\t{:.20f}\n".format(aiter, max_error)
-            print line,
+            if aiter % 10 == 0:
+                print "Computed Error {} / {}: {:.25f}".format(aiter, max_iter, error)
+
+            line = "{}\t{:.25f}\n".format(aiter, max_error)
+            #print line,
             f.write(line)
 
     print "print_error_at_each_step data written to {}, exiting".format(filename)
+    exit(1)
 
 def arnoldi_sim_with_max_error(time_elapser, init_vec_csr, iterations, error_limit):
     '''
@@ -338,6 +341,10 @@ def arnoldi_sim_with_max_error(time_elapser, init_vec_csr, iterations, error_lim
     error = None
 
     pv_mat, h_mat = time_elapser.krylov_iterator.run_iteration(init_vec_csr, iterations)
+
+    # profiling was desired
+    if settings.simulation.krylov_error_stats_iterations is not None:
+        print_error_at_each_step(settings, h_mat, pv_mat)
 
     if stdout:
         print "Finished {}... checking error at each step".format( \
@@ -389,6 +396,10 @@ def arnoldi_sim_autotune(time_elapser, init_vec_csr):
     arnoldi_iter = 4
     sim = None
 
+    # if profiling was desired
+    if settings.simulation.krylov_error_stats_iterations is not None:
+        arnoldi_iter = settings.simulation.krylov_error_stats_iterations
+
     while True:
         if arnoldi_iter >= n:
             arnoldi_iter = n
@@ -411,18 +422,13 @@ def arnoldi_sim_autotune(time_elapser, init_vec_csr):
     # update max used memory
     #prev_mem = time_elapser.stats['min_free_memory']
     #time_elapser.stats['min_free_memory'] = min(prev_mem, get_free_memory_mb('update_mem'))
-    
+
     time_elapser.krylov_iterator.reset() # done with the current start vector, free memory
 
     if stdout:
         print "Simulation was accurate enough with {} arnoldi iterations...".format(arnoldi_iter)
 
     time_elapser.stats['arnoldi_iter'].append(arnoldi_iter)
-
-    #if settings.simulation.krylov_print_error_filename is not None:
-    #    print_error_at_each_step(settings, h_list, pv_list)
-    #    print "Exiting because settings.simulation.krylov_print_error_filename was set"
-    #    exit(0)
 
     return sim
 

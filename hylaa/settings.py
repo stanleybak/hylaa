@@ -61,6 +61,8 @@ class SimulationSettings(Freezable):
         self.krylov_odeint_simtol = 1e-9 # if using odeint, use this simulation error tolerance for atol and rtol
         self.krylov_stdout = False
 
+        self.krylov_error_stats_iterations = None # If not None, will output the error at each iteration to 'error.dat'
+
         self.freeze_attrs()
 
 class PlotSettings(Freezable):
