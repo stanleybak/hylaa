@@ -109,9 +109,12 @@ class HylaaEngine(object):
 
                     guard_threshold = self.cur_star.mode.transitions[i].guard_rhs[0]
 
-                    end_first_output_val = self.result.output_vars[0]
-
                     output_space = self.cur_star.mode.transitions[i].output_space_csr
+
+                    #end_first_output_val = self.result.output_vars[0]
+                    # multiply this by the output constraint matrix...
+                    output_vals = self.cur_star.mode.transitions[i].guard_matrix_csr * self.result.output_vars
+                    first_output_val = output_vals[0]
 
                     # construct inputs, which are in backwards order
                     inputs = []
@@ -126,7 +129,7 @@ class HylaaEngine(object):
                         print 'Writing counter-example trace file: "{}"'.format(filename)
 
                     write_counter_example(filename, mode, step_size, total_steps, self.result.init_vars, \
-                        init_space_csc, inputs, first_constraint, guard_threshold, end_first_output_val)
+                        init_space_csc, inputs, first_constraint, guard_threshold, first_output_val)
 
                 self.result.safe = False
                 break # no need to keep checking

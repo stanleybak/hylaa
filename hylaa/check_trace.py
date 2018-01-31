@@ -135,6 +135,9 @@ def check(a_matrix, b_matrix, step, max_time, start_point, inputs, normal_vec, e
     sim_val = np.dot(last_sim_point, normal_vec)
     diff = sim_val - end_val
 
+    # normal_vec is -1.0
+    print "sim_val = {}, end_val = {}".format(sim_val, end_val)
+
     data.abs_error = numerator = abs(diff)
     denominator = abs(sim_val)
 
