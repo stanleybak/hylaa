@@ -14,9 +14,9 @@ Hylaa is released under the GPL v3 license (see the LICENSE file). It has been a
 
 ### Installation ###
 
-Hylaa is mostly written in Python, with a few C++ parts (linear programming solving, GPU interface). You'll need to get a few required libraries, compiles the C++ portions as shared libraries, and then setup the evnironment variables. Then, to run a model you simply do 'python modelname.py'. Even if you're not planning on using a GPU, you still need the install cuda to use their compiler. A
+Hylaa is mostly written in Python, with a few C++ parts (linear programming solving, multithreaded matrix multiplication). You'll need to get a few required libraries, compiles the C++ portions as shared libraries, and then setup the evnironment variables. Then, to run a model you simply do 'python modelname.py'. 
 
-These instructions are made for an Ubuntu system, such as the Amazon EC2 GPU instance (p2.xlarge) using the Ubuntu 16.04 LTS Server image.
+These instructions are made for an Ubuntu system. Other systems may work but you'll need to adapt the instructions accordinly
 
 # Install Packages #
 
@@ -31,11 +31,9 @@ For glpk_interface unit tests: cvxopt
 
 This a custom C++ interface to GLPK for use in Hylaa that you need to compile. See hylaa/glpk-interface/README for details on how to do this. Essentially, you need to get glpk-4.60 (which may be newer than what comes with Ubuntu), and then run make (the Makefile is in that folder). This will produce hylaa_glpk.so.
 
-# Compile Arnoldi GPU / CPU code as Shared Library #
+# Compile Fast Matrix Multiplication as Shared Library #
 
-You also need to compile the arnoldi code, which include a GPU interface. This requires the nvcc compiler from n-videa for general gpu computation using cuda. This compiler turns .cu files into executables (or shared libraries in this instance). You should use at least version 7.5 of nvcc (use 'nvcc --version' to check). Some people have reported that right after installation they need to reboot their system for the nvcc compiler to work correctly, so if the 'nvidia-cuda-toolkit' installation seemed to work and you have compiling issues, try that first.
-
-To compile, go into the hylaa/glpk-interface folder and run 'make' (the Makefile is in that folder). This should produce cusp_krylov_stan.so.
+Go to hylaa/fast_mult and run make. This should produce fast_mult.so.
 
 # Setup PYTHONPATH Environment Variable #
 
@@ -52,9 +50,11 @@ For .mp4 (and other format) video export, ffmpeg is used. Make sure you can run 
 
 The easiest way to get started with Hylaa is to run some of the examples. Models in Hylaa are defined in python code (more on the input format in the next section), and the tool is executed using python as well.
 
-Go to `examples/harmonic_oscillator` and run `ha.py` from the command line (`python ha.py`). This should create `plot.png` in the same folder, which will be an 2-d plot of the reachable set. This plot is similar to the timed harmonic oscillator plot given in the paper "Affine Systems Verification with Double-Projected Reachability: 10^6 Dimensions and Beyond". 
+Go to `examples/harmonic_oscillator` and run `ha.py` from the command line (`python ha.py`). This should create `plot.png` in the same folder, which will be an 2-d plot of the reachable set.  
 
-The dynamics in Hylaa are given as x' = **A**x, where **A** is the sparse dynamics matrix. Initial states and unsafe states are given as conjunctions of linear constraints. You can see the 4-d system in the timed harmonic oscialltor case and the error states defined in the `define_ha` function in ha.py. Try changing the dynamics slightly and re-running the script to see the effect.
+The dynamics in Hylaa are given as x' = **A**x, where **A** is the sparse dynamics matrix. Initial states and unsafe states are given as conjunctions of linear constraints in an initial and output space. If you want to provide these using the normal state variables, just use the identity matrix as the initial and output spaces... although this may impact efficiency in high dimensions.
+
+You can see the 4-d system in the timed harmonic oscialltor case and the error states defined in the `define_ha` function in ha.py. Try changing the dynamics slightly and re-running the script to see the effect.
 
 Computation settings are given in the `define_settings` function. To switch from plotting a static image to a live plot during the computation, for example, change `plot_settings.plot_mode` to be `PlotSettings.PLOT_FULL`. Lots of settings exist in Hylaa (plotting mode, verification options, ect.). The default settings are generally okay, as long as you provide the time bound and time step size. If you want to do more advanced things such as select between cpu and gpu, or fix the number of arnoldi iterations rather that auto-tune it, or select the auto-tuning relative error threshold, the settings is the way to do that. All of them, as well as comments describing them can be found in `hylaa/settings.py`.
 
