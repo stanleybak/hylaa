@@ -223,7 +223,7 @@ def get_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, limi
 
                 if error > limit:
                     if settings.print_output:
-                        print "Simulation error with {} krylov iterations exceeds threshold: {} (limit: {})".format(
+                        print "Sim error with {} krylov iterations ({}) above limit ({})".format(
                             h_mat.shape[0], error, limit)
                     break
 
@@ -231,7 +231,7 @@ def get_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, limi
                 Timers.tic('krylov multiply by PV')
 
                 if settings.print_output:
-                    print "Simulation error with {} iter at sampled times was low enough, checking all steps...".format(
+                    print "Sim error with {} iter at sampled times was low enough, checking all steps...".format(
                         h_mat.shape[0])
 
                 sim = np.dot(full_sim[1:], pv_mat.T)

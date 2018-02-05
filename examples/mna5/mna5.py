@@ -46,8 +46,8 @@ def define_ha():
 
     # x1 >= 0.2
     mat = csr_matrix(([-1], [0], [0, 1]), dtype=float, shape=(1, 2))
-    #rhs = np.array([-0.2], dtype=float) # safe
-    rhs = np.array([-0.1], dtype=float) # unsafe
+    rhs = np.array([-0.2], dtype=float) # safe
+    #rhs = np.array([-0.1], dtype=float) # unsafe
     trans1 = ha.new_transition(mode, error)
     trans1.set_guard(output_space, mat, rhs)
 
@@ -91,6 +91,10 @@ def define_settings():
     'get the hylaa settings object'
     plot_settings = PlotSettings()
     plot_settings.plot_mode = PlotSettings.PLOT_NONE
+    #plot_settings.plot_mode = PlotSettings.PLOT_FULL
+    plot_settings.xdim_dir = None
+    plot_settings.ydim_dir = 0
+    plot_settings.max_shown_polys = None
 
     settings = HylaaSettings(step=0.001, max_time=20.0, plot_settings=plot_settings)
     settings.simulation.sim_mode = SimulationSettings.KRYLOV

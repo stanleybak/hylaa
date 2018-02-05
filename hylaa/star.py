@@ -166,6 +166,32 @@ class Star(Freezable):
 
                 Star.plot_vecs.append(vec)
 
+    def add_time_to_1d_plot_pts(self, pts):
+        '''add time values for plotting 1-d outputs over time
+
+        returns new points list
+        '''
+
+        assert len(pts) == 2
+
+        cur_time = self.time_elapse.next_step * self.settings.step
+        half_step = self.settings.step / 2.0
+        t1 = cur_time - half_step
+        t2 = cur_time + half_step
+
+        if self.settings.plot.xdim_dir is None:
+            y1 = pts[0][0]
+            y2 = pts[1][0]
+
+            pts = [(t1, y1), (t1, y2), (t2, y2), (t2, y1)]
+        elif self.settings.plot.ydim_dir is None:
+            x1 = pts[0][0]
+            x2 = pts[1][0]
+
+            pts = [(x1, t1), (x2, t1), (x2, t2), (x1, t2)]
+
+        return pts
+
     def verts(self):
         'get the verticies of the polygon projection of the star used for plotting'
 
@@ -179,13 +205,8 @@ class Star(Freezable):
 
             pts = self._find_star_boundaries(use_binary_search=use_binary_search)
 
-            # add time to point
-            cur_time = self.time_elapse.next_step * self.settings.step
-
-            if self.settings.plot.xdim_dir is None:
-                pts = [[cur_time, pt[0]] for pt in pts]
-            elif self.settings.plot.ydim_dir is None:
-                pts = [[pt[0], cur_time] for pt in pts]
+            if self.settings.plot.xdim_dir is None or self.settings.plot.ydim_dir is None:
+                pts = self.add_time_to_1d_plot_pts(pts)
 
             if len(pts) > len(Star.plot_vecs)/2 and not Star.high_vert_mode:
                 # don't use binary search anymore, and reduce the number of directions being plotted
@@ -267,6 +288,7 @@ class Star(Freezable):
                 if last_point is None or not np.array_equal(point, last_point):
                     last_point = point.copy()
                     rv.append(last_point)
+
         else:
             # optimized approach: do binary search to find changes
             star_lpi.minimize(direction_list[0], point, error_if_infeasible=True)
