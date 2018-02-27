@@ -172,7 +172,10 @@ class Star(Freezable):
         returns new points list
         '''
 
-        assert len(pts) == 2
+        assert len(pts) == 1 or len(pts) == 2, "pts len was {} != 1 or 2 in 1d-plot".format(len(pts))
+
+        if len(pts) == 1: # min == max
+            pts.append(pts[0])
 
         cur_time = self.time_elapse.next_step * self.settings.step
         half_step = self.settings.step / 2.0
