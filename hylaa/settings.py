@@ -58,7 +58,7 @@ class SimulationSettings(Freezable):
         self.krylov_use_rel_error = True # use relative error (False = absolute error)
 
         self.krylov_use_odeint = True # use odeint instead of expm for computing expm(t*v)
-        self.krylov_odeint_simtol = 1e-9 # if using odeint, use this simulation error tolerance for atol and rtol
+        self.krylov_odeint_simtol = 1e-10 # if using odeint, use this simulation error tolerance for atol and rtol
         self.krylov_stdout = False # extra printing on stdout during krylov iteration process
 
         self.krylov_error_stats_iterations = None # If not None, will output the error at each iteration to 'error.dat'
