@@ -90,7 +90,7 @@ def check(a_matrix, b_matrix, step, max_time, start_point, inputs, normal_vec, e
 
     # we want to roughly get the desired number of sample points, so we may need to do multiple
     # samples per input
-    samples_per_input = approx_samples / len(inputs)
+    samples_per_input = approx_samples / max(1, len(inputs))
     if samples_per_input < 1:
         samples_per_input = 1
 

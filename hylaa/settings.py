@@ -23,7 +23,7 @@ class HylaaSettings(Freezable):
         self.plot = plot_settings
 
         self.print_output = True # print status and waiting list information to stdout
-        self.skip_step_times = True # print the times at each step
+        self.skip_step_times = False # print the times at each step
 
         self.print_lp_on_error = False # upon reaching an error mode, print LP and exit (no counter-example)
         self.counter_example_filename = 'counterexample.py' # the counter-example filename to create on errors
