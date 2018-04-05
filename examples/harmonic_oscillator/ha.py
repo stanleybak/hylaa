@@ -56,7 +56,7 @@ def make_init_star(ha, hylaa_settings):
 def define_settings():
     'get the hylaa settings object'
     plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_INTERACTIVE
+    plot_settings.plot_mode = PlotSettings.PLOT_NONE #PlotSettings.PLOT_INTERACTIVE
     plot_settings.xdim_dir = 0
     plot_settings.ydim_dir = 1
 
@@ -78,12 +78,12 @@ def define_settings():
 
     settings = HylaaSettings(step=math.pi/4, max_time=3 * math.pi / 4, plot_settings=plot_settings)
     #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
-    #settings.simulation.sim_mode = SimulationSettings.MATRIX_EXP
-    settings.simulation.sim_mode = SimulationSettings.KRYLOV
+    settings.time_elapse.method = SimulationSettings.MATRIX_EXP
+    #settings.simulation.sim_mode = SimulationSettings.KRYLOV
     #settings.simulation.krylov_use_lanczos = True
 
     #settings.simulation.exp_mult_output_vec = False
-    #settings.simulation.check_answer = True
+    settings.time_elapse.check_answer = True
 
     return settings
 

@@ -8,14 +8,51 @@ import sys
 import numpy as np
 
 from scipy.sparse import csr_matrix, csc_matrix
-from scipy.sparse.linalg import expm, expm_multiply
 
 from hylaa.util import Freezable
 from hylaa.hybrid_automaton import LinearAutomatonMode
 from hylaa.settings import HylaaSettings, PlotSettings, SimulationSettings
 from hylaa.timerutil import Timers
 from hylaa.time_elapse_krylov import make_cur_basis_mat_list
-from hylaa.krylov_python import KrylovIterator
+form hylaa.time_elapse_expm import TimeElapseMatrixExp, TimeElapseExpMult
+
+def create_output_space_csr(plot_settings, ha_mode):
+    'create the output space matrix'
+
+    num_directions = 0
+
+    data = []
+    cols = []
+    indptr = [0]
+
+    if plot_settings.plot_mode != PlotSettings.PLOT_NONE:
+        dirs = [plot_settings.xdim_dir, plot_settings.ydim_dir]
+
+        for plot_dir in dirs:
+            if isinstance(plot_dir, int):
+                data.append(1.0)
+                cols.append(plot_dir)
+                indptr.append(len(data))
+                num_directions += 1
+            elif plot_dir is not None:
+                xdir = csr_matrix(plot_dir)
+                assert len(xdir.shape) == 1 or xdir.shape[0] == 1, \
+                    "expected row vector for plot direction, got shape: {}".format(plot_dir.shape)
+
+                data += [n for n in xdir.data]
+                cols += [n for n in xdir.indices]
+                indptr.append(len(data))
+                num_directions += 1
+
+    if ha_mode.output_space_csr is not None:
+        num_directions += ha_mode.output_space_csr.shape[0]
+        offset = len(data)
+
+        data += [n for n in ha_mode.output_space_csr.data]
+        cols += [n for n in ha_mode.output_space_csr.indices]
+        indptr += [i + offset for i in ha_mode.output_space_csr.indptr[1:]]
+
+    return csr_matrix((data, cols, indptr), shape=(num_directions, ha_mode.parent.dims), dtype=float)
 
 class TimeElapser(Freezable):
     'Object which computes the time-elapse function for a single mode at multiples of the time step'
@@ -25,252 +62,57 @@ class TimeElapser(Freezable):
         assert isinstance(hylaa_settings, HylaaSettings)
         assert isinstance(init_space_csc, csc_matrix)
 
+        self.mode = mode
         self.settings = hylaa_settings
-        self.init_space_csc = init_space_csc
-
-        if self.settings.simulation.sim_mode == SimulationSettings.MATRIX_EXP or \
-           self.settings.simulation.sim_mode == SimulationSettings.EXP_MULT or \
-            self.settings.simulation.check_answer:
-            Timers.tic("convert a_matrix and b_matrix to csc matrix")
-            self.a_matrix_csc = csc_matrix(mode.a_matrix)
-            self.b_matrix_csc = None if mode.b_matrix is None else csc_matrix(mode.b_matrix)
-            Timers.toc("convert a_matrix and b_matrix to csc matrix")
-
         self.a_matrix = mode.a_matrix
         self.b_matrix = mode.b_matrix
-
         self.dims = self.a_matrix.shape[0]
         self.inputs = 0 if mode.b_matrix is None else mode.b_matrix.shape[1]
 
+        self.output_space_csr = create_output_space_csr(hylaa_settings.plot, mode)
+        self.init_space_csc = init_space_csc
+
         self.next_step = 0
-        self.key_dir_mat = None # csr_matrix
         self.cur_basis_mat = None # assigned on step()
         self.cur_input_effects_matrix = None # assigned on step() if inputs exist
-        self.cur_input_projection_matrix = None
 
-        # used for certain simulation modes
-        Timers.tic("extract key directions")
-        self._extract_key_directions(mode)
-        Timers.toc("extract key directions")
+        print ".time_elapse init space shape = {}".format(self.init_space_csc.shape)
+        print ".time_elapse output space shape = {}".format(self.output_space_csr.shape)
 
-        # method-specific settings
-        if self.settings.simulation.sim_mode == SimulationSettings.KRYLOV:
-            self.cur_basis_mat_list = None
+        self.use_init_space = self.settings.time_elpase.force_init_space
 
-            if self.settings.simulation.krylov_transpose:
-                output_mat = csr_matrix(self.init_space_csc.transpose())
+        if self.use_init_space is None:
+            # auto detect strategy: use the lower dimension space
+            if self.init_space_csc.shape[1] < self.output_space_csr.shape[0]:
+                print ".using initial space"
+                self.use_init_space = True
             else:
-                output_mat = self.key_dir_mat
+                print ".using output space"
+                self.use_init_space = False
 
-            self.krylov_iterator = KrylovIterator(hylaa_settings, self.a_matrix, output_mat)
+        # initialize method-specific container objects
+        if self.settings.time_elapse.check_answer:
+            self.checker_obj = TimeElapseMatrixExp(self)
 
-        elif self.settings.simulation.sim_mode == SimulationSettings.EXP_MULT:
-            self.stored_vec = None
-            self.one_step_matrix_exp = None # one step matrix exponential
-            self.one_step_input_effects_matrix = None # one step input effects matrix, if inputs exist
+        method = self.settings.time_elapse.method
 
-        # -- performance statistics --
-        # arnoldi_iter -> list of the number of arnoldi iterations for each initial vector
-        #
-        self.stats = {} # performance statistics, map name -> value
-        #self.stats['min_free_memory'] = get_free_memory_mb('init')
+        if method  == TimeElapseSettings.MATRIX_EXP:
+            self.time_elapse_obj = TimeElapseMatrixExp(self)
+        elif method  == TimeElapseSettings.EXP_MULT:
+            self.time_elapse_obj = TimeElapseExpMult(self)
+        elif method == TimeElapseSettings.KRYLOV:
+            self.time_elapse_obj = TimeElapseKrylov(self)
+        else:
+            raise RuntimeError("Unsupported Time Elapse Method: {}".format(method))
 
         self.freeze_attrs()
-
-    def _extract_key_directions(self, mode):
-        'extract the key directions for lp solving'
-
-        num_directions = 0
-
-        data = []
-        cols = []
-        indptr = [0]
-
-        if self.settings.plot.plot_mode != PlotSettings.PLOT_NONE:
-            dirs = [self.settings.plot.xdim_dir, self.settings.plot.ydim_dir]
-
-            for plot_dir in dirs:
-                if isinstance(plot_dir, int):
-                    data.append(1.0)
-                    cols.append(plot_dir)
-                    indptr.append(len(data))
-                    num_directions += 1
-                elif plot_dir is not None:
-                    xdir = csr_matrix(plot_dir)
-                    data += [n for n in xdir.data]
-                    cols += [n for n in xdir.cols]
-                    indptr.append(len(data))
-                    num_directions += 1
-
-        for t in mode.transitions:
-            num_directions += t.output_space_csr.shape[0]
-            offset = len(data)
-
-            data += [n for n in t.output_space_csr.data]
-            cols += [n for n in t.output_space_csr.indices]
-            indptr += [i + offset for i in t.output_space_csr.indptr[1:]]
-
-            # actually, we just need to add one of the transitions since they must share the same output space
-            break
-
-        self.key_dir_mat = csr_matrix((data, cols, indptr), shape=(num_directions, self.dims), dtype=float)
-
-    def step_exp_mult(self):
-        'first step matrix exp, other steps matrix multiplication'
-
-        if self.next_step == 0:
-
-            self.cur_basis_mat = (self.key_dir_mat * self.init_space_csc).toarray()
-
-            # store either output_vec or input_vec
-            if self.settings.simulation.exp_mult_output_vec:
-                self.stored_vec = self.key_dir_mat.toarray()
-            else:
-                self.stored_vec = self.init_space_csc.toarray()
-        elif self.one_step_matrix_exp is None:
-            assert self.next_step == 1
-            assert isinstance(self.key_dir_mat, csr_matrix)
-            Timers.tic('time_elapse.step first step')
-
-            print_status = self.a_matrix.shape[0] > 100 and self.settings.print_output
-
-            if print_status:
-                print "Computing the one-step matrix exponential for the {}-dimensional system...".format(
-                    self.a_matrix.shape[0]),
-                sys.stdout.flush()
-
-            a_step_mat = self.a_matrix_csc * self.settings.step
-
-            self.one_step_matrix_exp = np.array(expm(a_step_mat).todense(), dtype=float)
-
-            if print_status:
-                print "done"
-
-            if self.settings.simulation.exp_mult_output_vec:
-                self.stored_vec = np.dot(self.stored_vec, self.one_step_matrix_exp)
-                self.cur_basis_mat = self.stored_vec * self.init_space_csc
-            else:
-                self.stored_vec = np.dot(self.one_step_matrix_exp, self.stored_vec)
-                self.cur_basis_mat = self.key_dir_mat * self.stored_vec
-
-            self.cur_basis_mat = self.cur_basis_mat.copy() # make it c-contiguous (instead of fortran-contiguous)
-
-            if self.inputs > 0:
-                self.one_step_input_effects_matrix = np.zeros(self.b_matrix.shape, dtype=float)
-
-                for c in xrange(self.inputs):
-                    # create the a_matrix augmented with a column of the b_matrix as an affine term
-                    a = self.a_matrix
-                    b = self.b_matrix
-
-                    indptr = b.indptr
-
-                    data = np.concatenate((a.data, b.data[indptr[c]:indptr[c+1]]))
-                    indices = np.concatenate((a.indices, b.indices[indptr[c]:indptr[c+1]]))
-                    indptr = np.concatenate((a.indptr, [len(data)]))
-
-                    aug_a_matrix = csc_matrix((data, indices, indptr), shape=(self.dims + 1, self.dims + 1))
-
-                    mat = aug_a_matrix * self.settings.step
-
-                    # the last column of matrix_exp is the same as multiplying it by the initial state [0, 0, ..., 1]
-                    init_state = np.zeros(self.dims + 1, dtype=float)
-                    init_state[self.dims] = 1.0
-                    col = expm_multiply(mat, init_state)
-
-                    #matrix_exp = np.array(expm(mat).todense(), dtype=float)
-                    #col = matrix_exp[:, -1]
-
-                    self.one_step_input_effects_matrix[:, c] = col[:self.dims]
-
-                self.cur_input_projection_matrix = np.array(self.key_dir_mat.toarray(), dtype=float)
-                self.cur_input_effects_matrix = np.dot(self.cur_input_projection_matrix,
-                                                       self.one_step_input_effects_matrix)
-
-            Timers.toc('time_elapse.step first step')
-        else:
-            Timers.tic('time_elapse.step other steps')
-
-
-            if self.settings.simulation.exp_mult_output_vec:
-                self.stored_vec = np.dot(self.stored_vec, self.one_step_matrix_exp)
-                self.cur_basis_mat = self.stored_vec * self.init_space_csc
-            else:
-                self.stored_vec = np.dot(self.one_step_matrix_exp, self.stored_vec)
-                self.cur_basis_mat = self.key_dir_mat * self.stored_vec
-
-            self.cur_basis_mat = self.cur_basis_mat.copy() # make it c-contiguous (instead of fortran-contiguous)
-
-            # inputs
-            if self.inputs > 0:
-                self.cur_input_projection_matrix = np.dot(self.cur_input_projection_matrix, self.one_step_matrix_exp)
-
-                self.cur_input_effects_matrix = np.dot(self.cur_input_projection_matrix,
-                                                       self.one_step_input_effects_matrix)
-
-            Timers.toc('time_elapse.step other steps')
-
-    def step_matrix_exp(self):
-        'matrix exp every step'
-
-        cur_time = self.settings.step * self.next_step
-        time_mat = self.a_matrix_csc * cur_time
-        exp = expm(time_mat)
-
-        self.cur_basis_mat = np.array((self.key_dir_mat * exp * self.init_space_csc).todense(), dtype=float)
-
-        if self.inputs != 0 and self.next_step > 0:
-            input_effects_matrix = np.zeros(self.b_matrix.shape, dtype=float)
-
-            for c in xrange(self.inputs):
-                # create the a_matrix augmented with a column of the b_matrix as an affine term
-                a = self.a_matrix_csc
-                b = self.b_matrix_csc
-
-                indptr = b.indptr
-
-                data = np.concatenate((a.data, b.data[indptr[c]:indptr[c+1]]))
-                indices = np.concatenate((a.indices, b.indices[indptr[c]:indptr[c+1]]))
-                indptr = np.concatenate((a.indptr, [len(data)]))
-
-                aug_a_matrix = csc_matrix((data, indices, indptr), shape=(self.dims + 1, self.dims + 1))
-
-                matrix_exp = np.array(expm(aug_a_matrix * self.settings.step).todense(), dtype=float)
-
-                # the last column of matrix_exp is the same as multiplying it by the initial state [0, 0, ..., 1]
-                col = matrix_exp[:, -1]
-
-                input_effects_matrix[:, c] = col[:self.dims]
-
-            prev_exp = expm(self.a_matrix_csc * (self.settings.step * (self.next_step - 1)))
-            full_input_effects = (prev_exp * input_effects_matrix)
-            self.cur_input_effects_matrix = self.key_dir_mat * full_input_effects
-
-    def step_krylov(self):
-        'krylov-based step function'
-
-        if self.cur_basis_mat_list is None:
-            if self.settings.print_output:
-                print "Using Krylov method to make basis matrices"
-
-            self.cur_basis_mat_list = make_cur_basis_mat_list(self)
-
-        self.cur_basis_mat = self.cur_basis_mat_list[self.next_step].copy()
 
     def step(self):
         'perform the computation to obtain the values of the key directions the current time'
 
         Timers.tic('time_elapse.step Total')
 
-        if self.settings.simulation.sim_mode == SimulationSettings.MATRIX_EXP:
-            self.step_matrix_exp()
-        elif self.settings.simulation.sim_mode == SimulationSettings.EXP_MULT:
-            self.step_exp_mult()
-        elif self.settings.simulation.sim_mode == SimulationSettings.KRYLOV:
-            self.step_krylov()
-        else:
-            raise RuntimeError('Unimplemented sim_mode {}'.format(self.settings.simulation.sim_mode))
-
+        self.time_elapse_obj.step()
         self.next_step += 1
 
         Timers.toc('time_elapse.step Total')
@@ -291,29 +133,30 @@ class TimeElapser(Freezable):
             assert self.cur_input_effects_matrix.shape == (self.key_dir_mat.shape[0], self.inputs)
 
         # answer accuracy check (optional)
-        if self.settings.simulation.check_answer:
+        if self.checker_obj is not None:
             self.check_answer()
 
     def check_answer(self):
-        'check the correctness of the answer versus expm'
+        'check the correctness of the answer at the current step'
+        
+        # save current basis matrix and current input effects matrix, as these will get overriden by check_obj.step()
+        saved_basis_mat = self.cur_basis_mat
+        saved_input_effects_matrix = self.cur_input_effects_matrix
 
         Timers.tic('expm check answer')
-        assert self.a_matrix.shape[0] <= 1000, "settings.simulation.check_answer == True with large matrix"
+
+        assert self.a_matrix.shape[0] <= 1000, "settings.time_elapse.check_answer = True with large matrix (dims > 1000)"
         tol = self.settings.simulation.check_answer_abs_tol
 
-        t = self.settings.step * (self.next_step - 1)
-        exp = expm(self.a_matrix_csc * t)
-        expected = np.array((self.key_dir_mat * exp * self.init_space_csc).todense(), dtype=float)
+        self.checker_obj.step()
 
-        assert self.cur_basis_mat.shape == expected.shape, \
-            "wrong shape in check_answer(), got {}, expected {}".format(self.cur_basis_mat.shape, expected.shape)
+        expected = self.cur_basis_mat
+        expected_input = self.cur_input_effects_matrix
 
-        #print "expected:\n{}".format(expected)
-        #print "got:\n{}".format(self.cur_basis_mat)
-
+        # compare basis matrix
         for dim in xrange(expected.shape[1]):
             col_expected = expected[:, dim]
-            col_got = self.cur_basis_mat[:, dim]
+            col_got = saved_basis_mat[:, dim]
 
             same = True
 
@@ -323,10 +166,37 @@ class TimeElapser(Freezable):
                     break
 
             if not same:
-                print "Answer was incorrect in column {}".format(dim)
+                print "Answer was incorrect in basis matrix column {}".format(dim)
                 print "Expected {}".format(col_expected)
                 print "Got {}".format(col_got)
 
-                assert False, "answer was incorrect"
+                raise RuntimeError("answer was incorrect")
+
+        # compare input effects matrix
+        if expected_input is not None:
+            assert saved_input_effects_matrix is not None, "incorrect answer: expected input effects matrix"
+
+            for dim in xrange(expected_input.shape[1]):
+                col_expected = expected_input[:, dim]
+                col_got = saved_input_effects_matrix[:, dim]
+
+                same = True
+
+                for a, b in zip(col_expected, col_got):
+                    if abs(a - b) > tol:
+                        same = False
+                        break
+
+                if not same:
+                    print "Answer was incorrect in input effects matrix column {}".format(dim)
+                    print "Expected {}".format(col_expected)
+                    print "Got {}".format(col_got)
+
+                    raise RuntimeError("answer was incorrect")
+
 
         Timers.toc('expm check answer')
+
+        # restore the saved basis matrix and input effects matrix
+        self.cur_basis_mat = saved_basis_mat
+        self.cur_input_effects_matrix = saved_input_effects_matrix

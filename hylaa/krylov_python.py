@@ -19,6 +19,7 @@ from scipy.sparse.linalg import norm as sparse_norm
 from hylaa.timerutil import Timers
 from hylaa.util import Freezable, get_script_path, safe_zeros
 
+
 def normalize_sparse(vec):
     'normalize a sparse vector (passed in as a 1xn csr_matrix), and return a tuple: scaled_vec, original_norm'
 
@@ -77,8 +78,8 @@ def add_ones_row(mat):
 
     return csr_matrix((data, indices, ind_ptr), shape=(mat.shape[0] + 1, w))
 
-class KrylovIterator(Freezable):
-    'Krylov Iterator container class'
+class KrylovIteration(Freezable):
+    'Krylov Iteration container class (Arnoldi or Lanczos iteration)'
 
     def __init__(self, hylaa_settings, a_matrix, key_dir_mat):
         assert a_matrix.shape[0] == a_matrix.shape[1], "a_mat should be square"

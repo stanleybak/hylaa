@@ -10,9 +10,145 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.linalg import expm
 from scipy.integrate import odeint
 
+import psutil
+
 from hylaa.timerutil import Timers
 from hylaa.settings import HylaaSettings
-from hylaa.util import safe_zeros
+from hylaa.util import Freezable
+from hylaa.krylov_python import KrylovIteration
+
+class TimeElapseKrylov(Freezable):
+    'container object for time elapse krylov method'
+
+    def __init__(self, time_elapser):
+        self.time_elapser = time_elapser
+        self.settings = time_elapser.settings
+
+        self.cur_basis_mat_list = None
+
+        if time_elapser.use_init_space:
+            key_dir_mat = csr_matrix(time_elapser.init_space_csc.transpose())
+        else:
+            key_dir_mat = time_elapser.output_space_csr
+
+        self.krylov_iteration = KrylovIteration(time_elapser.settings, time_elapser.a_matrix, key_dir_mat)
+
+        # -- performance statistics --
+        # arnoldi_iter -> list of the number of arnoldi iterations for each initial vector
+        #
+        self.stats = {} # performance statistics, map name -> value
+
+        self.freeze_attrs()
+
+    def step(self):
+        'krylov-based step function'
+
+        if self.cur_basis_mat_list is None:
+            if self.settings.print_output:
+                print "Using Krylov method to make basis matrices"
+
+            self.cur_basis_mat_list = self.make_cur_basis_mat_list()
+
+        self.time_elapser.cur_basis_mat = self.cur_basis_mat_list[self.time_elapser.next_step].copy()
+
+    def make_cur_basis_mat_list(self):
+        '''
+        Main work function. This returns the basis matrix at every step.
+
+        This is called one time, and returns a list, element N is the basis matrix at step N
+        '''
+
+        # numpy raise errors overflow errors, ignore underflow
+        np.seterr(all='warn', over='raise', under='ignore')
+
+        settings = self.settings
+
+        rv = init_krylov(time_elapser)
+
+        if settings.simulation.krylov_transpose:
+            init_space = time_elapser.key_dir_mat
+        else:
+            init_space = csr_matrix(time_elapser.init_space_csc.transpose())
+
+        start = last_print = time.time()
+        num_init_vecs = init_space.shape[0]
+
+        if settings.print_output:
+            print "Simulating from {} initial vector(s)".format(num_init_vecs)
+
+        for init_index in xrange(num_init_vecs):
+            sim = arnoldi_sim_autotune(time_elapser, init_space[init_index])
+
+            assign_from_sim(rv, sim, init_index, settings)
+
+            if settings.print_output:
+                now = time.time()
+
+                if now - last_print > 1.0: # print every second
+                    last_print = now
+                    frac = float(init_index) / num_init_vecs
+
+                    if frac > 1e-9:
+                        elapsed_sec = now - start
+                        total_sec = elapsed_sec / frac
+                        eta_sec = total_sec - elapsed_sec
+                        eta = format_secs(eta_sec)
+
+                        print "Arnoldi {} / {} ({:.2f}%, ETA: {})".format(
+                            init_index, num_init_vecs, 100.0 * frac, eta)
+
+        if settings.print_output:
+            elapsed = format_secs(time.time() - start)
+            print "Krylov Simulation Total Time: {}\n".format(elapsed)
+
+        # restore numpy error
+        np.seterr(all='warn')
+
+        return rv
+
+    def init_krylov(self):
+        '''
+        initialize krylov interface for the computation
+
+        returns a list of empty matrices to be filled in by the subsequent computation
+        '''
+
+        settings = self.settings
+        key_dir_mat = self.time_elapser.output_space_csr
+        init_space_csc = self.time_elapser.init_space_csc
+
+        # check available memory before computing
+        #i = time_elapser.init_space_csc.shape[1]
+        #check_available_memory_basis(settings.print_output, time_elapser.settings.num_steps, key_dir_mat.shape[0], i)
+
+        self.stats['arnoldi_iter'] = []
+        #time_elapser.stats['arnoldi_mem_start'] = get_free_memory_mb()
+
+        rv = []
+
+        # initialize step zero
+
+        step_zero_mat = (key_dir_mat * init_space_csc).toarray()
+
+        rv.append(step_zero_mat)
+
+        if settings.print_output:
+            print "Basis matrix shape: {}".format(step_zero_mat.shape)
+
+        # check if there's enough memory (otherwise python likes to consume everything before freezing or crashing)
+        available_mb = psutil.virtual_memory().available / 1024.0 / 1024.0
+        needed_mb = self.time_elapser.settings.num_steps * rv[0].shape[0] * rv[0].shape[1] * 8 / 1024.0 / 1024.0
+
+        # keep a reserve of 1024 mb for other things
+        if needed_mb + 1024 < available_mb:
+            raise RuntimeError("Memory to store basis matrices ({:.2f}MB) exceeds available memory ({:.2f}MB)".format(
+                needed_mb + 1024, available_mb)
+
+        # add zeros (allocate storage for result)
+        for _ in xrange(0, self.settings.num_steps):
+            rv.append(np.zeros(rv[0].shape, dtype=float))
+
+        return rv
 
 def odeint_sim(arg):
     '''
@@ -80,44 +216,6 @@ def format_secs(sec):
 
 #    if required_mb + 1024 > available_mb: # add 1024 mb since we want 1 GB free for other things
 #        raise MemoryError("Not enogh memory for storing the basis matrices.")
-
-def init_krylov(time_elapser):
-    '''
-    initialize krylov interface for the computation
-
-    returns a list of empty matrices to be filled in by the subsequent computation
-    '''
-
-    settings = time_elapser.settings
-    key_dir_mat = time_elapser.key_dir_mat
-    init_space_csc = time_elapser.init_space_csc
-
-    # check available memory before computing
-    #i = time_elapser.init_space_csc.shape[1]
-    #check_available_memory_basis(settings.print_output, time_elapser.settings.num_steps, key_dir_mat.shape[0], i)
-
-    time_elapser.stats['arnoldi_iter'] = []
-    #time_elapser.stats['arnoldi_mem_start'] = get_free_memory_mb()
-
-    rv = []
-
-    # initialize step zero
-
-    step_zero_mat = (key_dir_mat * init_space_csc).toarray()
-
-    rv.append(step_zero_mat)
-
-    if settings.print_output:
-        print "Basis matrix shape: {}".format(step_zero_mat.shape)
-
-    safe_zeros('full_basis_matrix', (time_elapser.settings.num_steps * rv[0].shape[0], rv[0].shape[1]), \
-                   dtype=float, alloc=False)
-        
-    # add zeros (allocate storage for result)
-    for _ in xrange(0, time_elapser.settings.num_steps):
-        rv.append(safe_zeros('basis_matrix', rv[0].shape, dtype=float))
-
-    return rv
 
 def compute_error(correct, estimate, is_relative):
     '''compute the error between two vectors
@@ -451,58 +549,3 @@ def assign_from_sim(rv, sim, index, settings):
             rv[i+1][:, index] = piece
 
     Timers.toc('update result list')
-
-def make_cur_basis_mat_list(time_elapser):
-    '''
-    Main work function. This returns the basis matrix at every step.
-
-    This is called one time, and returns a list, element N is the basis matrix at step N
-    '''
-
-    # numpy raise errors overflow errors, ignore underflow
-    np.seterr(all='warn', over='raise', under='ignore')
-
-    settings = time_elapser.settings
-
-    rv = init_krylov(time_elapser)
-
-    if settings.simulation.krylov_transpose:
-        init_space = time_elapser.key_dir_mat
-    else:
-        init_space = csr_matrix(time_elapser.init_space_csc.transpose())
-
-    start = last_print = time.time()
-    num_init_vecs = init_space.shape[0]
-
-    if settings.print_output:
-        print "Simulating from {} initial vector(s)".format(num_init_vecs)
-
-    for init_index in xrange(num_init_vecs):
-        sim = arnoldi_sim_autotune(time_elapser, init_space[init_index])
-
-        assign_from_sim(rv, sim, init_index, settings)
-
-        if settings.print_output:
-            now = time.time()
-
-            if now - last_print > 1.0: # print every second
-                last_print = now
-                frac = float(init_index) / num_init_vecs
-
-                if frac > 1e-9:
-                    elapsed_sec = now - start
-                    total_sec = elapsed_sec / frac
-                    eta_sec = total_sec - elapsed_sec
-                    eta = format_secs(eta_sec)
-
-                    print "Arnoldi {} / {} ({:.2f}%, ETA: {})".format(
-                        init_index, num_init_vecs, 100.0 * frac, eta)
-
-    if settings.print_output:
-        elapsed = format_secs(time.time() - start)
-        print "Krylov Simulation Total Time: {}\n".format(elapsed)
-
-    # restore numpy error
-    np.seterr(all='warn')
-
-    return rv

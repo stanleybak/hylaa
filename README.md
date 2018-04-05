@@ -21,7 +21,7 @@ These instructions are made for an Ubuntu system. Other systems may work but you
 # Install Packages #
 
 sudo apt-get update
-sudo apt-get install python-numpy python-scipy python-matplotlib make
+sudo apt-get install python-numpy python-scipy python-matplotlib python-psutil make
 
 
 For python_krylov unit tests: python-krypy

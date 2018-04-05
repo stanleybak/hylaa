@@ -46,8 +46,8 @@ def define_ha():
     y3 = csc_matrix((y3.data, y3.indices, col_ptr), shape=(1, y3.shape[1] + num_inputs))
     output_space = csr_matrix(y3)
 
-    #limit = 0.0005
-    limit = 0.00017
+    limit = 0.0005
+    #limit = 0.00017
     trans1 = ha.new_transition(mode, error)
     mat = csr_matrix(([1], [0], [0, 1]), dtype=float, shape=(1, 1))
     rhs = np.array([-limit], dtype=float) # safe
@@ -87,26 +87,41 @@ def make_init_star(ha, hylaa_settings):
 
     return Star(hylaa_settings, ha.modes['mode'], init_space, init_mat, init_mat_rhs)
 
-def define_settings(_):
+def define_settings(ha):
     'get the hylaa settings object'
     plot_settings = PlotSettings()
+    #plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
     plot_settings.plot_mode = PlotSettings.PLOT_NONE
 
-    max_time = 20.0 # 20.0
+    print "using max_time 0.01"
+    max_time = 0.01 #20.0
     step_size = 0.001
     settings = HylaaSettings(step=step_size, max_time=max_time, plot_settings=plot_settings)
     #settings.simulation.guard_mode = SimulationSettings.GUARD_DECOMPOSED
 
     #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
-    settings.simulation.sim_mode = SimulationSettings.KRYLOV
-    #settings.simulation.check_answer = True
+    settings.time_elapse.sim_mode = SimulationSettings.MATRIX_EXP
+    settings.time_elapse.check_answer = True
 
     #settings.simulation.krylov_check_all_rel_error = True
     #settings.simulation.krylov_rel_error = 1e-6
-    settings.simulation.krylov_transpose = True
-    settings.simulation.krylov_stdout = True
+    #settings.simulation.krylov_transpose = True
+    #settings.simulation.krylov_stdout = True
 
     #settings.skip_step_times = False
+
+    plot_settings.xdim_dir = None
+    plot_settings.ydim_dir = ha.transitions[0].output_space_csr[0]
+
+    plot_settings.max_shown_polys = None
+    plot_settings.label.y_label = '$y_{3}$'
+    plot_settings.label.x_label = 'Time'
+    plot_settings.label.title = 'Space Station (Fixed Inputs)'
+    #plot_settings.label.axes_limits = (0.4, 0.6, -0.0002, -0.0001)
+    plot_settings.plot_size = (12, 8)
+    plot_settings.label.big(size=36)
+
+    plot_settings.extra_lines = [[(0.0, -0.00017), (20.0, -0.00017)], [(0.0, 0.00017), (20.0, 0.00017)]]
 
     return settings
 

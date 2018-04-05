@@ -157,6 +157,8 @@ class LinearAutomatonMode(Freezable):
     'A single mode of a hybrid automaton'
 
     def __init__(self, parent, name):
+        assert isinstance(parent, LinearHybridAutomaton)
+
         self.name = name
 
         # dynamics are x' = Ax + Bu
@@ -165,8 +167,19 @@ class LinearAutomatonMode(Freezable):
 
         self.parent = parent
         self.transitions = [] # outgoing transitions
+        self.output_space_csr = None
 
         self.freeze_attrs()
+
+    def set_output_space(self, output_space_csr):
+        'sets the output space for the mode'
+
+        assert isinstance(output_space_csr, csr_matrix)
+        assert output_space_csr.shape[1] == self.parent.dims, "output space width {} should equal dims {}".format(
+            output_space_csr.shape[1], self.parent.dims)
+        assert output_space_csr, "output space assigned twice (shouldn't be changed after being set)"
+
+        self.output_space_csr = output_space_csr
 
     def set_dynamics(self, a_matrix, b_matrix=None):
         'sets the autonomous system dynamics'
@@ -212,31 +225,23 @@ class LinearAutomatonTransition(Freezable):
         # matrix * (output_space * var_list) <= rhs
         self.guard_matrix_csr = None
         self.guard_rhs = None
-        self.output_space_csr = None
 
         self.freeze_attrs()
 
         from_mode.transitions.append(self)
 
-    def set_guard(self, output_space_csr, matrix_csr, rhs):
+    def set_guard(self, matrix_csr, rhs):
         '''set the guard matrix and right-hand side. The transition is enabled if
         matrix * (output_space * var_list) <= rhs
         '''
 
         assert isinstance(matrix_csr, csr_matrix)
         assert isinstance(rhs, np.ndarray)
-        assert isinstance(output_space_csr, csr_matrix)
 
         assert rhs.shape == (matrix_csr.shape[0],)
-        assert output_space_csr.shape[0] == matrix_csr.shape[1]
-        assert output_space_csr.shape[1] == self.parent.dims, "output space width {} should equal dims {}".format(
-            output_space_csr.shape[1], self.parent.dims)
+        assert self.from_mode.output_sapce_csr is not None, "output_space_csr of mode should be set before set_guard"
+        assert self.from_mode.output_space_csr.shape[0] == matrix_csr.shape[1]
 
-        for transition in self.from_mode.transitions:
-            if transition.output_space_csr is not None:
-                assert output_space_csr is transition.output_space_csr, "all guards must have the same output space"
-
-        self.output_space_csr = output_space_csr
         self.guard_matrix_csr = matrix_csr
         self.guard_rhs = rhs
 

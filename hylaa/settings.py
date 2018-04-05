@@ -21,48 +21,52 @@ class HylaaSettings(Freezable):
         self.num_steps = int(math.ceil(max_time / step))
 
         self.plot = plot_settings
+        self.time_elapse = TimeElapseSettings(step)
 
         self.print_output = True # print status and waiting list information to stdout
         self.skip_step_times = False # print the times at each step
 
         self.print_lp_on_error = False # upon reaching an error mode, print LP and exit (no counter-example)
         self.counter_example_filename = 'counterexample.py' # the counter-example filename to create on errors
-        self.simulation = SimulationSettings(step)
 
         self.freeze_attrs()
 
-class SimulationSettings(Freezable):
-    'simulation settings container'
+class TimeElapseSettings(Freezable):
+    'time elapse settings container'
 
     # simulation mode (matrix-exp)
-    MATRIX_EXP = 0 # matrix exp every step
+    MATRIX_EXP = 0 # matrix exp every step (slow)
     EXP_MULT = 1 # first step matrix exp, remaining steps matrix-vector multiplication
-    KRYLOV = 2 # krylov method
-    # maybe add an odeint (or rk45 method)
+    KRYLOV = 2 # krylov simulation method
+    SCIPY_SIM = 3 # numerical simulation using an instance of scipy.integrate.OdeSolver
 
     def __init__(self, step):
         self.step = step
-        self.sim_mode = SimulationSettings.EXP_MULT
+        self.method = TimeElapseSettings.SCIPY_SIM
 
-        self.exp_mult_output_vec = True # for EXP_MULT: store output_mat * mat_exp? (otherwise mat_exp * input_mat)
+        self.force_init_space = None # True -> use init space when possible, False -> output space, None -> auto detect
 
         self.check_answer = False # double-check answer using MATRIX_EXP at each step (slow!)
         self.check_answer_abs_tol = 1e-5 # absolute tolerance when checking answer
 
+        self.krylov = KrylovSettings() # used only with krylov method
+
+        self.freeze_attrs()
+
+class KrylovSettings(Freezable):
+    'krylov simulation settings'
+
+    def __init__(self):
         # accuracy settings. If you don't have enough accuracy, decrease rel error and increase samples
-        self.krylov_lanczos = False # use the lanczos iteration instead of arnoldi
-        self.krylov_transpose = False # compute basis matrix using transpose of dynamics (swaps init and output spaces)
+        self.target_error = 1e-6 # desired relative error of projV * exmp(H * end_time)
+        self.add_ones_key_dir = True # add an output direction of all 1's for error calculation
+        self.use_rel_error = True # use relative error (False = absolute error)
 
-        self.krylov_target_error = 1e-6 # desired relative error of projV * exmp(H * end_time)
-        self.krylov_add_ones_key_dir = True # add an output direction of all 1's for error calculation
-        self.krylov_use_rel_error = True # use relative error (False = absolute error)
+        self.use_odeint = True # use odeint instead of expm for computing expm(t*v)
+        self.odeint_simtol = 1e-10 # if using odeint, use this simulation error tolerance for atol and rtol
+        self.stdout = False # extra printing on stdout during krylov iteration process
 
-        self.krylov_use_odeint = True # use odeint instead of expm for computing expm(t*v)
-        self.krylov_odeint_simtol = 1e-10 # if using odeint, use this simulation error tolerance for atol and rtol
-        self.krylov_stdout = False # extra printing on stdout during krylov iteration process
-
-        self.krylov_error_stats_iterations = None # If not None, will output the error at each iteration to 'error.dat'
-
+        self.error_stats_iterations = None # If not None, will output the error at each iteration to 'error.dat'
         self.freeze_attrs()
 
 class PlotSettings(Freezable):
