@@ -113,7 +113,7 @@ def run_hylaa(hylaa_settings):
 
     sparse_definition = False
 
-    ha = define_ha(True)
+    ha = define_ha(sparse_definition)
     init = make_init_star(ha, hylaa_settings, sparse_definition)
 
     engine = HylaaEngine(ha, hylaa_settings)
