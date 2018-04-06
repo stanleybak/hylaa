@@ -3,18 +3,16 @@ Time Elapse Computation. This module is primarily responsive for computing
 l * e^{At} where l is some direction of interest, and t is a multiple of some time step
 '''
 
-import sys
-
 import numpy as np
 
 from scipy.sparse import csr_matrix, csc_matrix
 
 from hylaa.util import Freezable
 from hylaa.hybrid_automaton import LinearAutomatonMode
-from hylaa.settings import HylaaSettings, PlotSettings, SimulationSettings
+from hylaa.settings import HylaaSettings, PlotSettings, TimeElapseSettings
 from hylaa.timerutil import Timers
-from hylaa.time_elapse_krylov import make_cur_basis_mat_list
-form hylaa.time_elapse_expm import TimeElapseMatrixExp, TimeElapseExpMult
+from hylaa.time_elapse_expm import TimeElapseMatrixExp, TimeElapseExpmMult
+from hylaa.time_elapse_krylov import TimeElapseKrylov
 
 def create_output_space_csr(plot_settings, ha_mode):
     'create the output space matrix'
@@ -76,19 +74,13 @@ class TimeElapser(Freezable):
         self.cur_basis_mat = None # assigned on step()
         self.cur_input_effects_matrix = None # assigned on step() if inputs exist
 
-        print ".time_elapse init space shape = {}".format(self.init_space_csc.shape)
-        print ".time_elapse output space shape = {}".format(self.output_space_csr.shape)
-
-        self.use_init_space = self.settings.time_elpase.force_init_space
+        self.use_init_space = self.settings.time_elapse.force_init_space
 
         if self.use_init_space is None:
             # auto detect strategy: use the lower dimension space
-            if self.init_space_csc.shape[1] < self.output_space_csr.shape[0]:
-                print ".using initial space"
-                self.use_init_space = True
-            else:
-                print ".using output space"
-                self.use_init_space = False
+            self.use_init_space = self.init_space_csc.shape[1] <= self.output_space_csr.shape[0]
+
+        print ". time_elapse, use init space = {}".format(self.use_init_space)
 
         # initialize method-specific container objects
         if self.settings.time_elapse.check_answer:
@@ -96,10 +88,10 @@ class TimeElapser(Freezable):
 
         method = self.settings.time_elapse.method
 
-        if method  == TimeElapseSettings.MATRIX_EXP:
+        if method == TimeElapseSettings.MATRIX_EXP:
             self.time_elapse_obj = TimeElapseMatrixExp(self)
-        elif method  == TimeElapseSettings.EXP_MULT:
-            self.time_elapse_obj = TimeElapseExpMult(self)
+        elif method == TimeElapseSettings.EXP_MULT:
+            self.time_elapse_obj = TimeElapseExpmMult(self)
         elif method == TimeElapseSettings.KRYLOV:
             self.time_elapse_obj = TimeElapseKrylov(self)
         else:
@@ -121,7 +113,7 @@ class TimeElapser(Freezable):
         assert isinstance(self.cur_basis_mat, np.ndarray), "cur_basis_mat should be an np.array, " + \
             "but it was {}".format(type(self.cur_basis_mat))
 
-        expected_basis_shape = (self.key_dir_mat.shape[0], self.init_space_csc.shape[1])
+        expected_basis_shape = (self.output_space_csr.shape[0], self.init_space_csc.shape[1])
 
         assert self.cur_basis_mat.shape == expected_basis_shape, \
             "cur_basis mat shape({}) should be {}".format(self.cur_basis_mat.shape, expected_basis_shape)
@@ -130,7 +122,7 @@ class TimeElapser(Freezable):
             assert self.cur_input_effects_matrix is None
         else:
             assert isinstance(self.cur_input_effects_matrix, np.ndarray)
-            assert self.cur_input_effects_matrix.shape == (self.key_dir_mat.shape[0], self.inputs)
+            assert self.cur_input_effects_matrix.shape == (self.output_space_csr.shape[0], self.inputs)
 
         # answer accuracy check (optional)
         if self.checker_obj is not None:
@@ -138,17 +130,20 @@ class TimeElapser(Freezable):
 
     def check_answer(self):
         'check the correctness of the answer at the current step'
-        
+
         # save current basis matrix and current input effects matrix, as these will get overriden by check_obj.step()
         saved_basis_mat = self.cur_basis_mat
         saved_input_effects_matrix = self.cur_input_effects_matrix
 
         Timers.tic('expm check answer')
 
-        assert self.a_matrix.shape[0] <= 1000, "settings.time_elapse.check_answer = True with large matrix (dims > 1000)"
-        tol = self.settings.simulation.check_answer_abs_tol
+        assert self.a_matrix.shape[0] <= 1000, "check_answer = True with large matrix (dims > 1000)"
+        tol = self.settings.time_elapse.check_answer_abs_tol
 
+        # the step number was already advanced, so decrease it by one before calling step()
+        self.next_step -= 1
         self.checker_obj.step()
+        self.next_step += 1
 
         expected = self.cur_basis_mat
         expected_input = self.cur_input_effects_matrix

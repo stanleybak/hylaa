@@ -19,7 +19,7 @@ from hylaa.hybrid_automaton import HyperRectangle, LinearAutomatonTransition
 from hylaa.hybrid_automaton import LinearAutomatonMode
 from hylaa.timerutil import Timers as Timers
 from hylaa.util import Freezable
-from hylaa.settings import PlotSettings, HylaaSettings, SimulationSettings
+from hylaa.settings import PlotSettings, HylaaSettings, TimeElapseSettings
 from hylaa.time_elapse import TimeElapser
 from hylaa.guard_opt_data import GuardOptData
 

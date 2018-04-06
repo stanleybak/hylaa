@@ -25,13 +25,16 @@ class TimeElapseKrylov(Freezable):
         self.settings = time_elapser.settings
 
         self.cur_basis_mat_list = None
+        self.use_transpose = not time_elapser.use_init_space
 
-        if time_elapser.use_init_space:
+        # key_dir_mat is the output projection matrix in arnoldi
+        if self.use_transpose:
             key_dir_mat = csr_matrix(time_elapser.init_space_csc.transpose())
         else:
             key_dir_mat = time_elapser.output_space_csr
 
-        self.krylov_iteration = KrylovIteration(time_elapser.settings, time_elapser.a_matrix, key_dir_mat)
+        self.krylov_iteration = KrylovIteration(time_elapser.settings, time_elapser.a_matrix, self.use_transpose, \
+            key_dir_mat)
 
         # -- performance statistics --
         # arnoldi_iter -> list of the number of arnoldi iterations for each initial vector
@@ -63,30 +66,30 @@ class TimeElapseKrylov(Freezable):
 
         settings = self.settings
 
-        rv = init_krylov(time_elapser)
+        rv = self.init_krylov()
 
-        if settings.simulation.krylov_transpose:
-            init_space = time_elapser.key_dir_mat
+        if self.use_transpose:
+            kry_init_space = self.time_elapser.output_space_csr
         else:
-            init_space = csr_matrix(time_elapser.init_space_csc.transpose())
+            kry_init_space = csr_matrix(self.time_elapser.init_space_csc.transpose())
 
         start = last_print = time.time()
-        num_init_vecs = init_space.shape[0]
+        num_kry_init_vecs = kry_init_space.shape[0]
 
         if settings.print_output:
-            print "Simulating from {} initial vector(s)".format(num_init_vecs)
+            print "Simulating from {} initial vector(s)".format(num_kry_init_vecs)
 
-        for init_index in xrange(num_init_vecs):
-            sim = arnoldi_sim_autotune(time_elapser, init_space[init_index])
+        for init_index in xrange(num_kry_init_vecs):
+            sim = arnoldi_sim_autotune(self.time_elapser, kry_init_space[init_index])
 
-            assign_from_sim(rv, sim, init_index, settings)
+            assign_from_sim(rv, sim, init_index, settings, self.use_transpose)
 
             if settings.print_output:
                 now = time.time()
 
                 if now - last_print > 1.0: # print every second
                     last_print = now
-                    frac = float(init_index) / num_init_vecs
+                    frac = float(init_index) / num_kry_init_vecs
 
                     if frac > 1e-9:
                         elapsed_sec = now - start
@@ -95,7 +98,7 @@ class TimeElapseKrylov(Freezable):
                         eta = format_secs(eta_sec)
 
                         print "Arnoldi {} / {} ({:.2f}%, ETA: {})".format(
-                            init_index, num_init_vecs, 100.0 * frac, eta)
+                            init_index, num_kry_init_vecs, 100.0 * frac, eta)
 
         if settings.print_output:
             elapsed = format_secs(time.time() - start)
@@ -140,12 +143,12 @@ class TimeElapseKrylov(Freezable):
         needed_mb = self.time_elapser.settings.num_steps * rv[0].shape[0] * rv[0].shape[1] * 8 / 1024.0 / 1024.0
 
         # keep a reserve of 1024 mb for other things
-        if needed_mb + 1024 < available_mb:
-            raise RuntimeError("Memory to store basis matrices ({:.2f}MB) exceeds available memory ({:.2f}MB)".format(
-                needed_mb + 1024, available_mb)
+        if needed_mb + 1024 > available_mb:
+            raise RuntimeError("Memory to store basis matrices ({:.1f}MB) exceeds available memory ({:.1f}MB)".format(\
+                needed_mb + 1024, available_mb))
 
         # add zeros (allocate storage for result)
-        for _ in xrange(0, self.settings.num_steps):
+        for _ in xrange(self.settings.num_steps):
             rv.append(np.zeros(rv[0].shape, dtype=float))
 
         return rv
@@ -166,7 +169,7 @@ def odeint_sim(arg):
 
     step = settings.step
     num_steps = settings.num_steps
-    sim_tol = settings.simulation.krylov_odeint_simtol
+    sim_tol = settings.time_elapse.krylov.odeint_simtol
 
     if isinstance(a_matrix, np.ndarray):
         # was arnoldi iteration, a_matrix (H) is a dense matrix
@@ -275,7 +278,7 @@ def get_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, limi
     assert h_mat.shape[0] > 1
 
     sim = None
-    use_rel_error = settings.simulation.krylov_use_rel_error
+    use_rel_error = settings.time_elapse.krylov.use_rel_error
     error = 0
 
     # use less arnoldi iterations than what's in the matrices
@@ -287,17 +290,21 @@ def get_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, limi
         small_h_mat = h_mat[:-1, :-1].copy()
         small_pv_mat = pv_mat[:, :-1].copy()
 
-    if settings.simulation.krylov_use_odeint:
+    if settings.time_elapse.krylov.use_odeint:
         Timers.tic('get_error odeint')
         start_vec = np.array([1.0 if d == 0 else 0.0 for d in xrange(h_mat.shape[0])], dtype=float)
 
         if limit is None:
             full_sim = odeint_sim((h_mat, start_vec, settings))
 
-            sim = safe_zeros('projected_sim', (full_sim.shape[0] - 1, pv_mat.shape[0]), dtype=float)
+            sim = np.zeros((full_sim.shape[0] - 1, pv_mat.shape[0]), dtype=float)
+
+            print ". pv_mat = {}".format(pv_mat)
 
             for i in xrange(1, full_sim.shape[0]): # skip step zero
                 sim[i-1] = np.dot(pv_mat, full_sim[i])
+
+                print ". step {}: full sim={}, projected_sim={}".format(i, full_sim[i], sim[i-1]) 
         else:
             small_start_vec = start_vec[:-1].copy()
             args = [(h_mat, start_vec, settings), (small_h_mat, small_start_vec, settings)]
@@ -424,10 +431,10 @@ def print_error_at_each_step(settings, h_mat, pv_mat):
     print "print_error_at_each_step data written to {}, exiting".format(filename)
     exit(1)
 
-def arnoldi_sim_with_max_error(time_elapser, init_vec_csr, iterations, error_limit):
+def arnoldi_sim_with_max_error(time_elapser, kry_init_vec_csr, iterations, error_limit):
     '''
     Run an arnoldi simulation with a fixed number of iterations and a target max error.
-    If error_limit is None, just run the whole simulation.
+    If error_limit is None, just run the whole simulation
 
     returns a 2-tuple (a, b) with:
     a: projected simulation at each step, or None if the error limit is exceeded.
@@ -435,32 +442,37 @@ def arnoldi_sim_with_max_error(time_elapser, init_vec_csr, iterations, error_lim
     '''
 
     settings = time_elapser.settings
-    stdout = settings.simulation.krylov_stdout
+    stdout = settings.time_elapse.krylov.stdout
     error = None
 
-    pv_mat, h_mat = time_elapser.krylov_iterator.run_iteration(init_vec_csr, iterations)
+    pv_mat, h_mat = time_elapser.time_elapse_obj.krylov_iteration.run_iteration(kry_init_vec_csr, iterations)
 
     # profiling was desired
-    if settings.simulation.krylov_error_stats_iterations is not None:
+    if settings.time_elapse.krylov.error_stats_iterations is not None:
         print_error_at_each_step(settings, h_mat, pv_mat)
 
     if stdout:
-        print "Finished {}... checking error at each step".format( \
-            "Lanczos" if settings.simulation.krylov_lanczos else "Arnoldi")
+        print "Finished Arnoldi/Lanczos... checking error at each step"
 
     if h_mat.shape[0] <= iterations:
         error_limit = None
         iterations = h_mat.shape[0]
 
         if stdout:
-            print "Arnoldi terminated early. Simulating without error limit."
+            print "Arnoldi terminated early (after {} iterations). Simulating without error limit.".format(iterations)
+
+    print "(before trim) h_mat = {}".format(h_mat)
+    print "(before trim) pv_mat = {}".format(pv_mat)
 
     h_mat = h_mat[:-1, :].copy()
     pv_mat = pv_mat[:, :-1].copy()
 
+    print "h_mat = {}".format(h_mat)
+    print "pv_mat = {}".format(pv_mat)
+
     error, projected_sim = get_error(settings, h_mat, pv_mat, return_sim=True, limit=error_limit)
 
-    if error_limit is not None and error == 0 and not settings.simulation.krylov_add_ones_key_dir:
+    if error_limit is not None and error == 0 and not settings.time_elapse.krylov.add_ones_key_dir:
         if stdout:
             print "Error was zero and didn't add ones row to key directions. Increasing iterations."
 
@@ -477,7 +489,7 @@ def arnoldi_sim_with_max_error(time_elapser, init_vec_csr, iterations, error_lim
     return rv, iterations
 
 # projected_simulation = arnoldi_projected_simulation(time_elapser, init_vec)
-def arnoldi_sim_autotune(time_elapser, init_vec_csr):
+def arnoldi_sim_autotune(time_elapser, kry_init_vec_csr):
     '''
     Perform a projected simulation from a given initial vector. This auto-tunes the number
     of arnoldi iterations based on the error.
@@ -486,17 +498,17 @@ def arnoldi_sim_autotune(time_elapser, init_vec_csr):
     '''
 
     settings = time_elapser.settings
-    stdout = settings.simulation.krylov_stdout
+    stdout = settings.time_elapse.krylov.stdout
     n = time_elapser.a_matrix.shape[0]
 
-    error_limit = settings.simulation.krylov_target_error
+    error_limit = settings.time_elapse.krylov.target_error
 
     arnoldi_iter = 4
     sim = None
 
     # if profiling was desired
-    if settings.simulation.krylov_error_stats_iterations is not None:
-        arnoldi_iter = settings.simulation.krylov_error_stats_iterations
+    if settings.time_elapse.krylov.error_stats_iterations is not None:
+        arnoldi_iter = settings.time_elapse.krylov.error_stats_iterations
 
     while True:
         if arnoldi_iter >= n:
@@ -507,10 +519,9 @@ def arnoldi_sim_autotune(time_elapser, init_vec_csr):
                 print "Arnoldi iter ({}) reached system dimension; skipping error".format(arnoldi_iter)
 
         if stdout:
-            print "Trying {} {} iterations...".format(arnoldi_iter, \
-                "Arnoldi" if not settings.simulation.krylov_lanczos else "Lanczos")
+            print "Trying {} iterations...".format(arnoldi_iter)
 
-        sim, arnoldi_iter = arnoldi_sim_with_max_error(time_elapser, init_vec_csr, arnoldi_iter, error_limit)
+        sim, arnoldi_iter = arnoldi_sim_with_max_error(time_elapser, kry_init_vec_csr, arnoldi_iter, error_limit)
 
         if sim is not None:
             break
@@ -521,16 +532,16 @@ def arnoldi_sim_autotune(time_elapser, init_vec_csr):
     #prev_mem = time_elapser.stats['min_free_memory']
     #time_elapser.stats['min_free_memory'] = min(prev_mem, get_free_memory_mb('update_mem'))
 
-    time_elapser.krylov_iterator.reset() # done with the current start vector, free memory
+    time_elapser.time_elapse_obj.krylov_iteration.reset() # done with the current start vector, free memory
 
     if stdout:
         print "Simulation was accurate enough with {} arnoldi iterations...".format(arnoldi_iter)
 
-    time_elapser.stats['arnoldi_iter'].append(arnoldi_iter)
+    time_elapser.time_elapse_obj.stats['arnoldi_iter'].append(arnoldi_iter)
 
     return sim
 
-def assign_from_sim(rv, sim, index, settings):
+def assign_from_sim(rv, sim, index, settings, use_transpose):
     'assign a simulation to the result object'
 
     assert len(sim) == len(rv) - 1, "Got sim of length {}, expected {}".format(len(sim), len(rv) - 1)
@@ -538,14 +549,14 @@ def assign_from_sim(rv, sim, index, settings):
 
     for i in xrange(len(sim)):
 
-        if settings.simulation.krylov_add_ones_key_dir:
+        if settings.time_elapse.krylov.add_ones_key_dir:
             piece = sim[i][:-1]
         else:
             piece = sim[i][:]
 
-        if settings.simulation.krylov_transpose:
-            rv[i+1][index] = piece
+        if use_transpose:
+            rv[i+1][index, :piece.shape[0]] = piece
         else:
-            rv[i+1][:, index] = piece
+            rv[i+1][:piece.shape[0], index] = piece
 
     Timers.toc('update result list')

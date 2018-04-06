@@ -10,7 +10,7 @@ from hylaa.plotutil import PlotManager
 from hylaa.star import Star
 from hylaa.hybrid_automaton import LinearHybridAutomaton
 from hylaa.timerutil import Timers
-from hylaa.settings import HylaaSettings, PlotSettings
+from hylaa.settings import HylaaSettings, PlotSettings, TimeElapseSettings
 from hylaa.file_io import write_counter_example
 from hylaa.util import Freezable
 
@@ -99,7 +99,7 @@ class HylaaEngine(object):
                     step_size = self.settings.step
                     total_steps = star.time_elapse.next_step - 1
 
-                    output_space = self.cur_star.mode.transitions[i].output_space_csr
+                    output_space = self.cur_star.mode.output_space_csr
                     guard_mat = self.cur_star.mode.transitions[i].guard_matrix_csr
 
                     first_constraint = (guard_mat * output_space)[0].toarray()
@@ -109,7 +109,7 @@ class HylaaEngine(object):
 
                     guard_threshold = self.cur_star.mode.transitions[i].guard_rhs[0]
 
-                    output_space = self.cur_star.mode.transitions[i].output_space_csr
+                    output_space = self.cur_star.mode.output_space_csr
 
                     #end_first_output_val = self.result.output_vars[0]
                     # multiply this by the output constraint matrix...
@@ -191,7 +191,9 @@ class HylaaEngine(object):
 
         # assign results
         self.result.timers = Timers.timers
-        self.result.krylov_stats = init_star.time_elapse.stats
+
+        if self.settings.time_elapse.method == TimeElapseSettings.KRYLOV:
+            self.result.krylov_stats = init_star.time_elapse.time_elapse_obj.stats
 
         if self.plotman.reach_poly_data is not None:
             self.result.reachable_poly_data = self.plotman.reach_poly_data

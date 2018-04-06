@@ -13,7 +13,7 @@ from scipy.sparse.linalg import expm, expm_multiply
 import numpy as np
 
 from hylaa.util import Freezable
-from hylaa.timers import Timers
+from hylaa.timerutil import Timers
 
 class TimeElapseMatrixExp(Freezable):
     'container object for expm-at-each step method'
@@ -163,21 +163,21 @@ class TimeElapseExpmMult(Freezable):
         else:
             Timers.tic('time_elapse.exp_mult other steps')
 
-            if self.time_elapse.use_init_space:
+            if self.time_elapser.use_init_space:
                 self.stored_vec = np.dot(self.stored_vec, self.one_step_matrix_exp)
-                self.cur_basis_mat = self.stored_vec * init_space
+                self.time_elapser.cur_basis_mat = self.stored_vec * init_space
             else:
                 self.stored_vec = np.dot(self.one_step_matrix_exp, self.stored_vec)
-                self.cur_basis_mat = output_space * self.stored_vec
+                self.time_elapser.cur_basis_mat = output_space * self.stored_vec
 
             # make it c-contiguous (instead of fortran-contiguous)
-            self.time_elapser.cur_basis_mat = self.time_elapser.cur_basis_mat.copy() 
+            self.time_elapser.cur_basis_mat = self.time_elapser.cur_basis_mat.copy()
 
             # inputs
             if self.time_elapser.inputs > 0:
                 self.cur_input_projection_matrix = np.dot(self.cur_input_projection_matrix, self.one_step_matrix_exp)
 
                 self.time_elapser.cur_input_effects_matrix = np.dot(self.cur_input_projection_matrix,
-                                                       self.one_step_input_effects_matrix)
+                                                                    self.one_step_input_effects_matrix)
 
             Timers.toc('time_elapse.exp_mult other steps')

@@ -177,7 +177,7 @@ class LinearAutomatonMode(Freezable):
         assert isinstance(output_space_csr, csr_matrix)
         assert output_space_csr.shape[1] == self.parent.dims, "output space width {} should equal dims {}".format(
             output_space_csr.shape[1], self.parent.dims)
-        assert output_space_csr, "output space assigned twice (shouldn't be changed after being set)"
+        assert self.output_space_csr is None, "output space assigned twice (shouldn't be changed after being set)"
 
         self.output_space_csr = output_space_csr
 
@@ -239,7 +239,7 @@ class LinearAutomatonTransition(Freezable):
         assert isinstance(rhs, np.ndarray)
 
         assert rhs.shape == (matrix_csr.shape[0],)
-        assert self.from_mode.output_sapce_csr is not None, "output_space_csr of mode should be set before set_guard"
+        assert self.from_mode.output_space_csr is not None, "output_space_csr of mode should be set before set_guard"
         assert self.from_mode.output_space_csr.shape[0] == matrix_csr.shape[1]
 
         self.guard_matrix_csr = matrix_csr

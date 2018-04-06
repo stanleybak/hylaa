@@ -17,7 +17,7 @@ from scipy.sparse import csr_matrix, csc_matrix, dia_matrix
 from scipy.sparse.linalg import norm as sparse_norm
 
 from hylaa.timerutil import Timers
-from hylaa.util import Freezable, get_script_path, safe_zeros
+from hylaa.util import Freezable, get_script_path
 
 
 def normalize_sparse(vec):
@@ -65,8 +65,8 @@ def add_ones_row(mat):
 
     w = mat.shape[1]
 
-    new_data = safe_zeros('new_data', (w,), dtype=float)
-    new_inds = safe_zeros('new_inds', (w,), dtype=mat.indices.dtype)
+    new_data = np.zeros((w,), dtype=float)
+    new_inds = np.zeros((w,), dtype=mat.indices.dtype)
 
     for n in xrange(w):
         new_inds[n] = n
@@ -78,28 +78,32 @@ def add_ones_row(mat):
 
     return csr_matrix((data, indices, ind_ptr), shape=(mat.shape[0] + 1, w))
 
+
+def is_symmetric(mat):
+    'is the passed-in square matrix symmetric?'
+
+    return (mat != mat.T).nnz == 0
+
 class KrylovIteration(Freezable):
     'Krylov Iteration container class (Arnoldi or Lanczos iteration)'
 
-    def __init__(self, hylaa_settings, a_matrix, key_dir_mat):
+    def __init__(self, hylaa_settings, a_matrix, use_transpose, key_dir_mat):
         assert a_matrix.shape[0] == a_matrix.shape[1], "a_mat should be square"
         assert key_dir_mat.shape[1] == a_matrix.shape[0], "key_dir_mat width should equal number of dims"
         assert not isinstance(a_matrix, np.ndarray), "a_matrix should be a sparse matrix"
         assert isinstance(key_dir_mat, csr_matrix), "key_dir_mat should be a csr_matrix"
 
-        self.settings = hylaa_settings
-        self.lanczos = self.settings.simulation.krylov_lanczos
-        self.print_status = self.settings.simulation.krylov_stdout and a_matrix.shape[0] >= int(1e6)
+        self.kry_settings = hylaa_settings.time_elapse.krylov
+        self.lanczos = is_symmetric(a_matrix)
+        self.print_status = self.kry_settings.stdout and a_matrix.shape[0] >= int(1e6)
 
-        #self.add_ones_key_dir = self.settings.simulation.krylov_add_ones_key_dir
-
-        if self.settings.simulation.krylov_transpose and not self.lanczos:
+        if use_transpose and not self.lanczos:
             # we need to compute with the transpose of the a matrix
             self.a_matrix = csr_matrix(a_matrix.transpose())
         else:
             self.a_matrix = a_matrix
 
-        if self.settings.simulation.krylov_add_ones_key_dir:
+        if self.kry_settings.add_ones_key_dir:
             self.key_dir_mat = add_ones_row(key_dir_mat)
         else:
             self.key_dir_mat = key_dir_mat
@@ -147,11 +151,11 @@ class KrylovIteration(Freezable):
         'fast matrix vector multiplication'
 
         dims = mat.shape[0]
-        
+
         if isinstance(mat, dia_matrix):
-            rv = safe_zeros('mult_result', (dims,), dtype=float, use_empty=True)
+            rv = np.empty((dims,), dtype=float)
             cpus = multiprocessing.cpu_count()
-            
+
             self.dia_fast_mult(rv, vec, dims, dims, mat.data, mat.offsets, len(mat.offsets), cpus)
         else:
             rv = mat * vec
@@ -195,7 +199,7 @@ class KrylovIteration(Freezable):
 
             if self.lanczos:
 
-                self.pv_mat = safe_zeros('krylov pv_mat', (iterations + 1, key_dirs))
+                self.pv_mat = np.zeros((iterations + 1, key_dirs), dtype=float)
                 self.h_data = []
                 self.h_inds = []
                 self.h_indptrs = [0]
@@ -218,8 +222,8 @@ class KrylovIteration(Freezable):
             else:
                 # arnoldi
 
-                self.v_mat = safe_zeros('krylov v_mat', (iterations + 1, dims))
-                self.h_mat = safe_zeros('krylov h_mat', (iterations + 1, iterations))
+                self.v_mat = np.zeros((iterations + 1, dims), dtype=float)
+                self.h_mat = np.zeros((iterations + 1, iterations), dtype=float)
 
                 # sparse assignment of initial vector
                 for i in xrange(len(scaled_vec.data)):
@@ -230,13 +234,13 @@ class KrylovIteration(Freezable):
             # continue the computation (allocate more memory)
 
             if self.lanczos:
-                new_pv_mat = safe_zeros('krylov new pv_mat', (iterations + 1, key_dirs))
+                new_pv_mat = np.zeros((iterations + 1, key_dirs), dtype=float)
                 new_pv_mat[:self.pv_mat.shape[0], :self.pv_mat.shape[1]] = self.pv_mat
                 self.pv_mat = new_pv_mat
             else:
                 # arnoldi
-                new_v_mat = safe_zeros('krylov new_v_mat', (iterations + 1, dims))
-                new_h_mat = safe_zeros('krylov new_h_mat', (iterations + 1, iterations))
+                new_v_mat = np.zeros((iterations + 1, dims), dtype=float)
+                new_h_mat = np.zeros((iterations + 1, iterations), dtype=float)
 
                 # copy from old
                 new_v_mat[:self.v_mat.shape[0], :self.v_mat.shape[1]] = self.v_mat
@@ -315,6 +319,7 @@ class KrylovIteration(Freezable):
 
                 self.v_mat[self.cur_it] = cur_vec
             elif self.cur_it > 1:
+                #cur_vec *= 0
                 #print "break! norm {} <= tol {}".format(norm, self.tol)
                 self.v_mat = self.v_mat[:self.cur_it+1, :]
                 self.h_mat = self.h_mat[:self.cur_it+1, :self.cur_it]
