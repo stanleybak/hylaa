@@ -78,8 +78,6 @@ class TimeElapseScipySim(Freezable):
             # find the correct dense_output for each initial vec, compute the point, and project it and store result
             cur_time = self.time_elapser.settings.step * self.time_elapser.next_step
 
-            self.cur_max_one_norm = 0 # accumulate the one norm here
-
             for init_index in xrange(len(self.sim_objs)):
                 dense_output = self.find_dense_output(init_index, cur_time)
 

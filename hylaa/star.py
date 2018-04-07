@@ -69,9 +69,6 @@ class Star(Freezable):
         self.input_mat_csr = input_mat_csr
         self.input_rhs = input_rhs
 
-        if self.settings.variable_step_optimization:
-            self.a_matrix_norm = sp.sparse.linalg.norm(mode.a_matrix, ord=np.inf)
-
         ###################################
         ## private member initialization ##
         ###################################
@@ -133,17 +130,6 @@ class Star(Freezable):
                 self._plot_lpi.add_input_effects_matrix(self.time_elapse.cur_input_effects_matrix[:2])
 
         self._verts = None # cached vertices for plotting are no longer valid
-
-    def advance_variable_step(self, min_normalized_guard_distance):
-        '''
-        update the next time step based on the distance to the guard
-        this may increase self.time_elapse.next_step so that steps are skipped
-        '''
-
-        # the maximum distance that you can advance is e^|A|t * |v|, where |v| is the current state
-
-        print "guard distance (normalized) = {}".format(min_normalized_guard_distance)
-        exit(1)
 
     ######### star plotting methods below ############
 

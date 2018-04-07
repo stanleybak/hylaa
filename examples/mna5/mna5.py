@@ -9,7 +9,7 @@ from scipy.sparse import csr_matrix, csc_matrix
 from hylaa.hybrid_automaton import LinearHybridAutomaton, bounds_list_to_init
 from hylaa.engine import HylaaSettings
 from hylaa.engine import HylaaEngine
-from hylaa.settings import PlotSettings, SimulationSettings
+from hylaa.settings import PlotSettings, TimeElapseSettings
 from hylaa.star import Star
 
 def define_ha():
@@ -43,19 +43,20 @@ def define_ha():
 
     # error condition x1 >= 0.2 and x2 >= 0.15
     output_space = csr_matrix(([1., 1.], [0, 1], [0, 1, 2]), shape=(2, dims))
+    mode.set_output_space(output_space)
 
     # x1 >= 0.2
     mat = csr_matrix(([-1], [0], [0, 1]), dtype=float, shape=(1, 2))
     rhs = np.array([-0.2], dtype=float) # safe
     #rhs = np.array([-0.1], dtype=float) # unsafe
     trans1 = ha.new_transition(mode, error)
-    trans1.set_guard(output_space, mat, rhs)
+    trans1.set_guard(mat, rhs)
 
     # x2 >= 0.15
     mat = csr_matrix(([-1], [1], [0, 1]), dtype=float, shape=(1, 2))
     rhs = np.array([-0.15], dtype=float)
     trans2 = ha.new_transition(mode, error)
-    trans2.set_guard(output_space, mat, rhs)
+    trans2.set_guard(mat, rhs)
 
     return ha
 
@@ -83,9 +84,10 @@ def make_init_star(ha, hylaa_settings):
 
         bounds_list.append((lb, ub))
 
-    init_space, init_mat, init_mat_rhs = bounds_list_to_init(bounds_list)
+    init_space, init_mat, init_mat_rhs, init_range_tuples = bounds_list_to_init(bounds_list)
 
-    return Star(hylaa_settings, ha.modes['mode'], init_space, init_mat, init_mat_rhs)
+    return Star(hylaa_settings, ha.modes['mode'], init_space, init_mat, init_mat_rhs, \
+                init_range_tuples=init_range_tuples)
 
 def define_settings():
     'get the hylaa settings object'
@@ -97,10 +99,8 @@ def define_settings():
     plot_settings.max_shown_polys = None
 
     settings = HylaaSettings(step=0.001, max_time=20.0, plot_settings=plot_settings)
-    settings.simulation.sim_mode = SimulationSettings.KRYLOV
+    settings.time_elapse.method = TimeElapseSettings.KRYLOV
 
-    #settings.simulation.krylov_stdout = True
-    settings.simulation.krylov_transpose = True
 
     return settings
 

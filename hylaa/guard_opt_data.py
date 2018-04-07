@@ -87,7 +87,7 @@ class GuardOptData(Freezable):
         this is only possible if the initial set has only range conditions for each initial dimension,
         and the output-space has only a single condition
 
-        This returns either an lp solution (np.ndarray) or a single number which is the normalized guard distance
+        This returns either an lp solution (np.ndarray) or None if infeasible
         '''
 
         Timers.tic('get_optimized_lp_solution')
@@ -136,7 +136,7 @@ class GuardOptData(Freezable):
 
             rv = result
         else:
-            rv = guard_val - guard_threshold / self.guard_norm
+            rv = None
 
         Timers.toc('get_optimized_lp_solution')
 

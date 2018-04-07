@@ -37,9 +37,6 @@ class HylaaSettings(Freezable):
         # if initial states are intervals and single guard condition, we don't need an LP solver
         self.interval_guard_optimization = True
 
-        # if single guard condition, we can skip steps using matrix exponential condition
-        self.variable_step_optimization = True
-
         self.freeze_attrs()
 
 class TimeElapseSettings(Freezable):
@@ -73,8 +70,8 @@ class ScipySimSettings(Freezable):
 
         # settings for the simulation
         self.max_step = np.inf
-        self.rtol = 1e-6
-        self.atol = 1e-9
+        self.rtol = 1e-7
+        self.atol = 1e-10
 
 class KrylovSettings(Freezable):
     'krylov simulation settings'
