@@ -8,6 +8,9 @@ import math
 
 from hylaa.util import Freezable
 
+import numpy as np
+from scipy.integrate import RK45
+
 class HylaaSettings(Freezable):
     'Settings for the computation'
 
@@ -28,6 +31,14 @@ class HylaaSettings(Freezable):
 
         self.print_lp_on_error = False # upon reaching an error mode, print LP and exit (no counter-example)
         self.counter_example_filename = 'counterexample.py' # the counter-example filename to create on errors
+
+        ### COMPUTATION OPTIMIZATIONS ###
+
+        # if initial states are intervals and single guard condition, we don't need an LP solver
+        self.interval_guard_optimization = True
+
+        # if single guard condition, we can skip steps using matrix exponential condition
+        self.variable_step_optimization = True
 
         self.freeze_attrs()
 
@@ -50,8 +61,20 @@ class TimeElapseSettings(Freezable):
         self.check_answer_abs_tol = 1e-5 # absolute tolerance when checking answer
 
         self.krylov = KrylovSettings() # used only with krylov method
+        self.scipy = ScipySimSettings() # used only with the scipy_sim method
 
         self.freeze_attrs()
+
+class ScipySimSettings(Freezable):
+    'scipy-based simulation settings'
+
+    def __init__(self):
+        self.ode_class = RK45
+
+        # settings for the simulation
+        self.max_step = np.inf
+        self.rtol = 1e-6
+        self.atol = 1e-9
 
 class KrylovSettings(Freezable):
     'krylov simulation settings'

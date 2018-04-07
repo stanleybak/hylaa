@@ -299,12 +299,8 @@ def get_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, limi
 
             sim = np.zeros((full_sim.shape[0] - 1, pv_mat.shape[0]), dtype=float)
 
-            print ". pv_mat = {}".format(pv_mat)
-
             for i in xrange(1, full_sim.shape[0]): # skip step zero
                 sim[i-1] = np.dot(pv_mat, full_sim[i])
-
-                print ". step {}: full sim={}, projected_sim={}".format(i, full_sim[i], sim[i-1]) 
         else:
             small_start_vec = start_vec[:-1].copy()
             args = [(h_mat, start_vec, settings), (small_h_mat, small_start_vec, settings)]
@@ -461,14 +457,8 @@ def arnoldi_sim_with_max_error(time_elapser, kry_init_vec_csr, iterations, error
         if stdout:
             print "Arnoldi terminated early (after {} iterations). Simulating without error limit.".format(iterations)
 
-    print "(before trim) h_mat = {}".format(h_mat)
-    print "(before trim) pv_mat = {}".format(pv_mat)
-
     h_mat = h_mat[:-1, :].copy()
     pv_mat = pv_mat[:, :-1].copy()
-
-    print "h_mat = {}".format(h_mat)
-    print "pv_mat = {}".format(pv_mat)
 
     error, projected_sim = get_error(settings, h_mat, pv_mat, return_sim=True, limit=error_limit)
 

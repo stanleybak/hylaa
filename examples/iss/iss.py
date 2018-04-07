@@ -9,7 +9,7 @@ from scipy.sparse import csr_matrix, csc_matrix
 from hylaa.hybrid_automaton import LinearHybridAutomaton, bounds_list_to_init
 from hylaa.engine import HylaaSettings
 from hylaa.engine import HylaaEngine
-from hylaa.settings import PlotSettings, SimulationSettings
+from hylaa.settings import PlotSettings, TimeElapseSettings
 from hylaa.star import Star
 
 def define_ha():
@@ -46,17 +46,19 @@ def define_ha():
     y3 = csc_matrix((y3.data, y3.indices, col_ptr), shape=(1, y3.shape[1] + num_inputs))
     output_space = csr_matrix(y3)
 
-    limit = 0.0005
-    #limit = 0.00017
+    mode.set_output_space(output_space)
+
+    #limit = 0.0005
+    limit = 0.00017
     trans1 = ha.new_transition(mode, error)
     mat = csr_matrix(([1], [0], [0, 1]), dtype=float, shape=(1, 1))
     rhs = np.array([-limit], dtype=float) # safe
-    trans1.set_guard(output_space, mat, rhs) # y3 <= -limit
+    trans1.set_guard(mat, rhs) # y3 <= -limit
 
     trans2 = ha.new_transition(mode, error)
     mat = csr_matrix(([-1], [0], [0, 1]), dtype=float, shape=(1, 1))
     rhs = np.array([-limit], dtype=float) # safe
-    trans2.set_guard(output_space, mat, rhs) # y3 >= limit
+    trans2.set_guard(mat, rhs) # y3 >= limit
 
     return ha
 
@@ -83,9 +85,10 @@ def make_init_star(ha, hylaa_settings):
 
         bounds_list.append((lb, ub))
 
-    init_space, init_mat, init_mat_rhs = bounds_list_to_init(bounds_list)
+    init_space, init_mat, init_mat_rhs, init_range_tuples = bounds_list_to_init(bounds_list)
 
-    return Star(hylaa_settings, ha.modes['mode'], init_space, init_mat, init_mat_rhs)
+    return Star(hylaa_settings, ha.modes['mode'], init_space, init_mat, init_mat_rhs, \
+                init_range_tuples=init_range_tuples)
 
 def define_settings(ha):
     'get the hylaa settings object'
@@ -93,25 +96,19 @@ def define_settings(ha):
     #plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
     plot_settings.plot_mode = PlotSettings.PLOT_NONE
 
-    print "using max_time 0.01"
-    max_time = 0.01 #20.0
+    max_time = 20.0
     step_size = 0.001
     settings = HylaaSettings(step=step_size, max_time=max_time, plot_settings=plot_settings)
-    #settings.simulation.guard_mode = SimulationSettings.GUARD_DECOMPOSED
 
-    #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
-    settings.time_elapse.sim_mode = SimulationSettings.MATRIX_EXP
-    settings.time_elapse.check_answer = True
+    settings.time_elapse.method = TimeElapseSettings.SCIPY_SIM
+    settings.time_elapse.check_answer = False
 
-    #settings.simulation.krylov_check_all_rel_error = True
-    #settings.simulation.krylov_rel_error = 1e-6
-    #settings.simulation.krylov_transpose = True
-    #settings.simulation.krylov_stdout = True
+    #settings.interval_guard_optimization = False
 
     #settings.skip_step_times = False
 
     plot_settings.xdim_dir = None
-    plot_settings.ydim_dir = ha.transitions[0].output_space_csr[0]
+    plot_settings.ydim_dir = ha.modes.values()[0].output_space_csr[0]
 
     plot_settings.max_shown_polys = None
     plot_settings.label.y_label = '$y_{3}$'

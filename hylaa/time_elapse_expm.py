@@ -35,7 +35,7 @@ class TimeElapseMatrixExp(Freezable):
         init_space = self.time_elapser.init_space_csc
         output_space = self.time_elapser.output_space_csr
 
-        self.time_elapser.cur_basis_mat = np.array((output_space * exp * init_space).todense(), dtype=float)
+        self.time_elapser.cur_basis_mat = (output_space * exp * init_space).toarray()
 
         # compute input effects
         if self.time_elapser.inputs != 0 and self.time_elapser.next_step > 0:
@@ -55,7 +55,7 @@ class TimeElapseMatrixExp(Freezable):
                 dims = self.time_elapser.dims
                 aug_a_matrix = csc_matrix((data, indices, indptr), shape=(dims + 1, dims + 1))
 
-                matrix_exp = np.array(expm(aug_a_matrix * self.time_elapser.settings.step).todense(), dtype=float)
+                matrix_exp = expm(aug_a_matrix * self.time_elapser.settings.step).toarray()
 
                 # the last column of matrix_exp is the same as multiplying it by the initial state [0, 0, ..., 1]
                 col = matrix_exp[:, -1]
@@ -112,7 +112,7 @@ class TimeElapseExpmMult(Freezable):
 
             a_step_mat = self.a_matrix_csc * self.settings.step
 
-            self.one_step_matrix_exp = np.array(expm(a_step_mat).todense(), dtype=float)
+            self.one_step_matrix_exp = expm(a_step_mat).toarray()
 
             if print_status:
                 print "done"
@@ -149,9 +149,6 @@ class TimeElapseExpmMult(Freezable):
                     init_state = np.zeros(dims + 1, dtype=float)
                     init_state[dims] = 1.0
                     col = expm_multiply(mat, init_state)
-
-                    #matrix_exp = np.array(expm(mat).todense(), dtype=float)
-                    #col = matrix_exp[:, -1]
 
                     self.one_step_input_effects_matrix[:, c] = col[:dims]
 

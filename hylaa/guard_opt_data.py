@@ -5,11 +5,13 @@ July 2017
 '''
 
 import numpy as np
+import scipy as sp
 
 from hylaa.util import Freezable
 from hylaa.hybrid_automaton import LinearAutomatonMode
 from hylaa.settings import PlotSettings
 from hylaa.glpk_interface import LpInstance
+from hylaa.timerutil import Timers
 
 class GuardOptData(Freezable):
     'Guard optimization data'
@@ -37,11 +39,13 @@ class GuardOptData(Freezable):
         self.lpi = LpInstance(self.num_output_vars, star.num_init_vars, self.inputs)
 
         self.lpi.set_init_constraints(star.init_mat, star.init_rhs)
-
         self.lpi.set_output_constraints(self.transition.guard_matrix_csr, self.transition.guard_rhs)
 
         if star.inputs > 0:
             self.lpi.set_input_constraints_csr(star.input_mat_csr, star.input_rhs)
+
+        if self.num_output_vars == 1 and len(self.transition.guard_rhs) == 1:
+            self.guard_norm = sp.sparse.linalg.norm(self.transition.guard_matrix_csr[0, :], ord=np.inf)
 
         self.freeze_attrs()
 
@@ -62,10 +66,7 @@ class GuardOptData(Freezable):
             self.lpi.add_input_effects_matrix(input_effects_mat[start:end])
 
         result_len = self.num_output_vars + self.star.num_init_vars
-
-        if self.inputs > 0:
-            num_steps = self.star.time_elapse.next_step - 1
-            result_len += self.inputs * num_steps
+        result_len += self.inputs * (self.star.time_elapse.next_step - 1)
 
         result = np.zeros((result_len), dtype=float)
         direction = np.zeros((self.num_output_vars,), dtype=float)
@@ -81,7 +82,74 @@ class GuardOptData(Freezable):
 
         return self.lpi
 
+    def get_optimized_lp_solution(self):
+        '''gets the lp solution without calling an lp solver
+        this is only possible if the initial set has only range conditions for each initial dimension,
+        and the output-space has only a single condition
+
+        This returns either an lp solution (np.ndarray) or a single number which is the normalized guard distance
+        '''
+
+        Timers.tic('get_optimized_lp_solution')
+
+        init_ranges = self.star.init_range_tuples
+        basis_mat = self.star.time_elapse.cur_basis_mat
+
+        assert len(init_ranges) == basis_mat.shape[1]
+        assert len(self.transition.guard_rhs) == 1
+        assert self.num_output_vars == 1
+
+        guard_threshold = self.transition.guard_rhs[0]
+        guard_val = 0
+
+        for init_index in xrange(len(init_ranges)):
+            basis_val = basis_mat[0][init_index]
+            min_init = init_ranges[init_index][0]
+            max_init = init_ranges[init_index][1]
+
+            val1 = min_init * basis_val
+            val2 = max_init * basis_val
+
+            # take the minimum of val1 and val2, since guard is CONDITION <= RHS
+            if val1 < val2:
+                guard_val += val1
+            else:
+                guard_val += val2
+
+        if guard_val <= guard_threshold:
+            # reconstruct result
+            result_len = self.num_output_vars + self.star.num_init_vars
+            result_len += self.inputs * (self.star.time_elapse.next_step - 1)
+
+            result = np.zeros((result_len), dtype=float)
+            result[-1] = guard_val # single output variable
+
+            for init_index in xrange(len(init_ranges)):
+                basis_val = basis_mat[0][init_index]
+                min_init = init_ranges[init_index][0]
+                max_init = init_ranges[init_index][1]
+
+                val1 = min_init * basis_val
+                val2 = max_init * basis_val
+
+                result[init_index] = min_init if val1 < val2 else max_init
+
+            rv = result
+        else:
+            rv = guard_val - guard_threshold / self.guard_norm
+
+        Timers.toc('get_optimized_lp_solution')
+
+        return rv
+
     def get_updated_lp_solution(self):
         '''update the LP solution and, if it's feasible, get its solution'''
 
-        return self.update_full_lp()
+        if self.star.settings.interval_guard_optimization and self.star.init_range_tuples is not None and \
+                                                              self.num_output_vars == 1:
+            # LP can be decomposed column-by-column (optimization)
+            rv = self.get_optimized_lp_solution()
+        else:
+            rv = self.update_full_lp()
+
+        return rv

@@ -13,44 +13,7 @@ from hylaa.settings import HylaaSettings, PlotSettings, TimeElapseSettings
 from hylaa.timerutil import Timers
 from hylaa.time_elapse_expm import TimeElapseMatrixExp, TimeElapseExpmMult
 from hylaa.time_elapse_krylov import TimeElapseKrylov
-
-def create_output_space_csr(plot_settings, ha_mode):
-    'create the output space matrix'
-
-    num_directions = 0
-
-    data = []
-    cols = []
-    indptr = [0]
-
-    if plot_settings.plot_mode != PlotSettings.PLOT_NONE:
-        dirs = [plot_settings.xdim_dir, plot_settings.ydim_dir]
-
-        for plot_dir in dirs:
-            if isinstance(plot_dir, int):
-                data.append(1.0)
-                cols.append(plot_dir)
-                indptr.append(len(data))
-                num_directions += 1
-            elif plot_dir is not None:
-                xdir = csr_matrix(plot_dir)
-                assert len(xdir.shape) == 1 or xdir.shape[0] == 1, \
-                    "expected row vector for plot direction, got shape: {}".format(plot_dir.shape)
-
-                data += [n for n in xdir.data]
-                cols += [n for n in xdir.indices]
-                indptr.append(len(data))
-                num_directions += 1
-
-    if ha_mode.output_space_csr is not None:
-        num_directions += ha_mode.output_space_csr.shape[0]
-        offset = len(data)
-
-        data += [n for n in ha_mode.output_space_csr.data]
-        cols += [n for n in ha_mode.output_space_csr.indices]
-        indptr += [i + offset for i in ha_mode.output_space_csr.indptr[1:]]
-
-    return csr_matrix((data, cols, indptr), shape=(num_directions, ha_mode.parent.dims), dtype=float)
+from hylaa.time_elapse_scipy_sim import TimeElapseScipySim
 
 class TimeElapser(Freezable):
     'Object which computes the time-elapse function for a single mode at multiples of the time step'
@@ -73,6 +36,7 @@ class TimeElapser(Freezable):
         self.next_step = 0
         self.cur_basis_mat = None # assigned on step()
         self.cur_input_effects_matrix = None # assigned on step() if inputs exist
+        self.cur_max_one_norm = None # assigned on step() for certain methods
 
         self.use_init_space = self.settings.time_elapse.force_init_space
 
@@ -80,11 +44,11 @@ class TimeElapser(Freezable):
             # auto detect strategy: use the lower dimension space
             self.use_init_space = self.init_space_csc.shape[1] <= self.output_space_csr.shape[0]
 
-        print ". time_elapse, use init space = {}".format(self.use_init_space)
-
         # initialize method-specific container objects
         if self.settings.time_elapse.check_answer:
             self.checker_obj = TimeElapseMatrixExp(self)
+        else:
+            self.checker_obj = None
 
         method = self.settings.time_elapse.method
 
@@ -94,6 +58,8 @@ class TimeElapser(Freezable):
             self.time_elapse_obj = TimeElapseExpmMult(self)
         elif method == TimeElapseSettings.KRYLOV:
             self.time_elapse_obj = TimeElapseKrylov(self)
+        elif method == TimeElapseSettings.SCIPY_SIM:
+            self.time_elapse_obj = TimeElapseScipySim(self)
         else:
             raise RuntimeError("Unsupported Time Elapse Method: {}".format(method))
 
@@ -195,3 +161,41 @@ class TimeElapser(Freezable):
         # restore the saved basis matrix and input effects matrix
         self.cur_basis_mat = saved_basis_mat
         self.cur_input_effects_matrix = saved_input_effects_matrix
+
+def create_output_space_csr(plot_settings, ha_mode):
+    'create the output space matrix'
+
+    num_directions = 0
+
+    data = []
+    cols = []
+    indptr = [0]
+
+    if plot_settings.plot_mode != PlotSettings.PLOT_NONE:
+        dirs = [plot_settings.xdim_dir, plot_settings.ydim_dir]
+
+        for plot_dir in dirs:
+            if isinstance(plot_dir, int):
+                data.append(1.0)
+                cols.append(plot_dir)
+                indptr.append(len(data))
+                num_directions += 1
+            elif plot_dir is not None:
+                xdir = csr_matrix(plot_dir)
+                assert len(xdir.shape) == 1 or xdir.shape[0] == 1, \
+                    "expected row vector for plot direction, got shape: {}".format(plot_dir.shape)
+
+                data += [n for n in xdir.data]
+                cols += [n for n in xdir.indices]
+                indptr.append(len(data))
+                num_directions += 1
+
+    if ha_mode.output_space_csr is not None:
+        num_directions += ha_mode.output_space_csr.shape[0]
+        offset = len(data)
+
+        data += [n for n in ha_mode.output_space_csr.data]
+        cols += [n for n in ha_mode.output_space_csr.indices]
+        indptr += [i + offset for i in ha_mode.output_space_csr.indptr[1:]]
+
+    return csr_matrix((data, cols, indptr), shape=(num_directions, ha_mode.parent.dims), dtype=float)

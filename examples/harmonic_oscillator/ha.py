@@ -94,24 +94,21 @@ def define_settings():
     plot_settings.extra_lines_width = 4
 
     settings = HylaaSettings(step=math.pi/4, max_time=3 * math.pi / 4, plot_settings=plot_settings)
-    #settings.simulation.sim_mode = TimeElapseSettings.EXP_MULT
+    #settings.time_elapse.method = TimeElapseSettings.SCIPY_SIM
     settings.time_elapse.method = TimeElapseSettings.KRYLOV
-    #settings.simulation.sim_mode = TimeElapseSettings.KRYLOV
-    #settings.simulation.krylov_use_lanczos = True
 
-    #settings.simulation.exp_mult_output_vec = False
     settings.time_elapse.check_answer = True
 
-    settings.time_elapse.krylov.stdout = True
+    #settings.time_elapse.krylov.stdout = True
 
-    settings.time_elapse.force_init_space = True
+    #settings.time_elapse.force_init_space = True
 
     return settings
 
 def run_hylaa(hylaa_settings):
     'Runs hylaa with the given settings, returning the HylaaResult object.'
 
-    sparse_definition = False
+    sparse_definition = True
 
     ha = define_ha(sparse_definition)
     init = make_init_star(ha, hylaa_settings, sparse_definition)

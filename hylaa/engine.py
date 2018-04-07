@@ -75,8 +75,17 @@ class HylaaEngine(object):
         if self.cur_star.time_elapse.next_step == 1 and self.settings.print_output:
             print "Solving first step guard LP..."
 
+        normalized_guard_distances = []
+
         for i in xrange(len(self.cur_star.mode.transitions)):
-            lp_solution = self.cur_star.get_guard_intersection(i)
+            res = self.cur_star.get_guard_intersection(i)
+            lp_solution = None
+
+            # result is either an ndarray (if intersections exist), or the distance to the guard
+            if isinstance(res, np.ndarray):
+                lp_solution = res
+            else:
+                normalized_guard_distances.append(res)
 
             if lp_solution is not None:
                 step_num = self.cur_star.time_elapse.next_step - 1
@@ -133,6 +142,20 @@ class HylaaEngine(object):
 
                 self.result.safe = False
                 break # no need to keep checking
+
+        # possibly do a variable time step based on the distance to the guard
+        if self.result.safe and self.settings.variable_step_optimization and len(normalized_guard_distances) > 0:
+            min_dist = np.inf
+
+            for dist in normalized_guard_distances:
+                if dist is None:
+                    min_dist = None
+                    break
+
+                min_dist = min(min_dist, dist)
+
+            if min_dist is not None:
+                self.cur_star.advance_variable_step(min_dist)
 
     def do_step_continuous_post(self):
         '''do a step where it's part of a continuous post'''

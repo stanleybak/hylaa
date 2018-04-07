@@ -12,6 +12,7 @@ from numpy import array_repr
 from numpy.linalg import lstsq
 from numpy.testing import assert_array_almost_equal
 
+import scipy as sp
 from scipy.sparse import csr_matrix, csc_matrix
 
 from hylaa.glpk_interface import LpInstance
@@ -29,7 +30,8 @@ class Star(Freezable):
     for plotting that states if requested in the settings.
     '''
 
-    def __init__(self, hylaa_settings, mode, init_space_csc, init_mat, init_rhs, input_mat_csr=None, input_rhs=None):
+    def __init__(self, hylaa_settings, mode, init_space_csc, init_mat, init_rhs, init_range_tuples=None, \
+                       input_mat_csr=None, input_rhs=None):
         assert isinstance(hylaa_settings, HylaaSettings)
         assert isinstance(mode, LinearAutomatonMode)
         assert isinstance(init_space_csc, csc_matrix)
@@ -53,6 +55,7 @@ class Star(Freezable):
         self.init_space_csc = init_space_csc
         self.init_mat = init_mat
         self.init_rhs = init_rhs
+        self.init_range_tuples = init_range_tuples
 
         if self.inputs == 0:
             assert input_mat_csr is None and input_rhs is None
@@ -65,6 +68,9 @@ class Star(Freezable):
 
         self.input_mat_csr = input_mat_csr
         self.input_rhs = input_rhs
+
+        if self.settings.variable_step_optimization:
+            self.a_matrix_norm = sp.sparse.linalg.norm(mode.a_matrix, ord=np.inf)
 
         ###################################
         ## private member initialization ##
@@ -127,6 +133,17 @@ class Star(Freezable):
                 self._plot_lpi.add_input_effects_matrix(self.time_elapse.cur_input_effects_matrix[:2])
 
         self._verts = None # cached vertices for plotting are no longer valid
+
+    def advance_variable_step(self, min_normalized_guard_distance):
+        '''
+        update the next time step based on the distance to the guard
+        this may increase self.time_elapse.next_step so that steps are skipped
+        '''
+
+        # the maximum distance that you can advance is e^|A|t * |v|, where |v| is the current state
+
+        print "guard distance (normalized) = {}".format(min_normalized_guard_distance)
+        exit(1)
 
     ######### star plotting methods below ############
 

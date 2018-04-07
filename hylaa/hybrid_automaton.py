@@ -11,11 +11,12 @@ from hylaa.util import Freezable
 def bounds_list_to_init(bounds_list):
     '''convert a list of upper and lower bound tuples for each dimension into:
 
-    (init_space, init_mat, init_mat_rhs)
+    (init_space, init_mat, init_mat_rhs, init_range_tuples)
     '''
 
     dims = len(bounds_list)
     fixed_dims = []
+    init_range_tuples = []
 
     space_data = []
     space_inds = []
@@ -35,6 +36,7 @@ def bounds_list_to_init(bounds_list):
         if lb == ub and lb != 0:
             fixed_dims.append(dim)
         elif lb != ub:
+            init_range_tuples.append((lb, ub))
             cur_space_dimension = len(space_data)
             space_data.append(1)
             space_inds.append(dim)
@@ -52,6 +54,7 @@ def bounds_list_to_init(bounds_list):
 
     # if there were non-zero fixed dimensions, add one space dimension for that
     if len(fixed_dims) > 0:
+        init_range_tuples.append((1, 1))
         cur_space_dimension = len(space_data)
 
         for dim in fixed_dims:
@@ -78,7 +81,7 @@ def bounds_list_to_init(bounds_list):
 
     init_mat_rhs = np.array(rhs, dtype=float)
 
-    return (init_space, init_mat, init_mat_rhs)
+    return (init_space, init_mat, init_mat_rhs, init_range_tuples)
 
 class HyperRectangle(object):
     'An n-dimensional box'
