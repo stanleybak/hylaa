@@ -165,8 +165,11 @@ class LinearAutomatonMode(Freezable):
         self.name = name
 
         # dynamics are x' = Ax + Bu
-        self.a_matrix = None
-        self.b_matrix = None
+        self.a_matrix_csr = None
+        self.b_matrix_csc = None
+
+        self.u_constraints_csr = None # csc_matrix
+        self.u_constraints_rhs = None # np.ndarray
 
         self.parent = parent
         self.transitions = [] # outgoing transitions
@@ -177,42 +180,42 @@ class LinearAutomatonMode(Freezable):
     def set_output_space(self, output_space_csr):
         'sets the output space for the mode'
 
+        assert self.a_matrix_csr is not None, "set_dynamics should be called before set_output_space"
+        dims = self.a_matrix_csr.shape[0]
         assert isinstance(output_space_csr, csr_matrix)
-        assert output_space_csr.shape[1] == self.parent.dims, "output space width {} should equal dims {}".format(
-            output_space_csr.shape[1], self.parent.dims)
+        assert output_space_csr.shape[1] == dims, "output space width {} should equal dims {}".format(
+            output_space_csr.shape[1], dims)
         assert self.output_space_csr is None, "output space assigned twice (shouldn't be changed after being set)"
 
         self.output_space_csr = output_space_csr
 
-    def set_dynamics(self, a_matrix, b_matrix=None):
+    def set_inputs(self, b_matrix_csc, u_constraints_csr, u_constraints_rhs):
+        'sets the time-varying / uncertain inputs for the mode (optional)'
+
+        assert self.a_matrix_csr is not None, "set_dynamics should be done before set_inputs"
+        assert isinstance(b_matrix_csc, csc_matrix)
+        assert isinstance(u_constraints_csr, csr_matrix)
+        assert isinstance(u_constraints_rhs, np.ndarray)
+        u_constraints_rhs.shape = (len(u_constraints_rhs), ) # flatten init_rhs into a 1-d array
+
+        assert u_constraints_csr.shape[0] == u_constraints_rhs.shape[0], "u_constraints rows shoud match rhs len"
+        assert u_constraints_csr.shape[1] == b_matrix_csc.shape[1], "u_constraints cols should match b.width"
+
+        assert b_matrix_csc.shape[0] == self.a_matrix_csr.shape[0], \
+                "B-mat shape {} incompatible with A-mat shape {}".format(b_matrix_csc.shape, self.a_matrix_csr.shape)
+
+        self.b_matrix_csc = b_matrix_csc
+        self.u_constraints_csr = u_constraints_csr
+        self.u_constraints_rhs = u_constraints_rhs
+
+    def set_dynamics(self, a_matrix_csr):
         'sets the autonomous system dynamics'
 
-        assert not isinstance(a_matrix, np.ndarray), "dynamics a_matrix should be be sparse matrix"
-        assert len(a_matrix.shape) == 2
-        assert a_matrix.shape[0] == a_matrix.shape[1]
+        assert not isinstance(a_matrix_csr, np.ndarray), "dynamics a_matrix should be be sparse matrix"
+        assert len(a_matrix_csr.shape) == 2
+        assert a_matrix_csr.shape[0] == a_matrix_csr.shape[1]
 
-        if b_matrix is not None:
-            assert isinstance(b_matrix, csr_matrix)
-            assert b_matrix.shape[0] == a_matrix.shape[0], "B-mat shape {} incompatible with A-mat shape {}".format(
-                b_matrix.shape, a_matrix.shape)
-
-        if self.parent.dims is None:
-            self.parent.dims = a_matrix.shape[0]
-        else:
-            assert self.parent.dims == a_matrix.shape[0]
-
-        if self.parent.inputs is None:
-            self.parent.inputs = 0 if b_matrix is None else b_matrix.shape[1]
-        else:
-            assert self.parent.inputs == b_matrix.shape[1]
-
-        if self.parent.inputs == 0:
-            assert b_matrix is None
-        else:
-            assert b_matrix.shape[1] == self.parent.inputs
-
-        self.a_matrix = a_matrix
-        self.b_matrix = b_matrix
+        self.a_matrix_csr = a_matrix_csr
 
     def __str__(self):
         return '[LinearAutomatonMode: {}]'.format(self.name)
@@ -254,12 +257,10 @@ class LinearAutomatonTransition(Freezable):
 class LinearHybridAutomaton(Freezable):
     'The hybrid automaton'
 
-    def __init__(self, name='HybridAutomaton', dims=None, inputs=None):
+    def __init__(self, name='HybridAutomaton'):
         self.name = name
         self.modes = {}
         self.transitions = []
-        self.dims = dims
-        self.inputs = inputs
 
         self.freeze_attrs()
 

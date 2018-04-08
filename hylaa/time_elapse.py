@@ -25,10 +25,10 @@ class TimeElapser(Freezable):
 
         self.mode = mode
         self.settings = hylaa_settings
-        self.a_matrix = mode.a_matrix
-        self.b_matrix = mode.b_matrix
+        self.a_matrix = mode.a_matrix_csr
+        self.b_matrix = mode.b_matrix_csc
         self.dims = self.a_matrix.shape[0]
-        self.inputs = 0 if mode.b_matrix is None else mode.b_matrix.shape[1]
+        self.inputs = 0 if self.b_matrix is None else self.b_matrix.shape[1]
 
         self.output_space_csr = create_output_space_csr(hylaa_settings.plot, mode)
         self.init_space_csc = init_space_csc
@@ -198,4 +198,6 @@ def create_output_space_csr(plot_settings, ha_mode):
         cols += [n for n in ha_mode.output_space_csr.indices]
         indptr += [i + offset for i in ha_mode.output_space_csr.indptr[1:]]
 
-    return csr_matrix((data, cols, indptr), shape=(num_directions, ha_mode.parent.dims), dtype=float)
+    dims = ha_mode.a_matrix_csr.shape[0]
+
+    return csr_matrix((data, cols, indptr), shape=(num_directions, dims), dtype=float)

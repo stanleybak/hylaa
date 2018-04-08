@@ -30,25 +30,26 @@ class Star(Freezable):
     for plotting that states if requested in the settings.
     '''
 
-    def __init__(self, hylaa_settings, mode, init_space_csc, init_mat, init_rhs, init_range_tuples=None, \
-                       input_mat_csr=None, input_rhs=None):
+    def __init__(self, hylaa_settings, mode, init_space_csc, init_mat, init_rhs, init_range_tuples=None):
         assert isinstance(hylaa_settings, HylaaSettings)
         assert isinstance(mode, LinearAutomatonMode)
         assert isinstance(init_space_csc, csc_matrix)
         assert isinstance(init_mat, csr_matrix)
         assert isinstance(init_rhs, np.ndarray)
 
+        self.mode = mode
+        self.dims = mode.a_matrix_csr.shape[0]
+        self.inputs = 0 if mode.b_matrix_csc is None else mode.b_matrix_csc.shape[1]
+
         init_rhs.shape = (len(init_rhs), ) # flatten init_rhs into a 1-d array
         assert init_rhs.shape == (init_mat.shape[0],)
         assert init_mat.shape[1] == init_space_csc.shape[1]
-        assert init_space_csc.shape[0] == mode.parent.dims
+        assert init_space_csc.shape[0] == self.dims
         assert init_space_csc.shape[1] > 0, "initial states are zero-dimensional"
 
         self.num_init_vars = init_space_csc.shape[1]
 
         self.settings = hylaa_settings
-        self.mode = mode
-        self.inputs = mode.parent.inputs
 
         self.time_elapse = TimeElapser(mode, hylaa_settings, init_space_csc)
 
@@ -56,18 +57,6 @@ class Star(Freezable):
         self.init_mat = init_mat
         self.init_rhs = init_rhs
         self.init_range_tuples = init_range_tuples
-
-        if self.inputs == 0:
-            assert input_mat_csr is None and input_rhs is None
-        else:
-            assert input_mat_csr is not None and input_rhs is not None
-            assert input_rhs.shape == (input_mat_csr.shape[0],)
-            assert input_mat_csr.shape[1] == self.inputs
-            assert isinstance(input_mat_csr, csr_matrix)
-            assert isinstance(input_rhs, np.ndarray)
-
-        self.input_mat_csr = input_mat_csr
-        self.input_rhs = input_rhs
 
         ###################################
         ## private member initialization ##
