@@ -351,7 +351,7 @@ class LpData
         for (int r = 0; r < numOutputVars; ++r)
         {
             int row = numInitConstraints + numOutputConstraints + r + 1;
-            glp_set_row_bnds(lp, row, GLP_FX, 0, 0);
+            glp_set_row_bnds(lp, row, GLP_FX, 0, 0);  // '==' constraints
         }
 
         // also create rows for the total inputs effects (number = total output effects
@@ -362,7 +362,7 @@ class LpData
             int row = numInitConstraints + numOutputConstraints + numOutputVars + r + 1;
 
             // set bounds == 0
-            glp_set_row_bnds(lp, row, GLP_FX, 0, 0);
+            glp_set_row_bnds(lp, row, GLP_FX, 0, 0);  // '==' constraint
 
             // assign values to the row initially
             int indices[2] = {0, 0};
@@ -406,37 +406,22 @@ class LpData
             glp_set_col_bnds(lp, 1 + numColsBefore + i, GLP_FR, 0,
                              0);  // free variable (bounds -inf to inf)
 
-        addRows((int)inputRhs.size(), &inputRhs[0]);
+        addRows((int)(inputRhs.size()), &inputRhs[0]);
 
         for (int c = 0; c < numInputs; ++c)
         {
-            /*
-         * init_cons | 0           | 0          | 0            | 0            | <= init_cons_rhs
-         * ----------+-------------+------------+--------------+--------------+-------
-         * 0         | output_cons | 0          | 0            | 0            | <= output_cons_rhs
-         * ----------+-------------+------------+--------------+--------------+-------
-         * basis_mat | -1 * ident  | ident      | 0            |              | == 0
-         * ----------+-------------+------------+-------------------------------------
-         * 0         | 0           | -1 * ident | input_basis1 | input_basis2 | == 0
-         * 0         | 0           | 0          | input_cons   | 0            | <= input_cons_rhs
-         * 0         | 0           | 0          | 0            | input_cons   | <= input_cons_rhs
-         */
-
             int lpCol = 1 + c + numColsBefore;
 
             for (int i = 0; i < h; ++i)
             {
                 if (c == 0)  // no sense in re-assigning the indices
-                    colIndices[i + 1] = 1 + numRowsBefore + i;
+                    colIndices[i + 1] =
+                        1 + numInitConstraints + numOutputConstraints + numOutputVars + i;
 
                 colData[i + 1] = mat[i * w + c];
             }
 
             // add the constraints as well
-            // vector<double> inputCscData;
-            //   vector<int> inputCscIndices;
-            //  vector<int> inputCscIndptr;
-            //  vector<double> inputRhs;
 
             int arrayIndex = 1 + h;
 
@@ -491,7 +476,7 @@ class LpData
             rowIndices[w + 2] = 1 + w + numOutputVars + r;
             rowData[w + 2] = 1;
 
-            glp_set_mat_row(lp, lpRow, w + 1, &rowIndices[0], &rowData[0]);
+            glp_set_mat_row(lp, lpRow, w + 2, &rowIndices[0], &rowData[0]);
         }
     }
 

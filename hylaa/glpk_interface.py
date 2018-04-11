@@ -10,7 +10,7 @@ import os
 import numpy as np
 from numpy.ctypeslib import ndpointer
 
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, csc_matrix
 
 from hylaa.timerutil import Timers
 from hylaa.util import Freezable, get_script_path
@@ -45,11 +45,28 @@ class LpInstance(Freezable):
             LpInstance._update_basis_matrix.argtypes = \
                 [ctypes.c_void_p, ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, ctypes.c_int]
 
+            # void addInputEffectsMatrix(void* lpdata, double* matrix, int w, int h)
+            LpInstance._add_input_effects_matrix = lib.addInputEffectsMatrix
+            LpInstance._add_input_effects_matrix.restype = None
+            LpInstance._add_input_effects_matrix.argtypes = \
+                [ctypes.c_void_p, ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, ctypes.c_int]
+
             #void setInitConstraintsCsr(LpData* lpd, int w, int h, double* data, int dataLen, int* inds,
             #               int indsLen, int* indptr, int indptrLen, double* rhs, int rhsLen)
             LpInstance._set_init_constraints_csr = lib.setInitConstraintsCsr
             LpInstance._set_init_constraints_csr.restype = None
             LpInstance._set_init_constraints_csr.argtypes = \
+                [ctypes.c_void_p, ctypes.c_int, ctypes.c_int,\
+                 ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, \
+                 ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, \
+                 ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, \
+                 ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int]
+
+            # void setInputConstraintsCsc(LpData* lpd, int w, int h, double* data, int dataLen, int* inds,
+            #               int indsLen, int* indptr, int indptrLen, double* rhs, int rhsLen)
+            LpInstance._set_input_constraints_csc = lib.setInputConstraintsCsc
+            LpInstance._set_input_constraints_csc.restype = None
+            LpInstance._set_input_constraints_csc.argtypes = \
                 [ctypes.c_void_p, ctypes.c_int, ctypes.c_int,\
                  ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, \
                  ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, \
@@ -118,7 +135,9 @@ class LpInstance(Freezable):
         # for very minor error checking
         self.num_init_vars = num_init_vars
         self.num_output_vars = num_output_vars
+        self.num_inputs = num_inputs
         self.added_init_constraints = False
+        self.added_input_constraints = False
 
         self.freeze_attrs()
 
@@ -240,15 +259,32 @@ class LpInstance(Freezable):
 
         return is_feasible
 
-    def set_input_constraints_csr(self, input_mat_csr, input_rhs):
+    def set_input_constraints_csc(self, constraint_mat, rhs):
         '''set the input constraints'''
 
-        3.1415
+        assert isinstance(constraint_mat, csc_matrix)
+        assert not self.added_input_constraints, "input constraints set twice"
+        assert self.num_inputs == constraint_mat.shape[1]
+        self.added_input_constraints = True
 
-    def add_input_effects_matrix(self, mat):
-        '''removed input function'''
+        LpInstance._set_input_constraints_csc(self.lp_data, constraint_mat.shape[1], constraint_mat.shape[0], \
+        constraint_mat.data, len(constraint_mat.data), constraint_mat.indices, len(constraint_mat.indices), \
+        constraint_mat.indptr, len(constraint_mat.indptr), rhs, rhs.shape[0])
 
-        raise RuntimeError("inputs currently unsupported")
+    def add_input_effects_matrix(self, matrix):
+        'update the basis matrix in an lp'
+
+        assert self.added_input_constraints, "input constraints should be set before adding input effects matrix"
+        assert self.num_output_vars is not None
+        assert self.num_init_vars is not None
+        assert isinstance(matrix, np.ndarray)
+
+        assert matrix.shape == (self.num_output_vars, self.num_inputs), "Expected {}x{} basis mat, got {}x{}".format(
+            self.num_output_vars, self.num_inputs, matrix.shape[0], matrix.shape[1])
+
+        Timers.tic("lp overhead")
+        LpInstance._add_input_effects_matrix(self.lp_data, matrix, matrix.shape[1], matrix.shape[0])
+        Timers.toc("lp overhead")
 
     @staticmethod
     def total_iterations():

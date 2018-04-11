@@ -74,7 +74,7 @@ class TimeElapseExpmMult(Freezable):
 
         self.time_elapser = time_elapser
         self.a_matrix_csc = csc_matrix(time_elapser.a_matrix)
-        self.b_matrix_csc = None if time_elapser.mode.b_matrix is None else csc_matrix(time_elapser.b_matrix)
+        self.b_matrix_csc = None if time_elapser.b_matrix is None else csc_matrix(time_elapser.b_matrix)
 
         self.cur_input_projection_matrix = None
 

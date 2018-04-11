@@ -7,6 +7,8 @@ July 2017
 import numpy as np
 import scipy as sp
 
+from scipy.sparse import csc_matrix
+
 from hylaa.util import Freezable
 from hylaa.hybrid_automaton import LinearAutomatonMode
 from hylaa.settings import PlotSettings
@@ -42,7 +44,7 @@ class GuardOptData(Freezable):
         self.lpi.set_output_constraints(self.transition.guard_matrix_csr, self.transition.guard_rhs)
 
         if star.inputs > 0:
-            self.lpi.set_input_constraints_csr(star.mode.u_constraints_csr, star.mode.u_constraints_rhs)
+            self.lpi.set_input_constraints_csc(csc_matrix(star.mode.u_constraints_csr), star.mode.u_constraints_rhs)
 
         if self.num_output_vars == 1 and len(self.transition.guard_rhs) == 1:
             self.guard_norm = sp.sparse.linalg.norm(self.transition.guard_matrix_csr[0, :], ord=np.inf)

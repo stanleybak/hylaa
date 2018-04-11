@@ -86,8 +86,9 @@ def define_settings():
     plot_settings.extra_lines_width = 4
 
     settings = HylaaSettings(step=math.pi/4, max_time=2 * math.pi, plot_settings=plot_settings)
-    settings.time_elapse.method = TimeElapseSettings.SCIPY_SIM
+    #settings.time_elapse.method = TimeElapseSettings.SCIPY_SIM
     #settings.time_elapse.method = TimeElapseSettings.KRYLOV
+    settings.time_elapse.method = TimeElapseSettings.EXP_MULT
 
     settings.time_elapse.check_answer = True
 

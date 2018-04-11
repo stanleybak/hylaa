@@ -113,40 +113,44 @@ void test1d_inputs()
     int indptr[] = {0, 1, 2};
     double rhs[] = {2, -1};
 
-    lpd.setInitConstraintsCsr(data, 2, indices, 2, indptr, 3, rhs, 2);
+    lpd.setInitConstraintsCsr(1, 2, data, 2, indices, 2, indptr, 3, rhs, 2);
     // 1 <= x <= 2
     // 1st step input is bounded to [-0.1, 0.2]
     // 2nd step inputs is bounded to [-0.2, 0.4] (scaled by 2 using input-effects matrix)
     double inputData[] = {1, -1};
-    int inputIndices[] = {0, 0};
-    int inputIndptr[] = {0, 1, 2};
+    int inputIndices[] = {0, 1};
+    int inputIndptr[] = {0, 2};
     double inputRhs[] = {0.2, 0.1};
-    lpd.setInputConstraintsCsr(inputData, 2, inputIndices, 2, inputIndptr, 3, inputRhs, 2);
+
+    lpd.setInputConstraintsCsc(1, 2, inputData, 2, inputIndices, 2, inputIndptr, 2, inputRhs, 2);
+
+    lpd.setNoOutputConstraints();
 
     double basis[] = {1.0};
-    lpd.updateTimeElapseMatrix(basis, 1, 1);
+    lpd.updateBasisMatrix(basis, 1, 1);
 
     double inputEffects[] = {1.0};
     lpd.addInputEffectsMatrix(inputEffects, 1, 1);
 
-    lpd.commitCurTimeRows();
-
-    double result[4] = {0, 0, 0, 0};
+    double result[5] = {0, 0, 0, 0, 0};
     double direction1[] = {1};
 
-    if (lpd.minimize(direction1, 1, result, 3))
+    if (lpd.minimize(direction1, 1, result, 4))
     {
         printf("1st call to minimize failed in 1-d-input self test\n");
         exit(1);
     }
 
-    double expected1[] = {1.0, 0.9, -0.1};
+    double expected1[] = {1.0, 0.9, -0.1, -0.1};
 
     if (fabs(result[0] - (expected1[0])) > 1e-6 || fabs(result[1] - (expected1[1])) > 1e-6 ||
-        fabs(result[2] - (expected1[2])) > 1e-6)
+        fabs(result[2] - (expected1[2])) > 1e-6 || fabs(result[3] - (expected1[3])) > 1e-6)
     {
-        printf("lp self-test-1d-input failed 1st result: (%f, %f, %f); expected: (%f, %f, %f)\n",
-               result[0], result[1], result[3], expected1[0], expected1[1], expected1[2]);
+        printf(
+            "lp self-test-1d-input failed 1st result: (%f, %f, %f, %f); expected: (%f, %f, %f, "
+            "%f)\n",
+            result[0], result[1], result[3], result[4], expected1[0], expected1[1], expected1[2],
+            expected1[3]);
         exit(1);
     }
 
@@ -155,26 +159,25 @@ void test1d_inputs()
     double inputEffects2[] = {2.0};
     lpd.addInputEffectsMatrix(inputEffects2, 1, 1);
 
-    lpd.commitCurTimeRows();
-
     double direction2[] = {-1};
 
-    if (lpd.minimize(direction2, 1, result, 4))
+    if (lpd.minimize(direction2, 1, result, 5))
     {
         printf("2nd call to minimize failed in 1-d-input self test\n");
         exit(1);
     }
 
-    double expected2[] = {2.0, 2.6, 0.2, 0.2};
+    double expected2[] = {2.0, 2.6, 0.6, 0.2, 0.2};
 
     if (fabs(result[0] - (expected2[0])) > 1e-6 || fabs(result[1] - (expected2[1])) > 1e-6 ||
-        fabs(result[2] - (expected2[2])) > 1e-6 || fabs(result[3] - (expected2[3])) > 1e-6)
+        fabs(result[2] - (expected2[2])) > 1e-6 || fabs(result[3] - (expected2[3])) > 1e-6 ||
+        fabs(result[4] - (expected2[4])) > 1e-6)
     {
         printf(
-            "lp self-test-1d-input failed 2nd result: (%f, %f, %f, %f); expected: (%f, %f, %f, "
-            "%f)\n",
-            result[0], result[1], result[2], result[2], expected2[0], expected2[1], expected2[2],
-            expected2[3]);
+            "lp self-test-1d-input failed 2nd result: (%f, %f, %f, %f, %f); expected: (%f, %f, %f, "
+            "%f, %f)\n",
+            result[0], result[1], result[2], result[2], result[3], expected2[0], expected2[1],
+            expected2[2], expected2[3], expected2[4]);
         exit(1);
     }
 }

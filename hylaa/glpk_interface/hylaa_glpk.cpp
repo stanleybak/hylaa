@@ -32,7 +32,12 @@ void delLp(LpData* ptr)
 
 void updateBasisMatrix(LpData* lpd, double* matrix, int w, int h)
 {
-    return lpd->updateBasisMatrix(matrix, w, h);
+    lpd->updateBasisMatrix(matrix, w, h);
+}
+
+void addInputEffectsMatrix(LpData* lpd, double* mat, int w, int h)
+{
+    lpd->addInputEffectsMatrix(mat, w, h);
 }
 
 void setInitConstraintsCsr(LpData* lpd, int w, int h, double* data, int dataLen, int* inds,
@@ -100,6 +105,11 @@ void delLp(void* lpdata)
 void updateBasisMatrix(void* lpdata, double* matrix, int w, int h)
 {
     hylaa_glpk::updateBasisMatrix((LpData*)lpdata, matrix, w, h);
+}
+
+void addInputEffectsMatrix(void* lpdata, double* matrix, int w, int h)
+{
+    hylaa_glpk::addInputEffectsMatrix((LpData*)lpdata, matrix, w, h);
 }
 
 void setInitConstraintsCsr(void* lpdata, int w, int h, double* data, int dataLen, int* inds,
