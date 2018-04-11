@@ -76,7 +76,7 @@ class TimeElapseExpmMult(Freezable):
         self.a_matrix_csc = csc_matrix(time_elapser.a_matrix)
         self.b_matrix_csc = None if time_elapser.b_matrix is None else csc_matrix(time_elapser.b_matrix)
 
-        self.cur_input_projection_matrix = None
+        self.cur_full_input_effects_matrix = None
 
         self.stored_vec = None
         self.one_step_matrix_exp = None # one step matrix exponential
@@ -132,8 +132,11 @@ class TimeElapseExpmMult(Freezable):
 
                 for c in xrange(self.time_elapser.inputs):
                     # create the a_matrix augmented with a column of the b_matrix as an affine term
-                    a = self.time_elapser.a_matrix
+                    a = csc_matrix(self.time_elapser.a_matrix)
                     b = self.time_elapser.b_matrix
+
+                    assert isinstance(a, csc_matrix)
+                    assert isinstance(b, csc_matrix)
 
                     indptr = b.indptr
 
@@ -152,9 +155,10 @@ class TimeElapseExpmMult(Freezable):
 
                     self.one_step_input_effects_matrix[:, c] = col[:dims]
 
-                self.cur_input_projection_matrix = np.array(output_space.toarray(), dtype=float)
-                self.time_elapser.cur_input_effects_matrix = np.dot(self.cur_input_projection_matrix,
-                                                                    self.one_step_input_effects_matrix)
+                self.cur_full_input_effects_matrix = self.one_step_input_effects_matrix
+
+                self.time_elapser.cur_input_effects_matrix = np.dot(output_space.toarray(), \
+                                                                    self.cur_full_input_effects_matrix)
 
             Timers.toc('time_elapse.exp_mult first step')
         else:
@@ -172,9 +176,10 @@ class TimeElapseExpmMult(Freezable):
 
             # inputs
             if self.time_elapser.inputs > 0:
-                self.cur_input_projection_matrix = np.dot(self.cur_input_projection_matrix, self.one_step_matrix_exp)
+                self.cur_full_input_effects_matrix = np.dot(self.one_step_matrix_exp,
+                                                            self.cur_full_input_effects_matrix)
 
-                self.time_elapser.cur_input_effects_matrix = np.dot(self.cur_input_projection_matrix,
-                                                                    self.one_step_input_effects_matrix)
+                self.time_elapser.cur_input_effects_matrix = np.dot(output_space.toarray(),
+                                                                    self.cur_full_input_effects_matrix)
 
             Timers.toc('time_elapse.exp_mult other steps')

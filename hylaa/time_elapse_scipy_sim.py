@@ -27,14 +27,10 @@ class TimeElapseScipySim(Freezable):
             sim_mat = self.a_matrix
             init_vecs = self.time_elapser.init_space_csc
             self.proj_mat = self.time_elapser.output_space_csr
-
-            print ". using original system matrix"
         else:
             sim_mat = csr_matrix(self.a_matrix.transpose())
             init_vecs = self.time_elapser.output_space_csr.transpose()
             self.proj_mat = self.time_elapser.init_space_csc.transpose()
-
-            print ". using transpose system matrix"
 
         assert isinstance(self.proj_mat, csr_matrix)
 
