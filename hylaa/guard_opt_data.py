@@ -42,7 +42,7 @@ class GuardOptData(Freezable):
         self.lpi.set_output_constraints(self.transition.guard_matrix_csr, self.transition.guard_rhs)
 
         if star.inputs > 0:
-            self.lpi.set_input_constraints_csr(star.input_mat_csr, star.input_rhs)
+            self.lpi.set_input_constraints_csr(star.mode.u_constraints_csr, star.mode.u_constraints_rhs)
 
         if self.num_output_vars == 1 and len(self.transition.guard_rhs) == 1:
             self.guard_norm = sp.sparse.linalg.norm(self.transition.guard_matrix_csr[0, :], ord=np.inf)

@@ -106,7 +106,7 @@ def write_counter_example(filename, mode, step_size, total_steps, init_pt, init_
                           normal_val, end_val):
     'write a counter-example to a file which can be run using the HyLAA trace generator'
 
-    a_matrix_csc = csc_matrix(mode.a_matrix)
+    a_matrix_csc = csc_matrix(mode.a_matrix_csr)
     assert isinstance(normal_vec, np.ndarray)
     assert len(normal_vec.shape) == 1
 
@@ -132,15 +132,15 @@ def check_instance(stdout=True, skip_plot=False):
 
         ###
 
-        if mode.b_matrix is None:
+        if mode.b_matrix_csc is None:
             f.write('    b_matrix = None\n')
             f.write('    inputs = None\n\n')
         else:
-            f.write('    data = {}\n'.format([n for n in mode.b_matrix.data]))
-            f.write('    indices = {}\n'.format([n for n in mode.b_matrix.indices]))
-            f.write('    indptr = {}\n'.format([n for n in mode.b_matrix.indptr]))
+            f.write('    data = {}\n'.format([n for n in mode.b_matrix_csc.data]))
+            f.write('    indices = {}\n'.format([n for n in mode.b_matrix_csc.indices]))
+            f.write('    indptr = {}\n'.format([n for n in mode.b_matrix_csc.indptr]))
             f.write('    b_matrix = csc_matrix((data, indices, indptr), dtype=float, shape=({}, {}))\n\n'.format(
-                mode.b_matrix.shape[0], mode.b_matrix.shape[1]))
+                mode.b_matrix_csc.shape[0], mode.b_matrix_csc.shape[1]))
 
             # write inputs to use at each step
             f.write('    inputs = []\n')

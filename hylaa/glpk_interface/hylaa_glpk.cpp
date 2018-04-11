@@ -41,6 +41,12 @@ void setInitConstraintsCsr(LpData* lpd, int w, int h, double* data, int dataLen,
     lpd->setInitConstraintsCsr(w, h, data, dataLen, inds, indsLen, indptr, indptrLen, rhs, rhsLen);
 }
 
+void setInputConstraintsCsc(LpData* lpd, int w, int h, double* data, int dataLen, int* inds,
+                            int indsLen, int* indptr, int indptrLen, double* rhs, int rhsLen)
+{
+    lpd->setInputConstraintsCsc(w, h, data, dataLen, inds, indsLen, indptr, indptrLen, rhs, rhsLen);
+}
+
 void setOutputConstraintsCsr(LpData* lpd, int w, int h, double* data, int dataLen, int* inds,
                              int indsLen, int* indptr, int indptrLen, double* rhs, int rhsLen)
 {
@@ -101,6 +107,13 @@ void setInitConstraintsCsr(void* lpdata, int w, int h, double* data, int dataLen
 {
     hylaa_glpk::setInitConstraintsCsr((LpData*)lpdata, w, h, data, dataLen, inds, indsLen, indptr,
                                       indptrLen, rhs, rhsLen);
+}
+
+void setInputConstraintsCsc(void* lpdata, int w, int h, double* data, int dataLen, int* inds,
+                            int indsLen, int* indptr, int indptrLen, double* rhs, int rhsLen)
+{
+    hylaa_glpk::setInputConstraintsCsc((LpData*)lpdata, w, h, data, dataLen, inds, indsLen, indptr,
+                                       indptrLen, rhs, rhsLen);
 }
 
 void setOutputConstraintsCsr(void* lpdata, int w, int h, double* data, int dataLen, int* inds,

@@ -241,9 +241,9 @@ class LpInstance(Freezable):
         return is_feasible
 
     def set_input_constraints_csr(self, input_mat_csr, input_rhs):
-        '''removed input function'''
+        '''set the input constraints'''
 
-        raise RuntimeError("inputs currently unsupported")
+        3.1415
 
     def add_input_effects_matrix(self, mat):
         '''removed input function'''

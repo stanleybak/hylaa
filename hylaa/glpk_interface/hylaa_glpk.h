@@ -61,9 +61,9 @@ class LpData
             exit(1);
         }
 
-        if (numInputs != 0)
+        if (numInputs < 0)
         {
-            printf("Fatal Error: Inputs not supported (numInputs > 0)\n");
+            printf("Fatal Error: numInputs(%d) must be nonnegative.\n", numInputs);
             exit(1);
         }
 
@@ -79,11 +79,13 @@ class LpData
         // params.presolve = GLP_ON;
         // params.meth = GLP_DUALP;
 
-        // the first n variables are the init variables
-        // the first m variables are the output variables
-        glp_add_cols(lp, numOutputVars + numInitVars);
+        // the first i variables are the init variables
+        // the next o variables are the output variables
+        // the next o variables are the total-output-effects-from-inputs variables
+        int numVars = numOutputVars + numInitVars + numOutputVars;
+        glp_add_cols(lp, numVars);
 
-        for (int i = 0; i < numOutputVars + numInitVars; ++i)
+        for (int i = 0; i < numVars; ++i)
             glp_set_col_bnds(lp, i + 1, GLP_FR, 0, 0);  // free variable (bounds -inf to inf)
 
         // rows are added to the lp instance once the basis matrix is updated
@@ -178,51 +180,25 @@ class LpData
     }
 
     // Set the input constraints
-    void setInputConstraintsCsr(double* data, int dataLen, int* indices, int indicesLen,
-                                int* indptr, int indptrLen, double* rhs, int rhsLen)
+    void setInputConstraintsCsc(int w, int h, double* data, int dataLen, int* indices,
+                                int indicesLen, int* indptr, int indptrLen, double* rhs, int rhsLen)
     {
-        printf("TODO: modify setInputConstraintsCsr to take in w and h of matrix\n");
-        checkCsr("setInputConstraintsCsr", -1, rhsLen, data, dataLen, indices, indicesLen, indptr,
+        checkCsc("setInputConstraintsCsc", w, h, data, dataLen, indices, indicesLen, indptr,
                  indptrLen);
 
-        if (dataLen != indicesLen)
-        {
-            printf(
-                "Fatal Error: setInputConstraintsCsr() expected sparse matrix with dataLen == "
-                "indicesLen.\n");
-            exit(1);
-        }
-
-        if (indptrLen != rhsLen + 1)
-        {
-            printf(
-                "Fatal Error: setInputConstraintsCsr() matrix should have indptrLen (%d) == "
-                "rhsLen(%d) + 1.\n",
-                indptrLen, rhsLen);
-            exit(1);
-        }
-
-        if (indptr[indptrLen - 1] != dataLen)
-        {
-            printf(
-                "Fatal Error: setInputConstraintsCsr() sparse matrix should have indptr[-1] == "
-                "dataLen.\n");
-            exit(1);
-        }
-
-        inputCsrData.resize(dataLen);
-        inputCsrIndices.resize(indicesLen);
-        inputCsrIndptr.resize(indptrLen);
+        inputCscData.resize(dataLen);
+        inputCscIndices.resize(indicesLen);
+        inputCscIndptr.resize(indptrLen);
         inputRhs.resize(rhsLen);
 
         for (int i = 0; i < dataLen; ++i)
-            inputCsrData[i] = data[i];
+            inputCscData[i] = data[i];
 
         for (int i = 0; i < indicesLen; ++i)
-            inputCsrIndices[i] = indices[i];
+            inputCscIndices[i] = indices[i];
 
         for (int i = 0; i < indptrLen; ++i)
-            inputCsrIndptr[i] = indptr[i];
+            inputCscIndptr[i] = indptr[i];
 
         for (int i = 0; i < rhsLen; ++i)
             inputRhs[i] = rhs[i];
@@ -377,6 +353,101 @@ class LpData
             int row = numInitConstraints + numOutputConstraints + r + 1;
             glp_set_row_bnds(lp, row, GLP_FX, 0, 0);
         }
+
+        // also create rows for the total inputs effects (number = total output effects
+        glp_add_rows(lp, numOutputVars);
+
+        for (int r = 0; r < numOutputVars; ++r)
+        {
+            int row = numInitConstraints + numOutputConstraints + numOutputVars + r + 1;
+
+            // set bounds == 0
+            glp_set_row_bnds(lp, row, GLP_FX, 0, 0);
+
+            // assign values to the row initially
+            int indices[2] = {0, 0};
+            double data[2] = {0, -1};
+
+            indices[1] = numInitVars + numOutputVars + r + 1;
+
+            glp_set_mat_row(lp, row, 1, indices, data);
+        }
+    }
+
+    void addInputEffectsMatrix(double* mat, int w, int h)
+    {
+        if (w != numInputs || h != numOutputVars)
+        {
+            printf(
+                "Fatal Error: Matrix dimensions mismatch in addInputEffectsMatrix: "
+                "w(%d) != numInputs(%d) || h(%d) != numOutputVars(%d)\n",
+                w, numInitVars, h, numOutputVars);
+            exit(1);
+        }
+
+        if (numOutputConstraints == -1)
+        {
+            printf("Fatal Error: Output Constraints should be set before addInputEffectsMatrix.\n");
+            exit(1);
+        }
+
+        // this is done by adding new columns, and setting the constraints
+        // use memory on the heap (stack may be too small)
+        int numInputConstraints = (int)inputRhs.size();
+        vector<int> colIndices(1 + h + numInputConstraints, 0);
+        vector<double> colData(1 + h + numInputConstraints, 0.0);
+
+        int numColsBefore = glp_get_num_cols(lp);
+        int numRowsBefore = glp_get_num_rows(lp);
+
+        glp_add_cols(lp, numInputs);
+
+        for (int i = 0; i < numInputs; ++i)
+            glp_set_col_bnds(lp, 1 + numColsBefore + i, GLP_FR, 0,
+                             0);  // free variable (bounds -inf to inf)
+
+        addRows((int)inputRhs.size(), &inputRhs[0]);
+
+        for (int c = 0; c < numInputs; ++c)
+        {
+            /*
+         * init_cons | 0           | 0          | 0            | 0            | <= init_cons_rhs
+         * ----------+-------------+------------+--------------+--------------+-------
+         * 0         | output_cons | 0          | 0            | 0            | <= output_cons_rhs
+         * ----------+-------------+------------+--------------+--------------+-------
+         * basis_mat | -1 * ident  | ident      | 0            |              | == 0
+         * ----------+-------------+------------+-------------------------------------
+         * 0         | 0           | -1 * ident | input_basis1 | input_basis2 | == 0
+         * 0         | 0           | 0          | input_cons   | 0            | <= input_cons_rhs
+         * 0         | 0           | 0          | 0            | input_cons   | <= input_cons_rhs
+         */
+
+            int lpCol = 1 + c + numColsBefore;
+
+            for (int i = 0; i < h; ++i)
+            {
+                if (c == 0)  // no sense in re-assigning the indices
+                    colIndices[i + 1] = 1 + numRowsBefore + i;
+
+                colData[i + 1] = mat[i * w + c];
+            }
+
+            // add the constraints as well
+            // vector<double> inputCscData;
+            //   vector<int> inputCscIndices;
+            //  vector<int> inputCscIndptr;
+            //  vector<double> inputRhs;
+
+            int arrayIndex = 1 + h;
+
+            for (int cscIndex = inputCscIndptr[c]; cscIndex < inputCscIndptr[c + 1]; ++cscIndex)
+            {
+                colIndices[arrayIndex] = 1 + numRowsBefore + inputCscIndices[cscIndex];
+                colData[arrayIndex++] = inputCscData[cscIndex];
+            }
+
+            glp_set_mat_col(lp, lpCol, arrayIndex - 1, &colIndices[0], &colData[0]);
+        }
     }
 
     void updateBasisMatrix(double* mat, int w, int h)
@@ -397,8 +468,8 @@ class LpData
         }
 
         // use memory on the heap (stack may be too small)
-        vector<int> rowIndices(w + 2, 0);
-        vector<double> rowData(w + 2, 0.0);
+        vector<int> rowIndices(w + 3, 0);
+        vector<double> rowData(w + 3, 0.0);
 
         for (int r = 0; r < numOutputVars; ++r)
         {
@@ -412,9 +483,13 @@ class LpData
                 rowData[i + 1] = mat[r * w + i];
             }
 
-            // negative inverse entry
+            // negative identity entry (output variables columns)
             rowIndices[w + 1] = 1 + w + r;
             rowData[w + 1] = -1;
+
+            // positive identity entry (total input effects columns)
+            rowIndices[w + 2] = 1 + w + numOutputVars + r;
+            rowData[w + 2] = 1;
 
             glp_set_mat_row(lp, lpRow, w + 1, &rowIndices[0], &rowData[0]);
         }
@@ -476,9 +551,9 @@ class LpData
     int numOutputConstraints = -1;
 
     // saved input constraints (need to be set at each step, if input is present)
-    vector<double> inputCsrData;
-    vector<int> inputCsrIndices;
-    vector<int> inputCsrIndptr;
+    vector<double> inputCscData;
+    vector<int> inputCscIndices;
+    vector<int> inputCscIndptr;
     vector<double> inputRhs;
 
     glp_prob* lp = nullptr;
@@ -639,13 +714,13 @@ class LpData
     {
         if (dataLen != indicesLen)
         {
-            printf("Fatal Error: %s sparse matrix should have dataLen == indicesLen.\n", label);
+            printf("Fatal Error: %s csr sparse matrix should have dataLen == indicesLen.\n", label);
             exit(1);
         }
 
         if (indptrLen != h + 1)
         {
-            printf("Fatal Error: %s sparse matrix should have indptrLen (%d) == h + 1 (%d).\n",
+            printf("Fatal Error: %s csr sparse matrix should have indptrLen (%d) == h + 1 (%d).\n",
                    label, indptrLen, h + 1);
             exit(1);
         }
@@ -656,7 +731,37 @@ class LpData
             if (indices[i] >= w)
             {
                 printf(
-                    "Fatal Error: %s sparse matrix has indices[%d]=%d, which is >= matrix "
+                    "Fatal Error: %s sparse csr matrix has indices[%d]=%d, which is >= matrix "
+                    "width (%d)\n",
+                    label, i, indices[i], w);
+                exit(1);
+            }
+        }
+    }
+
+    void checkCsc(const char* label, int w, int h, double* data, int dataLen, int* indices,
+                  int indicesLen, int* indptr, int indptrLen)
+    {
+        if (dataLen != indicesLen)
+        {
+            printf("Fatal Error: %s csc sparse matrix should have dataLen == indicesLen.\n", label);
+            exit(1);
+        }
+
+        if (indptrLen != w + 1)
+        {
+            printf("Fatal Error: %s csc sparse matrix should have indptrLen (%d) == w + 1 (%d).\n",
+                   label, indptrLen, w + 1);
+            exit(1);
+        }
+
+        // make sure each index is less than height
+        for (int i = 0; i < indicesLen; ++i)
+        {
+            if (indices[i] >= h)
+            {
+                printf(
+                    "Fatal Error: %s sparse csc matrix has indices[%d]=%d, which is >= matrix "
                     "width (%d)\n",
                     label, i, indices[i], w);
                 exit(1);
