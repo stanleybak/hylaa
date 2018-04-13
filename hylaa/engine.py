@@ -84,7 +84,9 @@ class HylaaEngine(object):
                                                             self.settings.step * step_num)
 
                 self.result.init_vars = lp_solution[:self.cur_star.num_init_vars]
-                self.result.output_vars = lp_solution[self.cur_star.num_init_vars:]
+
+                end_output_lp_col = self.cur_star.num_init_vars + self.cur_star.mode.output_space_csr.shape[0]
+                self.result.output_vars = lp_solution[self.cur_star.num_init_vars:end_output_lp_col]
 
                 if self.settings.print_lp_on_error:
                     # print the LP solution and exit
@@ -119,11 +121,18 @@ class HylaaEngine(object):
                     # construct inputs, which are in backwards order
                     inputs = []
 
-                    #input_vals = lp_solution[self.cur_star.lp_dims + num_constraints:]
-                    #
-                    #for step in xrange(total_steps):
-                    #    offset = len(input_vals) - (self.cur_star.inputs * (1 + step))
-                    #    inputs.append(input_vals[offset:offset+self.cur_star.inputs])
+                    # skip total input effects
+                    input_start_col = end_output_lp_col + self.cur_star.inputs
+
+                    input_vals = lp_solution[input_start_col:]
+
+                    print "input_vals = {}".format(input_vals)
+
+                    for step in xrange(total_steps - 1):
+                        offset = len(input_vals) - (self.cur_star.inputs * (1 + step))
+                        inputs.append(input_vals[offset:offset+self.cur_star.inputs])
+
+                    print "inputs = {}".format(inputs)
 
                     if self.settings.print_output:
                         print 'Writing counter-example trace file: "{}"'.format(filename)
