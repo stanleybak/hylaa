@@ -10,10 +10,8 @@ from numpy.testing import assert_array_almost_equal
 
 from scipy.linalg import expm
 
-from hylaa.containers import SimulationSettings
+from hylaa.settings import TimeElapseSettings
 from hylaa.timerutil import Timers
-from hylaa.simutil import SimulationBundle
-from hylaa.openblas import OpenBlasThreads
 
 def make_settings(step_time):
     'make simulation settings object for testing'
@@ -314,6 +312,24 @@ class TestSimUtil(unittest.TestCase):
 
             self.assertAlmostEqual(vals[0][1], vec2[0])
             self.assertAlmostEqual(vals[1][1], vec2[1])
+
+    def test_input_sim_ha_simple(self):
+        '''test the computation of G(A, h) * B using simulations, also compare with inverse result'''
+
+        a_matrix = np.array([[0.0, 1.0], [-1.0, 0.0]], dtype=float)
+        b_matrix = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=float)
+        step_time = math.pi / 4
+
+        # inverse computation: A^{-1}(e^{Ah} - I)
+        a_inv = np.linalg.inv(a_matrix)
+        e_ah = expm(a_matrix * step_time)
+        q_matrix = np.dot(a_inv, (e_ah - np.identity(2)))
+        inverse_result = np.dot(q_matrix, b_matrix).transpose()
+
+        print "inverse_result = {}".format(inverse_result)
+
+        series_result = compute_gbt_series(a_matrix, b_matrix, step_time)
+        print "series_result = {}".format(series_result)
 
     def test_input_sim_ha(self):
         '''test the computation of G(A, h) * B using simulations, also compare with inverse result'''

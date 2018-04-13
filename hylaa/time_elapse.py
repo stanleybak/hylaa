@@ -36,7 +36,6 @@ class TimeElapser(Freezable):
         self.next_step = 0
         self.cur_basis_mat = None # assigned on step()
         self.cur_input_effects_matrix = None # assigned on step() if inputs exist
-        self.cur_max_one_norm = None # assigned on step() for certain methods
 
         self.use_init_space = self.settings.time_elapse.force_init_space
 

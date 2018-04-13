@@ -19,13 +19,14 @@ def define_ha():
     ha = LinearHybridAutomaton()
 
     # with time and affine variable
-    a_matrix = csr_matrix(np.array([[0, 1, 0, 0], [-1, 0, 0, 0], [0, 0, 0, 1], [0, 0, 0, 0]], dtype=float))
+    a_matrix = csr_matrix(np.array([[0, 1], [-1, 0]], dtype=float))
 
-    b_matrix = csc_matrix(np.array([[1], [0], [0], [0]], dtype=float))
+    b_matrix = csc_matrix(np.array([[1, 0], [0, 1]], dtype=float))
 
     # -0.5 <= u1 <= 0.5
-    u_mat = csr_matrix(np.array([[1.], [-1.]], dtype=float))
-    u_rhs = np.array([0.5, -0.5], dtype=float)
+    # -0.5 <= u2 <= 0.5
+    u_mat = csr_matrix(np.array([[-1., 0], [1., 0], [0, -1], [0, 1]], dtype=float))
+    u_rhs = np.array([0.5, 0.5, 0.5, 0.5], dtype=float)
 
     mode = ha.new_mode('mode')
     mode.set_dynamics(a_matrix)
@@ -33,11 +34,11 @@ def define_ha():
 
     error = ha.new_mode('error')
 
-    # x1 >= 5.5 & x1 <= 5.5
-    output_space = csr_matrix(([1.], [0], [0, 1]), shape=(1, 4), dtype=float)
+    # error: x1 == 7
+    output_space = csr_matrix(([1.], [0], [0, 1]), shape=(1, a_matrix.shape[0]), dtype=float)
 
-    mat = csr_matrix(np.array([[1.], [-1.]], dtype=float))
-    rhs = np.array([5.5, -5.5], dtype=float)
+    mat = csr_matrix(np.array([[-1.], [1.]], dtype=float))
+    rhs = np.array([-7, 7], dtype=float)
 
     mode.set_output_space(output_space)
     trans1 = ha.new_transition(mode, error)
@@ -53,10 +54,13 @@ def make_init_star(ha, hylaa_settings):
     # vec1 is <0, 1, 0, 0> with the constraint that 0 <= vec1 <= 1
     # vec2 is <-5, 0, 0, 1> with the constraint that vec2 == 1
 
-    init_space = csc_matrix(np.array([[0., 1, 0, 0], [-5, 0, 0, 1]], dtype=float).transpose())
-    init_mat = csr_matrix(np.array([[1., 0], [-1, 0], [0, 1], [0, -1]], dtype=float))
-    init_rhs = np.array([[1], [0], [1], [-1.]], dtype=float)
+    #init_space = csc_matrix(np.array([[0., 1, 0, 0], [-5, 0, 0, 1]], dtype=float).transpose())
+    #init_mat = csr_matrix(np.array([[1., 0], [-1, 0], [0, 1], [0, -1]], dtype=float))
+    #init_rhs = np.array([[1], [0], [1], [-1.]], dtype=float)
 
+    init_space = csc_matrix(np.array([[1., 0], [0, 1]], dtype=float))
+    init_mat = csr_matrix(np.array([[1., 0], [-1, 0], [0, 1], [0, -1]], dtype=float))
+    init_rhs = np.array([[-5], [6], [1], [0.]], dtype=float)
 
     rv = Star(hylaa_settings, ha.modes['mode'], init_space, init_mat, init_rhs)
 
