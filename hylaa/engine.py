@@ -121,18 +121,15 @@ class HylaaEngine(object):
                     # construct inputs, which are in backwards order
                     inputs = []
 
-                    # skip total input effects
-                    input_start_col = end_output_lp_col + self.cur_star.inputs
+                    if self.cur_star.inputs > 0:
+                        # skip total input effects
+                        input_start_col = end_output_lp_col + 1
 
-                    input_vals = lp_solution[input_start_col:]
+                        input_vals = lp_solution[input_start_col:]
 
-                    print "input_vals = {}".format(input_vals)
-
-                    for step in xrange(total_steps - 1):
-                        offset = len(input_vals) - (self.cur_star.inputs * (1 + step))
-                        inputs.append(input_vals[offset:offset+self.cur_star.inputs])
-
-                    print "inputs = {}".format(inputs)
+                        for step in xrange(total_steps):
+                            offset = len(input_vals) - (self.cur_star.inputs * (1 + step))
+                            inputs.append(input_vals[offset:offset+self.cur_star.inputs])
 
                     if self.settings.print_output:
                         print 'Writing counter-example trace file: "{}"'.format(filename)

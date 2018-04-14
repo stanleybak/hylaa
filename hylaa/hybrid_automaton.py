@@ -168,7 +168,7 @@ class LinearAutomatonMode(Freezable):
         self.a_matrix_csr = None
         self.b_matrix_csc = None
 
-        self.u_constraints_csr = None # csc_matrix
+        self.u_constraints_csr = None # csr_matrix
         self.u_constraints_rhs = None # np.ndarray
 
         self.parent = parent

@@ -101,7 +101,7 @@ class Star(Freezable):
             rv.update_basis_matrix(self.time_elapse.cur_basis_mat[:self.num_plot_vars])
 
             if self.inputs > 0:
-                rv.set_input_constraints_csr(self.input_mat_csr, self.input_rhs)
+                rv.set_input_constraints_csc(csc_matrix(self.mode.u_constraints_csr), self.mode.u_constraints_rhs)
 
             self._plot_lpi = rv
 

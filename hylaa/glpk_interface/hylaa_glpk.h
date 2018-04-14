@@ -493,9 +493,18 @@ class LpData
         if (dirLen != numOutputVars)
         {
             printf(
-                "Fatal Error: dirLen(%d) is not equal to numOutputVars(%d) in call to "
-                "minimize()\n",
+                "Fatal Error: dirLen(%d) is not equal numOutputVars(%d) in "
+                "call to minimize()\n",
                 dirLen, numOutputVars);
+            exit(1);
+        }
+
+        if (resLen != numOutputVars && resLen != glp_get_num_cols(lp))
+        {
+            printf(
+                "Fatal Error: resultLen(%d) is not equal to numOutputVars (%d) or numCols(%d) in "
+                "call to minimize()\n",
+                resLen, numOutputVars, glp_get_num_cols(lp));
             exit(1);
         }
 
@@ -659,8 +668,19 @@ class LpData
             {
                 int numCols = glp_get_num_cols(lp);
 
-                for (int col = 0; col < resLen && col < numCols; ++col)
-                    result[col] = glp_get_col_prim(lp, col + 1);
+                if (resLen == numOutputVars)
+                {
+                    int outputIndex = 0;
+
+                    // copy just the output vars
+                    for (int col = numInitVars; col < numInitVars + numOutputVars; ++col)
+                        result[outputIndex++] = glp_get_col_prim(lp, col + 1);
+                }
+                else
+                {
+                    for (int col = 0; col < resLen && col < numCols; ++col)
+                        result[col] = glp_get_col_prim(lp, col + 1);
+                }
             }
             else if (status == GLP_NOFEAS)
             {

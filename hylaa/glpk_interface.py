@@ -239,19 +239,7 @@ class LpInstance(Freezable):
         assert len(result.shape) == 1
 
         Timers.tic("lp minimize")
-
-        if result.shape[0] == self.num_output_vars:
-            # the result should be just the output_vars
-            size = self.num_init_vars + self.num_output_vars
-            temp_result = np.zeros((size,))
-
-            is_feasible = LpInstance._minimize(self.lp_data, direction, dir_len, temp_result, size) == 0
-
-            if is_feasible:
-                result[:] = temp_result[self.num_init_vars:]
-        else:
-            is_feasible = LpInstance._minimize(self.lp_data, direction, dir_len, result, result.shape[0]) == 0
-
+        is_feasible = LpInstance._minimize(self.lp_data, direction, dir_len, result, result.shape[0]) == 0
         Timers.toc("lp minimize")
 
         if not is_feasible and error_if_infeasible:

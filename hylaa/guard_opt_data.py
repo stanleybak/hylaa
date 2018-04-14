@@ -46,9 +46,6 @@ class GuardOptData(Freezable):
         if star.inputs > 0:
             self.lpi.set_input_constraints_csc(csc_matrix(star.mode.u_constraints_csr), star.mode.u_constraints_rhs)
 
-        if self.num_output_vars == 1 and len(self.transition.guard_rhs) == 1:
-            self.guard_norm = sp.sparse.linalg.norm(self.transition.guard_matrix_csr[0, :], ord=np.inf)
-
         self.freeze_attrs()
 
     def update_full_lp(self):
@@ -68,12 +65,11 @@ class GuardOptData(Freezable):
             self.lpi.add_input_effects_matrix(input_effects_mat[start:end])
 
         result_len = self.num_output_vars + self.star.num_init_vars
-        result_len += self.inputs * (self.star.time_elapse.next_step - 1)
+        result_len += self.num_output_vars # total input effect
+        result_len += self.inputs * (self.star.time_elapse.next_step - 1) # inputs at each step
 
         result = np.zeros((result_len), dtype=float)
         direction = np.zeros((self.num_output_vars,), dtype=float)
-
-        # self.lpi.reset_lp()
 
         is_feasible = self.lpi.minimize(direction, result, error_if_infeasible=False)
 
@@ -120,11 +116,11 @@ class GuardOptData(Freezable):
 
         if guard_val <= guard_threshold:
             # reconstruct result
-            result_len = self.num_output_vars + self.star.num_init_vars
+            result_len = self.num_output_vars + self.star.num_init_vars + self.num_output_vars
             result_len += self.inputs * (self.star.time_elapse.next_step - 1)
 
             result = np.zeros((result_len), dtype=float)
-            result[-1] = guard_val # single output variable
+            #result[-1] = guard_val # single output variable
 
             for init_index in xrange(len(init_ranges)):
                 basis_val = basis_mat[0][init_index]
@@ -135,6 +131,10 @@ class GuardOptData(Freezable):
                 val2 = max_init * basis_val
 
                 result[init_index] = min_init if val1 < val2 else max_init
+
+            # num output vars == 1
+            result[-2] = guard_threshold
+            result[-1] = 0 # total input effects on output
 
             rv = result
         else:
