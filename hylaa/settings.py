@@ -58,7 +58,7 @@ class TimeElapseSettings(Freezable):
         self.check_answer_abs_tol = 1e-5 # absolute tolerance when checking answer
 
         self.krylov = KrylovSettings() # used only with krylov method
-        self.scipy = ScipySimSettings() # used only with the scipy_sim method
+        self.scipy_sim = ScipySimSettings() # used only with the scipy_sim method
 
         self.freeze_attrs()
 

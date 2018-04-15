@@ -85,7 +85,7 @@ def check(a_matrix, b_matrix, step, max_time, start_point, inputs, normal_vec, e
 
     assert len(inputs) <= total_steps, "more inputs({}) than steps({})?".format(len(inputs), total_steps)
 
-    data = CheckTraceData()    
+    data = CheckTraceData()
     data.sim_time = max_time
 
     # we want to roughly get the desired number of sample points, so we may need to do multiple
@@ -110,12 +110,13 @@ def check(a_matrix, b_matrix, step, max_time, start_point, inputs, normal_vec, e
             else:
                 break
 
-        if stdout and num_steps > 1:
+        elapsed = time.time() - start
+        remaining = elapsed / ((1.0+index) / len(inputs)) - elapsed
+
+        if stdout and num_steps > 1 and remaining > 2.0:
             print "Combining {} steps (identical inputs)".format(num_steps)
 
-        if stdout:
-            elapsed = time.time() - start
-            remaining = elapsed / ((1.0+index) / len(inputs)) - elapsed
+        if stdout and remaining > 2.0:
             print "{} / {} (ETA: {:.2f} sec)".format(index, len(inputs), remaining)
 
         der_func = make_der_func(a_matrix, b_matrix, inputs[index])
@@ -136,7 +137,6 @@ def check(a_matrix, b_matrix, step, max_time, start_point, inputs, normal_vec, e
     diff = sim_val - end_val
 
     # normal_vec is -1.0
-    print "sim_val = {}, end_val = {}".format(sim_val, end_val)
 
     data.abs_error = numerator = abs(diff)
     denominator = abs(sim_val)
@@ -163,7 +163,7 @@ def sim(start, der_func, time_amount, num_steps, quick):
         tol /= 1e5 # more accurate simulation
 
     times = np.linspace(0, time_amount, num=1 + num_steps)
-    states = odeint(der_func, start, times, col_deriv=True, rtol=tol, atol=tol, mxstep=50000)
+    states = odeint(der_func, start, times, col_deriv=True, rtol=tol, atol=tol, mxstep=100000)
 
     states = states[1:]
     times = times[1:]
@@ -182,16 +182,17 @@ def plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step, 
     do_2d = xdim is not None and ydim is not None
 
     total_steps = int(math.ceil(max_time / step))
-    end_point = sim_states[-1]    
+    end_point = sim_states[-1]
     end_val = np.dot(end_point, normal_vec)
     tol = 1e-6
-    
-    print "End Point: {}".format(end_point)
+
+    if len(end_point) < 10:
+        print "End Point: {}".format(end_point)
 
     if end_val - tol <= normal_val:
         print "End Point is a violation (within tolerance): {} - {} <= {}".format(end_val, tol, normal_val)
     else:
-        print "End point is NOT a violation: {} > {}".format(end_val, normal_val)
+        print "End point is NOT a violation: {} - {} (tolerance) > {}".format(end_val, tol, normal_val)
 
     epsilon = step / 8.0 # to prevent round-off error on the end range
     input_times = np.arange(0.0, max_time + epsilon, step)
@@ -225,7 +226,7 @@ def plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step, 
         ax[0].set_ylabel('Projected State', fontsize=22)
         ax[0].set_title('Counter-Example Trace', fontsize=28)
 
-    if inputs is not None:
+    if inputs is not None and len(inputs) > 0:
         inputs.append(inputs[-1]) # there is one less input than time instants
         inputs = np.array(inputs, dtype=float)
 

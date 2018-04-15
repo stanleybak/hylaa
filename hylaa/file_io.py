@@ -145,19 +145,20 @@ def check_instance(stdout=True, skip_plot=False):
             # write inputs to use at each step
             f.write('    inputs = []\n')
 
-            prev_input = inputs[0]
-            total = 1
+            if len(inputs) > 0:
+                prev_input = inputs[0]
+                total = 1
 
-            for i in xrange(1, len(inputs)):
-                if (inputs[i] == prev_input).all():
-                    total += 1
-                else:
-                    f.write('    inputs += [{}] * {}\n'.format([u for u in prev_input], total))
-                    prev_input = inputs[i]
-                    total = 1
+                for i in xrange(1, len(inputs)):
+                    if (inputs[i] == prev_input).all():
+                        total += 1
+                    else:
+                        f.write('    inputs += [{}] * {}\n'.format([u for u in prev_input], total))
+                        prev_input = inputs[i]
+                        total = 1
 
-            # don't forget the last one
-            f.write('    inputs += [{}] * {}\n\n'.format([u for u in prev_input], total))
+                # don't forget the last one
+                f.write('    inputs += [{}] * {}\n\n'.format([u for u in prev_input], total))
 
         ###
         f.write('    step = {}\n'.format(step_size))

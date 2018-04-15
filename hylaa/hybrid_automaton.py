@@ -170,6 +170,7 @@ class LinearAutomatonMode(Freezable):
 
         self.u_constraints_csr = None # csr_matrix
         self.u_constraints_rhs = None # np.ndarray
+        self.u_range_tuples = None # list of tuples (optional)
 
         self.parent = parent
         self.transitions = [] # outgoing transitions
@@ -189,7 +190,7 @@ class LinearAutomatonMode(Freezable):
 
         self.output_space_csr = output_space_csr
 
-    def set_inputs(self, b_matrix_csc, u_constraints_csr, u_constraints_rhs):
+    def set_inputs(self, b_matrix_csc, u_constraints_csr, u_constraints_rhs, u_range_tuples=None):
         'sets the time-varying / uncertain inputs for the mode (optional)'
 
         assert self.a_matrix_csr is not None, "set_dynamics should be done before set_inputs"
@@ -204,9 +205,13 @@ class LinearAutomatonMode(Freezable):
         assert b_matrix_csc.shape[0] == self.a_matrix_csr.shape[0], \
                 "B-mat shape {} incompatible with A-mat shape {}".format(b_matrix_csc.shape, self.a_matrix_csr.shape)
 
+        if u_range_tuples is not None:
+            assert len(u_range_tuples) == b_matrix_csc.shape[1]
+
         self.b_matrix_csc = b_matrix_csc
         self.u_constraints_csr = u_constraints_csr
         self.u_constraints_rhs = u_constraints_rhs
+        self.u_range_tuples = u_range_tuples
 
     def set_dynamics(self, a_matrix_csr):
         'sets the autonomous system dynamics'

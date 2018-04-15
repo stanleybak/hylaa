@@ -104,19 +104,15 @@ class HylaaEngine(object):
                     output_space = self.cur_star.mode.output_space_csr
                     guard_mat = self.cur_star.mode.transitions[i].guard_matrix_csr
 
-                    first_constraint = (guard_mat * output_space)[0].toarray()
+                    first_constraint = (guard_mat[0] * output_space).toarray()
                     first_constraint.shape = (first_constraint.shape[1],)
 
                     init_space_csc = self.cur_star.init_space_csc
-
                     guard_threshold = self.cur_star.mode.transitions[i].guard_rhs[0]
 
-                    output_space = self.cur_star.mode.output_space_csr
 
-                    #end_first_output_val = self.result.output_vars[0]
                     # multiply this by the output constraint matrix...
-                    output_vals = self.cur_star.mode.transitions[i].guard_matrix_csr * self.result.output_vars
-                    first_output_val = output_vals[0]
+                    first_output_val = guard_mat[0] * self.result.output_vars
 
                     # construct inputs, which are in backwards order
                     inputs = []

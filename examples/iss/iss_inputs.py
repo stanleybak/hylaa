@@ -4,7 +4,7 @@ International Space Station Example in Hylaa-Continuous
 
 import numpy as np
 from scipy.io import loadmat
-from scipy.sparse import csr_matrix, csc_matrix
+from scipy.sparse import csr_matrix
 
 from hylaa.hybrid_automaton import LinearHybridAutomaton, bounds_list_to_init
 from hylaa.engine import HylaaSettings
@@ -20,36 +20,28 @@ def define_ha():
     mode = ha.new_mode('mode')
     dynamics = loadmat('iss.mat')
     a_matrix = dynamics['A']
-
-    # a is a csc_matrix
-    col_ptr = [n for n in a_matrix.indptr]
-    rows = [n for n in a_matrix.indices]
-    data = [n for n in a_matrix.data]
-
     b_matrix = dynamics['B']
-    num_inputs = b_matrix.shape[1]
 
-    for u in xrange(num_inputs):
-        rows += [n for n in b_matrix[:, u].indices]
-        data += [n for n in b_matrix[:, u].data]
-        col_ptr.append(len(data))
+    mode.set_dynamics(csr_matrix(a_matrix))
 
-    combined_mat = csc_matrix((data, rows, col_ptr), \
-        shape=(a_matrix.shape[0] + num_inputs, a_matrix.shape[1] + num_inputs))
+    # 0 <= u1 <= 0.1
+    # 0.8 <= u2 <= 1.0
+    # 0.9 <= u3 <= 1.0
+    bounds_list = [(0, 0.1), (0.8, 1.0), (0.9, 1.0)]
+    _, u_mat, u_rhs, u_range_tuples = bounds_list_to_init(bounds_list)
 
-    mode.set_dynamics(csr_matrix(combined_mat))
+    mode.set_inputs(b_matrix, u_mat, u_rhs, u_range_tuples)
 
     error = ha.new_mode('error')
 
     y3 = dynamics['C'][2]
-    col_ptr = [n for n in y3.indptr] + num_inputs * [y3.data.shape[0]]
-    y3 = csc_matrix((y3.data, y3.indices, col_ptr), shape=(1, y3.shape[1] + num_inputs))
     output_space = csr_matrix(y3)
 
     mode.set_output_space(output_space)
 
-    limit = 0.0005
-    #limit = 0.00017
+    #limit = 0.0005
+    limit = 0.0007
+
     trans1 = ha.new_transition(mode, error)
     mat = csr_matrix(([1], [0], [0, 1]), dtype=float, shape=(1, 1))
     rhs = np.array([-limit], dtype=float) # safe
@@ -69,16 +61,7 @@ def make_init_star(ha, hylaa_settings):
     dims = ha.modes.values()[0].a_matrix_csr.shape[0]
 
     for dim in xrange(dims):
-        if dim == 270: # input 1
-            lb = 0
-            ub = 0.1
-        elif dim == 271: # input 2
-            lb = 0.8
-            ub = 1.0
-        elif dim == 272: # input 3
-            lb = 0.9
-            ub = 1.0
-        elif dim < 270:
+        if dim < 270:
             lb = -0.0001
             ub = 0.0001
         else:
@@ -105,6 +88,10 @@ def define_settings(ha):
     settings.time_elapse.check_answer = False
 
     #settings.interval_guard_optimization = False
+    #settings.time_elapse.scipy_sim.max_step = 0.001
+
+    #settings.time_elapse.scipy_sim.rtol = 1e-9
+    #settings.time_elapse.scipy_sim.atol = 1e-12
 
     #settings.skip_step_times = False
 
@@ -114,12 +101,12 @@ def define_settings(ha):
     plot_settings.max_shown_polys = None
     plot_settings.label.y_label = '$y_{3}$'
     plot_settings.label.x_label = 'Time'
-    plot_settings.label.title = 'Space Station (Fixed Inputs)'
+    plot_settings.label.title = 'Space Station (Uncertain Inputs)'
     #plot_settings.label.axes_limits = (0.4, 0.6, -0.0002, -0.0001)
     plot_settings.plot_size = (12, 8)
     plot_settings.label.big(size=36)
 
-    plot_settings.extra_lines = [[(0.0, -0.00017), (20.0, -0.00017)], [(0.0, 0.00017), (20.0, 0.00017)]]
+    plot_settings.extra_lines = [[(0.0, -0.0005), (20.0, -0.0005)], [(0.0, 0.0005), (20.0, 0.0005)]]
 
     return settings
 

@@ -46,6 +46,8 @@ class GuardOptData(Freezable):
         if star.inputs > 0:
             self.lpi.set_input_constraints_csc(csc_matrix(star.mode.u_constraints_csr), star.mode.u_constraints_rhs)
 
+        self.optimized_lp_solution = None
+
         self.freeze_attrs()
 
     def update_full_lp(self):
@@ -92,53 +94,65 @@ class GuardOptData(Freezable):
 
         init_ranges = self.star.init_range_tuples
         basis_mat = self.star.time_elapse.cur_basis_mat
+        input_effects_mat = self.star.time_elapse.cur_input_effects_matrix
 
         assert len(init_ranges) == basis_mat.shape[1]
         assert len(self.transition.guard_rhs) == 1
         assert self.num_output_vars == 1
+        assert self.transition.guard_matrix_csr.shape == (1, 1)
+
+        guard_multiplier = self.transition.guard_matrix_csr[0, 0]
+
+        if self.optimized_lp_solution is None:
+            # +1 for output +1 for total input effects
+            self.optimized_lp_solution = [0.0] * (len(init_ranges) + 1 + 1)
+
+        result = self.optimized_lp_solution
+        total_output_index = len(init_ranges)
+        total_input_index = len(init_ranges) + 1
 
         guard_threshold = self.transition.guard_rhs[0]
-        guard_val = 0
+        noinput_effect = 0
 
         for init_index in xrange(len(init_ranges)):
             basis_val = basis_mat[0][init_index]
             min_init = init_ranges[init_index][0]
             max_init = init_ranges[init_index][1]
 
-            val1 = min_init * basis_val
-            val2 = max_init * basis_val
+            val1 = min_init * basis_val * guard_multiplier
+            val2 = max_init * basis_val * guard_multiplier
 
             # take the minimum of val1 and val2, since guard is CONDITION <= RHS
             if val1 < val2:
-                guard_val += val1
+                noinput_effect += val1
+                result[init_index] = min_init
             else:
-                guard_val += val2
+                noinput_effect += val2
+                result[init_index] = max_init
 
-        if guard_val <= guard_threshold:
-            # reconstruct result
-            result_len = self.num_output_vars + self.star.num_init_vars + self.num_output_vars
-            result_len += self.inputs * (self.star.time_elapse.next_step - 1)
+        # add input effects if they exist
+        if input_effects_mat is not None:
+            input_ranges = self.star.mode.u_range_tuples
 
-            result = np.zeros((result_len), dtype=float)
-            #result[-1] = guard_val # single output variable
+            for input_index in xrange(len(input_ranges)):
+                basis_val = input_effects_mat[0][input_index]
+                min_input = input_ranges[input_index][0]
+                max_input = input_ranges[input_index][1]
 
-            for init_index in xrange(len(init_ranges)):
-                basis_val = basis_mat[0][init_index]
-                min_init = init_ranges[init_index][0]
-                max_init = init_ranges[init_index][1]
+                val1 = min_input * basis_val * guard_multiplier
+                val2 = max_input * basis_val * guard_multiplier
 
-                val1 = min_init * basis_val
-                val2 = max_init * basis_val
+                # take the minimum of val1 and val2, since guard is CONDITION <= RHS
+                if val1 < val2:
+                    result[total_input_index] += val1
+                    result.append(min_input)
+                else:
+                    result[total_input_index] += val2
+                    result.append(max_input)
 
-                result[init_index] = min_init if val1 < val2 else max_init
+        result[total_output_index] = noinput_effect + result[total_input_index]
 
-            # num output vars == 1
-            result[-2] = guard_threshold
-            result[-1] = 0 # total input effects on output
-
-            rv = result
-        else:
-            rv = None
+        rv = np.array(result, dtype=float) if result[total_output_index] <= guard_threshold else None
 
         Timers.toc('get_optimized_lp_solution')
 
@@ -148,9 +162,26 @@ class GuardOptData(Freezable):
         '''update the LP solution and, if it's feasible, get its solution'''
 
         if self.star.settings.interval_guard_optimization and self.star.init_range_tuples is not None and \
-                                                              self.num_output_vars == 1:
+            (self.star.inputs == 0 or self.star.mode.u_range_tuples is not None) and self.num_output_vars == 1:
             # LP can be decomposed column-by-column (optimization)
             rv = self.get_optimized_lp_solution()
+
+            #check = self.update_full_lp()
+
+            #if rv is not None:
+            #    print "checking lp answer"
+            #    assert check is not None
+            #    assert len(rv) == len(check)
+
+            #    tol = 1e-6
+
+            #    for i in xrange(len(rv)):
+            #        val_optimized = rv[i]
+            #        val_glpk = check[i]
+
+            #        assert abs(val_optimized - val_glpk) < tol, "variable #{}, optimized({}) != glpk({})".format(
+            #            i, val_optimized, val_glpk)
+
         else:
             rv = self.update_full_lp()
 

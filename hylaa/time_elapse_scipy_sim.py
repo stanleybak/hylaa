@@ -16,7 +16,7 @@ class TimeElapseScipySim(Freezable):
 
     def __init__(self, time_elapser):
         self.settings = time_elapser.settings
-        self.sim_settings = self.settings.time_elapse.scipy
+        self.sim_settings = self.settings.time_elapse.scipy_sim
         self.a_matrix = time_elapser.a_matrix
         self.b_matrix = time_elapser.b_matrix
         self.time_elapser = time_elapser
@@ -184,8 +184,6 @@ class TimeElapseScipySim(Freezable):
             dense_output_list = [sim_obj.dense_output()]
             self.input_dense_outputs.append(dense_output_list)
             self.input_sim_objs.append(sim_obj)
-
-            do = sim_obj.dense_output()
 
 def find_dense_output(index, cur_time, sim_objs, dense_outputs):
     'find (or compute) the dense output instance at the passed-in time'

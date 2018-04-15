@@ -69,10 +69,7 @@ class Star(Freezable):
         for i in xrange(len(mode.transitions)):
             self._guard_opt_data.append(GuardOptData(self, mode, i))
 
-        self.num_plot_vars = 0
-        for d in [self.settings.plot.xdim_dir, self.settings.plot.ydim_dir]:
-            if d is not None:
-                self.num_plot_vars += 1
+        self.num_plot_vars = Star.get_num_plot_vars(self.settings.plot)
 
         self.freeze_attrs()
 
@@ -94,6 +91,7 @@ class Star(Freezable):
         rv = self._plot_lpi
 
         if rv is None:
+            print ". in star, self.num_plot_vars = {}".format(self.num_plot_vars)
             rv = LpInstance(self.num_plot_vars, self.num_init_vars, self.inputs)
             rv.set_init_constraints(self.init_mat, self.init_rhs)
             rv.set_no_output_constraints()
@@ -116,9 +114,11 @@ class Star(Freezable):
             self._plot_lpi.update_basis_matrix(self.time_elapse.cur_basis_mat[:self.num_plot_vars])
 
             if self.time_elapse.cur_input_effects_matrix is not None:
-                self._plot_lpi.add_input_effects_matrix(self.time_elapse.cur_input_effects_matrix[:2])
+                plot_input_effects_mat = self.time_elapse.cur_input_effects_matrix[:self.num_plot_vars]
+                self._plot_lpi.add_input_effects_matrix(plot_input_effects_mat)
 
         self._verts = None # cached vertices for plotting are no longer valid
+
 
     ######### star plotting methods below ############
 
@@ -128,16 +128,25 @@ class Star(Freezable):
     high_vert_mode = False # reduce plotting directions if the set has lots of verticies (drawing optimization)
 
     @staticmethod
+    def get_num_plot_vars(plot_settings):
+        'get the number of plot variables'
+
+        num_plot_vars = 0
+
+        if plot_settings.plot_mode != PlotSettings.PLOT_NONE:
+            for d in [plot_settings.xdim_dir, plot_settings.ydim_dir]:
+                if d is not None:
+                    num_plot_vars += 1
+
+            assert num_plot_vars > 0, "both plot.xdim_dir and plot.ydim_dir are None: not allowed"
+
+        return num_plot_vars
+
+    @staticmethod
     def init_plot_vecs(plot_settings):
         'initialize plot_vecs'
 
-        num_plot_vars = 0
-        for d in [plot_settings.xdim_dir, plot_settings.ydim_dir]:
-            if d is not None:
-                num_plot_vars += 1
-
-        assert num_plot_vars > 0, "both plot.xdim_dir and plot.ydim_dir are None: not allowed"
-
+        num_plot_vars = Star.get_num_plot_vars(plot_settings)
         Star.plot_settings = plot_settings
         Star.plot_vecs = []
 

@@ -127,6 +127,7 @@ class LpInstance(Freezable):
         assert num_output_vars > 0
         assert num_init_vars > 0
 
+        print "initialized lp with {} output vars".format(num_output_vars)
         self.lp_data = LpInstance._init_lp(num_output_vars, num_init_vars, num_inputs)
 
         # put a copy of del_lp into the object for use in the destructor
