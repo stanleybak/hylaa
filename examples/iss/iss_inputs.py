@@ -39,8 +39,8 @@ def define_ha():
 
     mode.set_output_space(output_space)
 
-    #limit = 0.0005
-    limit = 0.0007
+    limit = 0.0005
+    #limit = 0.0007
 
     trans1 = ha.new_transition(mode, error)
     mat = csr_matrix(([1], [0], [0, 1]), dtype=float, shape=(1, 1))

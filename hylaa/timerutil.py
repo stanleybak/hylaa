@@ -12,11 +12,24 @@ from collections import OrderedDict
 class TimerData(object):
     'Performance timer which can be started with tic() and paused with toc()'
 
-    def __init__(self, name):
+    def __init__(self, name, parent):
+        assert parent is None or isinstance(parent, TimerData)
+
         self.name = name
         self.total_secs = 0
         self.num_calls = 0
         self.last_start_time = None
+
+        self.parent = parent # parent TimerData, None for top-level timers
+        self.children = [] # a list of child TimerData
+
+    def full_name(self):
+        'get the full name of the timer (including ancestors)'
+
+        if self.parent is None:
+            return self.name
+        else:
+            return "{}.{}".format(self.parent.full_name(), self.name)
 
     def tic(self):
         'start the timer'
@@ -32,8 +45,6 @@ class TimerData(object):
     def toc(self):
         'stop the timer'
 
-        #print "Toc({})".format(self.name)
-
         if self.last_start_time is None:
             raise RuntimeError("Timer stopped without being started: {}".format(self.name))
 
@@ -47,8 +58,10 @@ class Timers(object):
     print_stats to print time statistics
     '''
 
-    # map of timer_name -> TimerData
-    timers = OrderedDict([('total', TimerData('total'))])
+    # complete map of timer_name -> TimerData
+    timers = OrderedDict()
+
+    stack = [] # stack of currently-running timers, parents at the start, children at the end
 
     def __init__(self):
         raise RuntimeError('Timers is a static class; should not be instantiated')
@@ -57,58 +70,80 @@ class Timers(object):
     def reset():
         'reset all timers'
 
-        Timers.timers = {'total': TimerData('total')}
+        Timers.timers = OrderedDict()
 
     @staticmethod
     def tic(name):
         'start a timer'
 
+        td = Timers.timers.get(name)
+
         # create timer object if it doesn't exist
-        if Timers.timers.get(name) is None:
-            Timers.timers[name] = TimerData(name)
+        if td is None:
+            parent = None if len(Timers.stack) == 0 else Timers.stack[-1]
+            td = TimerData(name, parent)
+            Timers.timers[name] = td
+
+            if len(Timers.stack) > 0:
+                Timers.stack[-1].children.append(td)
+        else:
+            # timer exists, make sure it's in the correct place in the heirarchy
+            if len(Timers.stack) == 0:
+                assert td.parent is None, "Timer changed in heirarchy. Currently no parent, previous was {}".format(
+                    td.full_name)
+            else:
+                new_name = Timers.stack[-1].full_name() + "." + td.name
+
+                assert td.parent == Timers.stack[-1], \
+                    "Timer changed in heirarchy. Tried to start timer {}, previously at {}".format( \
+                    new_name, td.full_name())
 
         Timers.timers[name].tic()
+        Timers.stack.append(td)
 
     @staticmethod
     def toc(name):
         'stop a timer'
 
+        assert Timers.stack[-1].name == name, "Out of order toc(). Expected to first stop timer {}".format(
+            Timers.stack[-1].full_name())
+
         Timers.timers[name].toc()
+        Timers.stack.pop()
 
     @staticmethod
     def print_stats():
         'print statistics about performance timers to stdout'
 
-        total = Timers.timers["total"].total_secs
+        for td in Timers.timers.values():
+            if td.parent is None:
+                Timers.print_stats_recursive(td, 0)
 
-        skip_timers = ['total', 'frame']
+    @staticmethod
+    def print_stats_recursive(td, level):
+        'recursively print information about a timer'
 
-        timer_names = Timers.timers.keys()
-        timer_names.sort()
+        if td.last_start_time is not None:
+            raise RuntimeError("Timer was never stopped: {}".format(td.name))
 
-        for timer_name in timer_names:
-            timer = Timers.timers[timer_name]
+        if td.parent is None:
+            percent_str = ""
+        else:
+            percent_str = " ({:.1f}%)".format(100 * td.total_secs / td.parent.total_secs)
 
-            if timer.last_start_time is not None:
-                raise RuntimeError("timer was never stopped: {}".format(timer.name))
+        print "{}{} Time ({} calls): {:.2f} sec{}".format(" " * level * 2, \
+            td.name.capitalize(), td.num_calls, td.total_secs, percent_str)
 
-            # print total time last
-            if timer.name in skip_timers:
-                continue
+        total_children_secs = 0
 
-            print "{} Time ({} calls): {:.2f} sec ({:.1f}%)".format(
-                timer.name.capitalize(), timer.num_calls, timer.total_secs, 100 * timer.total_secs / total)
+        for child in td.children:
+            total_children_secs += child.total_secs
 
-        if Timers.timers.get('frame') is not None:
-            frame = Timers.timers["frame"]
+            Timers.print_stats_recursive(child, level + 1)
 
-            overhead = total - frame.total_secs
-            print "Matplotlib Overhead ({} frames): {:.2f} sec ({:.1f}%)".format(
-                frame.num_calls, overhead, 100 * overhead / total)
+        if len(td.children) > 0:
+            other = td.total_secs - total_children_secs
+            percent_str = " ({:.1f}%)".format(100 * other / td.total_secs)
 
-        print "Total Time: {:.2f} sec".format(total)
-
-
-
-
-
+            print "{}Other: {:.2f} sec{}".format(" " * (level + 1) * 2, \
+                other, percent_str)
