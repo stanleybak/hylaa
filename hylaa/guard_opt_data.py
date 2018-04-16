@@ -165,23 +165,6 @@ class GuardOptData(Freezable):
             (self.star.inputs == 0 or self.star.mode.u_range_tuples is not None) and self.num_output_vars == 1:
             # LP can be decomposed column-by-column (optimization)
             rv = self.get_optimized_lp_solution()
-
-            #check = self.update_full_lp()
-
-            #if rv is not None:
-            #    print "checking lp answer"
-            #    assert check is not None
-            #    assert len(rv) == len(check)
-
-            #    tol = 1e-6
-
-            #    for i in xrange(len(rv)):
-            #        val_optimized = rv[i]
-            #        val_glpk = check[i]
-
-            #        assert abs(val_optimized - val_glpk) < tol, "variable #{}, optimized({}) != glpk({})".format(
-            #            i, val_optimized, val_glpk)
-
         else:
             rv = self.update_full_lp()
 
