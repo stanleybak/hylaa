@@ -10,20 +10,22 @@ import math
 import time
 
 import numpy as np
-from scipy.sparse import csr_matrix
+from scipy.io import loadmat
+from scipy.sparse import csr_matrix, csc_matrix
 from scipy.sparse.linalg import expm_multiply
 from scipy.integrate import odeint
 
-from hylaa.settings import HylaaSettings
-from hylaa.krylov_python import KrylovIterator
+from hylaa.settings import HylaaSettings, TimeElapseSettings
+from hylaa.krylov_python import KrylovIteration
+from hylaa.time_elapse import TimeElapser
+from hylaa.hybrid_automaton import LinearHybridAutomaton, bounds_list_to_init
 
 from krypy.utils import arnoldi as krypy_arnoldi # krypy is used for testing
 
-def make_settings(lanczos=False):
+def make_settings():
     'make a hylaa settings object'
 
     h = HylaaSettings(0.1, 1.0)
-    h.simulation.krylov_lanczos = lanczos
 
     return h
 
@@ -189,6 +191,66 @@ def relative_error(correct, estimate):
 
     return rel_error
 
+def load_pde():
+    'loads the pde dynamics a matrix, returns (LinearAutomatonMode, init_matrix_csc)'
+
+    ha = LinearHybridAutomaton()
+    mode = ha.new_mode('mode')
+
+    dynamics = loadmat('pde.mat')
+
+    a_matrix = csc_matrix(dynamics['A'])
+    col_ptr = [n for n in a_matrix.indptr]
+    rows = [n for n in a_matrix.indices]
+    data = [n for n in a_matrix.data]
+
+    b_matrix = csc_matrix(dynamics['B'])
+    num_inputs = b_matrix.shape[1]
+
+    for u in xrange(num_inputs):
+        rows += [n for n in b_matrix[:, u].indices]
+        data += [n for n in b_matrix[:, u].data]
+        col_ptr.append(len(data))
+
+    combined_mat = csc_matrix((data, rows, col_ptr), \
+        shape=(a_matrix.shape[0] + num_inputs, a_matrix.shape[1] + num_inputs))
+
+    a_matrix = csr_matrix(combined_mat)
+    mode.set_dynamics(a_matrix)
+
+    c_matrix = csr_matrix(dynamics['C'])
+    output_space = csr_matrix((c_matrix.data, c_matrix.indices, c_matrix.indptr), shape=(c_matrix.shape[0], \
+                               c_matrix.shape[1] + num_inputs))
+
+    mode.set_output_space(output_space)
+
+
+    # making initial space
+    n = a_matrix.shape[0]
+    bounds_list = [] # bounds on each dimension
+
+    for dim in xrange(n):
+        if dim < 64:
+            lb = 0
+            ub = 0
+        elif dim < 80:
+            lb = 0.001
+            ub = 0.0015
+        elif dim < 84:
+            lb = -0.002
+            ub = -0.0015
+        elif dim == n-1: # u1
+            lb = 0.5
+            ub = 1.0
+        else:
+            raise RuntimeError('unknown dimension: {}'.format(dim))
+
+        bounds_list.append((lb, ub))
+
+    init_space, _, _, _ = bounds_list_to_init(bounds_list)
+
+    return mode, init_space
+
 class TestKrylov(unittest.TestCase):
     'Unit tests for hylaa.krylov'
 
@@ -224,8 +286,12 @@ class TestKrylov(unittest.TestCase):
             krypy_v *= norm
 
             # using python
-            ksim = KrylovIterator(make_settings(), a_matrix, key_dir_mat)
+            use_transpose = False
+            ksim = KrylovIteration(make_settings(add_ones_row=False), a_matrix, use_transpose, key_dir_mat)
             python_pv, python_h = ksim.run_iteration(init_sparse, iterations)
+
+            self.assertEquals(python_pv.shape, krypy_v.shape)
+            self.assertEquals(python_h.shape, krypy_h.shape)
 
             self.assertTrue(np.allclose(python_h, krypy_h), "Python h matrix incorrect")
             self.assertTrue(np.allclose(python_pv, krypy_v), "Python v matrix incorrect")
@@ -252,9 +318,13 @@ class TestKrylov(unittest.TestCase):
             krypy_v *= norm
 
             # using python
-            ksim = KrylovIterator(make_settings(True), a_matrix, key_dir_mat)
+            ksim = KrylovIteration(make_settings(False), a_matrix, False, key_dir_mat)
+            ksim.lanczos = True # force usin lanczos iteration
             python_pv, python_h = ksim.run_iteration(init_sparse, iterations)
             python_h = python_h.toarray()
+
+            self.assertEquals(python_pv.shape, krypy_v.shape)
+            self.assertEquals(python_h.shape, krypy_h.shape)
 
             self.assertTrue(np.allclose(python_h, krypy_h), "Python h matrix incorrect")
             self.assertTrue(np.allclose(python_pv, krypy_v), "Python v matrix incorrect")
@@ -275,7 +345,8 @@ class TestKrylov(unittest.TestCase):
         key_dir_mat = csr_matrix([[1.0 for _ in xrange(dims)], [1.0 if i == 0 else 0.0 for i in xrange(dims)]])
 
         # using python lanczos
-        ksim = KrylovIterator(make_settings(True), a_matrix_sparse, key_dir_mat)
+        ksim = KrylovIteration(make_settings(False), a_matrix_sparse, False, key_dir_mat)
+        ksim.lanczos = True # force usin lanczos iteration
         python_pv, python_h = ksim.run_iteration(e1_sparse, iterations)
 
         python_pv = python_pv[:, :iterations]
@@ -312,7 +383,8 @@ class TestKrylov(unittest.TestCase):
         key_dir_mat = csr_matrix([[1.0 for _ in xrange(dims)], [1.0 if i == 0 else 0.0 for i in xrange(dims)]])
 
         # using python lanczos
-        ksim = KrylovIterator(make_settings(True), a_matrix_sparse, key_dir_mat)
+        ksim = KrylovIteration(make_settings(False), a_matrix_sparse, False, key_dir_mat)
+        ksim.lanczos = True # force usin lanczos iteration
         python_pv, python_h = ksim.run_iteration(e1_sparse, iterations)
 
         python_pv = python_pv[:, :iterations]
@@ -376,18 +448,18 @@ class TestKrylov(unittest.TestCase):
 
         init_sparse = csr_matrix(init_dense.T)
 
-        ksim = KrylovIterator(make_settings(), a_matrix, key_dir_mat, add_ones_key_dir=True)
+        ksim = KrylovIteration(make_settings(True), a_matrix, False, key_dir_mat)
         python_pv_auto, python_h_auto = ksim.run_iteration(init_sparse, iterations)
 
         # using python
-        ksim = KrylovIterator(make_settings(), a_matrix, key_dir_mat_with_one_norm, add_ones_key_dir=False)
+        ksim = KrylovIteration(make_settings(False), a_matrix, False, key_dir_mat_with_one_norm)
         python_pv, python_h = ksim.run_iteration(init_sparse, iterations)
 
         self.assertTrue(np.allclose(python_h, python_h_auto), "H matrices don't match")
         self.assertTrue(np.allclose(python_pv, python_pv_auto), "PV matrices don't match")
 
     def test_lanczos_one_norm(self):
-        'test lanczos computaiton with one norm setting'
+        'test lanczos computation with one norm setting'
 
         dims = 10
         iterations = 5
@@ -403,20 +475,44 @@ class TestKrylov(unittest.TestCase):
         indptr = np.concatenate((indptr, [len(data)]))
         key_dir_mat_with_one_norm = csr_matrix((data, indices, indptr), shape=(dims + 1, dims))
 
-        #init_dense = np.array([[2.] if d == 1 else [.4] if d == dims-1 else [0.0] for d in xrange(dims)], dtype=float)
-        init_dense = np.array([[1.] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
+        init_dense = np.array([[2.] if d == 1 else [.4] if d == dims-1 else [0.0] for d in xrange(dims)], dtype=float)
+        #init_dense = np.array([[1.] if d == 0 else [0.0] for d in xrange(dims)], dtype=float)
 
         init_sparse = csr_matrix(init_dense.T)
 
-        ksim = KrylovIterator(make_settings(True), a_matrix, key_dir_mat, add_ones_key_dir=True)
+        ksim = KrylovIteration(make_settings(True), a_matrix, False, key_dir_mat)
+        self.assertTrue(ksim.lanczos)
         python_pv_auto, python_h_auto = ksim.run_iteration(init_sparse, iterations)
 
         # using python
-        ksim = KrylovIterator(make_settings(), a_matrix, key_dir_mat_with_one_norm, add_ones_key_dir=False)
+        ksim = KrylovIteration(make_settings(False), a_matrix, False, key_dir_mat_with_one_norm)
+        ksim.lanczos = True
         python_pv, python_h = ksim.run_iteration(init_sparse, iterations)
 
-        self.assertTrue(np.allclose(python_h, python_h_auto.toarray()), "H matrices don't match")
+        self.assertEqual(python_h.shape, python_h_auto.shape)
+        self.assertEqual(python_pv.shape, python_pv_auto.shape)
+
+        self.assertTrue(np.allclose(python_h.toarray(), python_h_auto.toarray()), "H matrices don't match")
         self.assertTrue(np.allclose(python_pv, python_pv_auto), "PV matrices don't match")
+
+    def test_tuning(self):
+        'test tuning method with krylov simulation'
+
+        mode, init_space_csc = load_pde()
+
+        settings = make_settings()
+        settings.time_elapse.method = TimeElapseSettings.KRYLOV
+        settings.time_elapse.check_answer = True
+        k = settings.time_elapse.krylov
+
+        k.stdout = True 
+        k.ode_class = None
+
+        te = TimeElapser(mode, settings, init_space_csc)
+
+        te.step()
+
+        self.assertLess(te.time_elapse_obj.stats['arnoldi_iter'][0], 80)
 
 if __name__ == '__main__':
     unittest.main()

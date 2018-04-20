@@ -77,16 +77,17 @@ class KrylovSettings(Freezable):
     'krylov simulation settings'
 
     def __init__(self):
-        # accuracy settings. If you don't have enough accuracy, decrease rel error and increase samples
-        self.target_error = 1e-6 # desired relative error of projV * exmp(H * end_time)
-        self.add_ones_key_dir = True # add an output direction of all 1's for error calculation
-        self.use_rel_error = True # use relative error (False = absolute error)
+        self.stdout = False # additional printing for krylov method
+        self.target_error = 1e-6 # desired krylov simulation error
 
-        self.use_odeint = True # use odeint instead of expm for computing expm(t*v)
-        self.odeint_simtol = 1e-10 # if using odeint, use this simulation error tolerance for atol and rtol
-        self.stdout = False # extra printing on stdout during krylov iteration process
+        # simulation settings for computation on smaller H Matrix
+        self.ode_class = RK45 # simulation class object. if None, will use expm_mult
 
-        self.error_stats_iterations = None # If not None, will output the error at each iteration to 'error.dat'
+        # settings for the simulation (if ode_class is not None)
+        self.max_step = np.inf
+        self.rtol = 1e-7
+        self.atol = 1e-10
+
         self.freeze_attrs()
 
 class PlotSettings(Freezable):

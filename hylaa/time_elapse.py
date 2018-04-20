@@ -33,6 +33,9 @@ class TimeElapser(Freezable):
         self.output_space_csr = create_output_space_csr(hylaa_settings.plot, mode)
         self.init_space_csc = init_space_csc
 
+        assert self.output_space_csr.shape[0] > 0, "need at least one output dimension"
+        assert self.init_space_csc.shape[1] > 0, "need at least one initial dimension"
+
         self.next_step = 0
         self.cur_basis_mat = None # assigned on step()
         self.cur_input_effects_matrix = None # assigned on step() if inputs exist
