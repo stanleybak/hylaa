@@ -11,8 +11,8 @@ import time
 
 import numpy as np
 from scipy.io import loadmat
-from scipy.sparse import csr_matrix, csc_matrix
-from scipy.sparse.linalg import expm_multiply
+from scipy.sparse import csr_matrix, csc_matrix, dia_matrix
+from scipy.sparse.linalg import expm_multiply, eigsh
 from scipy.integrate import odeint
 
 from hylaa.settings import HylaaSettings, TimeElapseSettings
@@ -248,6 +248,126 @@ def load_pde():
         bounds_list.append((lb, ub))
 
     init_space, _, _, _ = bounds_list_to_init(bounds_list)
+
+    return mode, init_space
+
+def heat3d_dia(samples):
+    'fast dia_matrix construction for heat3d dynamics'
+
+    diffusity_const = 0.01
+    heat_exchange_const = 0.5
+
+    samples_sq = samples**2
+    dims = samples**3
+    step = 1.0/(samples + 1)
+
+    a = diffusity_const * 1.0 / step**2
+    d = -2.0 * (a + a + a)
+
+    data = np.zeros((7, dims), dtype=float)
+    offsets = np.array([-samples_sq, -samples, -1, 0, 1, samples, samples_sq], dtype=float)
+
+    # element with z = -1
+    data[0, :-samples_sq] = a
+
+    # element with y = -1
+    for s in xrange(samples):
+        start = s*samples_sq
+        end = (s+1)*(samples_sq) - samples
+        data[1, start:end] = a
+
+    # element with x = -1
+    for s in xrange(samples_sq):
+        start = s*samples
+        end = (s+1)*(samples) - 1
+        data[2, start:end] = a
+
+    #### diagonal element ####
+    data[3, :] = d # (prefill)
+
+    # adjust when z = 0 or z = samples-1
+    data[3, :samples_sq] += a
+    data[3, -samples_sq:] += a
+
+    # adjust when y = 0 or y = samples-1
+    for z in xrange(samples):
+        z_offset = z * samples_sq
+
+        data[3, z_offset:z_offset + samples] += a
+        data[3, z_offset+samples_sq-samples:z_offset+samples_sq] += a
+
+    # adjust when x = 0 (and add diffusion term when x = samples-1)
+    for z in xrange(samples):
+        for y in xrange(samples):
+            offset = z * samples_sq + y * samples
+
+            data[3, offset] += a
+
+            data[3, offset + samples - 1] += a/(1+heat_exchange_const*step)
+
+    #### end diagnal element ####
+    # element with x = +1
+    for s in xrange(samples_sq):
+        start = 1 + s * samples
+        end = (s+1) * samples
+        data[4, start:end] = a
+
+    # element with y = +1
+    for s in xrange(samples):
+        start = s*samples_sq+samples
+        end = (s+1)*(samples_sq)
+        data[5, start:end] = a
+
+    # element with z = +1
+    data[6, samples_sq:] = a
+
+    rv = dia_matrix((data, offsets), shape=(dims, dims))
+    assert np.may_share_memory(rv.data, data) # make sure we didn't copy memory
+
+    return rv
+
+def load_heat(samples):
+    'loads the pde dynamics a matrix, returns (LinearAutomatonMode, init_matrix_csc)'
+
+    assert samples >= 10 and samples % 10 == 0, "init region isn't evenly divided by discretization"
+
+    ha = LinearHybridAutomaton()
+
+    mode = ha.new_mode('mode')
+
+    a_matrix = heat3d_dia(samples)
+
+    n = a_matrix.shape[0]
+
+    assert isinstance(a_matrix, dia_matrix)
+    mode.set_dynamics(a_matrix)
+
+    # set output space
+    center_1d = int(math.floor(samples/2.0))
+    center_dim = center_1d * samples**2 + center_1d * samples + center_1d
+    output_space = csr_matrix(np.array([[1.0 if d == center_dim else 0.0 for d in xrange(n)]], dtype=float))
+    
+    mode.set_output_space(output_space)
+
+    # create init space
+    data = []
+    inds = []
+    indptrs = [0]
+
+    for z in xrange(samples / 10 + 1):
+        zoffset = z * samples * samples
+
+        for y in xrange(2 * samples / 10 + 1):
+            yoffset = y * samples
+
+            for x in xrange(4 * samples / 10 + 1):
+                dim = x + yoffset + zoffset
+
+                data.append(1)
+                inds.append(dim)
+
+    indptrs.append(len(data))
+    init_space = csc_matrix((data, inds, indptrs), dtype=float, shape=(n, 1))
 
     return mode, init_space
 
@@ -498,21 +618,37 @@ class TestKrylov(unittest.TestCase):
     def test_tuning(self):
         'test tuning method with krylov simulation'
 
-        mode, init_space_csc = load_pde()
+        mode, init_space_csc = load_heat(40) #load_pde()
 
         settings = make_settings()
         settings.time_elapse.method = TimeElapseSettings.KRYLOV
         settings.time_elapse.check_answer = True
         k = settings.time_elapse.krylov
 
-        k.stdout = True 
+        k.stdout = True
         k.ode_class = None
 
+        print "making timeelapser"
         te = TimeElapser(mode, settings, init_space_csc)
 
+        print "calling step"
         te.step()
 
         self.assertLess(te.time_elapse_obj.stats['arnoldi_iter'][0], 80)
+
+    def test_eigenvalues(self):
+        '''performance testing for computing eigenvalues of large matrices'''
+
+        mode, init_space_csc = load_heat(20) #load_pde()
+        print "Finished Making ODEs...\n"
+
+        mat = mode.a_matrix_csr
+        k=1
+
+        start = time.time()
+        vals_LA = eigsh(mat, k=k, return_eigenvectors=False, which='LA')
+        print "eigsh result = {}".format(vals_LA[0].real)
+        print "LA computation time: {:.2} sec".format(time.time() - start)
 
 if __name__ == '__main__':
     unittest.main()

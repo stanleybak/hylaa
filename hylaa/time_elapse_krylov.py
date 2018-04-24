@@ -7,8 +7,9 @@ import time
 
 import numpy as np
 from scipy.sparse import csr_matrix
-from scipy.sparse.linalg import expm
-from scipy.integrate import odeint
+from scipy.sparse.linalg import expm, expm_multiply
+from scipy.integrate import odeint, simps
+from scipy.sparse.linalg import eigs
 
 import psutil
 
@@ -36,6 +37,10 @@ class TimeElapseKrylov(Freezable):
         self.krylov_iteration = KrylovIteration(time_elapser.settings, time_elapser.a_matrix, self.use_transpose, \
             key_dir_mat)
 
+        # for error bound computation
+        self.nu_a = self.compute_nu_a()
+        print ". computing_nu_a = {}".format(self.nu_a)
+
         # -- performance statistics --
         # arnoldi_iter -> list of the number of arnoldi iterations for each initial vector
         #
@@ -53,6 +58,34 @@ class TimeElapseKrylov(Freezable):
             self.cur_basis_mat_list = self.make_cur_basis_mat_list()
 
         self.time_elapser.cur_basis_mat = self.cur_basis_mat_list[self.time_elapser.next_step].copy()
+
+    def compute_nu_a(self):
+        '''initialize the krylov error bounds'''
+
+        Timers.tic('compute_nu_a')
+
+        if self.krylov_iteration.lanczos: # already symmetric
+            mat = self.krylov_iteration.a_matrix
+        else:
+            Timers.tic('create_symmetric')
+            mat = (self.krylov_iteration.a_matrix + self.krylov_iteration.a_matrix.T) / 2.0
+            Timers.toc('create_symmetric')
+
+        # minimum eigenvalue with -A is negative maximum eigenvalue of with A
+        if self.settings.time_elapse.krylov.use_lanczos_eigenvalues:
+            raise RuntimeError('unimplemented (use_lanczos_eigenvalues=True)')
+        else:
+            if mat.shape[0] > 1e6:
+                print "Warning: krylov.use_lanczos_eigenvalues=False for high-dimensional system... may be slow"
+
+            print "n = {}, norm = {}".format(mat.shape[0], np.linalg.norm(mat.toarray()))
+            eig = -eigs(mat, k=1, which='LR', return_eigenvectors=False)[0].real
+
+        Timers.toc('compute_nu_a')
+
+        assert isinstance(eig, float)
+
+        return eig
 
     def make_cur_basis_mat_list(self):
         '''
@@ -207,72 +240,11 @@ def format_secs(sec):
 
     return rv
 
-#def check_available_memory_basis(stdout, s, k, i):
-#    'check if enough memory is available to store the basis matrix'
-
-#    required_mb = (s * k * i * 8) / 1024.0 / 1024.0
-#    available_mb = get_free_memory_mb()
-
-#    if stdout:
-#        print "Basis Matrix Required GB = {:.3f} (+1), available GB = {:.3f} (s = {}, k = {}, i+1 = {})".format(
-#            required_mb / 1024.0, available_mb / 1024.0, s, k, i)
-
-#    if required_mb + 1024 > available_mb: # add 1024 mb since we want 1 GB free for other things
-#        raise MemoryError("Not enogh memory for storing the basis matrices.")
-
-def compute_error(correct, estimate, is_relative):
-    '''compute the error between two vectors
-    if is_relative is False, then this computes the maximum absolute error
+def projected_sim(settings, h_mat, pv_mat):
     '''
+    Simulate the system defined by h_mat, projected the result with pv_mat at each step
 
-    return relative_error(correct, estimate) if is_relative else absolute_error(correct, estimate)
-
-def absolute_error(correct, estimate):
-    'compute maximum absolute error between entries in two vectors'
-
-    rv = abs(correct[0] - estimate[0])
-
-    for i in xrange(2, len(correct)):
-        rv = max(rv, abs(correct[i] - estimate[i]))
-
-    return rv
-
-def relative_error(correct, estimate):
-    'compute the relative error between the correct value and an estimate'
-
-    rel_error = 1.0e16 # large error is returned if it can't be computed due to numerical issues
-
-    try:
-        norm = np.linalg.norm(correct)
-
-        if not math.isinf(norm) and not math.isnan(norm):
-            if norm < 1e-13: # if norm is small, return absolute error
-                rel_error = norm
-            else:
-                diff = correct - estimate
-
-                abs_error = np.linalg.norm(diff)
-
-                if not math.isinf(abs_error) and not math.isnan(abs_error):
-                    rel_error = abs_error / norm
-    except FloatingPointError:
-        pass
-
-    assert not math.isinf(rel_error) and not math.isnan(rel_error)
-
-    return rel_error
-
-def get_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, limit=None):
-    '''
-    Get the error given the h and pv matrices, for the given number of arnoldi_iterations.
-    If arnoldi_iter is None, then use the full passed-in matrices.
-
-    This compares the error at all time steps.
-
-    If return_sim is True, then a tuple is returned where the second element is list of the
-    sim points at each time step.
-
-    if limit is not None, this will break as soon as the error exceeds the limit
+    returns a list of states at each time point
     '''
 
     assert h_mat.shape[0] > 1
@@ -397,35 +369,80 @@ def get_error(settings, h_mat, pv_mat, arnoldi_iter=None, return_sim=False, limi
 
     return error if not return_sim else (error, sim)
 
-def print_error_at_each_step(settings, h_mat, pv_mat):
+def get_a_posterori_error(settings, h_mat, nu):
     '''
-    a profiling function. If this is used, output a file with the error for every number of
-    arnoldi iteartions, and then quit.
+    Compute the a posterori error bound
+
+    from Theorem 3.1 in "Error Bounds for the Krylov Subspace Methods for Computations of Matrix Exponentials",
+    by Hao Wang and Qiang Ye
+
+    Err[T] <= H[k+1, k] * integral_{0}^{T} |h(t)| * g(t) dt
+    where: h(t) = e_k^T * exp(-t * H_k) * e_1
+        g(t) = exp((t - T) * nu(A))
+        nu(A) = lamda_{min} (A + A^T)/2
     '''
 
-    filename = 'error.dat'
+    Timers.tic('a_posterori_error')
 
-    print "Printing errors to file: {}".format(filename)
+    max_time = settings.num_steps * settings.step
+    k = h_mat.shape[1]
+    assert h_mat.shape[0] == k + 1
 
-    max_iter = h_mat.shape[0]
+    e_1 = np.array([[1.0] if n == 0 else [0] for n in xrange(k)], dtype=float)
+    e_k_t = np.array([[1.0 if n == k-1 else 0 for n in xrange(k)]], dtype=float)
 
-    with open(filename, 'w') as f:
+    def g(t):
+        'g(t) = exp((t - T) * nu(A))'
 
-        for aiter in xrange(2, max_iter):
-            max_error = 0.0
+        print "t = {}, t-max_time = {}, nu = {}, prod = {}".format(t, t - max_time, nu, (t-max_time) * nu)
 
-            error = get_error(settings, h_mat, pv_mat, arnoldi_iter=aiter)
-            max_error = max(max_error, error)
+        rv = math.exp((t - max_time) * nu)
 
-            if aiter % 10 == 0:
-                print "Computed Error {} / {}: {:.25f}".format(aiter, max_iter, error)
+        print "g returning {}".format(rv)
 
-            line = "{}\t{:.25f}\n".format(aiter, max_error)
-            #print line,
-            f.write(line)
+        return rv
 
-    print "print_error_at_each_step data written to {}, exiting".format(filename)
+    def h(t):
+        'h(t) = e_k^T * exp(-t * H_k) * e_1'
+
+        minus_t_h_mat = csc_matrix(-t * h_mat[:-1, :])
+
+        rv = np.dot(e_k_t, np.dot(expm(minus_t_h_mat), e_1))[0, 0]
+
+        print "h returning {}".format(rv)
+
+        return rv
+
+    def int_func(t):
+        '|h(t)| * g(t)'
+
+        rv = abs(h(t)) * g(t)
+
+        assert isinstance(rv, float), "rv was {}".format(rv)
+
+        return rv
+
+
+    samples = settings.time_elapse.krylov.integral_samples
+    assert samples > 4
+
+    print "start compute for simps"
+    x_list = [i * max_time / (samples-1.) for i in range(samples)]
+    y_list = [int_func(t) for t in x_list]
+    print "end compute for simps"
+
+    print "x_list = {}\ny_list = {}".format(x_list, y_list)
+
+    print ".start simps"
+    rv = h_mat[k, k-1] * simps(y_list, x_list, even='avg')
+    print ".end simps"
+
+    Timers.toc('a_posterori_error')
+
+    print "!!dims = {}, h_mat corner = {}, final error = {}".format(k, h_mat[k, k-1], rv)
     exit(1)
+
+    return rv
 
 def arnoldi_sim_with_max_error(time_elapser, kry_init_vec_csr, iterations, error_limit):
     '''
@@ -440,45 +457,37 @@ def arnoldi_sim_with_max_error(time_elapser, kry_init_vec_csr, iterations, error
     settings = time_elapser.settings
     stdout = settings.time_elapse.krylov.stdout
     error = None
+    obj = time_elapser.time_elapse_obj
 
-    pv_mat, h_mat = time_elapser.time_elapse_obj.krylov_iteration.run_iteration(kry_init_vec_csr, iterations)
-
-    # profiling was desired
-    if settings.time_elapse.krylov.error_stats_iterations is not None:
-        print_error_at_each_step(settings, h_mat, pv_mat)
+    pv_mat, h_mat = obj.krylov_iteration.run_iteration(kry_init_vec_csr, iterations)
 
     if stdout:
-        print "Finished Arnoldi/Lanczos... checking error at each step"
+        print "Finished Arnoldi/Lanczos... checking error"
 
     if h_mat.shape[0] <= iterations:
-        error_limit = None
+        error = 0
         iterations = h_mat.shape[0]
 
         if stdout:
             print "Arnoldi terminated early (after {} iterations). Simulating without error limit.".format(iterations)
+    else:
+        error = get_a_posterori_error(settings, h_mat, obj.nu_a)
 
-    h_mat = h_mat[:-1, :].copy()
-    pv_mat = pv_mat[:, :-1].copy()
-
-    error, projected_sim = get_error(settings, h_mat, pv_mat, return_sim=True, limit=error_limit)
-
-    if error_limit is not None and error == 0 and not settings.time_elapse.krylov.add_ones_key_dir:
-        if stdout:
-            print "Error was zero and didn't add ones row to key directions. Increasing iterations."
-
-        rv = None
-
-    elif error_limit is None or error < error_limit:
+    if error_limit is None or error < error_limit:
         if stdout and error_limit is not None:
             print "Error {} was below threshold: {}".format(error, error_limit)
 
-        rv = projected_sim
+        h_mat = h_mat[:-1, :].copy()
+        pv_mat = pv_mat[:, :-1].copy()
+
+        print "implement projected_sim based off of get_error"
+        #error, projected_sim = get_error(settings, h_mat, pv_mat, return_sim=True, limit=error_limit)
+        rv = projected_sim(settings, h_mat, pv_mat)
     else:
         rv = None
 
     return rv, iterations
 
-# projected_simulation = arnoldi_projected_simulation(time_elapser, init_vec)
 def arnoldi_sim_autotune(time_elapser, kry_init_vec_csr):
     '''
     Perform a projected simulation from a given initial vector. This auto-tunes the number
@@ -496,10 +505,6 @@ def arnoldi_sim_autotune(time_elapser, kry_init_vec_csr):
     arnoldi_iter = 4
     sim = None
 
-    # if profiling was desired
-    if settings.time_elapse.krylov.error_stats_iterations is not None:
-        arnoldi_iter = settings.time_elapse.krylov.error_stats_iterations
-
     while True:
         if arnoldi_iter >= n:
             arnoldi_iter = n
@@ -516,7 +521,7 @@ def arnoldi_sim_autotune(time_elapser, kry_init_vec_csr):
         if sim is not None:
             break
         else:
-            arnoldi_iter = int(arnoldi_iter * 1.5)
+            arnoldi_iter = int(arnoldi_iter * 1.5) # increase the number of iterations and try again
 
     # update max used memory
     #prev_mem = time_elapser.stats['min_free_memory']

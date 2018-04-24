@@ -45,44 +45,18 @@ def ones_dot(vec):
 
     return total
 
-#def check_available_memory_arnoldi(stdout, a, n):
-#    'check if enough memory is available to store the V and H matrix'
-
-#    required_mb = (((a+1) * n) + (a*(a+1))) * 8 / 1024.0 / 1024.0
-#    available_mb = get_free_memory_mb()
-
-#    if stdout:
-#        print "Arnoldi Required GB = {:.3f} (+1), available GB = {:.3f} (a = {}, n = {})".format(
-#            required_mb / 1024.0, available_mb / 1024.0, a, n)
-
-#    if required_mb + 1024 > available_mb: # add 1024 mb since we want 1 GB free for other things
-#        raise MemoryError("Not enogh memory for arnoldi computation.")
-
-def add_ones_row(mat):
-    '''add a row of ones to a csr matrix efficiently'''
-
-    assert isinstance(mat, csr_matrix)
-
-    w = mat.shape[1]
-
-    new_data = np.zeros((w,), dtype=float)
-    new_inds = np.zeros((w,), dtype=mat.indices.dtype)
-
-    for n in xrange(w):
-        new_inds[n] = n
-        new_data[n] = 1.0
-
-    data = np.concatenate((mat.data, new_data))
-    indices = np.concatenate((mat.indices, new_inds))
-    ind_ptr = np.concatenate((mat.indptr, [len(data)]))
-
-    return csr_matrix((data, indices, ind_ptr), shape=(mat.shape[0] + 1, w))
-
-
 def is_symmetric(mat):
     'is the passed-in square matrix symmetric?'
 
-    return (mat != mat.T).nnz == 0
+    Timers.tic('is_symmetric')
+
+    start = time.time()
+    rv = (mat != mat.T).nnz == 0
+    print "is_symmetric time = {}".format(time.time() - start)
+
+    Timers.toc('is_symmetric')
+
+    return rv
 
 class KrylovIteration(Freezable):
     'Krylov Iteration container class (Arnoldi or Lanczos iteration)'
@@ -103,12 +77,8 @@ class KrylovIteration(Freezable):
         else:
             self.a_matrix = a_matrix
 
-        if self.kry_settings.add_ones_key_dir:
-            self.key_dir_mat = add_ones_row(key_dir_mat)
-        else:
-            self.key_dir_mat = key_dir_mat
-
-        self.tol = 1e-9
+        self.key_dir_mat = key_dir_mat
+        self.tol = 1e-9 # tolerance for termination checking during arnoldi / lanczos iteration
 
         # from reset
         self.init_norm = None

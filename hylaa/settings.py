@@ -80,6 +80,8 @@ class KrylovSettings(Freezable):
         self.stdout = False # additional printing for krylov method
         self.target_error = 1e-6 # desired krylov simulation error
 
+        self.use_lanczos_eigenvalues = True # use Lanczos to find the largest eigenvalue? False = scipy.linalg.eigs()
+
         # simulation settings for computation on smaller H Matrix
         self.ode_class = RK45 # simulation class object. if None, will use expm_mult
 
@@ -87,6 +89,9 @@ class KrylovSettings(Freezable):
         self.max_step = np.inf
         self.rtol = 1e-7
         self.atol = 1e-10
+
+        # settings for error bound
+        self.integral_samples = 31 # number of samples for integral using Simpson's rule
 
         self.freeze_attrs()
 

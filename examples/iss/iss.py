@@ -101,7 +101,9 @@ def define_settings(ha):
     step_size = 0.005
     settings = HylaaSettings(step=step_size, max_time=max_time, plot_settings=plot_settings)
 
-    settings.time_elapse.method = TimeElapseSettings.SCIPY_SIM
+    #settings.time_elapse.method = TimeElapseSettings.SCIPY_SIM
+    settings.time_elapse.method = TimeElapseSettings.KRYLOV
+    settings.time_elapse.krylov.use_lanczos_eigenvalues = False
     settings.time_elapse.check_answer = False
 
     #settings.interval_guard_optimization = False
