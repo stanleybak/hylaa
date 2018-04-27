@@ -8,7 +8,6 @@ import time
 import numpy as np
 from scipy.linalg import expm
 from scipy.sparse import csr_matrix, csc_matrix
-from scipy.sparse.linalg import expm_multiply
 from scipy.integrate import odeint, simps
 from scipy.sparse.linalg import eigs
 
@@ -98,14 +97,15 @@ class TimeElapseKrylov(Freezable):
             mat = (mat + mat) / 2.0
             Timers.toc('create_symmetric')
 
+        print "computing eigenvalues..."
+
         # minimum eigenvalue with -A is negative maximum eigenvalue of with A
         if self.settings.time_elapse.krylov.use_lanczos_eigenvalues:
             raise RuntimeError('unimplemented (use_lanczos_eigenvalues=True)')
         else:
-            if mat.shape[0] > 1e6:
+            if mat.shape[0] >= 1e6:
                 print "Warning: krylov.use_lanczos_eigenvalues=False for high-dimensional system... may be slow"
 
-            print "n = {}, norm = {}".format(mat.shape[0], np.linalg.norm(mat.toarray()))
             eig = -eigs(mat, k=1, which='LR', return_eigenvectors=False)[0].real
 
         Timers.toc('compute_nu_a')
@@ -274,127 +274,31 @@ def projected_sim(settings, h_mat, pv_mat):
     returns a list of states at each time point
     '''
 
+    Timers.tic("projected_sim")
     assert h_mat.shape[0] > 1
 
-    sim = None
-    use_rel_error = settings.time_elapse.krylov.use_rel_error
-    error = 0
+    ode_class = settings.time_elapse.krylov.ode_class
+    sim = []
 
-    # use less arnoldi iterations than what's in the matrices
-    if arnoldi_iter is not None:
-        h_mat = h_mat[:arnoldi_iter, :arnoldi_iter].copy()
-        pv_mat = pv_mat[:, :arnoldi_iter].copy()
-
-    if limit is not None or arnoldi_iter is not None:
-        small_h_mat = h_mat[:-1, :-1].copy()
-        small_pv_mat = pv_mat[:, :-1].copy()
-
-    if settings.time_elapse.krylov.use_odeint:
-        Timers.tic('get_error odeint')
-        start_vec = np.array([1.0 if d == 0 else 0.0 for d in xrange(h_mat.shape[0])], dtype=float)
-
-        if limit is None:
-            full_sim = odeint_sim((h_mat, start_vec, settings))
-
-            sim = np.zeros((full_sim.shape[0] - 1, pv_mat.shape[0]), dtype=float)
-
-            for i in xrange(1, full_sim.shape[0]): # skip step zero
-                sim[i-1] = np.dot(pv_mat, full_sim[i])
-        else:
-            small_start_vec = start_vec[:-1].copy()
-            args = [(h_mat, start_vec, settings), (small_h_mat, small_start_vec, settings)]
-
-            full_sim, small_full_sim = [odeint_sim(a) for a in args]
-
-            if np.all(abs(full_sim[1]) < 1e-9): # was compare with new zeros vec
-                if settings.print_output:
-                    print "First step of simulation was almost all zeros... increasing num iterations"
-
-                error = limit + 1
-
-            # sample last / middle / first before going through the whole thing
-            steps = full_sim.shape[0]
-
-            for step in [steps-1, steps / 2, 1]:
-                cur_result = np.dot(pv_mat, full_sim[step])
-                small_result = np.dot(small_pv_mat, small_full_sim[step])
-
-                error = max(error, compute_error(cur_result, small_result, use_rel_error))
-
-                if error > limit:
-                    if settings.print_output:
-                        print "Sim error with {} krylov iterations ({}) above limit ({})".format(
-                            h_mat.shape[0], error, limit)
-                    break
-
-            if error < limit: # go through each step
-                Timers.tic('krylov multiply by PV')
-
-                if settings.print_output:
-                    print "Sim error with {} iter at sampled times was low enough, checking all steps...".format(
-                        h_mat.shape[0])
-
-                sim = np.dot(full_sim[1:], pv_mat.T)
-
-                for step in xrange(0, sim.shape[0]):
-                    cur_result = sim[step]
-                    small_result = np.dot(small_pv_mat, small_full_sim[step + 1])
-
-                    error = max(error, compute_error(cur_result, small_result, use_rel_error))
-
-                    if error > limit:
-                        if settings.print_output:
-                            print "Simulation error at step {} exceeds threshold: {} (limit: {})".format(
-                                step, error, limit)
-
-                        sim = None
-                        break
-
-                if settings.print_output and error < limit:
-                    print "Simulation error was low enough at all steps: {} (limit: {})".format(error, limit)
-
-                Timers.toc('krylov multiply by PV')
-
-        Timers.toc('get_error odeint')
-    else:
-        Timers.tic('get_error expm')
-        matrix_exp = expm(settings.step * h_mat)
+    if ode_class is None:
+        Timers.tic('h-mat expm')
+        one_step_mat = csc_matrix(-1 * settings.step * h_mat) # use negative time step
+        matrix_exp = expm(one_step_mat).toarray()
         cur_col = matrix_exp[:, 0]
-        Timers.toc('get_error expm')
+        Timers.toc('h-mat expm')
 
-        # for accuracy check
-        Timers.tic('get_error expm')
-        small_matrix_exp = expm(settings.step * small_h_mat) # step time is already included in loaded a_mat
-        small_col = small_matrix_exp[:, 0]
-        Timers.toc('get_error expm')
+        sim.append(np.dot(pv_mat, cur_col))
 
-        # do the comparison at the first step
-        cur_result = np.dot(pv_mat, cur_col)
-        small_result = np.dot(small_pv_mat, small_col)
-        error = max(error, compute_error(cur_result, small_result, use_rel_error))
-
-        if return_sim:
-            sim = [cur_result]
-
-        for step in xrange(2, settings.num_steps + 1):
+        for _ in xrange(2, settings.num_steps + 1):
             cur_col = np.dot(matrix_exp, cur_col)
-            small_col = np.dot(small_matrix_exp, small_col)
 
-            # maybe we want to check error in the middle as well
-            cur_result = np.dot(pv_mat, cur_col)
-            small_result = np.dot(small_pv_mat, small_col)
-            error = max(error, compute_error(cur_result, small_result, use_rel_error))
+            sim.append(np.dot(pv_mat, cur_col))
+    else:
+        raise RuntimeError("ode_class != None unimplemented")
 
-            if return_sim:
-                sim.append(cur_result)
+    Timers.toc('projected_sim')
 
-            if limit is not None and error > limit:
-                if settings.print_output:
-                    print "Error {} exceeded limit {} at step {}".format(error, limit, step)
-
-                break
-
-    return error if not return_sim else (error, sim)
+    return sim
 
 def get_a_posterori_error(settings, h_mat, nu, error_limit):
     '''
@@ -510,8 +414,6 @@ def arnoldi_sim_with_max_error(time_elapser, kry_init_vec_csr, iterations, error
         h_mat = h_mat[:-1, :].copy()
         pv_mat = pv_mat[:, :-1].copy()
 
-        print "implement projected_sim based off of get_error"
-        #error, projected_sim = get_error(settings, h_mat, pv_mat, return_sim=True, limit=error_limit)
         rv = projected_sim(settings, h_mat, pv_mat)
     else:
         rv = None
@@ -573,11 +475,7 @@ def assign_from_sim(rv, sim, index, settings, use_transpose):
     Timers.tic('update result list')
 
     for i in xrange(len(sim)):
-
-        if settings.time_elapse.krylov.add_ones_key_dir:
-            piece = sim[i][:-1]
-        else:
-            piece = sim[i][:]
+        piece = sim[i][:]
 
         if use_transpose:
             rv[i+1][index, :piece.shape[0]] = piece

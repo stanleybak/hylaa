@@ -178,7 +178,7 @@ class HylaaEngine(object):
         '''
 
         assert isinstance(init_star, Star), "initial states should be a Star object"
-        Timers.reset()
+        #Timers.reset()
         np.set_printoptions(suppress=True) # suppress floating point printing
 
         self.result = HylaaResult()

@@ -161,9 +161,14 @@ def define_settings(samples_per_side):
 
     settings = HylaaSettings(step=0.5, max_time=25.0, plot_settings=plot_settings)
     settings.time_elapse.method = TimeElapseSettings.KRYLOV
-    settings.time_elapse.krylov.use_lanczos_eigenvalues = False
-    settings.time_elapse.krylov.integral_samples = 11
-    settings.time_elapse.krylov.stdout = True
+    settings.skip_step_times = True
+    kryset = settings.time_elapse.krylov
+    settings.time_elapse.check_answer = False
+
+    kryset.use_lanczos_eigenvalues = False
+    kryset.integral_samples = 11
+    kryset.stdout = True
+    kryset.ode_class = None
 
     center_x = int(math.floor(samples_per_side/2.0))
     center_y = int(math.floor(samples_per_side/2.0))
@@ -179,7 +184,7 @@ def define_settings(samples_per_side):
 def run_hylaa():
     'Runs hylaa with the given settings, returning the HylaaResult object.'
 
-    samples_per_side = 10
+    samples_per_side = 50
 
     ha = define_ha(samples_per_side)
     settings = define_settings(samples_per_side)

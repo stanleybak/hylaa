@@ -106,7 +106,7 @@ class TimeElapser(Freezable):
 
         Timers.tic('expm check answer')
 
-        assert self.a_matrix.shape[0] <= 1000, "check_answer = True with large matrix (dims > 1000)"
+        assert self.dims <= 1000, "check_answer = True with large matrix (dims > 1000)"
         tol = self.settings.time_elapse.check_answer_abs_tol
 
         # the step number was already advanced, so decrease it by one before calling step()
