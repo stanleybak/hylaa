@@ -31,6 +31,7 @@ class TimeElapser(Freezable):
         self.inputs = 0 if self.b_matrix is None else self.b_matrix.shape[1]
 
         self.output_space_csr = create_output_space_csr(hylaa_settings.plot, mode)
+
         self.init_space_csc = init_space_csc
 
         assert self.output_space_csr.shape[0] > 0, "need at least one output dimension"
@@ -173,11 +174,15 @@ def create_output_space_csr(plot_settings, ha_mode):
     cols = []
     indptr = [0]
 
+    dims = ha_mode.a_matrix_csr.shape[0]
+
     if plot_settings.plot_mode != PlotSettings.PLOT_NONE:
         dirs = [plot_settings.xdim_dir, plot_settings.ydim_dir]
 
         for plot_dir in dirs:
             if isinstance(plot_dir, int):
+                assert plot_dir < dims, "plot_dir({}) >= system dimensions({})".format(plot_dir, dims)
+
                 data.append(1.0)
                 cols.append(plot_dir)
                 indptr.append(len(data))
@@ -186,6 +191,10 @@ def create_output_space_csr(plot_settings, ha_mode):
                 xdir = csr_matrix(plot_dir)
                 assert len(xdir.shape) == 1 or xdir.shape[0] == 1, \
                     "expected row vector for plot direction, got shape: {}".format(plot_dir.shape)
+                assert len(xdir) == dims
+
+                for n in xdir.indices:
+                    assert n >= 0 and n < dims, "out of bounds plot index: {} (sys dims = {})".format(n, dims)
 
                 data += [n for n in xdir.data]
                 cols += [n for n in xdir.indices]
@@ -199,7 +208,5 @@ def create_output_space_csr(plot_settings, ha_mode):
         data += [n for n in ha_mode.output_space_csr.data]
         cols += [n for n in ha_mode.output_space_csr.indices]
         indptr += [i + offset for i in ha_mode.output_space_csr.indptr[1:]]
-
-    dims = ha_mode.a_matrix_csr.shape[0]
 
     return csr_matrix((data, cols, indptr), shape=(num_directions, dims), dtype=float)

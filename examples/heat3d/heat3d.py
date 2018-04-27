@@ -132,9 +132,6 @@ def make_init_star(ha, hylaa_settings, samples):
     inds = []
     indptrs = [0]
 
-    data = []
-    inds = []
-
     assert samples >= 10 and samples % 10 == 0, "init region isn't evenly divided by discretization"
 
     for z in xrange(samples / 10 + 1):
@@ -166,6 +163,7 @@ def define_settings(samples_per_side):
     settings.time_elapse.method = TimeElapseSettings.KRYLOV
     settings.time_elapse.krylov.use_lanczos_eigenvalues = False
     settings.time_elapse.krylov.integral_samples = 11
+    settings.time_elapse.krylov.stdout = True
 
     center_x = int(math.floor(samples_per_side/2.0))
     center_y = int(math.floor(samples_per_side/2.0))
@@ -173,7 +171,7 @@ def define_settings(samples_per_side):
 
     center_dim = center_z * samples_per_side * samples_per_side + center_y * samples_per_side + center_x
 
-    plot_settings.xdim_dir = samples_per_side**3 + 1 # +0 = input, +1 = time, +2 = affine
+    plot_settings.xdim_dir = None
     plot_settings.ydim_dir = center_dim
 
     return settings

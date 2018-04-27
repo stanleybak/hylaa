@@ -46,6 +46,8 @@ def define_ha():
     y3 = csc_matrix((y3.data, y3.indices, col_ptr), shape=(1, y3.shape[1] + num_inputs))
     output_space = csr_matrix(y3)
 
+    print "y3.data = {}, y3.indices = {}, y3.col_ptr = {}".format(y3.data, y3.indices, y3.col_ptr)
+
     mode.set_output_space(output_space)
 
     limit = 0.0005

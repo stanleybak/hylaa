@@ -45,37 +45,20 @@ def ones_dot(vec):
 
     return total
 
-def is_symmetric(mat):
-    'is the passed-in square matrix symmetric?'
-
-    Timers.tic('is_symmetric')
-
-    start = time.time()
-    rv = (mat != mat.T).nnz == 0
-    print "is_symmetric time = {}".format(time.time() - start)
-
-    Timers.toc('is_symmetric')
-
-    return rv
-
 class KrylovIteration(Freezable):
     'Krylov Iteration container class (Arnoldi or Lanczos iteration)'
 
-    def __init__(self, hylaa_settings, a_matrix, use_transpose, key_dir_mat):
+    def __init__(self, hylaa_settings, a_matrix, use_lanczos, key_dir_mat):
         assert a_matrix.shape[0] == a_matrix.shape[1], "a_mat should be square"
         assert key_dir_mat.shape[1] == a_matrix.shape[0], "key_dir_mat width should equal number of dims"
         assert not isinstance(a_matrix, np.ndarray), "a_matrix should be a sparse matrix"
         assert isinstance(key_dir_mat, csr_matrix), "key_dir_mat should be a csr_matrix"
 
         self.kry_settings = hylaa_settings.time_elapse.krylov
-        self.lanczos = is_symmetric(a_matrix)
+        self.lanczos = use_lanczos
         self.print_status = self.kry_settings.stdout and a_matrix.shape[0] >= int(1e6)
 
-        if use_transpose and not self.lanczos:
-            # we need to compute with the transpose of the a matrix
-            self.a_matrix = csr_matrix(a_matrix.transpose())
-        else:
-            self.a_matrix = a_matrix
+        self.a_matrix = a_matrix
 
         self.key_dir_mat = key_dir_mat
         self.tol = 1e-9 # tolerance for termination checking during arnoldi / lanczos iteration

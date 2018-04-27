@@ -6,8 +6,9 @@ import math
 import time
 
 import numpy as np
-from scipy.sparse import csr_matrix
-from scipy.sparse.linalg import expm, expm_multiply
+from scipy.linalg import expm
+from scipy.sparse import csr_matrix, csc_matrix
+from scipy.sparse.linalg import expm_multiply
 from scipy.integrate import odeint, simps
 from scipy.sparse.linalg import eigs
 
@@ -17,6 +18,19 @@ from hylaa.timerutil import Timers
 from hylaa.settings import HylaaSettings
 from hylaa.util import Freezable
 from hylaa.krylov_python import KrylovIteration
+
+def is_symmetric(mat):
+    'is the passed-in square matrix symmetric?'
+
+    Timers.tic('is_symmetric')
+
+    start = time.time()
+    rv = (mat != mat.T).nnz == 0
+    print "is_symmetric time = {}".format(time.time() - start)
+
+    Timers.toc('is_symmetric')
+
+    return rv
 
 class TimeElapseKrylov(Freezable):
     'container object for time elapse krylov method'
@@ -34,12 +48,25 @@ class TimeElapseKrylov(Freezable):
         else:
             key_dir_mat = time_elapser.output_space_csr
 
-        self.krylov_iteration = KrylovIteration(time_elapser.settings, time_elapser.a_matrix, self.use_transpose, \
-            key_dir_mat)
+        a_matrix = time_elapser.a_matrix
+        use_lanczos = is_symmetric(a_matrix)
 
         # for error bound computation
-        self.nu_a = self.compute_nu_a()
+        self.nu_a = self.compute_nu_a(a_matrix, use_lanczos)
         print ". computing_nu_a = {}".format(self.nu_a)
+
+        if self.use_transpose and not use_lanczos:
+            # we need to compute with the transpose of the a matrix
+            a_matrix = csr_matrix(a_matrix.transpose())
+        else:
+            a_matrix = a_matrix
+
+        # modify in place
+        a_matrix *= -1
+
+        self.krylov_iteration = KrylovIteration(time_elapser.settings, a_matrix, use_lanczos, key_dir_mat)
+
+        time_elapser.a_matrix = None # this makes sure it's not used since we modified it in place
 
         # -- performance statistics --
         # arnoldi_iter -> list of the number of arnoldi iterations for each initial vector
@@ -59,16 +86,16 @@ class TimeElapseKrylov(Freezable):
 
         self.time_elapser.cur_basis_mat = self.cur_basis_mat_list[self.time_elapser.next_step].copy()
 
-    def compute_nu_a(self):
+    def compute_nu_a(self, a_matrix, use_lanczos):
         '''initialize the krylov error bounds'''
 
         Timers.tic('compute_nu_a')
 
-        if self.krylov_iteration.lanczos: # already symmetric
-            mat = self.krylov_iteration.a_matrix
-        else:
+        mat = a_matrix
+
+        if not use_lanczos: # not symmetric already
             Timers.tic('create_symmetric')
-            mat = (self.krylov_iteration.a_matrix + self.krylov_iteration.a_matrix.T) / 2.0
+            mat = (mat + mat) / 2.0
             Timers.toc('create_symmetric')
 
         # minimum eigenvalue with -A is negative maximum eigenvalue of with A
@@ -163,8 +190,7 @@ class TimeElapseKrylov(Freezable):
         rv = []
 
         # initialize step zero
-
-        step_zero_mat = (key_dir_mat * init_space_csc).toarray()
+        step_zero_mat = (key_dir_mat * csr_matrix(init_space_csc)).toarray()
 
         rv.append(step_zero_mat)
 
@@ -173,6 +199,7 @@ class TimeElapseKrylov(Freezable):
 
         # check if there's enough memory (otherwise python likes to consume everything before freezing or crashing)
         available_mb = psutil.virtual_memory().available / 1024.0 / 1024.0
+
         needed_mb = self.time_elapser.settings.num_steps * rv[0].shape[0] * rv[0].shape[1] * 8 / 1024.0 / 1024.0
 
         # keep a reserve of 1024 mb for other things
@@ -369,7 +396,7 @@ def projected_sim(settings, h_mat, pv_mat):
 
     return error if not return_sim else (error, sim)
 
-def get_a_posterori_error(settings, h_mat, nu):
+def get_a_posterori_error(settings, h_mat, nu, error_limit):
     '''
     Compute the a posterori error bound
 
@@ -391,25 +418,25 @@ def get_a_posterori_error(settings, h_mat, nu):
     e_1 = np.array([[1.0] if n == 0 else [0] for n in xrange(k)], dtype=float)
     e_k_t = np.array([[1.0 if n == k-1 else 0 for n in xrange(k)]], dtype=float)
 
+    h_mat_square = h_mat[:-1, :].toarray()
+
     def g(t):
         'g(t) = exp((t - T) * nu(A))'
 
-        print "t = {}, t-max_time = {}, nu = {}, prod = {}".format(t, t - max_time, nu, (t-max_time) * nu)
-
         rv = math.exp((t - max_time) * nu)
-
-        print "g returning {}".format(rv)
 
         return rv
 
     def h(t):
         'h(t) = e_k^T * exp(-t * H_k) * e_1'
 
-        minus_t_h_mat = csc_matrix(-t * h_mat[:-1, :])
+        exp_mat = expm(-t * h_mat_square)
 
-        rv = np.dot(e_k_t, np.dot(expm(minus_t_h_mat), e_1))[0, 0]
+        dotted = np.dot(exp_mat, e_1)
 
-        print "h returning {}".format(rv)
+        rv = np.dot(e_k_t, dotted)[0, 0]
+
+        assert isinstance(rv, float), "h's rv was not a scalar, instead it was: {} ({})".format(rv, type(rv))
 
         return rv
 
@@ -418,7 +445,7 @@ def get_a_posterori_error(settings, h_mat, nu):
 
         rv = abs(h(t)) * g(t)
 
-        assert isinstance(rv, float), "rv was {}".format(rv)
+        assert isinstance(rv, float), "int_func's rv was not a scalar, instead it was: {} ({})".format(rv, type(rv))
 
         return rv
 
@@ -426,21 +453,24 @@ def get_a_posterori_error(settings, h_mat, nu):
     samples = settings.time_elapse.krylov.integral_samples
     assert samples > 4
 
-    print "start compute for simps"
-    x_list = [i * max_time / (samples-1.) for i in range(samples)]
-    y_list = [int_func(t) for t in x_list]
+    print "start compute forsimps"
+
+    print "TODO: optimize loop to compute in backwards order and exit upon excessive error"
+    x_list = []
+    y_list = []
+    for i in xrange(samples):
+        x = i * max_time / (samples-1.)
+        y = int_func(x)
+
+        x_list.append(x)
+        y_list.append(y)
+
     print "end compute for simps"
 
-    print "x_list = {}\ny_list = {}".format(x_list, y_list)
-
-    print ".start simps"
     rv = h_mat[k, k-1] * simps(y_list, x_list, even='avg')
-    print ".end simps"
 
     Timers.toc('a_posterori_error')
-
-    print "!!dims = {}, h_mat corner = {}, final error = {}".format(k, h_mat[k, k-1], rv)
-    exit(1)
+    print "error bound for {} iterations: {}".format(k, rv)
 
     return rv
 
@@ -470,8 +500,8 @@ def arnoldi_sim_with_max_error(time_elapser, kry_init_vec_csr, iterations, error
 
         if stdout:
             print "Arnoldi terminated early (after {} iterations). Simulating without error limit.".format(iterations)
-    else:
-        error = get_a_posterori_error(settings, h_mat, obj.nu_a)
+    elif error_limit is not None:
+        error = get_a_posterori_error(settings, h_mat, obj.nu_a, error_limit)
 
     if error_limit is None or error < error_limit:
         if stdout and error_limit is not None:
@@ -498,7 +528,7 @@ def arnoldi_sim_autotune(time_elapser, kry_init_vec_csr):
 
     settings = time_elapser.settings
     stdout = settings.time_elapse.krylov.stdout
-    n = time_elapser.a_matrix.shape[0]
+    n = time_elapser.dims
 
     error_limit = settings.time_elapse.krylov.target_error
 
