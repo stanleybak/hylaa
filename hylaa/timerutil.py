@@ -23,6 +23,18 @@ class TimerData(object):
         self.parent = parent # parent TimerData, None for top-level timers
         self.children = [] # a list of child TimerData
 
+    def get_child(self, name):
+        'get a child timer with the given name'
+
+        rv = None
+
+        for child in self.children:
+            if child.name == name:
+                rv = child
+                break
+
+        return rv
+
     def full_name(self):
         'get the full name of the timer (including ancestors)'
 
@@ -58,8 +70,8 @@ class Timers(object):
     print_stats to print time statistics
     '''
 
-    # complete map of timer_name -> TimerData
-    timers = OrderedDict()
+    # map of timer_name -> TimerData
+    top_level_timers = OrderedDict()
 
     stack = [] # stack of currently-running timers, parents at the start, children at the end
 
@@ -70,35 +82,29 @@ class Timers(object):
     def reset():
         'reset all timers'
 
-        Timers.timers = OrderedDict()
+        Timers.top_level_timers = OrderedDict()
+        Timers.stack = []
 
     @staticmethod
     def tic(name):
         'start a timer'
 
-        td = Timers.timers.get(name)
+        if len(Timers.stack) == 0:
+            td = Timers.top_level_timers.get(name)
+        else:
+            td = Timers.stack[-1].get_child(name)
 
         # create timer object if it doesn't exist
         if td is None:
             parent = None if len(Timers.stack) == 0 else Timers.stack[-1]
             td = TimerData(name, parent)
-            Timers.timers[name] = td
 
-            if len(Timers.stack) > 0:
-                Timers.stack[-1].children.append(td)
-        else:
-            # timer exists, make sure it's in the correct place in the heirarchy
             if len(Timers.stack) == 0:
-                assert td.parent is None, "Timer changed in heirarchy. Currently no parent, previous was {}".format(
-                    td.full_name)
+                Timers.top_level_timers[name] = td
             else:
-                new_name = Timers.stack[-1].full_name() + "." + td.name
+                Timers.stack[-1].children.append(td)
 
-                assert td.parent == Timers.stack[-1], \
-                    "Timer changed in heirarchy. Tried to start timer {}, previously at {}".format( \
-                    new_name, td.full_name())
-
-        Timers.timers[name].tic()
+        td.tic()
         Timers.stack.append(td)
 
     @staticmethod
@@ -108,31 +114,35 @@ class Timers(object):
         assert Timers.stack[-1].name == name, "Out of order toc(). Expected to first stop timer {}".format(
             Timers.stack[-1].full_name())
 
-        Timers.timers[name].toc()
+        Timers.stack[-1].toc()
         Timers.stack.pop()
 
     @staticmethod
     def print_stats():
         'print statistics about performance timers to stdout'
 
-        for td in Timers.timers.values():
-            if td.parent is None:
-                Timers.print_stats_recursive(td, 0)
+        for td in Timers.top_level_timers.values():
+            Timers.print_stats_recursive(td, 0)
 
     @staticmethod
     def print_stats_recursive(td, level):
         'recursively print information about a timer'
 
+        percent_threshold = 0.0
+
         if td.last_start_time is not None:
             raise RuntimeError("Timer was never stopped: {}".format(td.name))
 
         if td.parent is None:
+            percent = 100
             percent_str = ""
         else:
-            percent_str = " ({:.1f}%)".format(100 * td.total_secs / td.parent.total_secs)
+            percent = 100 * td.total_secs / td.parent.total_secs
+            percent_str = " ({:.1f}%)".format(percent)
 
-        print "{}{} Time ({} calls): {:.2f} sec{}".format(" " * level * 2, \
-            td.name.capitalize(), td.num_calls, td.total_secs, percent_str)
+        if percent >= percent_threshold:
+            print "{}{} Time ({} calls): {:.2f} sec{}".format(" " * level * 2, \
+                td.name.capitalize(), td.num_calls, td.total_secs, percent_str)
 
         total_children_secs = 0
 
@@ -143,7 +153,10 @@ class Timers(object):
 
         if len(td.children) > 0:
             other = td.total_secs - total_children_secs
-            percent_str = " ({:.1f}%)".format(100 * other / td.total_secs)
+            other_percent = 100 * other / td.total_secs
 
-            print "{}Other: {:.2f} sec{}".format(" " * (level + 1) * 2, \
-                other, percent_str)
+            if other_percent >= percent_threshold:
+                percent_str = " ({:.1f}%)".format(other_percent)
+
+                print "{}Other: {:.2f} sec{}".format(" " * (level + 1) * 2, \
+                    other, percent_str)

@@ -192,7 +192,7 @@ class HylaaEngine(object):
             self.plotman.compute_and_animate(self.do_step, self.is_finished)
 
         # assign results
-        self.result.timers = Timers.timers
+        self.result.timers = Timers.top_level_timers
 
         if self.settings.time_elapse.method == TimeElapseSettings.KRYLOV:
             self.result.krylov_stats = init_star.time_elapse.time_elapse_obj.stats

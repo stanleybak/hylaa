@@ -53,30 +53,36 @@ class TimeElapser(Freezable):
         else:
             self.checker_obj = None
 
-        method = self.settings.time_elapse.method
-
-        if method == TimeElapseSettings.MATRIX_EXP:
-            self.time_elapse_obj = TimeElapseMatrixExp(self)
-        elif method == TimeElapseSettings.EXP_MULT:
-            self.time_elapse_obj = TimeElapseExpmMult(self)
-        elif method == TimeElapseSettings.KRYLOV:
-            self.time_elapse_obj = TimeElapseKrylov(self)
-        elif method == TimeElapseSettings.SCIPY_SIM:
-            self.time_elapse_obj = TimeElapseScipySim(self)
-        else:
-            raise RuntimeError("Unsupported Time Elapse Method: {}".format(method))
+        self.method = self.settings.time_elapse.method
+        self.time_elapse_obj = None
 
         self.freeze_attrs()
 
     def step(self):
         'perform the computation to obtain the values of the key directions the current time'
 
-        Timers.tic('time_elapse.step Total')
+        if self.time_elapse_obj is None:
+            Timers.tic('init time_elapse_obj')
+
+            if self.method == TimeElapseSettings.MATRIX_EXP:
+                self.time_elapse_obj = TimeElapseMatrixExp(self)
+            elif self.method == TimeElapseSettings.EXP_MULT:
+                self.time_elapse_obj = TimeElapseExpmMult(self)
+            elif self.method == TimeElapseSettings.KRYLOV:
+                self.time_elapse_obj = TimeElapseKrylov(self)
+            elif self.method == TimeElapseSettings.SCIPY_SIM:
+                self.time_elapse_obj = TimeElapseScipySim(self)
+            else:
+                raise RuntimeError("Unsupported Time Elapse Method: {}".format(self.method))
+
+            Timers.toc('init time_elapse_obj')
+
+        Timers.tic('step')
 
         self.time_elapse_obj.step()
         self.next_step += 1
 
-        Timers.toc('time_elapse.step Total')
+        Timers.toc('step')
 
         # post-conditions check
         assert isinstance(self.cur_basis_mat, np.ndarray), "cur_basis_mat should be an np.array, " + \

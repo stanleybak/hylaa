@@ -91,7 +91,6 @@ class Star(Freezable):
         rv = self._plot_lpi
 
         if rv is None:
-            print ". in star, self.num_plot_vars = {}".format(self.num_plot_vars)
             rv = LpInstance(self.num_plot_vars, self.num_init_vars, self.inputs)
             rv.set_init_constraints(self.init_mat, self.init_rhs)
             rv.set_no_output_constraints()
@@ -179,9 +178,8 @@ class Star(Freezable):
             pts.append(pts[0])
 
         cur_time = self.time_elapse.next_step * self.settings.step
-        half_step = self.settings.step / 2.0
-        t1 = cur_time - half_step
-        t2 = cur_time + half_step
+        t1 = cur_time - self.settings.step
+        t2 = cur_time
 
         if self.settings.plot.xdim_dir is None:
             y1 = pts[0][0]

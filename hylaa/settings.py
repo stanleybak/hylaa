@@ -78,20 +78,21 @@ class KrylovSettings(Freezable):
 
     def __init__(self):
         self.stdout = False # additional printing for krylov method
-        self.target_error = 1e-6 # desired krylov simulation error
+
+        self.target_error = 1e-6 # arnoldi/lanczos target a posteriori error
+
+        self.force_arnoldi = False # use arnoldi even if matrix is symmetric (False = auto-detect)
 
         self.use_lanczos_eigenvalues = True # use Lanczos to find the largest eigenvalue? False = scipy.linalg.eigs()
 
-        # simulation settings for computation on smaller H Matrix
-        self.ode_class = RK45 # simulation class object. if None, will use expm_mult
+        # settings for error bound
+        self.integral_samples = 51 # number of samples for error integral using Simpson's rule
 
-        # settings for the simulation (if ode_class is not None)
+        # settings for simulation for error bound
+        self.ode_class = None # if None, uses expm-mult method, else if RK45 or other, will use simulations
         self.max_step = np.inf
         self.rtol = 1e-7
         self.atol = 1e-10
-
-        # settings for error bound
-        self.integral_samples = 31 # number of samples for integral using Simpson's rule
 
         self.freeze_attrs()
 

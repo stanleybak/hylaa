@@ -5,10 +5,9 @@
 import math
 
 import numpy as np
-import scipy as sp
 from scipy.sparse import csr_matrix, csc_matrix, dia_matrix
 
-from hylaa.hybrid_automaton import LinearHybridAutomaton, bounds_list_to_init
+from hylaa.hybrid_automaton import LinearHybridAutomaton
 from hylaa.engine import HylaaSettings
 from hylaa.engine import HylaaEngine
 from hylaa.settings import PlotSettings, TimeElapseSettings
@@ -154,21 +153,20 @@ def make_init_star(ha, hylaa_settings, samples):
 
     return Star(hylaa_settings, ha.modes['mode'], init_space, init_mat, init_mat_rhs)
 
-def define_settings(samples_per_side):
+def define_settings(samples_per_side, stdout, use_arnoldi):
     'get the hylaa settings object'
     plot_settings = PlotSettings()
     plot_settings.plot_mode = PlotSettings.PLOT_GNUPLOT
 
-    settings = HylaaSettings(step=0.5, max_time=25.0, plot_settings=plot_settings)
+    settings = HylaaSettings(step=0.02, max_time=20.0, plot_settings=plot_settings)
     settings.time_elapse.method = TimeElapseSettings.KRYLOV
     settings.skip_step_times = True
     kryset = settings.time_elapse.krylov
-    settings.time_elapse.check_answer = False
+    #settings.time_elapse.check_answer = True
 
-    kryset.use_lanczos_eigenvalues = False
-    kryset.integral_samples = 11
-    kryset.stdout = True
-    kryset.ode_class = None
+    #kryset.use_lanczos_eigenvalues = False
+    kryset.stdout = stdout
+    kryset.force_arnoldi = use_arnoldi
 
     center_x = int(math.floor(samples_per_side/2.0))
     center_y = int(math.floor(samples_per_side/2.0))
@@ -181,13 +179,11 @@ def define_settings(samples_per_side):
 
     return settings
 
-def run_hylaa():
+def run_hylaa(samples_per_side, stdout, use_arnoldi):
     'Runs hylaa with the given settings, returning the HylaaResult object.'
 
-    samples_per_side = 50
-
     ha = define_ha(samples_per_side)
-    settings = define_settings(samples_per_side)
+    settings = define_settings(samples_per_side, stdout, use_arnoldi)
     init = make_init_star(ha, settings, samples_per_side)
 
     engine = HylaaEngine(ha, settings)
@@ -196,4 +192,4 @@ def run_hylaa():
     return engine.result
 
 if __name__ == '__main__':
-    run_hylaa()
+    run_hylaa(10, True, False)

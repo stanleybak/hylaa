@@ -50,9 +50,12 @@ class KrylovIteration(Freezable):
 
     def __init__(self, hylaa_settings, a_matrix, use_lanczos, key_dir_mat):
         assert a_matrix.shape[0] == a_matrix.shape[1], "a_mat should be square"
-        assert key_dir_mat.shape[1] == a_matrix.shape[0], "key_dir_mat width should equal number of dims"
         assert not isinstance(a_matrix, np.ndarray), "a_matrix should be a sparse matrix"
-        assert isinstance(key_dir_mat, csr_matrix), "key_dir_mat should be a csr_matrix"
+
+        # if key dir mat is None, output is just the H matrix (PV is None)
+        if key_dir_mat is not None:
+            assert key_dir_mat.shape[1] == a_matrix.shape[0], "key_dir_mat width should equal number of dims"
+            assert isinstance(key_dir_mat, csr_matrix), "key_dir_mat should be a csr_matrix"
 
         self.kry_settings = hylaa_settings.time_elapse.krylov
         self.lanczos = use_lanczos
@@ -65,7 +68,6 @@ class KrylovIteration(Freezable):
 
         # from reset
         self.init_norm = None
-        self.pv_mat = None
         self.h_data = None
         self.h_inds = None
         self.h_indptrs = None
@@ -73,7 +75,13 @@ class KrylovIteration(Freezable):
         self.prev_vec = None
         self.prev_prev_vec = None
         self.prev_norm = None
-        self.v_mat = None
+
+        if key_dir_mat is not None:
+            self.pv_mat = None
+
+        if not use_lanczos:
+            self.v_mat = None
+
         self.h_mat = None
 
         self.elapsed = 0
@@ -120,7 +128,9 @@ class KrylovIteration(Freezable):
 
         self.init_norm = None
 
-        self.pv_mat = None
+        if self.key_dir_mat is not None:
+            self.pv_mat = None
+
         self.h_data = None
         self.h_inds = None
         self.h_indptrs = None
@@ -129,7 +139,10 @@ class KrylovIteration(Freezable):
         self.prev_vec = None
         self.prev_prev_vec = None
         self.prev_norm = None
-        self.v_mat = None
+
+        if not self.lanczos:
+            self.v_mat = None
+
         self.h_mat = None
 
         self.elapsed = 0
@@ -139,11 +152,9 @@ class KrylovIteration(Freezable):
     def _realloc(self, init_vec, iterations):
         'allocate (or re-allocate) h, v, and pv storage'
 
-        dims = self.a_matrix.shape[0]
-        key_dirs = self.key_dir_mat.shape[0]
+        Timers.tic('realloc')
 
-        #if self.add_ones_key_dir:
-        #    key_dirs += 1
+        dims = self.a_matrix.shape[0]
 
         if self.reinit:
             scaled_vec, self.init_norm = normalize_sparse(init_vec)
@@ -151,8 +162,6 @@ class KrylovIteration(Freezable):
             self.cur_it = 1
 
             if self.lanczos:
-
-                self.pv_mat = np.zeros((iterations + 1, key_dirs), dtype=float)
                 self.h_data = []
                 self.h_inds = []
                 self.h_indptrs = [0]
@@ -165,13 +174,10 @@ class KrylovIteration(Freezable):
 
                 self.cur_vec.shape = (self.cur_vec.shape[1],)
 
-                # sparse assignment of initial vector
-                #if self.add_ones_key_dir:
-                #    self.pv_mat[0, :-1] = (self.key_dir_mat * scaled_vec.T).toarray()[:, 0]
-                #    self.pv_mat[0, -1] = ones_dot(self.cur_vec)
-                #else:
-                #    self.pv_mat[0, :] = (self.key_dir_mat * scaled_vec.T).toarray()[:, 0]
-                self.pv_mat[0, :] = (self.key_dir_mat * scaled_vec.T).toarray()[:, 0]
+                if self.key_dir_mat is not None:
+                    key_dirs = self.key_dir_mat.shape[0]
+                    self.pv_mat = np.zeros((iterations + 1, key_dirs), dtype=float)
+                    self.pv_mat[0, :] = (self.key_dir_mat * scaled_vec.T).toarray()[:, 0]
             else:
                 # arnoldi
 
@@ -187,9 +193,11 @@ class KrylovIteration(Freezable):
             # continue the computation (allocate more memory)
 
             if self.lanczos:
-                new_pv_mat = np.zeros((iterations + 1, key_dirs), dtype=float)
-                new_pv_mat[:self.pv_mat.shape[0], :self.pv_mat.shape[1]] = self.pv_mat
-                self.pv_mat = new_pv_mat
+                if self.key_dir_mat is not None:
+                    key_dirs = self.key_dir_mat.shape[0]
+                    new_pv_mat = np.zeros((iterations + 1, key_dirs), dtype=float)
+                    new_pv_mat[:self.pv_mat.shape[0], :self.pv_mat.shape[1]] = self.pv_mat
+                    self.pv_mat = new_pv_mat
             else:
                 # arnoldi
                 new_v_mat = np.zeros((iterations + 1, dims), dtype=float)
@@ -202,6 +210,8 @@ class KrylovIteration(Freezable):
                 # replace
                 self.v_mat = new_v_mat
                 self.h_mat = new_h_mat
+
+        Timers.toc('realloc')
 
     def run_iteration(self, init_vec, iterations):
         '''run arnoldi or lanczos'''
@@ -364,12 +374,8 @@ class KrylovIteration(Freezable):
                 self.cur_vec /= norm
                 Timers.toc('lanczos norm div')
 
-                #if self.add_ones_key_dir:
-                #    self.pv_mat[self.cur_it, :-1] = (self.key_dir_mat * self.cur_vec)
-                #    self.pv_mat[self.cur_it, -1] = ones_dot(self.cur_vec)
-                #else:
-                #    self.pv_mat[self.cur_it, :] = (self.key_dir_mat * self.cur_vec)
-                self.pv_mat[self.cur_it, :] = (self.key_dir_mat * self.cur_vec)
+                if self.key_dir_mat is not None:
+                    self.pv_mat[self.cur_it, :] = (self.key_dir_mat * self.cur_vec)
 
             elif self.cur_it > 1:
                 # break early
@@ -384,7 +390,7 @@ class KrylovIteration(Freezable):
         # h is easier to construct as a csc matrix, but we want to use it as a csr_matrix
         h_csc = csc_matrix((self.h_data, self.h_inds, self.h_indptrs), shape=(iterations + 1, iterations))
         h_csr = csr_matrix(h_csc)
-        rv_pv = (self.pv_mat * self.init_norm).transpose()
+        rv_pv = None if self.key_dir_mat is None else (self.pv_mat * self.init_norm).transpose()
 
         Timers.toc('lanczos')
 
