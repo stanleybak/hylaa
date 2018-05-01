@@ -116,7 +116,7 @@ class KrylovIteration(Freezable):
 
         if self.kry_settings.use_fast_mult and isinstance(mat, dia_matrix):
             rv = np.empty((dims,), dtype=float)
-            cpus = multiprocessing.cpu_count()
+            cpus = self.kry_settings.fast_mult_cpus
 
             self.dia_fast_mult(rv, vec, dims, dims, mat.data, mat.offsets, len(mat.offsets), cpus)
         else:

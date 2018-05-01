@@ -5,6 +5,7 @@ September 2016
 '''
 
 import math
+import multiprocessing
 
 from hylaa.util import Freezable
 
@@ -84,7 +85,9 @@ class KrylovSettings(Freezable):
         self.force_arnoldi = False # use arnoldi even if matrix is symmetric (False = auto-detect)
 
         self.use_lanczos_eigenvalues = True # use Lanczos to find the largest eigenvalue? False = scipy.linalg.eigs()
+
         self.use_fast_mult = True # use c++ optimized multithreaded dia_matrix-vector multiplication
+        self.fast_mult_cpus = multiprocessing.cpu_count()
 
         # settings for error bound
         self.integral_samples = 51 # number of samples for error integral using Simpson's rule
