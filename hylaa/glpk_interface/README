@@ -9,6 +9,7 @@ The code is based off of glpk-4.60 (newer than what's available in the ubuntu pa
 Commands:
 
 wget https://ftp.gnu.org/gnu/glpk/glpk-4.60.tar.gz
+tar -xvf glpk-4.60.tar.gz
 ./configure
 make
 sudo make install
