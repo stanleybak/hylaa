@@ -2,6 +2,7 @@
 Manually created hybrid automaton for hylaa testing.
 '''
 
+import math
 from hylaa.hybrid_automaton import LinearHybridAutomaton, LinearConstraint
 from hylaa.hybrid_automaton import HyperRectangle
 from hylaa.engine import HylaaSettings
@@ -9,7 +10,6 @@ from hylaa.engine import HylaaEngine
 from hylaa.plotutil import PlotSettings
 
 from numpy import array as nparray
-import math
 
 def define_ha():
     '''make the hybrid automaton and return it'''
@@ -66,6 +66,7 @@ def define_settings():
 
     # save to a video file
     plot_settings.make_video("deaggregation.mp4", frames=150, fps=5)
+    #plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
     
     plot_settings.xdim = 0
     plot_settings.ydim = 1
@@ -73,7 +74,10 @@ def define_settings():
     
     settings = HylaaSettings(step=0.25, max_time=6.0, plot_settings=plot_settings)
     settings.process_urgent_guards = True
-    
+    #settings.deaggregation = False
+    #settings.aggregation = False
+    settings.skip_step_times = True
+ 
     settings.simulation.threads=1
 
     return settings

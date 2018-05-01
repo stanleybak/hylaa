@@ -107,9 +107,10 @@ class HylaaEngine(object):
                 discrete_poststate_star = state.clone()
                 discrete_poststate_star.fast_forward_steps = 0 # reset fast forward on transitions
 
-                print "processing transition from {} to {}".format(state.mode.name, successor_mode.name)
-                #basis_center = state.vector_to_star_basis(state.center)
-                basis_center = state.basis_center
+                if all([abs(val) < 1e-9 for val in state.center]):
+                    basis_center = state.center
+                else:
+                    basis_center = state.vector_to_star_basis(state.center)
 
                 discrete_poststate_star.parent = DiscretePostParent(state.mode, discrete_prestate_star,
                                                                     basis_center, transition)
