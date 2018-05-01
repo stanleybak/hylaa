@@ -87,8 +87,9 @@ class KrylovIteration(Freezable):
         self.elapsed = 0
         self.reinit = True
         self.cur_it = None
-
-        self._init_fast_mult()
+    
+        if self.kry_settings.use_fast_mult:
+            self._init_fast_mult()
 
         self.freeze_attrs()
 
@@ -113,7 +114,7 @@ class KrylovIteration(Freezable):
 
         dims = mat.shape[0]
 
-        if isinstance(mat, dia_matrix):
+        if self.kry_settings.use_fast_mult and isinstance(mat, dia_matrix):
             rv = np.empty((dims,), dtype=float)
             cpus = multiprocessing.cpu_count()
 

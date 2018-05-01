@@ -21,8 +21,8 @@ These instructions are made for an Ubuntu system. Other systems may work but you
 # Install Packages #
 
 sudo apt-get update
-sudo apt-get install python-numpy python-scipy python-matplotlib python-psutil make
-
+sudo apt-get install python-numpy python-scipy python-matplotlib python-psutil python-pip make
+sudo pip install --upgrade pip numpy scipy
 
 For python_krylov unit tests: python-krypy
 For glpk_interface unit tests: cvxopt
