@@ -89,6 +89,7 @@ class Star(Freezable):
 
         self.settings = settings
         self.center = center
+        self.basis_center = center.copy() # the center at step zero
         self.num_dims = len(center)
 
         assert isinstance(basis_matrix, np.ndarray), "Expected basis matrix to be np.ndarray, got {}".format(
