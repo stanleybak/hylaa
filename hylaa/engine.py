@@ -178,7 +178,6 @@ class HylaaEngine(object):
         '''
 
         assert isinstance(init_star, Star), "initial states should be a Star object"
-        #Timers.reset()
         np.set_printoptions(suppress=True) # suppress floating point printing
 
         self.result = HylaaResult()
@@ -193,6 +192,7 @@ class HylaaEngine(object):
 
         # assign results
         self.result.timers = Timers.top_level_timers
+        Timers.reset()
 
         if self.settings.time_elapse.method == TimeElapseSettings.KRYLOV:
             self.result.krylov_stats = init_star.time_elapse.time_elapse_obj.stats
