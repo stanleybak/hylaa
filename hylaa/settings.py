@@ -82,7 +82,8 @@ class KrylovSettings(Freezable):
 
         self.target_error = 1e-6 # arnoldi/lanczos target a posteriori error
 
-        self.force_arnoldi = False # use arnoldi even if matrix is symmetric (False = auto-detect)
+        self.force_arnoldi = False # use arnoldi iteration (False = auto-detect)
+        self.force_lanczos = False # use lanczos iteration (False = auto-detect)
 
         self.use_lanczos_eigenvalues = True # use Lanczos to find the largest eigenvalue? False = scipy.linalg.eigs()
 

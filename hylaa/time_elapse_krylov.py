@@ -23,9 +23,7 @@ def is_symmetric(mat):
 
     Timers.tic('is_symmetric')
 
-    start = time.time()
     rv = (mat != mat.T).nnz == 0
-    print "is_symmetric time = {}".format(time.time() - start)
 
     Timers.toc('is_symmetric')
 
@@ -49,8 +47,12 @@ class TimeElapseKrylov(Freezable):
 
         a_matrix = time_elapser.a_matrix
 
-        if self.settings.time_elapse.krylov.force_arnoldi:
+        kryset = self.settings.time_elapse.krylov
+        assert not kryset.force_arnoldi and kryset.force_lanczos
+        if kryset.force_arnoldi:
             use_lanczos = False
+        elif kryset.force_lanczos:
+            use_lanczos = True
         else:
             use_lanczos = is_symmetric(a_matrix)
 
@@ -111,6 +113,8 @@ class TimeElapseKrylov(Freezable):
                     break
 
             last_eig = eig
+
+        kry_iter.reset() # explicitly free memory
 
         return eig * (1.0 + rtol) # add back in the tolerance to over-estimate it
 
