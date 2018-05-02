@@ -48,7 +48,7 @@ class TimeElapseKrylov(Freezable):
         a_matrix = time_elapser.a_matrix
 
         kryset = self.settings.time_elapse.krylov
-        assert not kryset.force_arnoldi and kryset.force_lanczos
+        assert not (kryset.force_arnoldi and kryset.force_lanczos)
         if kryset.force_arnoldi:
             use_lanczos = False
         elif kryset.force_lanczos:
