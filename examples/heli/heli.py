@@ -5,28 +5,22 @@ Scalable Version that allows replicating the dynamics
 '''
 
 import numpy as np
-from scipy.sparse import csr_matrix, csc_matrix, lil_matrix
+from scipy.sparse import csr_matrix, csc_matrix
 from scipy.io import loadmat
 
 from hylaa.hybrid_automaton import LinearHybridAutomaton, bounds_list_to_init
 from hylaa.engine import HylaaSettings
 from hylaa.engine import HylaaEngine
-from hylaa.settings import PlotSettings, SimulationSettings
+from hylaa.settings import PlotSettings, TimeElapseSettings
 from hylaa.star import Star
 
-def define_ha():
+def define_ha(stdout=True, use_safe=True, num_heli=1, full_io_space=False):
     '''make the hybrid automaton and return it'''
 
-    num_heli = 1 # 30 dims
-    #num_heli = 10 # 300 dims
-    #num_heli = 100 # 3000 dims
-    #num_heli = 1000 # 30k dimensions
-    #num_heli = 10000 # 300k dimensions
-    #num_heli = 33334 # 1 million dimensions -> expected GPU memory @ 32 arnoldi iterations = 0.25 GB
-    #num_heli = 333334 # 10 million dimensions -> expected GPU memory = 2.5 GB -> 801 seconds (LP time: 80%)
-    #num_heli = 2 * 333334 # 20 million dimensions -> expected GPU memory = 5.0 GB => 1649.47 sec (LP time: 80%)
-
     ha = LinearHybridAutomaton()
+
+    if stdout:
+        print "making a matrix"
 
     mode = ha.new_mode('mode')
     a_matrix = heli_a_matrix(num_heli)
@@ -34,15 +28,16 @@ def define_ha():
 
     error = ha.new_mode('error')
 
-    print "made heli_a_matrix... making output constriants"
+    if stdout:
+        print "made heli_a_matrix ({} dims)... making output constriants with safe={}".format(
+            a_matrix.shape[0], use_safe)
 
-    combined_error_condition = True
-    error_threshold = 0.45 # 0.45 = safe, 0.4 = unsafe
+    error_threshold = 0.45 if use_safe else 0.4 # 0.45 = safe, 0.4 = unsafe
 
-    if combined_error_condition:
+    if not full_io_space:
         #error: average of all helicopter's x8 >= 0.45
-        data = [1. for _ in xrange(num_heli)]
-        indices = [8 + 28*h for h in xrange(num_heli)]
+        data = [1.] * num_heli
+        indices = [7 + 28*h for h in xrange(num_heli)]
         indptrs = [0, len(data)]
 
         output_space = csr_matrix((data, indices, indptrs), shape=(1, 28 * num_heli), dtype=float)
@@ -50,70 +45,71 @@ def define_ha():
         mat = csr_matrix(([-1.0], [0], [0, 1]), shape=(1, 1))
         rhs = np.array([-error_threshold * num_heli], dtype=float)
     else:
-        # error: x8 >= 0.45 for each helicopter
-        data = [1.] * num_heli
-        indices = [8 + 28*h for h in xrange(num_heli)]
-        indptrs = xrange(num_heli + 1)
+        # full i/o space
+        output_space = csr_matrix(np.identity(28 * num_heli))
 
-        output_space = csr_matrix((data, indices, indptrs), shape=(num_heli, 28 * num_heli), dtype=float)
-
-        # -x8 <= -0.45 -> x8 >= 0.45
         data = [-1.] * num_heli
-        indices = xrange(num_heli)
-        indptr = xrange(num_heli + 1)
-        mat = csr_matrix((data, indices, indptr), shape=(num_heli, num_heli))
+        indices = [7 + 28 * h for h in xrange(num_heli)]
+        indptrs = [0, len(data)]
 
-        rhs = np.array([-error_threshold] * num_heli, dtype=float)
+        mat = csr_matrix((data, indices, indptrs), shape=(1, 28 * num_heli), dtype=float)
+        rhs = np.array([-error_threshold * num_heli], dtype=float)
 
+    mode.set_output_space(output_space)
     trans = ha.new_transition(mode, error)
-    trans.set_guard(output_space, mat, rhs)
+    trans.set_guard(mat, rhs)
 
     return ha
 
 def heli_a_matrix(num_heli):
     'make the helicopter a matrix'
 
-    dims = 28 * num_heli
-    rv = lil_matrix((dims, dims), dtype=float)
+    mat = csr_matrix(loadmat('heli28.mat')['A']) # single helicopter dynamics
+    dims_per_heli = mat.shape[0]
 
-    mat = loadmat('heli.mat')['A'][1:29,1:29]
+    dims = num_heli * dims_per_heli
 
-    print "mat shape = {}".format(mat.shape)
+    mat_data = [n for n in mat.data]
+    mat_indptr = [n for n in mat.indptr[:-1]] # exclude the last one
+    data = []
+    indices = []
+    indptr = []
 
     for instance in xrange(num_heli):
-        if instance > 0 and instance % 1000 == 0:
-            print "making a matrix {} / {}".format(instance, num_heli)
+        col_offset = instance * dims_per_heli
 
-        offset = instance * 28
-        rv[offset:offset+28, offset:offset+28] = mat
+        indices += [col_offset + n for n in mat.indices]
+        indptr += [len(data) + n for n in mat_indptr]
+        data += mat_data
 
-    if num_heli > 1000:
-        print "converting a_mat to csr_matrix..."
+    indptr.append(len(data)) # add the last one
 
-    return csr_matrix(rv)
+    return csr_matrix((data, indices, indptr), shape=(dims, dims), dtype=float)
 
-def make_init_star(ha, hylaa_settings):
+def make_init_star(ha, hylaa_settings, full_io_space=False):
     '''returns a star'''
 
     bounds_list = []
+    n = ha.modes.values()[0].a_matrix_csr.shape[0]
 
-    for h in xrange(ha.dims):
+    for h in xrange(n):
         ub = lb = 0.0
 
-        if h % 30 >= 0 and h % 30 <= 7:
+        if h % 28 >= 0 and h % 28 <= 7:
             ub = 0.1
             lb = -0.1
 
         bounds_list.append((lb, ub))
 
-    init_space, mat, init_rhs = bounds_list_to_init(bounds_list)
+    init_space, init_mat, init_mat_rhs, init_range_tuples = bounds_list_to_init(bounds_list, full_space=full_io_space)
 
-    return Star(hylaa_settings, ha.modes['mode'], init_space, mat, init_rhs)
+    return Star(hylaa_settings, ha.modes['mode'], init_space, init_mat, init_mat_rhs, \
+                init_range_tuples=init_range_tuples)
 
 def define_settings(_):
     'get the hylaa settings object'
     plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_FULL
+    plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
 
     plot_settings.xdim_dir = None
     plot_settings.ydim_dir = 7
@@ -121,14 +117,13 @@ def define_settings(_):
     settings = HylaaSettings(step=0.1, max_time=30.0, plot_settings=plot_settings)
 
     #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
-    settings.simulation.sim_mode = SimulationSettings.KRYLOV
+    settings.time_elapse.method = TimeElapseSettings.KRYLOV
     #settings.simulation.krylov_use_gpu = True
     #settings.simulation.krylov_profiling = True
     #settings.simulation.check_answer = True
 
     #settings.simulation.sim_mode = SimulationSettings.EXP_MULT
 
-    settings.simulation.krylov_transpose = True
     #settings.simulation.check_answer = True
     #settings.simulation.guard_mode = SimulationSettings.GUARD_FULL_LP
 
@@ -137,7 +132,6 @@ def define_settings(_):
 def run_hylaa():
     'Runs hylaa with the given settings, returning the HylaaResult object.'
 
-    print "Creating automaton..."
     ha = define_ha()
     settings = define_settings(ha)
 
