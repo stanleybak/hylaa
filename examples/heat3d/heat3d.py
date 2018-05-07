@@ -164,7 +164,7 @@ def define_settings(samples_per_side, stdout, use_arnoldi):
     kryset = settings.time_elapse.krylov
     #settings.time_elapse.check_answer = True
 
-    #kryset.use_lanczos_eigenvalues = False
+    kryset.use_lanczos_eigenvalues = True
     kryset.stdout = stdout
     kryset.force_arnoldi = use_arnoldi
 
@@ -192,4 +192,4 @@ def run_hylaa(samples_per_side, stdout, use_arnoldi):
     return engine.result
 
 if __name__ == '__main__':
-    run_hylaa(10, True, False)
+    run_hylaa(50, True, False)

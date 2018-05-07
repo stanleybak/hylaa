@@ -9,7 +9,7 @@ import numpy as np
 from scipy.linalg import expm
 from scipy.sparse import csr_matrix, csc_matrix
 from scipy.integrate import odeint, simps
-from scipy.sparse.linalg import eigs
+from scipy.sparse.linalg import eigsh
 
 import psutil
 
@@ -79,15 +79,15 @@ class TimeElapseKrylov(Freezable):
 
         self.freeze_attrs()
 
-    def find_max_eig_lanczos(self, mat):
+    def find_max_eig_lanczos(self, mat, tol):
         'find the maximum eigenvalue of the passed-in matrix using lanczos ritz values'
 
         kry_iter = KrylovIteration(self.settings, mat, True, None)
         n = mat.shape[0]
+        rtol = 1e-4
 
         init = csr_matrix(np.random.rand(n)) # random initial vector
         last_eig = None
-        rtol = 1e-3 # we just need a bound, so we don't need a super-accurate tolerance
 
         for iterations in xrange(10, max(n+1, 11)):
             _, h_mat = kry_iter.run_iteration(init, iterations)
@@ -95,7 +95,7 @@ class TimeElapseKrylov(Freezable):
             h_mat = h_mat[:-1, :].copy()
             assert h_mat.shape[0] == h_mat.shape[1] # not sure how this works on early termination
 
-            eig = -eigs(h_mat, k=1, which='LR', return_eigenvectors=False)[0].real
+            eig = eigsh(h_mat, k=1, which='LA', tol=tol, return_eigenvectors=False)[0].real
 
             # lanczos converged
             if h_mat.shape[0] < iterations:
@@ -116,7 +116,7 @@ class TimeElapseKrylov(Freezable):
 
         kry_iter.reset() # explicitly free memory
 
-        return eig * (1.0 + rtol) # add back in the tolerance to over-estimate it
+        return eig
 
     def step(self):
         'krylov-based step function'
@@ -135,6 +135,7 @@ class TimeElapseKrylov(Freezable):
         Timers.tic('compute_nu_a')
 
         mat = a_matrix
+        tol = 1e-5
 
         if not use_lanczos: # not symmetric already
             Timers.tic('create_symmetric')
@@ -143,16 +144,19 @@ class TimeElapseKrylov(Freezable):
 
         # minimum eigenvalue with -A is negative maximum eigenvalue of with A
         if self.settings.time_elapse.krylov.use_lanczos_eigenvalues:
-            eig = self.find_max_eig_lanczos(mat)
+            eig = -self.find_max_eig_lanczos(mat, tol)
         else:
-            if mat.shape[0] >= 1e6:
-                print "Warning: krylov.use_lanczos_eigenvalues=False for high-dimensional system... may be slow"
+            if mat.shape[0] >= 1e5:
+                print "Warning: krylov.use_lanczos_eigenvalues=False for high-dimensional system. May be slow."
 
-            eig = -eigs(mat, k=1, which='LR', return_eigenvectors=False)[0].real
+            eig = -eigsh(mat, k=1, which='LA', tol=tol, return_eigenvectors=False)[0].real
 
         Timers.toc('compute_nu_a')
 
         assert isinstance(eig, float)
+
+        if self.settings.time_elapse.krylov.stdout:
+            print "Computed nu(A): {}".format(eig)
 
         return eig
 
@@ -446,7 +450,9 @@ def get_a_posterori_error(settings, h_mat, nu, error_limit):
     def g(t):
         'g(t) = exp((t - T) * nu(A))'
 
-        return math.exp((t - max_time) * nu)
+        rv = math.exp((t - max_time) * nu)
+
+        return rv
 
     def h(step):
         'h(t) = e_k^T * exp(-t * H_k) * e_1'
@@ -462,17 +468,23 @@ def get_a_posterori_error(settings, h_mat, nu, error_limit):
 
         return rv
 
-    x_list = []
-    y_list = []
+    if nu * -max_time > 200: # would overflow exp() in computation of g()
+        rv = np.inf
 
-    for i in xrange(samples):
-        x = i * max_time / (samples-1.)
-        y = int_func(x, i)
+        if settings.time_elapse.krylov.stdout:
+            print "Warning: excessive value of nu * -max_time in a priori error bound (was -nu large?)"
+    else:
+        x_list = []
+        y_list = []
 
-        x_list.append(x)
-        y_list.append(y)
+        for i in xrange(samples):
+            x = i * max_time / (samples-1.)
+            y = int_func(x, i)
 
-    rv = h_mat[k, k-1] * simps(y_list, x_list, even='avg')
+            x_list.append(x)
+            y_list.append(y)
+
+        rv = h_mat[k, k-1] * simps(y_list, x_list, even='avg')
 
     Timers.toc('a_posterori_error')
 

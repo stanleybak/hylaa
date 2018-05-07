@@ -8,78 +8,109 @@ from scipy.sparse import csr_matrix, csc_matrix
 
 from hylaa.util import Freezable
 
-def bounds_list_to_init(bounds_list):
+def bounds_list_to_init(bounds_list, full_space=False):
     '''convert a list of upper and lower bound tuples for each dimension into:
 
     (init_space, init_mat, init_mat_rhs, init_range_tuples)
     '''
 
     dims = len(bounds_list)
-    fixed_dims = []
-    init_range_tuples = []
 
-    space_data = []
-    space_inds = []
-    space_indptrs = [0]
-    mat_data = []
-    mat_inds = []
-    mat_indptrs = [0]
-    rhs = []
+    if full_space:
+        init_space = csc_matrix(np.identity(dims))
 
-    # each dimension with a range gets its own vector
-    # all the fixed dimensions get a single vector
-    for dim in xrange(dims):
-        lb, ub = bounds_list[dim]
+        #init_mat is csr_matrix, rhs is nparray
+        data = []
+        indices = []
+        indptrs = [0]
+        rhs_list = []
 
-        assert lb <= ub, "expected lower bound ({}) <= upper bonud ({}) in dim {}".format(lb, ub, dim)
+        for dim in xrange(dims):
+            lb, ub = bounds_list[dim]
 
-        if lb == ub and lb != 0:
-            fixed_dims.append(dim)
-        elif lb != ub:
-            init_range_tuples.append((lb, ub))
+            assert lb <= ub, "expected lower bound ({}) <= upper bonud ({}) in dim {}".format(lb, ub, dim)
+
+            indices.append(dim)
+            data.append(1.0)
+            indptrs.append(len(data))
+            rhs_list.append(ub)
+
+            indices.append(dim)
+            data.append(-1.0)
+            indptrs.append(len(data))
+            rhs_list.append(-lb)
+
+        init_mat = csr_matrix((data, indices, indptrs), shape=(2*dims, dims), dtype=float)
+
+        init_mat_rhs = np.array(rhs_list, dtype=float)
+        init_range_tuples = bounds_list
+    else:
+
+        fixed_dims = []
+        init_range_tuples = []
+
+        space_data = []
+        space_inds = []
+        space_indptrs = [0]
+        mat_data = []
+        mat_inds = []
+        mat_indptrs = [0]
+        rhs = []
+
+        # each dimension with a range gets its own vector
+        # all the fixed dimensions get a single vector
+        for dim in xrange(dims):
+            lb, ub = bounds_list[dim]
+
+            assert lb <= ub, "expected lower bound ({}) <= upper bonud ({}) in dim {}".format(lb, ub, dim)
+
+            if lb == ub and lb != 0:
+                fixed_dims.append(dim)
+            elif lb != ub:
+                init_range_tuples.append((lb, ub))
+                cur_space_dimension = len(space_data)
+                space_data.append(1)
+                space_inds.append(dim)
+                space_indptrs.append(len(space_data))
+
+                mat_data.append(1)
+                mat_inds.append(cur_space_dimension)
+                mat_indptrs.append(len(mat_data))
+                rhs.append(ub)
+
+                mat_data.append(-1)
+                mat_inds.append(cur_space_dimension)
+                mat_indptrs.append(len(mat_data))
+                rhs.append(-lb)
+
+        # if there were non-zero fixed dimensions, add one space dimension for that
+        if len(fixed_dims) > 0:
+            init_range_tuples.append((1, 1))
             cur_space_dimension = len(space_data)
-            space_data.append(1)
-            space_inds.append(dim)
+
+            for dim in fixed_dims:
+                space_data.append(bounds_list[dim][0])
+                space_inds.append(dim)
+
             space_indptrs.append(len(space_data))
 
             mat_data.append(1)
             mat_inds.append(cur_space_dimension)
             mat_indptrs.append(len(mat_data))
-            rhs.append(ub)
+            rhs.append(1)
 
             mat_data.append(-1)
             mat_inds.append(cur_space_dimension)
             mat_indptrs.append(len(mat_data))
-            rhs.append(-lb)
+            rhs.append(-1)
 
-    # if there were non-zero fixed dimensions, add one space dimension for that
-    if len(fixed_dims) > 0:
-        init_range_tuples.append((1, 1))
-        cur_space_dimension = len(space_data)
+        space_dims = len(space_indptrs) - 1
+        init_space = csc_matrix((space_data, space_inds, space_indptrs), dtype=float, shape=(dims, space_dims))
 
-        for dim in fixed_dims:
-            space_data.append(bounds_list[dim][0])
-            space_inds.append(dim)
+        mat_height = len(mat_indptrs) - 1
+        init_mat = csr_matrix((mat_data, mat_inds, mat_indptrs), dtype=float, shape=(mat_height, space_dims))
 
-        space_indptrs.append(len(space_data))
-
-        mat_data.append(1)
-        mat_inds.append(cur_space_dimension)
-        mat_indptrs.append(len(mat_data))
-        rhs.append(1)
-
-        mat_data.append(-1)
-        mat_inds.append(cur_space_dimension)
-        mat_indptrs.append(len(mat_data))
-        rhs.append(-1)
-
-    space_dims = len(space_indptrs) - 1
-    init_space = csc_matrix((space_data, space_inds, space_indptrs), dtype=float, shape=(dims, space_dims))
-
-    mat_height = len(mat_indptrs) - 1
-    init_mat = csr_matrix((mat_data, mat_inds, mat_indptrs), dtype=float, shape=(mat_height, space_dims))
-
-    init_mat_rhs = np.array(rhs, dtype=float)
+        init_mat_rhs = np.array(rhs, dtype=float)
 
     return (init_space, init_mat, init_mat_rhs, init_range_tuples)
 

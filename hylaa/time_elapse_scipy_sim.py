@@ -44,6 +44,9 @@ class TimeElapseScipySim(Freezable):
         # a list of simluation objects for each initial vector
         self.sim_objs = []
 
+        if self.settings.print_output:
+            print "Initializing {} RK45 simulations".format(init_vecs.shape[1])
+
         for col_index in xrange(init_vecs.shape[1]):
             init = init_vecs[:, col_index].toarray()
             init.shape = (init.shape[0],)
@@ -69,6 +72,10 @@ class TimeElapseScipySim(Freezable):
 
         if self.time_elapser.next_step == 0:
             # step zero
+
+            if self.settings.print_output:
+                print "Initializing with basis matrix of size {} x {}".format(\
+                    output_space.shape[0], init_space.shape[1])
 
             self.time_elapser.cur_basis_mat = (output_space * init_space).toarray()
             self.time_elapser.cur_input_effects_matrix = None
@@ -139,6 +146,9 @@ class TimeElapseScipySim(Freezable):
         # compute input_effects_matrix
         a_mat_csc = csc_matrix(self.a_matrix)
         original_der_func = lambda _, state: np.array(self.a_matrix * state, dtype=float)
+
+        if self.settings.print_output:
+            print "Initializing {} RK45 simulations for inputs effects".format(self.b_matrix.shape[1])
 
         for input_index in xrange(self.b_matrix.shape[1]):
             # augment the a matrix with a fixed affine term to account for the effects of inputs

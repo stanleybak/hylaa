@@ -127,7 +127,6 @@ class LpInstance(Freezable):
         assert num_output_vars > 0
         assert num_init_vars > 0
 
-        print "initialized lp with {} output vars".format(num_output_vars)
         self.lp_data = LpInstance._init_lp(num_output_vars, num_init_vars, num_inputs)
 
         # put a copy of del_lp into the object for use in the destructor
@@ -156,12 +155,10 @@ class LpInstance(Freezable):
         assert rhs.shape == (constraint_mat.shape[0],)
         assert self.num_init_vars == constraint_mat.shape[1], "incorrect init constraints width"
 
-        Timers.tic("lp overhead")
         LpInstance._set_init_constraints_csr(self.lp_data, constraint_mat.shape[1], constraint_mat.shape[0], \
             constraint_mat.data, len(constraint_mat.data), constraint_mat.indices, len(constraint_mat.indices), \
             constraint_mat.indptr, len(constraint_mat.indptr), rhs, rhs.shape[0])
 
-        Timers.toc("lp overhead")
         self.added_init_constraints = True
 
     def set_output_constraints(self, constraint_mat, rhs):
@@ -172,19 +169,14 @@ class LpInstance(Freezable):
         assert rhs.shape == (constraint_mat.shape[0],)
         assert self.num_output_vars == constraint_mat.shape[1], "incorrect output constraints width"
 
-        Timers.tic("lp overhead")
         LpInstance._set_output_constraints_csr(self.lp_data, constraint_mat.shape[1], constraint_mat.shape[0], \
             constraint_mat.data, len(constraint_mat.data), constraint_mat.indices, len(constraint_mat.indices), \
             constraint_mat.indptr, len(constraint_mat.indptr), rhs, rhs.shape[0])
 
-        Timers.toc("lp overhead")
-
     def set_no_output_constraints(self):
         '''set the output state constraints (no constriants, for plotting, for example)'''
 
-        Timers.tic("lp overhead")
         LpInstance._set_no_output_constraints(self.lp_data)
-        Timers.toc("lp overhead")
 
     def update_basis_matrix(self, matrix):
         'update the basis matrix in an lp'
@@ -196,9 +188,7 @@ class LpInstance(Freezable):
         assert matrix.shape == (self.num_output_vars, self.num_init_vars), "Expected {}x{} basis mat, got {}x{}".format(
             self.num_output_vars, self.num_init_vars, matrix.shape[0], matrix.shape[1])
 
-        Timers.tic("lp overhead")
         LpInstance._update_basis_matrix(self.lp_data, matrix, matrix.shape[1], matrix.shape[0])
-        Timers.toc("lp overhead")
 
     def print_lp(self):
         '''print the lp constraint matrix to stdout (a debugging function)'''
@@ -271,9 +261,7 @@ class LpInstance(Freezable):
         assert matrix.shape == (self.num_output_vars, self.num_inputs), "Expected {}x{} basis mat, got {}x{}".format(
             self.num_output_vars, self.num_inputs, matrix.shape[0], matrix.shape[1])
 
-        Timers.tic("lp overhead")
         LpInstance._add_input_effects_matrix(self.lp_data, matrix, matrix.shape[1], matrix.shape[0])
-        Timers.toc("lp overhead")
 
     @staticmethod
     def total_iterations():

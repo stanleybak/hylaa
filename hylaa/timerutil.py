@@ -7,7 +7,6 @@ September 2016
 '''
 
 import time
-from collections import OrderedDict
 
 class TimerData(object):
     'Performance timer which can be started with tic() and paused with toc()'
@@ -35,6 +34,19 @@ class TimerData(object):
 
         return rv
 
+    def get_children_recursive(self, name):
+        'get all decendants with the given name (returns a list of TimerData)'
+
+        rv = []
+
+        if name == self.name:
+            rv.append(self)
+
+        for child in self.children:
+            rv += child.get_children_recursive(name)
+
+        return rv
+
     def full_name(self):
         'get the full name of the timer (including ancestors)'
 
@@ -57,6 +69,8 @@ class TimerData(object):
     def toc(self):
         'stop the timer'
 
+        #print "Toc({})".format(self.name)
+
         if self.last_start_time is None:
             raise RuntimeError("Timer stopped without being started: {}".format(self.name))
 
@@ -70,8 +84,7 @@ class Timers(object):
     print_stats to print time statistics
     '''
 
-    # map of timer_name -> TimerData
-    top_level_timers = OrderedDict()
+    top_level_timer = None
 
     stack = [] # stack of currently-running timers, parents at the start, children at the end
 
@@ -82,7 +95,7 @@ class Timers(object):
     def reset():
         'reset all timers'
 
-        Timers.top_level_timers = OrderedDict()
+        Timers.top_level_timer = None
         Timers.stack = []
 
     @staticmethod
@@ -90,7 +103,9 @@ class Timers(object):
         'start a timer'
 
         if len(Timers.stack) == 0:
-            td = Timers.top_level_timers.get(name)
+            assert name == "total", "There should only be one top-level timer named total (got {})".format(name)
+
+            td = Timers.top_level_timer
         else:
             td = Timers.stack[-1].get_child(name)
 
@@ -100,7 +115,7 @@ class Timers(object):
             td = TimerData(name, parent)
 
             if len(Timers.stack) == 0:
-                Timers.top_level_timers[name] = td
+                Timers.top_level_timer = td
             else:
                 Timers.stack[-1].children.append(td)
 
@@ -121,8 +136,7 @@ class Timers(object):
     def print_stats():
         'print statistics about performance timers to stdout'
 
-        for td in Timers.top_level_timers.values():
-            Timers.print_stats_recursive(td, 0)
+        Timers.print_stats_recursive(Timers.top_level_timer, 0)
 
     @staticmethod
     def print_stats_recursive(td, level):

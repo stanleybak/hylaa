@@ -191,7 +191,7 @@ class HylaaEngine(object):
             self.plotman.compute_and_animate(self.do_step, self.is_finished)
 
         # assign results
-        self.result.timers = Timers.top_level_timers
+        self.result.top_level_timer = Timers.top_level_timer
         Timers.reset()
 
         if self.settings.time_elapse.method == TimeElapseSettings.KRYLOV:
@@ -204,7 +204,7 @@ class HylaaResult(Freezable):
     'Result, assigned to engine.result after computation'
 
     def __init__(self):
-        self.timers = None # map of string (timer name) -> TimerData
+        self.top_level_timer = None # TimerData for total time
         self.safe = True # was the verification result safe?
 
         self.krylov_stats = None # krylov statistics, map of string -> value, copy of TimerElapse.stats
