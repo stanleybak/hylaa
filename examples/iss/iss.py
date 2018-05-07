@@ -46,7 +46,7 @@ def define_ha():
     y3 = csc_matrix((y3.data, y3.indices, col_ptr), shape=(1, y3.shape[1] + num_inputs))
     output_space = csr_matrix(y3)
 
-    print "y3.data = {}, y3.indices = {}, y3.col_ptr = {}".format(y3.data, y3.indices, y3.col_ptr)
+    #print "y3.data = {}, y3.indices = {}, y3.col_ptr = {}".format(y3.data, y3.indices, y3.col_ptr)
 
     mode.set_output_space(output_space)
 
@@ -96,11 +96,11 @@ def make_init_star(ha, hylaa_settings):
 def define_settings(ha):
     'get the hylaa settings object'
     plot_settings = PlotSettings()
-    #plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
-    plot_settings.plot_mode = PlotSettings.PLOT_NONE
+    plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
+    #plot_settings.plot_mode = PlotSettings.PLOT_NONE
 
     max_time = 20.0
-    step_size = 0.005
+    step_size = 0.05
     settings = HylaaSettings(step=step_size, max_time=max_time, plot_settings=plot_settings)
 
     #settings.time_elapse.method = TimeElapseSettings.SCIPY_SIM
@@ -113,7 +113,7 @@ def define_settings(ha):
     #settings.skip_step_times = False
 
     plot_settings.xdim_dir = None
-    plot_settings.ydim_dir = ha.modes.values()[0].output_space_csr[0]
+    plot_settings.ydim_dir = ha.modes.values()[0].output_space_csr[0].toarray()
 
     plot_settings.max_shown_polys = None
     plot_settings.label.y_label = '$y_{3}$'

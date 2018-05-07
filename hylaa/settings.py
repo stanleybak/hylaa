@@ -86,6 +86,7 @@ class KrylovSettings(Freezable):
         self.force_lanczos = False # use lanczos iteration (False = auto-detect)
 
         self.use_lanczos_eigenvalues = False # use Lanczos to find the largest eigenvalue? False = scipy.linalg.eigs()
+        self.skip_error_bound = False # compute an error bound? (False = only terminates if arnoldi converges)
 
         self.use_fast_mult = True # use c++ optimized multithreaded dia_matrix-vector multiplication
         self.fast_mult_cpus = multiprocessing.cpu_count()

@@ -293,17 +293,11 @@ class KrylovIteration(Freezable):
 
         self.elapsed += time.time() - start
 
-        #if self.add_ones_key_dir:
-        #    pv_mat = np.zeros((self.key_dir_mat.shape[0] + 1, self.v_mat.shape[0]), dtype=float)
-        #    pv_mat[:-1] = self.key_dir_mat * self.v_mat.transpose()
-
-        #    for i in xrange(self.v_mat.shape[0]):
-        #        pv_mat[-1, i] = ones_dot(self.v_mat[i])
-        #else:
-        #    pv_mat = self.key_dir_mat * self.v_mat.transpose()
-        pv_mat = self.key_dir_mat * self.v_mat.transpose()
-
-        pv_mat *= self.init_norm
+        if self.key_dir_mat is None:
+            pv_mat = None
+        else:
+            pv_mat = self.key_dir_mat * self.v_mat.transpose()
+            pv_mat *= self.init_norm
 
         Timers.toc('arnoldi')
 

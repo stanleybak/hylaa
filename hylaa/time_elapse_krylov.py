@@ -57,7 +57,8 @@ class TimeElapseKrylov(Freezable):
             use_lanczos = is_symmetric(a_matrix)
 
         # for error bound computation
-        self.nu_a = self.compute_nu_a(a_matrix, use_lanczos)
+        if not kryset.skip_error_bound:
+            self.nu_a = self.compute_nu_a(a_matrix, use_lanczos)
 
         if self.use_transpose and not use_lanczos:
             # we need to compute with the transpose of the a matrix
@@ -82,7 +83,8 @@ class TimeElapseKrylov(Freezable):
     def find_max_eig_lanczos(self, mat, tol):
         'find the maximum eigenvalue of the passed-in matrix using lanczos ritz values'
 
-        kry_iter = KrylovIteration(self.settings, mat, True, None)
+        use_lanczos = False
+        kry_iter = KrylovIteration(self.settings, mat, use_lanczos, None)
         n = mat.shape[0]
         rtol = 1e-4
 
@@ -514,7 +516,10 @@ def arnoldi_sim_with_max_error(time_elapser, kry_init_vec_csr, iterations, error
         if stdout:
             print "Arnoldi terminated early (after {} iterations). Simulating without error limit.".format(iterations)
     elif error_limit is not None:
-        error = get_a_posterori_error(settings, h_mat, obj.nu_a, error_limit)
+        if settings.time_elapse.krylov.skip_error_bound:
+            error = np.inf
+        else:
+            error = get_a_posterori_error(settings, h_mat, obj.nu_a, error_limit)
 
     if stdout:
         print "{} iterations had a posterori error {}".format(iterations, error)
