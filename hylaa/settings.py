@@ -37,7 +37,6 @@ class HylaaSettings(Freezable):
 
         # if initial states are intervals and single guard condition, we don't need an LP solver
         self.interval_guard_optimization = True
-        self.interval_guard_cpus = multiprocessing.cpu_count() # number of CPUs to use for inteval guard CPUs
 
         self.freeze_attrs()
 
