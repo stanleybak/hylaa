@@ -119,8 +119,9 @@ class GuardOptData(Freezable):
             min_init = init_ranges[init_index][0]
             max_init = init_ranges[init_index][1]
 
-            val1 = min_init * basis_val * guard_multiplier
-            val2 = max_init * basis_val * guard_multiplier
+            mult = basis_val * guard_multiplier
+            val1 = min_init * mult
+            val2 = max_init * mult
 
             # take the minimum of val1 and val2, since guard is CONDITION <= RHS
             if val1 < val2:
