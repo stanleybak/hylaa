@@ -107,7 +107,7 @@ def define_settings(ha):
     settings.time_elapse.method = TimeElapseSettings.SCIPY_SIM
     #settings.time_elapse.method = TimeElapseSettings.KRYLOV
     #settings.time_elapse.krylov.use_lanczos_eigenvalues = False
-    settings.time_elapse.check_answer = True
+    #settings.time_elapse.check_answer = True
 
     #settings.interval_guard_optimization = False
 
