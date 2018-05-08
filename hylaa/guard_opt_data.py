@@ -4,8 +4,9 @@ Hylaa-Continuous Guard Optimization Logic
 July 2017
 '''
 
+import multiprocessing
+
 import numpy as np
-import scipy as sp
 
 from scipy.sparse import csc_matrix
 
@@ -17,6 +18,8 @@ from hylaa.timerutil import Timers
 
 class GuardOptData(Freezable):
     'Guard optimization data'
+
+    pool = None # multiprocessing pool
 
     def __init__(self, star, mode, transition_index):
         assert isinstance(mode, LinearAutomatonMode)
@@ -47,6 +50,10 @@ class GuardOptData(Freezable):
             self.lpi.set_input_constraints_csc(csc_matrix(star.mode.u_constraints_csr), star.mode.u_constraints_rhs)
 
         self.optimized_lp_solution = None
+
+        # create multiprocessing pool
+        if GuardOptData.pool is None or GuardOptData.pool._processes != self.settings.interval_guard_cpus:
+            GuardOptData.pool = multiprocessing.Pool(self.settings.interval_guard_cpus)
 
         self.freeze_attrs()
 
@@ -114,21 +121,43 @@ class GuardOptData(Freezable):
         guard_threshold = self.transition.guard_rhs[0]
         noinput_effect = 0
 
-        for init_index in xrange(len(init_ranges)):
-            basis_val = basis_mat[0][init_index]
-            min_init = init_ranges[init_index][0]
-            max_init = init_ranges[init_index][1]
+        num_init = len(init_ranges)
 
-            val1 = min_init * basis_val * guard_multiplier
-            val2 = max_init * basis_val * guard_multiplier
+        # 100 per process minimum
+        split = min(num_init / 100, self.settings.interval_guard_cpus)
 
-            # take the minimum of val1 and val2, since guard is CONDITION <= RHS
-            if val1 < val2:
-                noinput_effect += val1
-                result[init_index] = min_init
-            else:
-                noinput_effect += val2
-                result[init_index] = max_init
+        if split < 1:
+            split = 1
+
+        params = []
+
+        for part in xrange(split):
+            start = part * num_init / split
+            end = (part + 1) * num_init / split
+
+            init_part = init_ranges[start:end]
+            basis_part = basis_mat[0][start:end].copy()
+
+            params.append((init_part, basis_part, guard_multiplier))
+
+        Timers.tic('split_noinput_computation')
+        if split == 1:
+            result_total_list = [compute_noinput_effects_split(param) for param in params]
+        else:
+            result_total_list = GuardOptData.pool.map(compute_noinput_effects_split, params) 
+        Timers.toc('split_noinput_computation')
+
+        # reconstruct result
+        for part in xrange(split):
+            start = part * num_init / split
+            end = (part + 1) * num_init / split
+
+            result_part, additional_noinput_effect = result_total_list[part]
+            noinput_effect += additional_noinput_effect
+
+            # copy result
+            for i in xrange(start, end):
+                result[i] = result_part[i - start]
 
         # add input effects if they exist
         if input_effects_mat is not None:
@@ -169,3 +198,31 @@ class GuardOptData(Freezable):
             rv = self.update_full_lp()
 
         return rv
+
+def compute_noinput_effects_split(param):
+    'compute noinput effects for part of the basis matrix (used for multithreaded computation)'
+
+    init_ranges, basis_mat, guard_multiplier = param
+
+    assert len(init_ranges) == len(basis_mat)
+
+    result = np.zeros((len(init_ranges),), dtype=float)
+    noinput_effect = 0
+
+    for init_index in xrange(len(init_ranges)):
+        basis_val = basis_mat[init_index]
+        min_init = init_ranges[init_index][0]
+        max_init = init_ranges[init_index][1]
+
+        val1 = min_init * basis_val * guard_multiplier
+        val2 = max_init * basis_val * guard_multiplier
+
+        # take the minimum of val1 and val2, since guard is CONDITION <= RHS
+        if val1 < val2:
+            noinput_effect += val1
+            result[init_index] = min_init
+        else:
+            noinput_effect += val2
+            result[init_index] = max_init
+
+    return result, noinput_effect

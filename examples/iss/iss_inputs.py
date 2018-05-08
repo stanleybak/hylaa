@@ -77,11 +77,12 @@ def make_init_star(ha, hylaa_settings):
 def define_settings(ha):
     'get the hylaa settings object'
     plot_settings = PlotSettings()
-    #plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
-    plot_settings.plot_mode = PlotSettings.PLOT_NONE
+    plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
+    #plot_settings.plot_mode = PlotSettings.PLOT_NONE
+    plot_settings.filename = "iss_uncertain_inputs.png"
 
     max_time = 20.0
-    step_size = 0.005
+    step_size = 0.1
     settings = HylaaSettings(step=step_size, max_time=max_time, plot_settings=plot_settings)
 
     settings.time_elapse.method = TimeElapseSettings.SCIPY_SIM

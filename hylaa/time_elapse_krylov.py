@@ -513,7 +513,7 @@ def arnoldi_sim_with_max_error(time_elapser, kry_init_vec_csr, iterations, error
         error = 0
         iterations = h_mat.shape[0]
 
-        if stdout:
+        if settings.print_output:
             print "Arnoldi terminated early (after {} iterations). Simulating without error limit.".format(iterations)
     elif error_limit is not None:
         if settings.time_elapse.krylov.skip_error_bound:
@@ -525,8 +525,8 @@ def arnoldi_sim_with_max_error(time_elapser, kry_init_vec_csr, iterations, error
         print "{} iterations had a posterori error {}".format(iterations, error)
 
     if error_limit is None or error < error_limit:
-        if stdout and error_limit is not None:
-            print "Error {} was below threshold ({}) with {} iterations".format(error, error_limit, iterations)
+        if settings.print_output and error_limit is not None:
+            print "Krylov error {} was below threshold ({}) with {} iterations".format(error, error_limit, iterations)
 
         h_mat = h_mat[:-1, :].copy()
         pv_mat = pv_mat[:, :-1].copy()

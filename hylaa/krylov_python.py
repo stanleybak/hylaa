@@ -8,7 +8,6 @@ Simulating a linear system x' = Ax using krylov supspace methods (arnoldi and la
 import math
 import time
 import ctypes
-import multiprocessing
 import os
 
 import numpy as np

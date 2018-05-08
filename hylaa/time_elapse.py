@@ -195,12 +195,11 @@ def create_output_space_csr(plot_settings, ha_mode):
                 num_directions += 1
             elif plot_dir is not None:
                 xdir = csr_matrix(plot_dir)
-                assert len(xdir.shape) == 1 or xdir.shape[0] == 1, \
+                assert (len(xdir.shape) == 1 and xdir.shape[0] == dims) or xdir.shape == (1, dims), \
                     "expected row vector for plot direction, got shape: {}".format(plot_dir.shape)
-                assert len(xdir) == dims
 
-                for n in xdir.indices:
-                    assert n >= 0 and n < dims, "out of bounds plot index: {} (sys dims = {})".format(n, dims)
+                # make sure it's not malformed
+                xdir.check_format()
 
                 data += [n for n in xdir.data]
                 cols += [n for n in xdir.indices]

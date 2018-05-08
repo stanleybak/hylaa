@@ -98,15 +98,16 @@ def define_settings(ha):
     plot_settings = PlotSettings()
     plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
     #plot_settings.plot_mode = PlotSettings.PLOT_NONE
+    plot_settings.filename = "iss_fixed_inputs.png"
 
     max_time = 20.0
-    step_size = 0.05
+    step_size = 0.01
     settings = HylaaSettings(step=step_size, max_time=max_time, plot_settings=plot_settings)
 
-    #settings.time_elapse.method = TimeElapseSettings.SCIPY_SIM
-    settings.time_elapse.method = TimeElapseSettings.KRYLOV
-    settings.time_elapse.krylov.use_lanczos_eigenvalues = False
-    settings.time_elapse.check_answer = False
+    settings.time_elapse.method = TimeElapseSettings.SCIPY_SIM
+    #settings.time_elapse.method = TimeElapseSettings.KRYLOV
+    #settings.time_elapse.krylov.use_lanczos_eigenvalues = False
+    settings.time_elapse.check_answer = True
 
     #settings.interval_guard_optimization = False
 
