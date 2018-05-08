@@ -9,6 +9,10 @@ import random
 import traceback
 from collections import OrderedDict
 
+import matplotlib
+# Force matplotlib to not use any Xwindows backend.
+matplotlib.use('Agg')
+
 from matplotlib import rcParams
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation

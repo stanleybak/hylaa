@@ -124,6 +124,7 @@ class GuardOptData(Freezable):
         num_init = len(init_ranges)
 
         # 100 per process minimum
+        print "num_init = {}, cpus = {}".format(num_init, self.settings.interval_guard_cpus)
         split = min(num_init / 100, self.settings.interval_guard_cpus)
 
         if split < 1:
@@ -152,12 +153,8 @@ class GuardOptData(Freezable):
             start = part * num_init / split
             end = (part + 1) * num_init / split
 
-            result_part, additional_noinput_effect = result_total_list[part]
+            _, additional_noinput_effect = result_total_list[part]
             noinput_effect += additional_noinput_effect
-
-            # copy result
-            for i in xrange(start, end):
-                result[i] = result_part[i - start]
 
         # add input effects if they exist
         if input_effects_mat is not None:
@@ -180,6 +177,18 @@ class GuardOptData(Freezable):
                     result.append(max_input)
 
         result[total_output_index] = noinput_effect + result[total_input_index]
+
+        if result[total_output_index] <= guard_threshold:
+            # reconstruct result
+            for part in xrange(split):
+                start = part * num_init / split
+                end = (part + 1) * num_init / split
+
+                result_part, _ = result_total_list[part]
+
+                # copy result
+                for i in xrange(start, end):
+                    result[i] = result_part[i - start]
 
         rv = np.array(result, dtype=float) if result[total_output_index] <= guard_threshold else None
 
