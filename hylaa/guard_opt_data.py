@@ -113,6 +113,7 @@ class GuardOptData(Freezable):
         guard_threshold = self.transition.guard_rhs[0]
         noinput_effect = 0
 
+        Timers.tic("noinput_effects")
         for init_index in xrange(len(init_ranges)):
             basis_val = basis_mat[0, init_index]
             min_init = init_ranges[init_index][0]
@@ -128,9 +129,11 @@ class GuardOptData(Freezable):
             else:
                 noinput_effect += val2
                 result[init_index] = max_init
+        Timers.toc("noinput_effects")
 
         # add input effects if they exist
         if input_effects_mat is not None:
+            Timers.tic("input_effects")
             input_ranges = self.star.mode.u_range_tuples
 
             for input_index in xrange(len(input_ranges)):
@@ -148,6 +151,8 @@ class GuardOptData(Freezable):
                 else:
                     result[total_input_index] += val2
                     result.append(max_input)
+
+            Timers.toc("input_effects")
 
         result[total_output_index] = noinput_effect + result[total_input_index]
 
