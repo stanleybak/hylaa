@@ -24,9 +24,6 @@ sudo apt-get update
 sudo apt-get install python-numpy python-scipy python-matplotlib python-psutil python-pip make
 sudo pip install --upgrade pip numpy scipy
 
-For python_krylov unit tests: python-krypy
-For glpk_interface unit tests: cvxopt
-
 # Compile GLPK Interface as Shared Library #
 
 This a custom C++ interface to GLPK for use in Hylaa that you need to compile. See hylaa/glpk-interface/README for details on how to do this. Essentially, you need to get glpk-4.60 (which may be newer than what comes with Ubuntu), and then run make (the Makefile is in that folder). This will produce hylaa_glpk.so.

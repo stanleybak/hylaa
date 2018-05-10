@@ -12,7 +12,7 @@ from hylaa.engine import HylaaEngine
 from hylaa.settings import PlotSettings, TimeElapseSettings
 from hylaa.star import Star
 
-def define_ha():
+def define_ha(is_safe):
     '''make the hybrid automaton and return it'''
 
     ha = LinearHybridAutomaton()
@@ -43,12 +43,15 @@ def define_ha():
 
     # error condition x1 >= 0.2 and x2 >= 0.15
     output_space = csr_matrix(([1., 1.], [0, 1], [0, 1, 2]), shape=(2, dims))
+
+    # x1 >= 0.2 (safe) or 0.1 (unsafe)
+    threshold = 0.2 if is_safe else 0.1
+
+    mat = csr_matrix(([-1], [0], [0, 1]), dtype=float, shape=(1, 2))
+
     mode.set_output_space(output_space)
 
-    # x1 >= 0.2
-    mat = csr_matrix(([-1], [0], [0, 1]), dtype=float, shape=(1, 2))
-    rhs = np.array([-0.2], dtype=float) # safe
-    #rhs = np.array([-0.1], dtype=float) # unsafe
+    rhs = np.array([-threshold], dtype=float)
     trans1 = ha.new_transition(mode, error)
     trans1.set_guard(mat, rhs)
 
@@ -63,7 +66,7 @@ def define_ha():
 def make_init_star(ha, hylaa_settings):
     '''returns a Star'''
 
-    n = ha.dims
+    n = ha.modes.values()[0].a_matrix_csr.shape[0]
     bounds_list = [] # bounds on each dimension
     input_start_dim = 10913
 
@@ -93,21 +96,23 @@ def define_settings():
     'get the hylaa settings object'
     plot_settings = PlotSettings()
     plot_settings.plot_mode = PlotSettings.PLOT_NONE
-    #plot_settings.plot_mode = PlotSettings.PLOT_FULL
-    plot_settings.xdim_dir = None
-    plot_settings.ydim_dir = 0
-    plot_settings.max_shown_polys = None
 
     settings = HylaaSettings(step=0.001, max_time=20.0, plot_settings=plot_settings)
     settings.time_elapse.method = TimeElapseSettings.KRYLOV
 
+    kryset = settings.time_elapse.krylov
+    #settings.time_elapse.check_answer = True
+
+    #kryset.use_lanczos_eigenvalues = False
+    kryset.stdout = True
+    #kryset.force_arnoldi = use_arnoldi
 
     return settings
 
-def run_hylaa():
+def run_hylaa(safe=True):
     'Runs hylaa with the given settings, returning the HylaaResult object.'
 
-    ha = define_ha()
+    ha = define_ha(safe)
     settings = define_settings()
     init = make_init_star(ha, settings)
 
@@ -118,3 +123,13 @@ def run_hylaa():
 
 if __name__ == '__main__':
     run_hylaa()
+
+
+
+
+
+
+
+
+
+

@@ -179,7 +179,7 @@ def define_settings(samples_per_side, stdout, use_arnoldi):
 
     return settings
 
-def run_hylaa(samples_per_side, stdout, use_arnoldi):
+def run_hylaa(samples_per_side=20, stdout=True, use_arnoldi=False):
     'Runs hylaa with the given settings, returning the HylaaResult object.'
 
     ha = define_ha(samples_per_side)
@@ -192,4 +192,4 @@ def run_hylaa(samples_per_side, stdout, use_arnoldi):
     return engine.result
 
 if __name__ == '__main__':
-    run_hylaa(50, True, False)
+    run_hylaa(20, True, False)
