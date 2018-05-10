@@ -105,9 +105,10 @@ def define_settings():
 
     return settings
 
-def run_hylaa(hylaa_settings):
+def run_hylaa():
     'Runs hylaa with the given settings, returning the HylaaResult object.'
 
+    hylaa_settings = define_settings()
     sparse_definition = True
 
     ha = define_ha(sparse_definition)
@@ -119,4 +120,4 @@ def run_hylaa(hylaa_settings):
     return engine.result
 
 if __name__ == '__main__':
-    run_hylaa(define_settings())
+    run_hylaa()
