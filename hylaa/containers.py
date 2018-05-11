@@ -52,7 +52,7 @@ class SimulationSettings(Freezable):
         self.use_presimulation = False # this is faster, but less interactive (automatically set if plot is off)
         self.step = step
         self.sim_tol = None # odeint simulation tolerance setting (default is around 1.5e-8)
-        self.threads = None # Threads used for simulation, None = auto-detect number of system cores
+        self.threads = 1 # Threads used for simulation, None = auto-detect number of system cores
         self.sparse = False # use sparse matrices for simulation
         self.sim_mode = SimulationSettings.SIMULATION # use simulations or use matrix exp
 
