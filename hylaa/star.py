@@ -97,7 +97,7 @@ class Star(Freezable):
 
         self.start_basis_matrix = None
 
-        self.parent = parent # object of type StarParent
+        self.parent = parent
 
         assert isinstance(mode, LinearAutomatonMode)
         self.mode = mode # the LinearAutomatonMode

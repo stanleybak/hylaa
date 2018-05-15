@@ -95,10 +95,14 @@ class HylaaEngine(object):
                 successor_mode = transition.to_mode
 
                 if successor_mode.is_error:
-                    self.reached_error = True
+                    assert isinstance(state.parent, ContinuousPostParent)
 
-                    if self.settings.stop_when_error_reachable:
-                        raise FoundErrorTrajectory("Found error trajectory")
+                    # check it it came from an aggregation (and deaggregation is enabled)
+                    if not isinstance(state.parent.star.parent, AggregationParent) or not self.settings.deaggregation:
+                        self.reached_error = True
+
+                        if self.settings.stop_when_error_reachable:
+                            raise FoundErrorTrajectory("Found error trajectory")
 
                 # copy the current star to be the frozen pre-state of the discrete post operation
                 discrete_prestate_star = state.clone()
