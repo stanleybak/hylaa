@@ -4,13 +4,13 @@
 
 Hylaa (**HY**brid **L**inear **A**utomata **A**nalyzer) is a verification tool for system models with linear ODEs, time-varying inputs, and possibly hybrid dynamics. 
 
-This is the continuous branch of Hylaa, where we focus on safety verification of strictly linear models. The goal is to scale to very large systems with dynamics given by sparse matrices A.
+This is the hybrid branch of Hylaa, where we're working on a new analysis method for hybrid automata.
 
 The latest version of Hylaa is always available on our github repository at https://github.com/stanleybak/hylaa . A website for Hylaa is maintained at http://stanleybak.com/hylaa .
 
 The code was mostly written by Stanley Bak (http://stanleybak.com) with input from Parasara Sridhar Duggirala (http://engr.uconn.edu/~psd). Work on this branch was also done by Dung Hoang Tran. 
 
-Hylaa is released under the GPL v3 license (see the LICENSE file). It has been approved for public release (DISTRIBUTION A: Approved for public release; distribution unlimited #88ABW-2016-5976, 22 NOV 2016).
+Hylaa is released under the GPL v3 license (see the LICENSE file). Earlier versions have been approved for public release (DISTRIBUTION A: Approved for public release; distribution unlimited #88ABW-2016-5976, 22 NOV 2016).
 
 ### Installation ###
 
