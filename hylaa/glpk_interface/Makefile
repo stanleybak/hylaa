@@ -1,20 +1,26 @@
 # -*- indent-tabs-mode:t; -*-
 
-# after building the .so file, you can run 'ldd hylaa_glpk.so' on it to
-# make sure it's linked with the correct glpk.so file
-
 CC=g++
 
-CFLAGS = -Wall -Werror -fPIC -O2 -std=c++0x  
+CFLAGS = -Wall -Werror -fPIC -O2 -std=c++11
 
-# use glpk-4.60 installed from source (in /usr/local/lib/)
-LDFLAGS = -L/usr/local/lib -lglpk -Wl,-rpath=/usr/local/lib
+# use a version of glpk installed from source (in /usr/local/lib/)
+#LDFLAGS = -L/usr/local/lib -lglpk -Wl,-rpath=/usr/local/lib
+# after building the .so file, you can run 'ldd python_glpk.so' on it to
+# make sure it's linked with the correct glpk.so file
 
-all: hylaa_glpk.so
 
-hylaa_glpk.so: hylaa_glpk.cpp hylaa_glpk.h hylaa_glpk_tests.cpp hylaa_glpk_tests.h
-	$(CC) -shared $(CFLAGS) hylaa_glpk.cpp hylaa_glpk_tests.cpp $(LDFLAGS) -o hylaa_glpk.so
+# use default glpk binary
+LDFLAGS = -lglpk
+
+all: python_glpk.so
+
+python_glpk.so: python_glpk.c 
+	$(CC) -shared $(CFLAGS) python_glpk.c $(LDFLAGS) -o python_glpk.so
+
+test: python_glpk.c
+	$(CC) $(CFLAGS) python_glpk.c $(LDFLAGS) -o test
 
 clean:
-	rm -fv hylaa_glpk.so
+	rm -fv python_glpk.so test
 
