@@ -1,6 +1,6 @@
 '''
 Timer utility functions for Hylaa. Timers are used for performance analysis and
-can be referred to statically using Timers.tic(name) and Timers.toc(name)
+can be refered to statically using Timers.tic(name) and Timers.toc(name)
 
 Stanley Bak
 September 2016
@@ -155,8 +155,8 @@ class Timers(object):
             percent_str = " ({:.1f}%)".format(percent)
 
         if percent >= percent_threshold:
-            print "{}{} Time ({} calls): {:.2f} sec{}".format(" " * level * 2, \
-                td.name.capitalize(), td.num_calls, td.total_secs, percent_str)
+            print("{}{} Time ({} calls): {:.2f} sec{}".format(" " * level * 2, \
+                td.name.capitalize(), td.num_calls, td.total_secs, percent_str))
 
         total_children_secs = 0
 
@@ -172,5 +172,5 @@ class Timers(object):
             if other_percent >= percent_threshold:
                 percent_str = " ({:.1f}%)".format(other_percent)
 
-                print "{}Other: {:.2f} sec{}".format(" " * (level + 1) * 2, \
-                    other, percent_str)
+                print("{}Other: {:.2f} sec{}".format(" " * (level + 1) * 2, \
+                    other, percent_str))
