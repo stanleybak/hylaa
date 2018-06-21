@@ -156,9 +156,6 @@ class LpInstance(Freezable):
         # put a copy of del_lp into the object for use in the destructor
         self.del_lp = LpInstance._del_lp
 
-        self.rows = 0
-        self.cols = 0
-
         self.freeze_attrs()
 
     def __del__(self):
@@ -180,7 +177,6 @@ class LpInstance(Freezable):
         'add a certain number of columns to the LP'
 
         LpInstance._add_cols(self.lp_data, num)
-        self.cols += num
 
     def add_rows_less_equal(self, rhs_vec):
         '''add rows to the LP with <= constraints
@@ -194,13 +190,11 @@ class LpInstance(Freezable):
         assert isinstance(rhs_vec, np.ndarray) and len(rhs_vec.shape) == 1, "expected 1-d right-hand-side vector"
 
         LpInstance._add_rows_less_equal(self.lp_data, rhs_vec, len(rhs_vec))
-        self.rows += rhs_vec.shape[0]
 
     def add_rows_equal_zero(self, num):
         '''add rows to the LP with == 0 constraints'''
 
         LpInstance._add_rows_equal_zero(self.lp_data, num)
-        self.rows += num
 
     def set_constraints_csr(self, csr_mat, offset=None):
         '''set the constrains row by row to be equal to the passed-in csr matrix

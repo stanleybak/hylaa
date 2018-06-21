@@ -1,3 +1,4 @@
 [
-  "test_lputil.py::test_true"
+  "test_lputil.py::test_from_box",
+  "test_lputil.py::test_set_basis_matrix"
 ]
