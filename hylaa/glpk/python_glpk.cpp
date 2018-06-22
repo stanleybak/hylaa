@@ -319,7 +319,7 @@ extern "C"
     // returns 0 on success
     // returns 1 on unsat
     // returns -1 on error
-    int processSimplexResult(glp_prob* lp, int simplexRes, double* result, int resLen)
+    int processSimplexResult(glp_prob* lp, int simplexRes, int* columns, double* result, int resLen)
     {
         int rv = 0;
 
@@ -415,7 +415,7 @@ extern "C"
                 // copy the output vars
                 for (int resIndex = 0; resIndex < resLen; ++resIndex)
                 {
-                    int col = result[resIndex];
+                    int col = columns[resIndex];
 
                     if (col < 0 || col >= numCols)
                     {
@@ -467,32 +467,33 @@ extern "C"
     }
 
     // returns 0 on success, -1 on error
+    // this sets the first 'dirLen' variables
     int setMinimizeDirection(glp_prob* lp, double* direction, int dirLen)
     {
         int numCols = glp_get_num_cols(lp);
         int rv = 0;
 
-        if (dirLen != numCols)
+        if (dirLen > numCols)
         {
-            printf("Error: dirLen(%d) is not equal numCols(%d) in call to minimize()\n", dirLen,
-                   numCols);
+            printf("Error: dirLen(%d) > numCols(%d) in call to minimize()\n", dirLen, numCols);
             rv = -1;
         }
         else
         {
-            for (int i = 0; i < numCols; ++i)
+            for (int i = 0; i < dirLen; ++i)
                 glp_set_obj_coef(lp, 1 + i, direction[i]);
         }
 
         return rv;
     }
 
-    // if result is NULL, no result is assigned
-    // if result is non-null, it's assumed to be initialized to a list of indices
+    // it is assumed columns and result are the same length
+    // columns is a list of columns to assign upon SAT
+    // they get assigned to the result array
     // returns 0 on success (sat)
     // returns 1 on unsat
     // returns -1 on error
-    int minimize(glp_prob* lp, double* result, int resLen)
+    int minimize(glp_prob* lp, int* columns, double* result, int resLen)
     {
         int rv = 0;
 
@@ -515,7 +516,7 @@ extern "C"
             simplexRes = glp_simplex(lp, &params);
         }
 
-        rv = processSimplexResult(lp, simplexRes, result, resLen);
+        rv = processSimplexResult(lp, simplexRes, columns, result, resLen);
 
         return rv;
     }
@@ -613,11 +614,12 @@ extern "C"
         else
         {
             double result[] = {0};
+            int columns[] = {0};
             double direction[] = {1};
 
             setMinimizeDirection(lp, direction, 1);
 
-            rv = minimize(lp, result, 1);
+            rv = minimize(lp, columns, result, 1);
 
             if (rv != 0)
                 printf("Test Error: minimize failed\n");

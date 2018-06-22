@@ -107,10 +107,11 @@ class LpInstance(Freezable):
                  ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int,
                  ctypes.c_int, ctypes.c_int]
 
-            # int minimize(glp_prob* lp, double* result, int resLen)
+            # int minimize(glp_prob* lp, int* columns, double* result, int resLen)
             LpInstance._minimize = lib.minimize
             LpInstance._minimize.restype = ctypes.c_int
             LpInstance._minimize.argtypes = [ctypes.c_void_p, \
+                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), \
                 ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int]
 
             # int setMinimizeDirection(glp_prob* lp, double* direction, int dirLen)
@@ -249,40 +250,50 @@ class LpInstance(Freezable):
         if res != 0:
             raise RuntimeError("set_minimize_direction failed")
 
-    def minimize_partial_result(self, result_vec, fail_on_unsat=False):
+    def minimize_partial_result(self, columns, fail_on_unsat=True):
         '''minimize the LP, getting some of the columns as a result
 
-        result_vec is an in/out parameter. It's initialized to the requested column numbers. It gets assigned
-        with the result (if LP is SAT). It's also returned.
+        columns is the requested column numbers. These are the columns that
+        get returned when SAT.
+
+        If unsat, and fail_on_unsat is False, None is returned
         '''
 
-        if not isinstance(result_vec, np.ndarray):
-            result_vec = np.array(result_vec, dtype=float)
+        if not isinstance(columns, np.ndarray):
+            columns = np.array(columns, dtype=np.int32)
 
-        assert len(result_vec.shape) == 1
+        if columns.dtype != np.int32: # convert it
+            assert columns.dtype != float, "expected array of integers"
+            columns = np.array(columns, dtype=np.int32)
 
-        assert isinstance(result_vec, np.ndarray) and len(result_vec.shape) == 1
+        assert len(columns.shape) == 1
+
+        result = np.zeros((len(columns),), dtype=float)
 
         # minimize() returns 0 on success, 1 on unsat, -1 on error
-        res = LpInstance._minimize(self.lp_data, result_vec, len(result_vec))
+        min_res = LpInstance._minimize(self.lp_data, columns, result, len(result))
 
-        if res == -1:
+        if min_res == -1:
             raise RuntimeError("LP minimize() failed internally")
 
-        if res == 1 and fail_on_unsat:
-            raise RuntimeError("LP minimize() returned UNSAT, but fail_on_unsat was True")
+        if min_res == 1:
+            if fail_on_unsat:
+                raise RuntimeError("LP minimize() returned UNSAT, but fail_on_unsat was True")
+            else:
+                result = None
 
-        return result_vec
+        return result
 
-    def minimize_full_result(self, fail_on_unsat=False):
+    def minimize_full_result(self, fail_on_unsat=True):
         'minimize the lp. returns the LP assigment for every column if SAT (as an np.ndarray), else None'
 
         num_cols = self.get_num_cols()
 
-        result_vec = np.array([float(n) for n in range(num_cols)]) # get each column
+        columns = np.array([i for i in range(num_cols)], dtype=np.int32)
+        result_vec = np.zeros((num_cols,), dtype=float)
 
         # minimize() returns 0 on success, 1 on unsat, -1 on error
-        res = LpInstance._minimize(self.lp_data, result_vec, len(result_vec))
+        res = LpInstance._minimize(self.lp_data, columns, result_vec, len(result_vec))
 
         if res == -1:
             raise RuntimeError("LP minimize() failed internally")
@@ -295,7 +306,7 @@ class LpInstance(Freezable):
 
         return result_vec
 
-    def minimize(self, direction_vec, fail_on_unsat=False):
+    def minimize(self, direction_vec, fail_on_unsat=True):
         'minimize the lp. This assigns the direction vec and returns the full result'
 
         self.set_minimize_direction(direction_vec)

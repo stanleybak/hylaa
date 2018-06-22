@@ -6,9 +6,10 @@ first N columns correspond to the current-time variables, and
 the first N rows are the current-time constraints (equality constraints equal to zero)
 '''
 
-from hylaa.glpk.python_sparse_glpk import LpInstance
-
+import numpy as np
 from scipy.sparse import csr_matrix
+
+from hylaa.glpk.python_sparse_glpk import LpInstance
 
 def from_box(box_list):
     'make a new lp instance from a passed-in box'
@@ -92,3 +93,16 @@ def set_basis_matrix(lpi, basis_mat):
     mat.check_format()
     
     lpi.set_constraints_csr(mat)
+
+def check_intersection(lpi, vec, rhs):
+    '''check if there is an intersection between the LP constriants and vec <= rhs
+    This solves an LP optimizing in the given direction... without adding the constraint to the LP
+    '''
+
+    lpi.set_minimize_direction(vec)
+
+    columns = np.array([i for i in range(len(vec))], dtype=int) # get the first len(vec) columns
+    result = lpi.minimize_partial_result(columns, fail_on_unsat=True)
+
+    return np.dot(result, vec) <= rhs
+
