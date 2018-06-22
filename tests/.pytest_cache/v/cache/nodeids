@@ -1,6 +1,0 @@
-[
-  "test_lputil.py::test_from_box",
-  "test_lputil.py::test_set_basis_matrix",
-  "test_lputil.py::test_check_intersection",
-  "test_lputil.py::test_verts"
-]

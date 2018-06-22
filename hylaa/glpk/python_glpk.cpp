@@ -242,7 +242,7 @@ extern "C"
                     int vIndex = 1;
 
                     for (int index = indptr[row]; index < indptr[row + 1]; ++index)
-                        indicesVec[vIndex++] = 1 + indices[index];
+                        indicesVec[vIndex++] = 1 + colOffset + indices[index];
 
                     double* dataPtr = &(data[indptr[row] - 1]);
 
@@ -290,7 +290,7 @@ extern "C"
                     int vIndex = 1;
 
                     for (int index = indptr[col]; index < indptr[col + 1]; ++index)
-                        indicesVec[vIndex++] = 1 + indices[index];
+                        indicesVec[vIndex++] = 1 + rowOffset + indices[index];
 
                     double* dataPtr = &(data[indptr[col] - 1]);
 

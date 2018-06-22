@@ -106,3 +106,33 @@ def check_intersection(lpi, vec, rhs):
 
     return np.dot(result, vec) <= rhs
 
+def add_constraint(lpi, basis_matrix, vec, rhs):
+    '''
+    add a constraint to the lpi
+
+    this adds a new row, with constraints assigned to the right-most variables (where the basis matrix is)
+    '''
+
+    assert isinstance(basis_matrix, np.ndarray)
+
+    # we need to convert the passed-in vector using the basis matrix
+    preshape = vec.shape
+    dims = basis_matrix.shape[0]
+    vec.shape = (1, dims)
+    new_vec = np.dot(vec, basis_matrix)
+    vec.shape = preshape
+
+    lpi.add_rows_less_equal([rhs])
+
+    cols = lpi.get_num_cols()
+    rows = lpi.get_num_rows()
+
+    indptr = [0, dims]
+    inds = [i for i in range(dims)]
+    data = new_vec
+    data.shape = (dims,)
+
+    csr_row_mat = csr_matrix((data, inds, indptr), dtype=float, shape=(1, dims))
+    csr_row_mat.check_format()
+
+    lpi.set_constraints_csr(csr_row_mat, offset=(rows-1, cols-dims))
