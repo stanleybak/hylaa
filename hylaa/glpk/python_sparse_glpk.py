@@ -135,6 +135,21 @@ class LpInstance(Freezable):
             LpInstance._get_num_cols.restype = ctypes.c_int
             LpInstance._get_num_cols.argtypes = [ctypes.c_void_p]
 
+            # int flipConstraint(glp_prob* lp, int rowIndex)
+            LpInstance._flip_constraint = lib.flipConstraint
+            LpInstance._flip_constraint.restype = ctypes.c_int
+            LpInstance._flip_constraint.argtypes = [ctypes.c_void_p, ctypes.c_int]
+
+            # int delConstraint(glp_prob* lp, int rowIndex)
+            LpInstance._del_constraint = lib.delConstraint
+            LpInstance._del_constraint.restype = ctypes.c_int
+            LpInstance._del_constraint.argtypes = [ctypes.c_void_p, ctypes.c_int]
+
+            # int setConstraintRhs(glp_prob* lp, int rowIndex, double rhs)
+            LpInstance._set_constraint_rhs = lib.setConstraintRhs
+            LpInstance._set_constraint_rhs.restype = ctypes.c_int
+            LpInstance._set_constraint_rhs.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_double]
+
             # int getMatrix(glp_prob* lp, double* mat, double* vec, int rows, int cols)
             LpInstance._get_matrix = lib.getMatrix
             LpInstance._get_matrix.restype = ctypes.c_int
@@ -312,6 +327,35 @@ class LpInstance(Freezable):
         self.set_minimize_direction(direction_vec)
 
         return self.minimize_full_result(fail_on_unsat=fail_on_unsat)
+
+    def flip_constraint(self, row_index):
+        '''flip a constraint from >= to <= or vis-versa
+
+        returns True if the constraint is now a '<=' constraint
+        '''
+
+        res = LpInstance._flip_constraint(self.lp_data, row_index)
+
+        if res < 0:
+            raise RuntimeError("flip_constraint() failed internally")
+
+        return res == 0
+
+    def del_constraint(self, row_index):
+        '''delete a constraint from the lp'''
+
+        res = LpInstance._del_constraint(self.lp_data, row_index)
+
+        if res != 0:
+            raise RuntimeError("del_constraint() failed internally")
+
+    def set_constraint_rhs(self, row_index, rhs):
+        '''change an existing constraint's right hand side'''
+
+        res = LpInstance._set_constraint_rhs(self.lp_data, row_index, rhs)
+
+        if res != 0:
+            raise RuntimeError("set_constraint_rhs() failed internally")
 
     def get_matrix(self):
         '''get the LP matrix as a dense np.ndarray (slow function, for testing)

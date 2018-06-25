@@ -81,12 +81,22 @@ extern "C"
 
             // check if the row is equality or lesseq
             int type = glp_get_row_type(lp, row);
-            double val = glp_get_row_ub(lp, row);
 
             if (type == GLP_FX)
+            {
+                double val = glp_get_row_ub(lp, row);
                 printf(" == %g", val);
+            }
             else if (type == GLP_UP)
+            {
+                double val = glp_get_row_ub(lp, row);
                 printf(" <= %g", val);
+            }
+            else if (type == GLP_LO)
+            {
+                double val = glp_get_row_lb(lp, row);
+                printf(" >= %g", val);
+            }
             else
                 printf(" <?> (unknown bounds)");
 
@@ -538,6 +548,100 @@ extern "C"
     int getNumCols(glp_prob* lp)
     {
         return glp_get_num_cols(lp);
+    }
+
+    int setConstraintRhs(glp_prob* lp, int rowIndex, double rhs)
+    {
+        int rv = 0;
+        int rows = glp_get_num_rows(lp);
+
+        if (rowIndex < 0 || rowIndex >= rows)
+        {
+            printf("Error: invalid row index %d passed to setConstraintRhs() (lp has %d rows)\n",
+                   rowIndex, rows);
+            rv = -1;
+        }
+        else
+        {
+            int type = glp_get_row_type(lp, rowIndex + 1);
+
+            if (type == GLP_UP)
+                glp_set_row_bnds(lp, rowIndex + 1, GLP_UP, 0, rhs);
+            else if (type == GLP_LO)
+                glp_set_row_bnds(lp, rowIndex + 1, GLP_LO, rhs, 0);
+            else if (type == GLP_FX)
+                glp_set_row_bnds(lp, rowIndex + 1, GLP_FX, rhs, rhs);
+            else
+            {
+                printf("Error: invalid constraint type %d in row %d in setConstraintRhs()\n", type,
+                       rowIndex);
+                rv = -1;
+            }
+        }
+
+        return rv;
+    }
+
+    // returns 0 on success
+    int delConstraint(glp_prob* lp, int rowIndex)
+    {
+        int rv = 0;
+        int rows = glp_get_num_rows(lp);
+
+        if (rowIndex < 0 || rowIndex >= rows)
+        {
+            printf("Error: invalid row index %d passed to delConstraint() (lp has %d rows)\n",
+                   rowIndex, rows);
+            rv = -1;
+        }
+        else
+        {
+            int nrs = 1;
+            int rows[] = {0, rowIndex + 1};
+
+            glp_del_rows(lp, nrs, rows);
+        }
+
+        return rv;
+    }
+
+    // returns -1 on error, 0 if the constraint is now '<=', 1 if the constraint is now '>='
+    int flipConstraint(glp_prob* lp, int rowIndex)
+    {
+        int rv = 0;
+        int rows = glp_get_num_rows(lp);
+
+        if (rowIndex < 0 || rowIndex >= rows)
+        {
+            printf("Error: invalid row index %d passed to flipConstraint() (lp has %d rows)\n",
+                   rowIndex, rows);
+            rv = -1;
+        }
+        else
+        {
+            int type = glp_get_row_type(lp, rowIndex + 1);
+
+            if (type == GLP_UP)
+            {
+                double val = glp_get_row_ub(lp, rowIndex + 1);
+                glp_set_row_bnds(lp, rowIndex + 1, GLP_LO, val, 0);
+                rv = 1;
+            }
+            else if (type == GLP_LO)
+            {
+                double val = glp_get_row_lb(lp, rowIndex + 1);
+                glp_set_row_bnds(lp, rowIndex + 1, GLP_UP, 0, val);
+                rv = 0;
+            }
+            else
+            {
+                printf("Error: invalid constraint type %d in row %d in flipConstraint()\n", type,
+                       rowIndex);
+                rv = -1;
+            }
+        }
+
+        return rv;
     }
 
     // get the LP matrix. This is slow, so it's meant for testing.

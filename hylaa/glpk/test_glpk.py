@@ -230,7 +230,6 @@ def test_partial_result():
 def test_get_matrix():
     '''tests get_matrix testing function'''
 
-    # max 0.6x + 0.5y st.
     # x + 2y <= 1
     # 3x + y <= 2
 
@@ -253,3 +252,196 @@ def test_get_matrix():
     assert np.allclose(mat, expected_mat)
 
     assert np.allclose(vec, expected_vec)
+
+def test_min_partial_result():
+    'test minimize partial result'
+
+    # x + 2y <= 1
+    # x + 2y >= -2
+
+    a_ub = [[1, 2], [-1, -2]]
+    b_ub = [1, 2]
+
+    lp = LpInstance()
+
+    a_csr = csr_matrix(np.array(a_ub, dtype=float))
+    lp.add_cols(a_csr.shape[1])
+    lp.add_rows_less_equal(b_ub)
+
+    lp.set_constraints_csr(a_csr)
+
+    result = lp.minimize_partial_result([])
+
+    assert result is not None and len(result) == 0
+
+def test_unsat():
+    'test unsat case returning None'
+
+    # x + 2y <= 1
+    # x + 2y >= 2
+
+    a_ub = [[1, 2], [-1, -2]]
+    b_ub = [1, -2]
+
+    lp = LpInstance()
+
+    a_csr = csr_matrix(np.array(a_ub, dtype=float))
+    lp.add_cols(a_csr.shape[1])
+    lp.add_rows_less_equal(b_ub)
+
+    lp.set_constraints_csr(a_csr)
+
+    result = lp.minimize_partial_result([], fail_on_unsat=False)
+
+    assert result is None
+
+def test_bad_col():
+    'test minimize getting a non-integer column'
+
+    # x + 2y <= 1
+    # x + 2y >= 2
+
+    a_ub = [[1, 2], [-1, -2]]
+    b_ub = [1, -2]
+
+    lp = LpInstance()
+
+    a_csr = csr_matrix(np.array(a_ub, dtype=float))
+    lp.add_cols(a_csr.shape[1])
+    lp.add_rows_less_equal(b_ub)
+
+    lp.set_constraints_csr(a_csr)
+
+    try:
+        lp.minimize_partial_result([1.5])
+        assert False, "expected exception to be raised"
+    except RuntimeError:
+        pass
+
+def test_csr_with_coloffset():
+    '''tests set csr constraints with column offset'''
+
+    # 0 + 2y <= 1
+    # 0 + y <= 2
+
+    b_ub = [1, 2]
+
+    lp = LpInstance()
+
+    col2_csr = csr_matrix(np.array([[2], [1]], dtype=float))
+    
+    lp.add_cols(2)
+    lp.add_rows_less_equal(b_ub)
+
+    lp.set_constraints_csr(col2_csr, offset=(0,1))
+
+    mat, vec = lp.get_matrix()
+
+    expected_mat = np.array([[0, 2], [0, 1]], dtype=float)
+    expected_vec = np.array([1, 2.0], dtype=float)
+    
+    assert np.allclose(mat, expected_mat)
+
+    assert np.allclose(vec, expected_vec)
+
+def test_flip_constraint():
+    '''test changing constraint direction from <= to >='''
+
+    # 0 <= x <= 1
+    # extra constraint x <= 0.5... changed to x >= 0.5 and then back
+
+    lp = LpInstance()
+
+    lp.add_cols(1)
+    lp.add_rows_less_equal([1, 0])
+    lp.set_constraints_csr(csr_matrix(np.array([[1], [-1]], dtype=float)))
+
+    # add x <= 0.5 constraint
+    lp.add_rows_less_equal([0.5])
+    lp.set_constraints_csr(csr_matrix(np.array([[1]], dtype=float)), offset=(2, 0))
+
+    max_x = lp.minimize([-1])[0]
+    assert max_x == 0.5
+
+    min_x = lp.minimize([1])[0]
+    assert min_x == 0.0
+
+    # flip the constraint
+    is_lesser = lp.flip_constraint(2)
+
+    assert not is_lesser, "constraint should now be a '>=' constraint"
+
+    max_x = lp.minimize([-1])[0]
+    assert max_x == 1.0
+
+    min_x = lp.minimize([1])[0]
+    assert min_x == 0.5
+
+def test_pop_row():
+    '''test removing a row'''
+
+    # 0 <= x <= 1
+
+    lp = LpInstance()
+
+    lp.add_cols(1)
+    lp.add_rows_less_equal([1, 0])
+    lp.set_constraints_csr(csr_matrix(np.array([[1], [-1]], dtype=float)))
+
+    # add x <= 0.5 constraint
+    lp.add_rows_less_equal([0.5])
+    lp.set_constraints_csr(csr_matrix(np.array([[1]], dtype=float)), offset=(2, 0))
+
+    max_x = lp.minimize([-1])[0]
+    assert max_x == 0.5
+
+    min_x = lp.minimize([1])[0]
+    assert min_x == 0.0
+
+    assert lp.get_num_rows() == 3
+
+    # remove the constraint
+    lp.del_constraint(2)
+
+    assert lp.get_num_rows() == 2
+
+    max_x = lp.minimize([-1])[0]
+    assert max_x == 1.0
+
+    min_x = lp.minimize([1])[0]
+    assert min_x == 0.0
+
+def test_set_constraint_rhs():
+    '''test changing rhs of constraint'''
+
+    # 0 <= x <= 1
+    # extra constraint x <= 0.5... changed to x <= 0.9
+
+    lp = LpInstance()
+
+    lp.add_cols(1)
+    lp.add_rows_less_equal([1, 0])
+    lp.set_constraints_csr(csr_matrix(np.array([[1], [-1]], dtype=float)))
+
+    # add x <= 0.5 constraint
+    lp.add_rows_less_equal([0.5])
+    lp.set_constraints_csr(csr_matrix(np.array([[1]], dtype=float)), offset=(2, 0))
+
+    max_x = lp.minimize([-1])[0]
+    assert max_x == 0.5
+
+    min_x = lp.minimize([1])[0]
+    assert min_x == 0.0
+
+    assert lp.get_num_rows() == 3
+
+    # change constraint to <= 0.9
+    lp.set_constraint_rhs(2, 0.9)
+
+    assert lp.get_num_rows() == 3
+
+    max_x = lp.minimize([-1])[0]
+    assert max_x == 0.9
+
+    min_x = lp.minimize([1])[0]
+    assert min_x == 0.0

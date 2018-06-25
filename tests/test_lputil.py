@@ -98,7 +98,9 @@ def test_add_constraint():
     # add constraint: y >= 4.5
     direction = np.array([0, -1], dtype=float)
 
-    lputil.add_constraint(lpi, basis_mat, direction, -4.5)
+    new_row = lputil.add_constraint(lpi, basis_mat, direction, -4.5)
+
+    assert new_row == 6, "new constraint should have been added in row index 6"
 
     # minimize y should give 4.5
     miny = lpi.minimize([0, 1, 0, 0])[1]
@@ -113,4 +115,52 @@ def test_add_constraint():
     assert [1.0, 5.0] in verts
     assert [0.0, 4.5] in verts
     assert [1.0, 4.5] in verts
+    assert verts[0] == verts[-1]
+
+def test_try_replace_constraint():
+    'tests try_replace_constraint on the harmonic oscillator example'
+
+    lpi = lputil.from_box([[-5, -4], [0, 1]])
+
+    # update basis matrix
+    basis_mat = np.array([[0, 1], [-1, 0]], dtype=float)
+    lputil.set_basis_matrix(lpi, basis_mat)
+
+    # minimize y should give 4.0
+    miny = lpi.minimize([0, 1, 0, 0])[1]
+    assert abs(miny - 4.0) < 1e-6
+
+    # add constraint: y >= 4.5
+    direction = np.array([0, -1], dtype=float)
+
+    row_index = lputil.add_constraint(lpi, basis_mat, direction, -4.5)
+
+    # minimize y should give 4.5
+    miny = lpi.minimize([0, 1, 0, 0])[1]
+    assert abs(miny - 4.5) < 1e-6
+
+    assert lpi.get_num_rows() == 7
+
+    # try to replace constraint y >= 4.6 (should be stronger than 4.5)
+    row_index = lputil.try_replace_constraint(lpi, row_index, basis_mat, direction, -4.6)
+
+    assert row_index == 6
+    assert lpi.get_num_rows() == 7
+
+    # try to replace constraint x <= 0.9 (should be incomparable)
+    xdir = np.array([1, 0], dtype=float)
+    row_index = lputil.try_replace_constraint(lpi, row_index, basis_mat, xdir, 0.9)
+
+    assert row_index == 7
+    assert lpi.get_num_rows() == 8
+
+    # check verts()
+    verts = lpplot.get_verts(lpi, 2)
+
+    assert len(verts) == 5
+    
+    assert [0.0, 5.0] in verts
+    assert [0.9, 5.0] in verts
+    assert [0.0, 4.6] in verts
+    assert [0.9, 4.6] in verts
     assert verts[0] == verts[-1]
