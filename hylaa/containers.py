@@ -37,6 +37,8 @@ class HylaaSettings(Freezable):
         self.opt_decompose_lp = True # use the Minkowski sum decomposition optimization (for systems with inputs)
         self.opt_warm_start_lp = True # reuse the LP instances between guard checks (warm-start LP)
 
+        self.do_guard_strengthening = True
+
         self.counter_example_filename = None # the counter-example filename to create on errors: "counterexample.py"
         self.simulation = SimulationSettings(step)
 

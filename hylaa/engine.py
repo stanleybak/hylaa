@@ -73,7 +73,10 @@ class HylaaEngine(object):
             else:
                 raise RuntimeError("Unsupported initial state type '{}': {}".format(type(shape), shape))
 
-            self.waiting_list.add_deaggregated(star)
+            still_feasible, _ = star.trim_to_invariant()
+
+            if still_feasible:
+                self.waiting_list.add_deaggregated(star)
 
     def is_finished(self):
         'is the computation finished'
@@ -389,7 +392,9 @@ class HylaaEngine(object):
 
         # strengthen guards to inclunde invariants of targets
         ha = init_list[0][0].parent
-        ha.do_guard_strengthening()
+
+        if self.settings.do_guard_strengthening:
+            ha.do_guard_strengthening()
 
         self.result = HylaaResult()
         self.plotman.create_plot()
