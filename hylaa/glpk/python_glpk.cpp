@@ -644,51 +644,111 @@ extern "C"
         return rv;
     }
 
-    // get the LP matrix. This is slow, so it's meant for testing.
-    // returns 0 on success, 1 on error (mismatched dimensions)
-    int getMatrix(glp_prob* lp, double* mat, double* vec, int rows, int cols)
+    // get the number of nonzeros in the lp constraint matrix
+    int getNumNz(glp_prob* lp)
+    {
+        return glp_get_num_nz(lp);
+    }
+
+    // get the right hand side of each constraint
+    int getRhs(glp_prob* lp, double* vec, int vecLen)
     {
         int lpRows = glp_get_num_rows(lp);
-        int lpCols = glp_get_num_cols(lp);
         int rv = 0;
 
-        if (rows != lpRows)
+        if (vecLen != lpRows)
         {
-            printf("Error: matRows(%d) != lpRows(%d)\n", rows, lpRows);
-            rv = 1;
-        }
-        else if (cols != lpCols)
-        {
-            printf("Error: matCols(%d) != lpCols(%d)\n", cols, lpCols);
+            printf("Error: vecLen(%d) != lpRows(%d) in getRhs()\n", vecLen, lpRows);
             rv = 1;
         }
         else
         {
-            vector<int> inds(cols + 1);
-            vector<double> vals(cols + 1);
-
-            for (int row = 1; row <= rows; ++row)
+            for (int row = 1; row <= lpRows; ++row)
             {
-                int len = glp_get_mat_row(lp, row, &inds[0], &vals[0]);
+                int type = glp_get_row_type(lp, row);
 
-                for (int col = 1; col <= cols; ++col)
+                if (type == GLP_FX || type == GLP_UP)
+                    vec[row - 1] = glp_get_row_ub(lp, row);
+                else if (type == GLP_LO)
+                    vec[row - 1] = glp_get_row_ub(lp, row);
+                else
                 {
-                    double val = 0;
+                    printf("Error: Unsupported type (%d) in getRhs() in row %d\n", type, row - 1);
+                    break;
+                }
+            }
+        }
 
-                    for (int index = 1; index <= len; ++index)
-                    {
-                        if (inds[index] == col)
-                        {
-                            val = vals[index];
-                            break;
-                        }
-                    }
+        return rv;
+    }
 
-                    mat[(row - 1) * cols + (col - 1)] = val;
+    // get the types of each constraint
+    int getTypes(glp_prob* lp, int* vec, int vecLen)
+    {
+        int lpRows = glp_get_num_rows(lp);
+        int rv = 0;
+
+        if (vecLen != lpRows)
+        {
+            printf("Error: vecLen(%d) != lpRows(%d) in getTypes()\n", vecLen, lpRows);
+            rv = 1;
+        }
+        else
+        {
+            for (int row = 1; row <= lpRows; ++row)
+            {
+                int type = glp_get_row_type(lp, row);
+
+                vec[row - 1] = type;
+            }
+        }
+
+        return rv;
+    }
+
+    // get the LP matrix as csr_matrix.
+    // returns 0 on success, 1 on error (bad output vector lenths)
+    int getConstraints(glp_prob* lp, double* data, int dataLen, int* inds, int indsLen, int* indPtr,
+                       int indPtrLen)
+    {
+        int lpRows = glp_get_num_rows(lp);
+        int lpCols = glp_get_num_cols(lp);
+        int nnz = glp_get_num_nz(lp);
+        int rv = 0;
+
+        if (dataLen != nnz)
+        {
+            printf("Error: dataLen(%d) != nnz(%d)\n", dataLen, nnz);
+            rv = 1;
+        }
+        else if (indsLen != nnz)
+        {
+            printf("Error: indsLen(%d) != nnz(%d)\n", indsLen, nnz);
+            rv = 1;
+        }
+        else if (indPtrLen != lpRows + 1)
+        {
+            printf("Error: indPtrLen(%d) != lpRows + 1(%d)\n", indPtrLen, lpRows + 1);
+            rv = 1;
+        }
+        else
+        {
+            vector<int> indsRow(lpCols + 1);
+            vector<double> valsRow(lpCols + 1);
+            int dataIndex = 0;
+            indPtr[0] = 0;
+
+            for (int row = 1; row <= lpRows; ++row)
+            {
+                int len = glp_get_mat_row(lp, row, &indsRow[0], &valsRow[0]);
+
+                for (int i = 1; i <= len; ++i)
+                {
+                    data[dataIndex] = valsRow[i];
+                    inds[dataIndex++] = indsRow[i] - 1;
                 }
 
-                double rhs = glp_get_row_ub(lp, row);
-                vec[row - 1] = rhs;
+                indPtr[row] = dataIndex;
             }
         }
 

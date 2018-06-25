@@ -191,3 +191,18 @@ def try_replace_constraint(lpi, old_row_index, basis_mat, direction, rhs):
         rv = old_row_index
 
     return rv
+
+def convex_hull(lpi_list):
+    '''
+    return a new lpi consisting of the convex hull of the passed-in list
+
+    This uses the method from: 
+    Hagemann, Willem. "Reachability analysis of hybrid systems using symbolic orthogonal projections," CAV 2014
+    '''
+
+    lpi.set_minimize_direction(vec)
+
+    columns = np.array([i for i in range(len(vec))], dtype=int) # get the first len(vec) columns
+    result = lpi.minimize_partial_result(columns, fail_on_unsat=True)
+
+    return np.dot(result, vec) <= rhs

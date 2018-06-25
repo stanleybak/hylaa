@@ -150,12 +150,31 @@ class LpInstance(Freezable):
             LpInstance._set_constraint_rhs.restype = ctypes.c_int
             LpInstance._set_constraint_rhs.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_double]
 
-            # int getMatrix(glp_prob* lp, double* mat, double* vec, int rows, int cols)
-            LpInstance._get_matrix = lib.getMatrix
-            LpInstance._get_matrix.restype = ctypes.c_int
-            LpInstance._get_matrix.argtypes = [ctypes.c_void_p, \
-                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), \
-                ctypes.c_int, ctypes.c_int]
+            # int getRhs(glp_prob* lp, double* vec, int vecLen)
+            LpInstance._get_rhs = lib.getRhs
+            LpInstance._get_rhs.restype = ctypes.c_int
+            LpInstance._get_rhs.argtypes = [ctypes.c_void_p, \
+                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int]
+
+            # int getTypes(glp_prob* lp, int* vec, int vecLen)
+            LpInstance._get_types = lib.getTypes
+            LpInstance._get_types.restype = ctypes.c_int
+            LpInstance._get_types.argtypes = [ctypes.c_void_p, \
+                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int]
+
+            # int getNumNz(glp_prob* lp)
+            LpInstance._get_num_nz = lib.getNumNz
+            LpInstance._get_num_nz.restype = ctypes.c_int
+            LpInstance._get_num_nz.argtypes = [ctypes.c_void_p]
+
+            # int getConstraints(glp_prob* lp, double* data, int dataLen, int* ind, int indLen,
+            #                    int* indPtr, int indPtrLen)
+            LpInstance._get_constraints = lib.getConstraints
+            LpInstance._get_constraints.restype = ctypes.c_int
+            LpInstance._get_constraints.argtypes = [ctypes.c_void_p, \
+                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, \
+                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, \
+                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int]
 
             # int test()
             LpInstance._test = lib.test
@@ -357,24 +376,44 @@ class LpInstance(Freezable):
         if res != 0:
             raise RuntimeError("set_constraint_rhs() failed internally")
 
-    def get_matrix(self):
-        '''get the LP matrix as a dense np.ndarray (slow function, for testing)
+    def get_constraints(self):
+        '''get the LP matrix as a csr_matrix
 
-        returns a tupleL (mat, vec), where mat is constraints, and vec is the right-hand side
+        returns a 3-tuple, (mat, types, vec), where mat is constraints, vec is the right-hand side, and
+        types is a np.array of integers cooresponding to the type of constraint: 
+        GLP_FX(== constraint): 5, GLP_UP (<= constraint): 3, GLP_LO (>= constraint): 2
         '''
 
         rows = self.get_num_rows()
         cols = self.get_num_cols()
 
-        mat = np.zeros((rows, cols))
-        vec = np.zeros((rows,))
-
-        res = LpInstance._get_matrix(self.lp_data, mat, vec, rows, cols)
+        vec = np.zeros((rows,), dtype=float)
+        res = LpInstance._get_rhs(self.lp_data, vec, rows)
 
         if res != 0:
-            raise RuntimeError("get_matrix failed")
+            raise RuntimeError("get_rhs failed")
 
-        return mat, vec
+        types = np.zeros((rows,), dtype=np.int32)
+        res = LpInstance._get_types(self.lp_data, types, rows)
+
+        if res != 0:
+            raise RuntimeError("get_types failed")
+
+        nnz = LpInstance._get_num_nz(self.lp_data)
+
+        data = np.zeros((nnz,), dtype=float)
+        inds = np.zeros((nnz,), dtype=np.int32)
+        indptrs = np.zeros((rows+1,), dtype=np.int32)
+
+        res = LpInstance._get_constraints(self.lp_data, data, len(data), inds, len(inds), indptrs, len(indptrs))
+
+        if res != 0:
+            raise RuntimeError("get_constraints failed")
+
+        mat = csr_matrix((data, inds, indptrs), shape=(rows, cols), dtype=float)
+        mat.check_format()
+
+        return mat, types, vec
 
     def get_num_rows(self):
         'get the number of rows in the lp'

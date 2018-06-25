@@ -164,3 +164,27 @@ def test_try_replace_constraint():
     assert [0.0, 4.6] in verts
     assert [0.9, 4.6] in verts
     assert verts[0] == verts[-1]
+
+def test_convex_hull():
+    'tests convex_hull'
+
+    lpi1 = lputil.from_box([[-5, -4], [0, 1]])
+    lpi2 = lputil.from_box([[0, 1], [4, 5]])
+
+    lpi = lputil.convex_hull([lpi1, lpi2])
+
+    verts = lpplot.get_verts(lpi, 2)
+
+    assert len(verts) == 7
+    
+    assert [-5.0, 0.] in verts
+    assert [-5.0, 1.] in verts
+    #assert [-4.0, 1.] in verts
+    assert [-4.0, 0.] in verts
+
+    #assert [0., 4.] in verts
+    assert [0., 5.] in verts
+    assert [1., 5.] in verts
+    assert [1., 4.] in verts
+    
+    assert verts[0] == verts[-1]

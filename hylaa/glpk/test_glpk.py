@@ -227,32 +227,6 @@ def test_partial_result():
     assert full_result[0] == cols21[1]
     assert full_result[1] == cols21[0]
 
-def test_get_matrix():
-    '''tests get_matrix testing function'''
-
-    # x + 2y <= 1
-    # 3x + y <= 2
-
-    a_ub = [[1, 2], [3, 1]]
-    b_ub = [1, 2]
-
-    lp = LpInstance()
-
-    a_csr = csr_matrix(np.array(a_ub, dtype=float))
-    lp.add_cols(a_csr.shape[1])
-    lp.add_rows_less_equal(b_ub)
-
-    lp.set_constraints_csr(a_csr)
-
-    mat, vec = lp.get_matrix()
-
-    expected_mat = np.array([[1, 2], [3, 1]], dtype=float)
-    expected_vec = np.array([1, 2.0], dtype=float)
-    
-    assert np.allclose(mat, expected_mat)
-
-    assert np.allclose(vec, expected_vec)
-
 def test_min_partial_result():
     'test minimize partial result'
 
@@ -335,7 +309,8 @@ def test_csr_with_coloffset():
 
     lp.set_constraints_csr(col2_csr, offset=(0,1))
 
-    mat, vec = lp.get_matrix()
+    mat, _, vec = lp.get_constraints()
+    mat = mat.toarray() # was csr_matrix
 
     expected_mat = np.array([[0, 2], [0, 1]], dtype=float)
     expected_vec = np.array([1, 2.0], dtype=float)
@@ -445,3 +420,31 @@ def test_set_constraint_rhs():
 
     min_x = lp.minimize([1])[0]
     assert min_x == 0.0
+
+def test_get_matrix():
+    '''tests get_matrix testing function'''
+
+    # x + 2y <= 1
+    # 3x + y <= 2
+
+    a_ub = [[1, 2], [3, 1]]
+    b_ub = [1, 2]
+
+    lp = LpInstance()
+
+    a_csr = csr_matrix(np.array(a_ub, dtype=float))
+    lp.add_cols(a_csr.shape[1])
+    lp.add_rows_less_equal(b_ub)
+
+    lp.set_constraints_csr(a_csr)
+
+    mat, types, vec = lp.get_constraints()
+    mat = mat.toarray() # was csr_matrix
+
+    expected_mat = np.array([[1, 2], [3, 1]], dtype=float)
+    expected_vec = np.array([1, 2.0], dtype=float)
+    expected_types = np.array([3, 3], dtype=np.int32)
+    
+    assert np.allclose(types, expected_types)
+    assert np.allclose(vec, expected_vec)
+    assert np.allclose(mat, expected_mat)
