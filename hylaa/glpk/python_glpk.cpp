@@ -20,6 +20,15 @@ extern "C"
         return lp;
     }
 
+    glp_prob* copyLp(glp_prob* other)
+    {
+        glp_prob* lp = glp_create_prob();
+
+        glp_copy_prob(lp, other, GLP_ON);
+
+        return lp;
+    }
+
     void delLp(glp_prob* lp)
     {
         glp_delete_prob(lp);

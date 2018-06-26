@@ -443,8 +443,46 @@ def test_get_matrix():
 
     expected_mat = np.array([[1, 2], [3, 1]], dtype=float)
     expected_vec = np.array([1, 2.0], dtype=float)
-    expected_types = np.array([3, 3], dtype=np.int32)
+    expected_types = np.array([LpInstance.GLP_UP, LpInstance.GLP_UP], dtype=np.int32)
     
     assert np.allclose(types, expected_types)
     assert np.allclose(vec, expected_vec)
     assert np.allclose(mat, expected_mat)
+
+def test_copy():
+    '''test copying an LP'''
+
+    # 0 <= x <= 1
+    # extra constraint x <= 0.5... in copy changed to x <= 0.9
+
+    lp = LpInstance()
+
+    lp.add_cols(1)
+    lp.add_rows_less_equal([1, 0])
+    lp.set_constraints_csr(csr_matrix(np.array([[1], [-1]], dtype=float)))
+
+    # add x <= 0.5 constraint
+    lp.add_rows_less_equal([0.5])
+    lp.set_constraints_csr(csr_matrix(np.array([[1]], dtype=float)), offset=(2, 0))
+
+    lp_copy = LpInstance(lp)
+    # change constraint to <= 0.9 in copy
+    lp_copy.set_constraint_rhs(2, 0.9)
+
+    # check original
+    max_x = lp.minimize([-1])[0]
+    assert max_x == 0.5
+
+    min_x = lp.minimize([1])[0]
+    assert min_x == 0.0
+
+    assert lp.get_num_rows() == 3
+
+    # check copy
+    assert lp_copy.get_num_rows() == 3
+
+    max_x = lp_copy.minimize([-1])[0]
+    assert max_x == 0.9
+
+    min_x = lp_copy.minimize([1])[0]
+    assert min_x == 0.0

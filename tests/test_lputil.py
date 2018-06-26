@@ -2,16 +2,18 @@
 Tests for LP operations.
 '''
 
-from hylaa import lputil, lpplot
-
+import math
 import numpy as np
+
+from hylaa import lputil, lpplot
+from hylaa.glpk.python_sparse_glpk import LpInstance
 
 def test_from_box():
     'tests from_box'
 
     lpi = lputil.from_box([[-5, -4], [0, 1]])
 
-    mat, vec = lpi.get_matrix()
+    mat, types, vec = lpi.get_constraints()
 
     expected_mat = np.array([\
         [-1, 0, 1, 0], \
@@ -23,8 +25,13 @@ def test_from_box():
 
     expected_vec = np.array([0, 0, 5, -4, 0, 1], dtype=float)
 
+    fx = LpInstance.GLP_FX
+    up = LpInstance.GLP_UP
+    expected_types = np.array([fx, fx, up, up, up, up], dtype=np.int32)
+
     assert np.allclose(vec, expected_vec)
-    assert np.allclose(mat, expected_mat)
+    assert np.allclose(types, expected_types)
+    assert np.allclose(mat.toarray(), expected_mat)
 
 def test_set_basis_matrix():
     'tests lputil set_basis_matrix on harmonic oscillator example'
@@ -34,7 +41,7 @@ def test_set_basis_matrix():
     basis = np.array([[0, 1], [-1, 0]], dtype=float)
     lputil.set_basis_matrix(lpi, basis)
 
-    mat, vec = lpi.get_matrix()
+    mat, _, vec = lpi.get_constraints()
 
     expected_mat = np.array([\
         [-1, 0, 0, 1], \
@@ -48,7 +55,7 @@ def test_set_basis_matrix():
 
     assert np.allclose(vec, expected_vec)
         
-    assert np.allclose(mat, expected_mat)
+    assert np.allclose(mat.toarray(), expected_mat)
 
 def test_check_intersection():
     'tests check_intersection on the harmonic oscillator example'
@@ -165,26 +172,61 @@ def test_try_replace_constraint():
     assert [0.9, 4.6] in verts
     assert verts[0] == verts[-1]
 
-def test_convex_hull():
-    'tests convex_hull'
+def test_box_aggregate():
+    'tests box aggregation'
 
-    lpi1 = lputil.from_box([[-5, -4], [0, 1]])
-    lpi2 = lputil.from_box([[0, 1], [4, 5]])
+    lpi1 = lputil.from_box([[0, 1], [0, 1]])
+    lpi2 = lputil.from_box([[1, 2], [1, 2]])
 
-    lpi = lputil.convex_hull([lpi1, lpi2])
+    agg_dirs = np.array([[1, 0], [0, 1]], dtype=float)
+
+    # box aggregation
+    lpi = lputil.aggregate([lpi1, lpi2], agg_dirs)
+
+    verts = lpplot.get_verts(lpi, 2)
+
+    assert len(verts) == 5
+    
+    assert [0., 0.] in verts
+    assert [0, 2.] in verts
+    assert [2., 0.] in verts
+    assert [2., 2.] in verts
+    
+    assert verts[0] == verts[-1]
+
+def pair_almost_in(pair, pair_list, tol=1e-9):
+    'check if a pair is in a pair list (up to small tolerance)'
+
+    rv = False
+
+    for a, b in pair_list:
+        if abs(a - pair[0]) < tol and abs(b - pair[1]) < tol:
+            rv = True
+            break
+
+    return rv
+
+def test_rotated_aggregate():
+    'tests rotated aggregation'
+
+    lpi1 = lputil.from_box([[0, 1], [0, 1]])
+    lpi2 = lputil.from_box([[1, 2], [1, 2]])
+
+    sq2 = math.sqrt(2) / 2.0
+
+    agg_dirs = np.array([[sq2, sq2], [sq2, -sq2]], dtype=float)
+
+    lpi = lputil.aggregate([lpi1, lpi2], agg_dirs)
 
     verts = lpplot.get_verts(lpi, 2)
 
     assert len(verts) == 7
     
-    assert [-5.0, 0.] in verts
-    assert [-5.0, 1.] in verts
-    #assert [-4.0, 1.] in verts
-    assert [-4.0, 0.] in verts
-
-    #assert [0., 4.] in verts
-    assert [0., 5.] in verts
-    assert [1., 5.] in verts
-    assert [1., 4.] in verts
+    assert pair_almost_in([0., 0.], verts)
+    assert pair_almost_in([1., 0.], verts)
+    assert pair_almost_in([2., 1.], verts)
+    assert pair_almost_in([2., 2.], verts)
+    assert pair_almost_in([1., 2.], verts)
+    assert pair_almost_in([0., 1.], verts)
     
     assert verts[0] == verts[-1]

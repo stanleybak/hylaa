@@ -7,7 +7,7 @@ the first N rows are the current-time constraints (equality constraints equal to
 '''
 
 import numpy as np
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, csc_matrix
 
 from hylaa.glpk.python_sparse_glpk import LpInstance
 
@@ -192,17 +192,84 @@ def try_replace_constraint(lpi, old_row_index, basis_mat, direction, rhs):
 
     return rv
 
-def convex_hull(lpi_list):
+def aggregate(lpi_list, direction_matrix):
     '''
-    return a new lpi consisting of the convex hull of the passed-in list
+    return a new lpi consisting of an aggregation of the passed-in list
 
-    This uses the method from: 
-    Hagemann, Willem. "Reachability analysis of hybrid systems using symbolic orthogonal projections," CAV 2014
+    This uses minkowski sum with template directions.
     '''
 
-    lpi.set_minimize_direction(vec)
+    assert direction_matrix.shape[0] == direction_matrix.shape[1], "expected square direction matrix"
+    assert len(lpi_list) > 1, "expected more than one lpi to perform an aggregation"
 
-    columns = np.array([i for i in range(len(vec))], dtype=int) # get the first len(vec) columns
-    result = lpi.minimize_partial_result(columns, fail_on_unsat=True)
+    middle_index = len(lpi_list) // 2
+    middle_lpi = lpi_list[middle_index]
+    
+    # for each direction, minimize and maximize it within the list
+    dims = num_directions = direction_matrix.shape[0]
+    columns = np.array([i for i in range(num_directions)], dtype=int) # get the first len(vec) columns
+    
+    mins = [np.inf] * num_directions
+    mid_mins = [np.inf] * num_directions
+    maxes = [-np.inf] * num_directions
+    mid_maxes = [-np.inf] * num_directions
 
-    return np.dot(result, vec) <= rhs
+    for i in range(num_directions):
+        direction = direction_matrix[i]
+        assert abs(np.linalg.norm(direction) - 1) < 1e-9, "expected normalized directions, got {}".format(direction)
+        
+        for lpi in lpi_list:
+            lpi.set_minimize_direction(direction)
+            result = lpi.minimize_partial_result(columns)
+            min_val = np.dot(result, direction)
+            mins[i] = min(mins[i], min_val)
+
+            lpi.set_minimize_direction(-direction)
+            result = lpi.minimize_partial_result(columns)
+            max_val = np.dot(-result, -direction)
+            maxes[i] = max(maxes[i], max_val)
+
+            if lpi == middle_lpi:
+                mid_mins[i] = min_val
+                mid_maxes[i] = max_val
+
+    rows = middle_lpi.get_num_rows()
+    cols = middle_lpi.get_num_cols()
+
+    rv = LpInstance(middle_lpi) # copy it
+
+    # add n new columns and 2n new rows, for the minkowski sum constriants
+    rv.add_cols(dims)
+
+    # csc matrix with constriants
+    data = []
+    inds = []
+    indptrs = [0]
+    rhs = []
+
+    for dim in range(dims):
+        direction = direction_matrix[dim]
+        
+        # column is direction[dim]
+        for i in range(len(direction)):
+            data.append(direction[i])
+            inds.append(i)
+
+        data.append(1.0) # <= constraint
+        inds.append(rows + 2*dim)
+        rhs.append(maxes[dim] - mid_maxes[dim])
+
+        data.append(-1.0) # >= constraint
+        inds.append(rows + 2*dim + 1)
+        rhs.append(-(mins[dim] - mid_mins[dim]))
+
+        indptrs.append(len(data))
+
+    rv.add_rows_less_equal(rhs)
+
+    constraints = csc_matrix((data, inds, indptrs), dtype=float, shape=(rows + 2*dims, dims))
+    constraints.check_format()
+   
+    rv.set_constraints_csc(constraints, offset=(0, cols))
+
+    return rv

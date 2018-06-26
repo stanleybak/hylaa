@@ -37,6 +37,11 @@ class LpInstance(Freezable):
     # static member (library)
     _lib = None
 
+    # static types for types in get_constraints
+    GLP_FX = 5 # == constraint
+    GLP_UP = 3 # <= constraint
+    GLP_LO = 2 # >= constraint
+
     @staticmethod
     def _init_static():
         'open the library (if not opened already) and initialize the static members'
@@ -50,6 +55,11 @@ class LpInstance(Freezable):
             LpInstance._init_lp = lib.initLp
             LpInstance._init_lp.restype = ctypes.c_void_p
             LpInstance._init_lp.argtypes = []
+
+            # glp_prob* copyLp(glp_prob* other)
+            LpInstance._copy_lp = lib.copyLp
+            LpInstance._copy_lp.restype = ctypes.c_void_p
+            LpInstance._copy_lp.argtypes = [ctypes.c_void_p]
 
             # void delLp(glp_prob* lp)
             LpInstance._del_lp = lib.delLp
@@ -181,12 +191,15 @@ class LpInstance(Freezable):
             LpInstance._test.restype = ctypes.c_int
             LpInstance._test.argtypes = []
 
-
-    def __init__(self):
+    def __init__(self, other_lpi=None):
+        'create a copy of the passed-in lpi'
         LpInstance._init_static()
         self.lp_data = None
 
-        self.lp_data = LpInstance._init_lp()
+        if other_lpi is not None:
+            self.lp_data = LpInstance._copy_lp(other_lpi.lp_data)
+        else:
+            self.lp_data = LpInstance._init_lp()
 
         # put a copy of del_lp into the object for use in the destructor
         self.del_lp = LpInstance._del_lp
@@ -380,8 +393,10 @@ class LpInstance(Freezable):
         '''get the LP matrix as a csr_matrix
 
         returns a 3-tuple, (mat, types, vec), where mat is constraints, vec is the right-hand side, and
-        types is a np.array of integers cooresponding to the type of constraint: 
+        types is a np.array of integers corresponding to the type of constraint: 
+
         GLP_FX(== constraint): 5, GLP_UP (<= constraint): 3, GLP_LO (>= constraint): 2
+        These constants are also defined as static members of LpInstance (for example, LpInstance.GLP_FX)
         '''
 
         rows = self.get_num_rows()
