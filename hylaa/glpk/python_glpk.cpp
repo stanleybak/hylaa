@@ -715,6 +715,92 @@ extern "C"
         return rv;
     }
 
+    int getSubConstraints(glp_prob* lp, int x, int y, int w, int h, double* data, int dataLen)
+    {
+        int lpRows = glp_get_num_rows(lp);
+        int lpCols = glp_get_num_cols(lp);
+        int rv = 0;
+
+        if (dataLen != w * h)
+        {
+            printf("Error: dataLen(%d) != w(%d) * h(%d)\n", dataLen, w, h);
+            rv = 1;
+        }
+        else if (x < 0 || w < 0 || x + w > lpCols)
+        {
+            printf("Error: invalid x range (requested x=%d w=%d, lpCols=%d)\n", x, w, lpCols);
+            rv = 1;
+        }
+        else if (y < 0 || h < 0 || y + h > lpRows)
+        {
+            printf("Error: invalid y range (requested y=%d h=%d, lpRows=%d)\n", y, h, lpRows);
+            rv = 1;
+        }
+        else
+        {
+            vector<int> indsRow(lpCols + 1);
+            vector<double> valsRow(lpCols + 1);
+
+            for (int row = y + 1; row <= y + h; ++row)
+            {
+                int len = glp_get_mat_row(lp, row, &indsRow[0], &valsRow[0]);
+
+                for (int i = 1; i <= len; ++i)
+                {
+                    if (indsRow[i] > x && indsRow[i] <= x + w)
+                    {
+                        int rowOffset = (row - y - 1) * w;
+                        int colOffset = indsRow[i] - x - 1;
+
+                        data[rowOffset + colOffset] = valsRow[i];
+                    }
+                }
+            }
+        }
+
+        return rv;
+    }
+
+    // returns -1 on error, otherwise the number of entries returned in data
+    int getRow(glp_prob* lp, int row, double* data, int dataLen, int* inds, int indsLen)
+    {
+        int lpCols = glp_get_num_cols(lp);
+        int lpRows = glp_get_num_rows(lp);
+
+        int rv = 0;
+
+        if (dataLen != indsLen)
+        {
+            printf("Error: dataLen(%d) != indsLen(%d)\n", dataLen, indsLen);
+            rv = -1;
+        }
+        else if (lpCols != dataLen)
+        {
+            printf("Error: dataLen(%d) != lpCols(%d)\n", dataLen, lpCols);
+            rv = -1;
+        }
+        else if (row < 0 || row >= lpRows)
+        {
+            printf("Error: out of bounds row %d (lpRows: %d)\n", row, lpRows);
+            rv = -1;
+        }
+        else
+        {
+            vector<int> indsRow(lpCols + 1);
+            vector<double> valsRow(lpCols + 1);
+
+            rv = glp_get_mat_row(lp, row + 1, &indsRow[0], &valsRow[0]);
+
+            for (int i = 1; i <= rv; ++i)
+            {
+                data[i - 1] = valsRow[i];
+                inds[i - 1] = indsRow[i] - 1;
+            }
+        }
+
+        return rv;
+    }
+
     // get the LP matrix as csr_matrix.
     // returns 0 on success, 1 on error (bad output vector lenths)
     int getConstraints(glp_prob* lp, double* data, int dataLen, int* inds, int indsLen, int* indPtr,

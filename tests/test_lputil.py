@@ -79,7 +79,7 @@ def test_verts():
 
     lpi = lputil.from_box([[-5, -4], [0, 1]])
 
-    verts = lpplot.get_verts(lpi, 2)
+    verts = lpplot.get_verts(lpi)
 
     assert len(verts) == 5
     
@@ -105,7 +105,7 @@ def test_add_constraint():
     # add constraint: y >= 4.5
     direction = np.array([0, -1], dtype=float)
 
-    new_row = lputil.add_constraint(lpi, basis_mat, direction, -4.5)
+    new_row = lputil.add_constraint(lpi, direction, -4.5)
 
     assert new_row == 6, "new constraint should have been added in row index 6"
 
@@ -114,7 +114,7 @@ def test_add_constraint():
     assert abs(miny - 4.5) < 1e-6
 
     # check verts()
-    verts = lpplot.get_verts(lpi, 2)
+    verts = lpplot.get_verts(lpi)
 
     assert len(verts) == 5
     
@@ -140,7 +140,7 @@ def test_try_replace_constraint():
     # add constraint: y >= 4.5
     direction = np.array([0, -1], dtype=float)
 
-    row_index = lputil.add_constraint(lpi, basis_mat, direction, -4.5)
+    row_index = lputil.add_constraint(lpi, direction, -4.5)
 
     # minimize y should give 4.5
     miny = lpi.minimize([0, 1, 0, 0])[1]
@@ -149,20 +149,20 @@ def test_try_replace_constraint():
     assert lpi.get_num_rows() == 7
 
     # try to replace constraint y >= 4.6 (should be stronger than 4.5)
-    row_index = lputil.try_replace_constraint(lpi, row_index, basis_mat, direction, -4.6)
+    row_index = lputil.try_replace_constraint(lpi, row_index, direction, -4.6)
 
     assert row_index == 6
     assert lpi.get_num_rows() == 7
 
     # try to replace constraint x <= 0.9 (should be incomparable)
     xdir = np.array([1, 0], dtype=float)
-    row_index = lputil.try_replace_constraint(lpi, row_index, basis_mat, xdir, 0.9)
+    row_index = lputil.try_replace_constraint(lpi, row_index, xdir, 0.9)
 
     assert row_index == 7
     assert lpi.get_num_rows() == 8
 
     # check verts()
-    verts = lpplot.get_verts(lpi, 2)
+    verts = lpplot.get_verts(lpi)
 
     assert len(verts) == 5
     
@@ -183,7 +183,7 @@ def test_box_aggregate():
     # box aggregation
     lpi = lputil.aggregate([lpi1, lpi2], agg_dirs)
 
-    verts = lpplot.get_verts(lpi, 2)
+    verts = lpplot.get_verts(lpi)
 
     assert len(verts) == 5
     
@@ -218,7 +218,7 @@ def test_rotated_aggregate():
 
     lpi = lputil.aggregate([lpi1, lpi2], agg_dirs)
 
-    verts = lpplot.get_verts(lpi, 2)
+    verts = lpplot.get_verts(lpi)
 
     assert len(verts) == 7
     
@@ -228,5 +228,47 @@ def test_rotated_aggregate():
     assert pair_almost_in([2., 2.], verts)
     assert pair_almost_in([1., 2.], verts)
     assert pair_almost_in([0., 1.], verts)
+    
+    assert verts[0] == verts[-1]
+
+def test_get_basis_matrix():
+    'tests lputil get_basis_matrix on harmonic oscillator example'
+
+    lpi = lputil.from_box([[-5, -4], [0, 1]])
+
+    basis = np.array([[0, 1], [-1, 0]], dtype=float)
+    lputil.set_basis_matrix(lpi, basis)
+
+    mat = lputil.get_basis_matrix(lpi)
+        
+    assert np.allclose(mat, basis)
+
+def test_box_aggregate3():
+    'tests box aggregation with 3 boxes'
+
+    lpi1 = lputil.from_box([[-2, -1], [-0.5, 0.5]])
+    lpi2 = LpInstance(lpi1)
+    lpi3 = LpInstance(lpi1)
+
+    basis2 = np.array([[0, 1], [-1, 0]], dtype=float)
+    lputil.set_basis_matrix(lpi2, basis2)
+
+    basis3 = np.array([[-1, 0], [0, -1]], dtype=float)
+    lputil.set_basis_matrix(lpi3, basis3)
+    
+    agg_dirs = np.array([[1, 0], [0, 1]], dtype=float)
+
+    # box aggregation
+    lpi = lputil.aggregate([lpi1, lpi2, lpi3], agg_dirs)
+
+    plot_vecs = lpplot.make_plot_vecs(256, offset=0.1) # use an offset to prevent LP dir from being aligned with axis
+    verts = lpplot.get_verts(lpi, plot_vecs=plot_vecs)
+
+    assert len(verts) == 5
+    
+    assert [-2., -0.5] in verts
+    assert [-2, 2.] in verts
+    assert [2., 2.] in verts
+    assert [2., -0.5] in verts
     
     assert verts[0] == verts[-1]

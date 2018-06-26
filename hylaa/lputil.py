@@ -106,7 +106,7 @@ def check_intersection(lpi, vec, rhs):
 
     return np.dot(result, vec) <= rhs
 
-def add_constraint(lpi, basis_matrix, vec, rhs):
+def add_constraint(lpi, vec, rhs, basis_matrix=None):
     '''
     add a constraint to the lpi
 
@@ -114,6 +114,9 @@ def add_constraint(lpi, basis_matrix, vec, rhs):
 
     this returns the row of the newly-created constraint
     '''
+
+    if basis_matrix is None:
+        basis_matrix = get_basis_matrix(lpi)
 
     assert isinstance(basis_matrix, np.ndarray)
 
@@ -141,7 +144,7 @@ def add_constraint(lpi, basis_matrix, vec, rhs):
 
     return rows - 1
 
-def try_replace_constraint(lpi, old_row_index, basis_mat, direction, rhs):
+def try_replace_constraint(lpi, old_row_index, direction, rhs):
     '''replace the constraint in row_index by a new constraint, if the new constraint is stronger, otherwise
     create new constriant
 
@@ -154,10 +157,11 @@ def try_replace_constraint(lpi, old_row_index, basis_mat, direction, rhs):
     # if negating the existing constraint, and adding the new one is UNSAT
 
     rv = None
+    basis_mat = get_basis_matrix(lpi)
 
     lpi.flip_constraint(old_row_index)
 
-    new_row_index = add_constraint(lpi, basis_mat, direction, rhs)
+    new_row_index = add_constraint(lpi, direction, rhs, basis_matrix=basis_mat)
 
     is_sat = lpi.minimize_partial_result([], fail_on_unsat=False) is not None
 
@@ -271,5 +275,98 @@ def aggregate(lpi_list, direction_matrix):
     constraints.check_format()
    
     rv.set_constraints_csc(constraints, offset=(0, cols))
+    
+    add_snapshot_variables(rv)
 
     return rv
+
+def get_dims(lpi):
+    '''get the number of dimensions of the lpi by counting '==' constriants'''
+
+    # first figure out the dimensions of the basis matrix by counting the number of '==' constraints
+    types = lpi.get_types()
+
+    dims = 0
+
+    for t in types:
+        if t != LpInstance.GLP_FX:
+            break
+
+        dims += 1
+
+    return dims
+
+def get_basis_matrix(lpi):
+    'get the basis matrix from the lpi'
+
+    dims = get_dims(lpi)
+    cols = lpi.get_num_cols()
+
+    return lpi.get_subconstraints(cols-dims, 0, dims, dims)
+
+def add_snapshot_variables(lpi):
+    '''
+    add snapshot variables to the existing lpi
+
+    this adds n new variables (the pre-snapshot variables), which is assigned with new rows to
+    0 BM -I = 0
+
+    and sets the first rows to a fresh setup:
+    -I 0 I = 0
+    '''
+
+    dims = get_dims(lpi)
+    cols = lpi.get_num_cols()
+    rows = lpi.get_num_rows()
+
+    lpi.add_cols(dims)
+    lpi.add_rows_equal_zero(dims)
+    
+    data = []
+    inds = []
+    indptrs = [0]
+
+    # set constraints for the last <dims> rows
+    for dim in range(dims):
+        row_csr = lpi.get_row(dim)
+
+        for i in range(len(row_csr.data)):
+
+            if row_csr.indices[i] < dims:
+                assert row_csr.data[i] == -1, "expected negative identity in row {}".format(dim)
+            else:
+                data.append(row_csr.data[i])
+                inds.append(row_csr.indices[i])
+
+        # add -I at the end
+        data.append(-1)
+        inds.append(cols + dim)
+
+        indptrs.append(len(data))
+
+    mat = csr_matrix((data, inds, indptrs), shape=(dims, cols + dims), dtype=float)
+    mat.check_format()
+    
+    lpi.set_constraints_csr(mat, offset=(rows, 0))
+    
+    # set constraints for the first <dims> rows
+    data = []
+    inds = []
+    indptrs = [0]
+
+    # set constraints for the last <dims> rows
+    for dim in range(dims):
+        # -I at the start
+        data.append(-1)
+        inds.append(dim)
+
+        # I at the end (basis matrix)
+        data.append(1)
+        inds.append(cols + dim)
+
+        indptrs.append(len(data))
+
+    mat = csr_matrix((data, inds, indptrs), shape=(dims, cols + dims), dtype=float)
+    mat.check_format()
+    
+    lpi.set_constraints_csr(mat)

@@ -421,8 +421,8 @@ def test_set_constraint_rhs():
     min_x = lp.minimize([1])[0]
     assert min_x == 0.0
 
-def test_get_matrix():
-    '''tests get_matrix testing function'''
+def test_get_constraints():
+    '''tests get_constraints() function'''
 
     # x + 2y <= 1
     # 3x + y <= 2
@@ -448,6 +448,9 @@ def test_get_matrix():
     assert np.allclose(types, expected_types)
     assert np.allclose(vec, expected_vec)
     assert np.allclose(mat, expected_mat)
+
+    types2 = lp.get_types()
+    assert np.allclose(types2, expected_types)
 
 def test_copy():
     '''test copying an LP'''
@@ -486,3 +489,64 @@ def test_copy():
 
     min_x = lp_copy.minimize([1])[0]
     assert min_x == 0.0
+
+def test_get_subconstraints():
+    '''tests get_subconstraints()'''
+
+    # x + 2y <= 1
+    # 3x + y <= 2
+
+    a_ub = [[1, 2], [3, 1]]
+    b_ub = [1, 2]
+
+    lp = LpInstance()
+
+    a_csr = csr_matrix(np.array(a_ub, dtype=float))
+    lp.add_cols(a_csr.shape[1])
+    lp.add_rows_less_equal(b_ub)
+
+    lp.set_constraints_csr(a_csr)
+
+    mat = lp.get_subconstraints(0, 0, 2, 2)
+    expected_mat = np.array([[1, 2], [3, 1]], dtype=float)
+
+    assert np.allclose(mat, expected_mat), "failed without offset"
+
+    # test with offset
+    mat = lp.get_subconstraints(1, 0, 1, 2)
+    expected_mat = np.array([[2], [1]], dtype=float)
+
+    assert np.allclose(mat, expected_mat), "failed with offset (1, 0)"
+
+    # test with offset
+    mat = lp.get_subconstraints(1, 1, 1, 1)
+    expected_mat = np.array([[1]], dtype=float)
+
+    assert np.allclose(mat, expected_mat), "failed with offset (1, 1)"
+
+def test_get_row():
+    '''tests get_row()'''
+
+    # x + 2y <= 1
+    # 3x + y <= 2
+
+    a_ub = [[1, 2], [3, 0]]
+    b_ub = [1, 2]
+
+    lp = LpInstance()
+
+    a_csr = csr_matrix(np.array(a_ub, dtype=float))
+    lp.add_cols(a_csr.shape[1])
+    lp.add_rows_less_equal(b_ub)
+
+    lp.set_constraints_csr(a_csr)
+
+    mat = lp.get_row(0).toarray()
+    expected_mat = np.array([1, 2], dtype=float)
+
+    assert np.allclose(mat, expected_mat)
+
+    mat = lp.get_row(1).toarray()
+    expected_mat = np.array([3, 0], dtype=float)
+
+    assert np.allclose(mat, expected_mat)

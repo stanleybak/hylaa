@@ -10,7 +10,9 @@ make_plot_vecs is useful for controlling the accuracy (and decreasing overhead c
 import math
 import numpy as np
 
-def get_verts(lpi, num_dims, xdim=0, ydim=1, plot_vecs=None):
+from hylaa import lputil
+
+def get_verts(lpi, num_dims=None, xdim=0, ydim=1, plot_vecs=None):
     '''get the vertices defining (an underapproximation) of the outside of the given linear constraints
     These will be usable for plotting, so that rv[0] == rv[-1]
 
@@ -20,6 +22,9 @@ def get_verts(lpi, num_dims, xdim=0, ydim=1, plot_vecs=None):
     
     if plot_vecs is None:
         plot_vecs = make_plot_vecs(256)
+
+    if num_dims is None:
+        num_dims = lputil.get_dims(lpi)
 
     # first set the optimization direction to all zeros
     zero_vec = np.zeros((num_dims,), dtype=float)
@@ -34,7 +39,7 @@ def get_verts(lpi, num_dims, xdim=0, ydim=1, plot_vecs=None):
 
     return verts
 
-def make_plot_vecs(num_angles=256):
+def make_plot_vecs(num_angles=256, offset=0):
     'make plot_vecs with equally spaced directions, returning the result'
 
     plot_vecs = []
@@ -42,8 +47,8 @@ def make_plot_vecs(num_angles=256):
     step = 2.0 * math.pi / num_angles
 
     for theta in np.arange(0.0, 2.0*math.pi, step):
-        x = math.cos(theta)
-        y = math.sin(theta)
+        x = math.cos(theta + offset)
+        y = math.sin(theta + offset)
 
         vec = np.array([x, y], dtype=float)
 

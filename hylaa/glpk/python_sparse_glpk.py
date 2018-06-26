@@ -177,6 +177,13 @@ class LpInstance(Freezable):
             LpInstance._get_num_nz.restype = ctypes.c_int
             LpInstance._get_num_nz.argtypes = [ctypes.c_void_p]
 
+            #int getRow(glp_prob* lp, int row, double* data, int dataLen, int* inds, int indsLen)
+            LpInstance._get_row = lib.getRow
+            LpInstance._get_row.restype = ctypes.c_int
+            LpInstance._get_row.argtypes = [ctypes.c_void_p, ctypes.c_int, \
+                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int, \
+                ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int]
+
             # int getConstraints(glp_prob* lp, double* data, int dataLen, int* ind, int indLen,
             #                    int* indPtr, int indPtrLen)
             LpInstance._get_constraints = lib.getConstraints
@@ -186,6 +193,13 @@ class LpInstance(Freezable):
                 ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int, \
                 ndpointer(ctypes.c_int, flags="C_CONTIGUOUS"), ctypes.c_int]
 
+            # int getSubConstraints(glp_prob* lp, int x, int y, int w, int h, double* data, int dataLen)
+            LpInstance._get_subconstraints = lib.getSubConstraints
+            LpInstance._get_subconstraints.restype = ctypes.c_int
+            LpInstance._get_subconstraints.argtypes = [ctypes.c_void_p, \
+                ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                ndpointer(ctypes.c_double, flags="C_CONTIGUOUS"), ctypes.c_int]
+                
             # int test()
             LpInstance._test = lib.test
             LpInstance._test.restype = ctypes.c_int
@@ -389,6 +403,34 @@ class LpInstance(Freezable):
         if res != 0:
             raise RuntimeError("set_constraint_rhs() failed internally")
 
+    def get_subconstraints(self, x, y, w, h):
+        'get a subconstraint matrix from the lpi as a dense matrix'
+
+        rv = np.zeros(w*h)
+
+        res = LpInstance._get_subconstraints(self.lp_data, x, y, w, h, rv, len(rv))
+
+        if res != 0:
+            raise RuntimeError("get_subconstaints failed")
+
+        rv.shape = (h, w)
+        
+        return rv
+
+    def get_types(self):
+        '''get the constraint types. See get_constraints() for the meaning of values in the returned array
+        '''
+
+        rows = self.get_num_rows()
+                
+        types = np.zeros((rows,), dtype=np.int32)
+        res = LpInstance._get_types(self.lp_data, types, rows)
+
+        if res != 0:
+            raise RuntimeError("get_types failed")
+
+        return types
+
     def get_constraints(self):
         '''get the LP matrix as a csr_matrix
 
@@ -429,6 +471,27 @@ class LpInstance(Freezable):
         mat.check_format()
 
         return mat, types, vec
+
+    def get_row(self, row):
+        '''get a row of the LP matrix as a csr_matrix
+        '''
+
+        cols = self.get_num_cols()
+
+        data = np.zeros((cols,), dtype=float)
+        inds = np.zeros((cols,), dtype=np.int32)
+        
+        res = LpInstance._get_row(self.lp_data, row, data, len(data), inds, len(inds))
+
+        if res == -1:
+            raise RuntimeError("get_row failed")
+
+        indptr = [0, res]
+
+        row_mat = csr_matrix((data, inds, indptr), shape=(1, cols), dtype=float)
+        row_mat.check_format()
+
+        return row_mat
 
     def get_num_rows(self):
         'get the number of rows in the lp'

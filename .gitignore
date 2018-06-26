@@ -14,3 +14,4 @@ test
 counterexample.py
 *_flymake.py
 .pytest_cache
+.cache
