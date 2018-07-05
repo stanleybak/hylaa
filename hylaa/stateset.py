@@ -6,18 +6,19 @@ Aug 2016
 
 from hylaa import lputil
 
-from hylaa.hybrid_automaton import LinearAutomatonMode
+from hylaa.hybrid_automaton import Mode
 from hylaa.timerutil import Timers as Timers
 from hylaa.util import Freezable
+from hylaa.glpk.python_sparse_glpk import LpInstance
 
 class StateSet(Freezable):
     '''
     A set of states with a common mode.
     '''
 
-    def __init__(self, core, lpi, mode):
-        assert isinstance(lpi. LpInstance)
-        assert isinstance(mode, LinearAutomatonMode)
+    def __init__(self, lpi, mode):
+        assert isinstance(lpi, LpInstance)
+        assert isinstance(mode, Mode)
 
         self.mode = mode
         self.lpi = lpi

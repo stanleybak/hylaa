@@ -5,9 +5,12 @@ Tests for Hylaa core object. Made for use with py.test
 import math
 import numpy as np
 
+from scipy.sparse import csr_matrix
+
 from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa.settings import HylaaSettings
 from hylaa.core import Core
+from hylaa.stateset import StateSet
 from hylaa import lputil
 
 def test_ha_line_arch18():
@@ -22,21 +25,21 @@ def test_ha_line_arch18():
 
     error = ha.new_mode('error')
 
-    mat = np.array([[1., 0, 0, 0], [-1., 0, 0, 0]], dtype=float)
+    csr_mat = csr_matrix(np.array([[1., 0, 0, 0], [-1., 0, 0, 0]], dtype=float))
     rhs = np.array([4.0, -4.0], dtype=float)
-
     trans1 = ha.new_transition(mode, error)
-    trans1.set_guard(mat, rhs)
+    trans1.set_guard(csr_mat, rhs)
 
     # initial set
     init_lpi = lputil.from_box([(-5, -5), (0, 1), (0, 0), (1, 1)])
-    init_mode = 'mode'
+    init_list = [StateSet(init_lpi, mode)]
 
     # settings
     settings = HylaaSettings(math.pi/4, math.pi)
+    settings.stdout = HylaaSettings.STDOUT_VERBOSE
     
     core = Core(ha, settings)
-    result = core.run([(init_mode, init_lpi)])
+    result = core.run(init_list)
 
     assert not result.safe
 

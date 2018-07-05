@@ -8,14 +8,11 @@ import numpy as np
 from hylaa.util import Freezable
 from hylaa.timerutil import Timers
 from hylaa.time_elapse_expm import TimeElapseExpmMult
-from hylaa.hybrid_automaton import Mode
 
 class TimeElapser(Freezable):
     'Object which computes the time-elapse function for a single mode at multiples of the time step'
 
     def __init__(self, mode, step_size):
-        assert isinstance(mode, Mode)
-
         self.mode = mode
         self.a_matrix = mode.a_matrix
         self.b_matrix = mode.b_matrix

@@ -6,12 +6,9 @@ Sept 2016
 
 import time
 import random
-import traceback
 from collections import OrderedDict
 
-# Forces matplotlib to not use any Xwindows backend.
-#import matplotlib
-#matplotlib.use('Agg')
+import numpy as np
 
 from matplotlib import rcParams
 import matplotlib.pyplot as plt
@@ -22,13 +19,10 @@ from matplotlib import colors
 from matplotlib.widgets import Button
 from matplotlib.lines import Line2D
 
-from hylaa.file_io import write_matlab, write_gnuplot
+from hylaa import lpplot
 from hylaa.timerutil import Timers
-from hylaa.settings import PlotSettings
+from hylaa.settings import HylaaSettings, PlotSettings
 from hylaa.util import Freezable
-from hylaa.glpk_interface import LpInstance
-
-import hylaa.lpplot
 
 def lighter(rgb_col):
     'return a lighter variant of an rgb color'
@@ -185,41 +179,6 @@ class DrawnShapes(Freezable):
             l.set_xdata(xdata)
             l.set_ydata(ydata)
 
-    def thin_reachable_set(self):
-        '''thin our the drawn reachable set to have less polygons (drawing optimization)'''
-
-        for poly_col in self.parent_to_polys.values():
-            paths = poly_col.get_paths()
-
-            keep = True
-            new_paths = []
-
-            for p in paths:
-                if keep:
-                    new_paths.append(p)
-
-                keep = not keep
-
-            paths[:] = new_paths
-
-        for line in self.parent_to_markers.values():
-            xdata = line.get_xdata()
-            ydata = line.get_ydata()
-            new_xdata = []
-            new_ydata = []
-
-            keep = True
-
-            for i in xrange(len(xdata)):
-                if keep:
-                    new_xdata.append(xdata[i])
-                    new_ydata.append(ydata[i])
-
-                keep = not keep
-
-            line.set_xdata(new_xdata)
-            line.set_ydata(new_ydata)
-
     def add_reachable_poly(self, poly_verts, mode_name):
         '''add a polygon which was reachable'''
 
@@ -266,14 +225,12 @@ class InteractiveState(object):
 class PlotManager(Freezable):
     'manager object for plotting during or after computation'
 
-    def __init__(self, hylaa_engine, plot_settings):
-        assert isinstance(plot_settings, PlotSettings)
-
+    def __init__(self, hylaa_core):
         # matplotlib default rcParams caused incorrect trace output due to interpolation
         rcParams['path.simplify'] = False
 
-        self.engine = hylaa_engine
-        self.settings = plot_settings
+        self.core = hylaa_core
+        self.settings = hylaa_core.settings.plot
 
         self.fig = None
         self.axes = None
@@ -287,19 +244,8 @@ class PlotManager(Freezable):
         self.drew_first_frame = False # one-time flag
         self._anim = None # animation object
 
-        if self.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE or \
-           self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
+        if self.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
             self.settings.min_frame_time = 0.0 # for interactive or video plots, draw every frame
-
-        self.cur_reachable_polys = 0 # number of polygons currently drawn
-        self.draw_stride = plot_settings.draw_stride # draw every 2nd poly, or every 4th, ect. (if over poly limit)
-        self.draw_cur_step = 0 # the current poly in the step
-
-        # used to save reachable polys for certain drawing modes (gnuplot, matlab)
-        self.reach_poly_data = None
-
-        if self.settings.plot_mode in [PlotSettings.PLOT_MATLAB, PlotSettings.PLOT_GNUPLOT]:
-            self.reach_poly_data = OrderedDict()
 
         self.plot_vecs = []
         self.init_plot_vecs()
@@ -379,9 +325,9 @@ class PlotManager(Freezable):
     def create_plot(self):
         'create the plot'
 
-        if not self.settings.plot_mode in [PlotSettings.PLOT_NONE, PlotSettings.PLOT_MATLAB, PlotSettings.PLOT_GNUPLOT]:
+        if not self.settings.plot_mode in [PlotSettings.PLOT_NONE]:
             self.fig, self.axes = plt.subplots(nrows=1, figsize=self.settings.plot_size)
-            ha = self.engine.hybrid_automaton
+            ha = self.core.hybrid_automaton
 
             title = self.settings.label.title
             title = title if title is not None else ha.name
@@ -426,21 +372,7 @@ class PlotManager(Freezable):
 
             self.shapes = DrawnShapes(self)
 
-    def add_reachable_poly_data(self, verts, mode_name):
-        '''
-        Add raw reachable poly data for use with certain plotting modes (matlab, gnuplot).
-        '''
-
-        data = self.reach_poly_data
-        # values are a tuple (color, [poly1, poly2, ...])
-
-        if mode_name not in data:
-            ecol, fcol = self.mode_colors.get_edge_face_colors(mode_name)
-            data[mode_name] = (ecol, fcol, [])
-
-        data[mode_name][2].append(verts)
-
-    def plot_current_star(self, star):
+    def plot_current_state(self, state):
         '''
         plot the current SymbolicState according to the plot settings
 
@@ -449,39 +381,21 @@ class PlotManager(Freezable):
 
         skipped_plot = True
 
-        if self.settings.plot_mode in [PlotSettings.PLOT_MATLAB, PlotSettings.PLOT_GNUPLOT]:
-            verts = star.verts()
+        if self.settings.plot_mode != PlotSettings.PLOT_NONE:
+            Timers.tic("plot_current_state()")
 
-            self.add_reachable_poly_data(verts, star.mode.name)
-        elif self.settings.plot_mode != PlotSettings.PLOT_NONE:
-            Timers.tic("plot_current_star()")
+            skipped_plot = False
 
-            if self.draw_cur_step % self.draw_stride == 0:
-                skipped_plot = False
+            verts = state.verts()
 
-                verts = star.verts()
+            self.shapes.set_cur_state(verts)
 
-                self.shapes.set_cur_state(verts)
+            if self.settings.label.axes_limits is None:
+                self.update_axis_limits(verts)
 
-                if self.settings.label.axes_limits is None:
-                    self.update_axis_limits(verts)
+            self.shapes.add_reachable_poly(verts, state.mode.name)
 
-                # possibly thin out the reachable set of states
-                max_polys = self.settings.max_shown_polys
-
-                if max_polys > 0 and self.cur_reachable_polys >= max_polys:
-                    self.shapes.thin_reachable_set()
-                    self.cur_reachable_polys /= 2
-                    self.draw_cur_step = 0
-                    self.draw_stride *= 2
-
-                self.cur_reachable_polys += 1
-
-                self.shapes.add_reachable_poly(verts, star.mode.name)
-
-            self.draw_cur_step += 1
-
-            Timers.toc("plot_current_star()")
+            Timers.toc("plot_current_state()")
 
         return skipped_plot
 
@@ -503,8 +417,8 @@ class PlotManager(Freezable):
                     self.shapes.reset_cur_state()
                     step_func()
 
-                    if self.engine.cur_star is not None:
-                        self.plot_current_star(self.engine.cur_star)
+                    if self.core.cur_state is not None:
+                        self.plot_current_state(self.core.cur_state)
 
                     # do several computation steps per frame if they're fast (optimization)
                     if force_single_frame or time.time() - start_time > self.settings.min_frame_time:
@@ -517,8 +431,10 @@ class PlotManager(Freezable):
 
                 Timers.toc("frame")
 
-                if self.interactive.paused and not force_single_frame:
-                    print "Paused After Frame #{}".format(Timers.timers['frame'].num_calls)
+                if self.interactive.paused and not force_single_frame and \
+                   self.core.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
+                    frame_timer = Timers.top_level_timer.get_children_recursive('frame')[0]
+                    print("Paused After Frame #{}".format(frame_timer.num_calls))
 
             return self.shapes.get_artists() + [self.axes.xaxis, self.axes.yaxis]
 
@@ -540,8 +456,7 @@ class PlotManager(Freezable):
 
             Timers.toc("total")
 
-            if self.engine.settings.print_output:
-                LpInstance.print_stats()
+            if self.core.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
                 Timers.print_stats()
 
         def next_pressed(_):
@@ -554,12 +469,6 @@ class PlotManager(Freezable):
             self.interactive.step = True
 
         iterator = anim_iterator
-
-        if self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
-            if self.settings.video.frames is None:
-                print "Warning: PLOT_VIDEO requires explicitly setting plot_settings.video.frames (default is 100)."
-            else:
-                iterator = self.settings.video.frames
 
         if self.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
             # do one frame
@@ -584,21 +493,12 @@ class PlotManager(Freezable):
         if self.settings.plot_mode == PlotSettings.PLOT_IMAGE:
             self.run_to_completion(step_func, is_finished_func)
             self.save_image()
-        elif self.settings.plot_mode == PlotSettings.PLOT_MATLAB:
-            self.run_to_completion(step_func, is_finished_func)
-            self.save_matlab()
-        elif self.settings.plot_mode == PlotSettings.PLOT_GNUPLOT:
-            self.run_to_completion(step_func, is_finished_func)
-            self.save_gnuplot()
         else:
             self._anim = animation.FuncAnimation(self.fig, anim_func, iterator, init_func=init_func,
                                                  interval=self.settings.anim_delay_interval, blit=True, repeat=False)
 
             if not self.settings.skip_show_gui:
-                if self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
-                    self.save_video(self._anim)
-                else:
-                    plt.show()
+                plt.show()
 
     def run_to_completion(self, step_func, is_finished_func, compute_plot=True):
         'run to completion, creating the plot at each step'
@@ -611,37 +511,13 @@ class PlotManager(Freezable):
 
             step_func()
 
-            if compute_plot and self.engine.cur_star is not None:
-                self.plot_current_star(self.engine.cur_star)
+            if compute_plot and self.core.cur_state is not None:
+                self.plot_current_state(self.core.cur_state)
 
         Timers.toc("total")
 
-        if self.engine.settings.print_output:
-            LpInstance.print_stats()
+        if self.core.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
             Timers.print_stats()
-
-    def save_matlab(self):
-        'save a matlab script'
-
-        filename = self.settings.filename
-
-        if filename is None:
-            filename = "plot_reach.m"
-
-        if not filename.endswith('.m'):
-            filename = filename + '.m'
-
-        write_matlab(filename, self.reach_poly_data, self.settings, self.engine.hybrid_automaton)
-
-    def save_gnuplot(self):
-        'save a gnuplot data file'
-
-        filename = self.settings.filename
-
-        if filename is None:
-            filename = "reach_data.txt"
-
-        write_gnuplot(filename, self.reach_poly_data)
 
     def save_image(self):
         'save an image file'
@@ -652,77 +528,3 @@ class PlotManager(Freezable):
             filename = "plot.png"
 
         plt.savefig(filename, bbox_inches='tight')
-
-    def save_video(self, func_anim_obj):
-        'save a video file of the given FuncAnimation object'
-
-        filename = self.settings.filename
-
-        if filename is None:
-            filename = "video.avi" # mp4 is also possible
-
-        fps = self.settings.video.fps
-        codec = self.settings.video.codec
-
-        print "Saving {} at {:.2f} fps using ffmpeg with codec '{}'.".format(
-            filename, fps, codec)
-
-        # if this fails do: 'sudo apt-get install ffmpeg'
-        try:
-            start = time.time()
-
-            extra_args = []
-
-            if codec is not None:
-                extra_args += ['-vcodec', str(codec)]
-
-            func_anim_obj.save(filename, fps=fps, extra_args=extra_args)
-
-            dif = time.time() - start
-            print "Finished creating {} ({:.2f} seconds)!".format(filename, dif)
-        except AttributeError:
-            traceback.print_exc()
-
-            print "\nSaving video file failed! Is ffmpeg installed? Can you run 'ffmpeg' in the terminal?"
-
-def debug_plot_star(star, col='k-', lw=1):
-    '''
-    debug function for plotting a star. This calls plt.plot(), so it's up to you
-    to call plt.show() afterwards
-    '''
-
-    verts = star.verts()
-
-    # wrap polygon back to first point
-    verts.append(verts[0])
-
-    xs = [ele[0] for ele in verts]
-    ys = [ele[1] for ele in verts]
-
-    plt.plot(xs, ys, col, lw=lw)
-
-# monkey patch function for blitting tick-labels
-# see http://stackoverflow.com/questions/17558096/animated-title-in-matplotlib
-def _blit_draw(_self, artists, bg_cache):
-    'money-patch version of animation._blit_draw'
-    # Handles blitted drawing, which renders only the artists given instead
-    # of the entire figure.
-    updated_ax = []
-    for a in artists:
-        # If we haven't cached the background for this axes object, do
-        # so now. This might not always be reliable, but it's an attempt
-        # to automate the process.
-        if a.axes not in bg_cache:
-            # bg_cache[a.axes] = a.figure.canvas.copy_from_bbox(a.axes.bbox)
-            # change here
-            bg_cache[a.axes] = a.figure.canvas.copy_from_bbox(a.axes.figure.bbox)
-        a.axes.draw_artist(a)
-        updated_ax.append(a.axes)
-
-    # After rendering all the needed artists, blit each axes individually.
-    for ax in set(updated_ax):
-        # and here
-        # ax.figure.canvas.blit(ax.bbox)
-        ax.figure.canvas.blit(ax.figure.bbox)
-
-animation.Animation._blit_draw = _blit_draw

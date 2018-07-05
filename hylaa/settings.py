@@ -7,6 +7,13 @@ import math
 
 from hylaa.util import Freezable
 
+# Force matplotlib to not use any Xwindows backend.
+#import matplotlib
+#matplotlib.use('Agg')
+
+#import numpy as np
+#np.set_printoptions(suppress=True) # suppress floating point printing
+
 class HylaaSettings(Freezable):
     'Settings for the computation'
 
@@ -23,7 +30,7 @@ class HylaaSettings(Freezable):
 
         self.plot = plot_settings
         self.stdout = HylaaSettings.STDOUT_NORMAL
-        self.counter_example_filename = 'counterexample.py' # the counter-example filename to create on errors
+        self.print_lp_on_error = False # print the LP to stdout upon reaching an error mode?
 
         ### COMPUTATION OPTIMIZATIONS ###
 
@@ -41,7 +48,7 @@ class PlotSettings(Freezable):
         self.plot_mode = PlotSettings.PLOT_NONE
 
         self.xdim_dir = 0 # plotting x dimension number, direction (np.array), or None (uses time)
-        self.xdim_dir = 1 # plotting x dimension number, direction (np.array), or None (uses time)
+        self.ydim_dir = 1 # plotting x dimension number, direction (np.array), or None (uses time)
 
         self.plot_size = (10, 10) # inches
         self.label = LabelSettings() # plot title, axis labels, font sizes, ect.
