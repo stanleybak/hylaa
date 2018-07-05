@@ -79,7 +79,8 @@ def test_verts():
 
     lpi = lputil.from_box([[-5, -4], [0, 1]])
 
-    verts = lpplot.get_verts(lpi)
+    plot_vecs = lpplot.make_plot_vecs(4, offset=(math.pi / 4.0))
+    verts = lpplot.get_verts(lpi, plot_vecs=plot_vecs)
 
     assert len(verts) == 5
     
@@ -272,3 +273,4 @@ def test_box_aggregate3():
     assert [2., -0.5] in verts
     
     assert verts[0] == verts[-1]
+

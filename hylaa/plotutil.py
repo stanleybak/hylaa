@@ -28,6 +28,8 @@ from hylaa.settings import PlotSettings
 from hylaa.util import Freezable
 from hylaa.glpk_interface import LpInstance
 
+import hylaa.lpplot
+
 def lighter(rgb_col):
     'return a lighter variant of an rgb color'
 
@@ -299,7 +301,26 @@ class PlotManager(Freezable):
         if self.settings.plot_mode in [PlotSettings.PLOT_MATLAB, PlotSettings.PLOT_GNUPLOT]:
             self.reach_poly_data = OrderedDict()
 
+        self.plot_vecs = []
+        self.init_plot_vecs()
+
         self.freeze_attrs()
+
+    def init_plot_vecs(self):
+        'initialize plot_vecs'
+
+        assert not (self.settings.xdim_dir is None and self.settings.ydim_dir is None)
+
+        if self.settings.xdim_dir is None:
+            self.plot_vecs.append(np.array([0, 1.], dtype=float))
+            self.plot_vecs.append(np.array([0, -1.], dtype=float))
+        elif self.settings.ydim_dir is None:
+            self.plot_vecs.append(np.array([1., 0], dtype=float))
+            self.plot_vecs.append(np.array([-1., 0], dtype=float))
+        else:
+            assert self.settings.num_angles >= 3, "needed at least 3 directions in plot_settings.num_angles"
+
+            self.plot_vecs = lpplot.make_plot_vecs(self.settings.num_angles)
 
     def update_axis_limits(self, points_list):
         'update the axes limits to include the passed-in point list'

@@ -7,6 +7,7 @@ import numpy as np
 from scipy.sparse import csr_matrix, csc_matrix
 
 from hylaa.util import Freezable
+from hylaa.time_elapse import TimeElapser
 
 def bounds_list_to_init(bounds_list, full_space=False):
     '''convert a list of upper and lower bound tuples for each dimension into:
@@ -187,76 +188,72 @@ class HyperRectangle(object):
 
         return rv
 
-class LinearAutomatonMode(Freezable):
-    'A single mode of a hybrid automaton'
+class Mode(Freezable):
+    '''
+    A single mode of a hybrid automaton with dynamics x' = Ax + b. 
+
+    The dynamics should be set_dynamics and (optionally) set_inputs. If they are not set, the mode will be
+    considered an error mode.
+    '''
 
     def __init__(self, parent, name):
-        assert isinstance(parent, LinearHybridAutomaton)
+        assert isinstance(parent, HybridAutomaton)
 
+        self.parent = parent
         self.name = name
 
         # dynamics are x' = Ax + Bu
-        self.a_matrix_csr = None
-        self.b_matrix_csc = None
+        self.a_matrix = None
+        self.b_matrix = None
 
         self.u_constraints_csr = None # csr_matrix
         self.u_constraints_rhs = None # np.ndarray
-        self.u_range_tuples = None # list of tuples (optional)
 
-        self.parent = parent
         self.transitions = [] # outgoing transitions
-        self.output_space_csr = None
+
+        self.time_elapse = None # a TimeElapse object... initialized on init_time_elapse()
 
         self.freeze_attrs()
 
-    def set_output_space(self, output_space_csr):
-        'sets the output space for the mode'
-
-        assert self.a_matrix_csr is not None, "set_dynamics should be called before set_output_space"
-        dims = self.a_matrix_csr.shape[0]
-        assert isinstance(output_space_csr, csr_matrix)
-        assert output_space_csr.shape[1] == dims, "output space width {} should equal dims {}".format(
-            output_space_csr.shape[1], dims)
-        assert self.output_space_csr is None, "output space assigned twice (shouldn't be changed after being set)"
-
-        self.output_space_csr = output_space_csr
-
-    def set_inputs(self, b_matrix_csc, u_constraints_csr, u_constraints_rhs, u_range_tuples=None):
+    def set_inputs(self, b_matrix, u_constraints_csr, u_constraints_rhs):
         'sets the time-varying / uncertain inputs for the mode (optional)'
 
-        assert self.a_matrix_csr is not None, "set_dynamics should be done before set_inputs"
-        assert isinstance(b_matrix_csc, csc_matrix)
+        raise RuntimeError("Inputs not currently supported")
+    
+        assert self.a_matrix is not None, "set_dynamics should be done before set_inputs"
+        assert isinstance(b_matrix, np.ndarray)
         assert isinstance(u_constraints_csr, csr_matrix)
         assert isinstance(u_constraints_rhs, np.ndarray)
         u_constraints_rhs.shape = (len(u_constraints_rhs), ) # flatten init_rhs into a 1-d array
 
         assert u_constraints_csr.shape[0] == u_constraints_rhs.shape[0], "u_constraints rows shoud match rhs len"
-        assert u_constraints_csr.shape[1] == b_matrix_csc.shape[1], "u_constraints cols should match b.width"
+        assert u_constraints_csr.shape[1] == b_matrix.shape[1], "u_constraints cols should match b.width"
 
-        assert b_matrix_csc.shape[0] == self.a_matrix_csr.shape[0], \
-                "B-mat shape {} incompatible with A-mat shape {}".format(b_matrix_csc.shape, self.a_matrix_csr.shape)
+        assert b_matrix.shape[0] == self.a_matrix.shape[0], \
+                "B-mat shape {} incompatible with A-mat shape {}".format(b_matrix.shape, self.a_matrix.shape)
 
-        if u_range_tuples is not None:
-            assert len(u_range_tuples) == b_matrix_csc.shape[1]
-
-        self.b_matrix_csc = b_matrix_csc
+        self.b_matrix = b_matrix
         self.u_constraints_csr = u_constraints_csr
         self.u_constraints_rhs = u_constraints_rhs
-        self.u_range_tuples = u_range_tuples
 
-    def set_dynamics(self, a_matrix_csr):
+    def set_dynamics(self, a_matrix):
         'sets the autonomous system dynamics'
 
-        assert not isinstance(a_matrix_csr, np.ndarray), "dynamics a_matrix should be be sparse matrix"
-        assert len(a_matrix_csr.shape) == 2
-        assert a_matrix_csr.shape[0] == a_matrix_csr.shape[1]
+        assert isinstance(a_matrix, np.ndarray), "dynamics a_matrix should be a dense matrix"
+        assert len(a_matrix.shape) == 2
+        assert a_matrix.shape[0] == a_matrix.shape[1]
 
-        self.a_matrix_csr = a_matrix_csr
+        self.a_matrix = a_matrix
+
+    def init_time_elapse(self, step_size):
+        'initialize the time elapse object for this mode'
+
+        self.time_elapse = TimeElapser(self, step_size)
 
     def __str__(self):
-        return '[LinearAutomatonMode: {}]'.format(self.name)
+        return '[AutomatonMode: {}]'.format(self.name)
 
-class LinearAutomatonTransition(Freezable):
+class Transition(Freezable):
     'A transition of a hybrid automaton'
 
     def __init__(self, parent, from_mode, to_mode):
@@ -290,7 +287,7 @@ class LinearAutomatonTransition(Freezable):
     def __str__(self):
         return self.from_mode.name + " -> " + self.to_mode.name
 
-class LinearHybridAutomaton(Freezable):
+class HybridAutomaton(Freezable):
     'The hybrid automaton'
 
     def __init__(self, name='HybridAutomaton'):
@@ -302,13 +299,13 @@ class LinearHybridAutomaton(Freezable):
 
     def new_mode(self, name):
         '''add a mode'''
-        m = LinearAutomatonMode(self, name)
+        m = Mode(self, name)
         self.modes[m.name] = m
         return m
 
     def new_transition(self, from_mode, to_mode):
         '''add a transition'''
-        t = LinearAutomatonTransition(self, from_mode, to_mode)
+        t = Transition(self, from_mode, to_mode)
         self.transitions.append(t)
 
         return t

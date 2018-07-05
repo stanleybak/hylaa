@@ -12,16 +12,19 @@ import numpy as np
 
 from hylaa import lputil
 
-def get_verts(lpi, num_dims=None, xdim=0, ydim=1, plot_vecs=None):
+def get_verts(lpi, num_dims=None, xdim=0, ydim=1, plot_vecs=None, cur_time=0):
     '''get the vertices defining (an underapproximation) of the outside of the given linear constraints
-    These will be usable for plotting, so that rv[0] == rv[-1]
+    These will be usable for plotting, so that rv[0] == rv[-1]. A single point may be returned if the constraints
+    are (close to) a single point.
+
+    xdim and ydim can be either an integer (dimension number), an np.array (direction), or None (time will be used)
 
     plot_vecs is an ordered list of vectors defining all the 2-d directions to optimize in... if None will 
     construct and use 256 equally spaced vectors 
     '''
     
     if plot_vecs is None:
-        plot_vecs = make_plot_vecs(256)
+        plot_vecs = make_plot_vecs()
 
     if num_dims is None:
         num_dims = lputil.get_dims(lpi)
@@ -102,15 +105,41 @@ def _find_boundary_pts(lpi, xdim, ydim, plot_vecs):
     return rv
 
 def _minimize(lpi, xdim, ydim, direction):
-    'minimize to lp... returning the 2-d point of the first 2 coordinates of the minimum'
+    'minimize to lp... returning the 2-d point of the minimum'
 
-    assert isinstance(xdim, int)
-    assert isinstance(ydim, int), "ydim was {}".format(ydim)
+    dims = 0
 
-    dir_vec = [direction[0] if dim == xdim else direction[1] if dim == ydim else 0 for dim in range(max(xdim, ydim) + 1)]
-    lpi.set_minimize_direction(dir_vec)
+    assert not (xdim is None and ydim is None)
 
-    return lpi.minimize_partial_result([xdim, ydim])
+    if xdim != None:
+        dims = xdim + 1 if isinstance(xdim, int) else len(xdim)
+
+    if ydim != None:
+        dims = max(dims, ydim + 1) if isinstance(ydim, int) else max(dims, len(ydim))
+        
+    if isinstance(xdim, int):
+        xdim = np.array([1.0 if dim == xdim else 0.0 for dim in range(dims)], dtype=float)
+
+    if isinstance(ydim, int):
+        ydim = np.array([1.0 if dim == ydim else 0.0 for dim in range(dims)], dtype=float)
+
+    # xdim and ydim are both arrays or None
+    optimize_direction = np.zeros(dims, dtype=float)
+
+    if xdim is not None:
+        optimize_direction += direction[0] * xdim
+
+    if ydim is not None:
+        optimize_direction += direction[1] * ydim
+
+    lpi.set_minimize_direction(optimize_direction)
+
+    res = lpi.minimize_partial_result([n for n in range(dims)])
+
+    xcoord = 0 if xdim is None else np.dot(res, xdim)
+    ycoord = 0 if ydim is None else np.dot(res, ydim)
+    
+    return np.array([xcoord, ycoord], dtype=float)
 
 def _binary_search_boundaries(lpi, start, end, start_point, end_point, xdim, ydim, plot_vecs):
     '''

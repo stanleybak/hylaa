@@ -1,20 +1,23 @@
 '''
 Main Hylaa Reachability Implementation
-Stanley Bak
-Aug 2016
+Stanley Bak, 2018
 '''
 
 import numpy as np
 
+from hylaa.settings import HylaaSettings, PlotSettings, TimeElapseSettings
+
 from hylaa.plotutil import PlotManager
-from hylaa.star import Star
+
+
+from hylaa.stateset import StateSet
 from hylaa.hybrid_automaton import LinearHybridAutomaton
 from hylaa.timerutil import Timers
-from hylaa.settings import HylaaSettings, PlotSettings, TimeElapseSettings
+
 from hylaa.file_io import write_counter_example
 from hylaa.util import Freezable
 
-class HylaaEngine(object):
+class Core(Freezable):
     'main computation object. initialize and call run()'
 
     def __init__(self, ha, hylaa_settings):
@@ -24,58 +27,30 @@ class HylaaEngine(object):
         self.hybrid_automaton = ha
         self.settings = hylaa_settings
 
-        if self.settings.plot.plot_mode != PlotSettings.PLOT_NONE:
-            Star.init_plot_vecs(self.settings.plot)
-
         self.plotman = PlotManager(self, self.settings.plot)
 
         # computation
-        self.cur_star = None # a Star object
+        self.cur_state = None # a StateSet object
 
         self.cur_step_in_mode = None # how much dwell time in current continuous post
         self.max_steps_remaining = None # bound on num steps left in current mode ; assigned on pop
 
-        self.result = None # a HylaaResult... assigned on run()
+        self.result = None # a HylaaResult... assigned on run() to store verification result
+
+        self.freeze_attrs()
 
     def is_finished(self):
         'is the computation finished'
 
-        return self.cur_star is None or not self.result.safe
-
-    def reconstruct_full_start_pt(self, lp_solution):
-        '''
-        Reconstruct a full-dimensional start point from an lp solution in the current star.
-
-        For use when settings.simulation.seperate_constant_vars == True in order to create the counter-example trace.
-        '''
-
-        star = self.cur_star
-        fixed_tuples = star.fixed_tuples
-        dims = star.dims
-
-        start_pt = []
-        fixed_index = 0
-        var_index = 0
-
-        for dim in xrange(dims):
-            if fixed_index < len(fixed_tuples) and fixed_tuples[fixed_index][0] == dim:
-                # fixed dimension
-                start_pt.append(fixed_tuples[fixed_index][1])
-                fixed_index += 1
-            else:
-                # variable dim, extract from lp solution
-                start_pt.append(lp_solution[var_index])
-                var_index += 1
-
-        return np.array(start_pt, dtype=float)
+        return self.cur_state is None or not self.result.safe
 
     def check_guards(self):
         '''check for discrete successors with the guards'''
 
-        if self.cur_star.time_elapse.next_step == 1 and self.settings.print_output:
+        if self.cur_state.time_elapse.next_step == 1 and self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
             print "Solving first step guard LP..."
 
-        for i in xrange(len(self.cur_star.mode.transitions)):
+        for i in xrange(len(self.cur_state.mode.transitions)):
             lp_solution = self.cur_star.get_guard_intersection(i)
 
             if lp_solution is not None:
@@ -142,11 +117,11 @@ class HylaaEngine(object):
         '''do a step where it's part of a continuous post'''
 
         # advance time by one step
-        if self.cur_star.time_elapse.next_step > self.settings.num_steps:
-            self.cur_star = None
+        if self.cur_state.time_elapse.next_step > self.settings.num_steps:
+            self.cur_state = None
         else:
-            if self.settings.print_output and not self.settings.skip_step_times:
-                step_num = self.cur_star.time_elapse.next_step
+            if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
+                step_num = self.cur_state.time_elapse.next_step
                 print "Step: {} / {} ({})".format(step_num, self.settings.num_steps, self.settings.step * step_num)
 
             self.cur_star.step()
@@ -170,7 +145,7 @@ class HylaaEngine(object):
             else:
                 print "Result: System is safe. Error modes are NOT reachable.\n"
 
-    def run(self, init_star):
+    def run(self, init_state):
         '''
         Run the computation (main entry point)
 
@@ -179,10 +154,17 @@ class HylaaEngine(object):
         fixed_dim_list, if used, is a list of dimensions with fixed initial values
         '''
 
-        assert isinstance(init_star, Star), "initial states should be a Star object"
-        np.set_printoptions(suppress=True) # suppress floating point printing
+        assert isinstance(init_state, StateSet), "initial states should be a StateSet object"
+        #np.set_printoptions(suppress=True) # suppress floating point printing
 
         self.result = HylaaResult()
+
+        # initialize time elapse in each mode of the hybrid automaton
+        ha = init_state.mode.parent
+
+        for mode in ha.modes:
+            mode.init_time_elapse(self.settings.step_size)
+        
         self.plotman.create_plot()
 
         self.cur_star = init_star
@@ -202,6 +184,16 @@ class HylaaEngine(object):
         if self.plotman.reach_poly_data is not None:
             self.result.reachable_poly_data = self.plotman.reach_poly_data
 
+class CounterExampleSegmant(Freezable):
+    'a part of a counter-example trace'
+
+    def __init__(self):
+        self.mode_name = None
+        self.start = None
+        self.end = None
+        
+        self.freeze_attrs()
+
 class HylaaResult(Freezable):
     'Result, assigned to engine.result after computation'
 
@@ -209,10 +201,6 @@ class HylaaResult(Freezable):
         self.top_level_timer = None # TimerData for total time
         self.safe = True # was the verification result safe?
 
-        self.krylov_stats = None # krylov statistics, map of string -> value, copy of TimerElapse.stats
-        self.reachable_poly_data = None # set to the vertices of the reachble plot (if plot mode is GNUPLOT or MATLAB)
-
-        self.init_vars = None # counterexample: assigned when unsafe state is reachable
-        self.output_vars = None # counterexample: assigned when unsafe state is reachable
+        self.counterexample = None # list of CounterExampleSegment objects
 
         self.freeze_attrs()
