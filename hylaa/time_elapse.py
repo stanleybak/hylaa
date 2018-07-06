@@ -14,11 +14,9 @@ class TimeElapser(Freezable):
 
     def __init__(self, mode, step_size):
         self.mode = mode
-        self.a_matrix = mode.a_matrix
-        self.b_matrix = mode.b_matrix
         self.step_size = step_size
-        self.dims = self.a_matrix.shape[0]
-        self.inputs = 0 if self.b_matrix is None else self.b_matrix.shape[1]
+        self.dims = self.mode.a_csr.shape[0]
+        self.inputs = 0 if self.mode.b_csr is None else self.mode.b_csr.shape[1]
 
         self.time_elapse_obj = None
 

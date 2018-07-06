@@ -13,6 +13,33 @@ from hylaa.core import Core
 from hylaa.stateset import StateSet
 from hylaa import lputil
 
+def test_guard_strengthening():
+    'simple 2-mode, 2-guard, 2d system with 1st guard A->B is x <= 2, 2nd guard A->B is y <= 2, and inv(B) is y <= 2'
+
+    ha = HybridAutomaton()
+
+    mode_a = ha.new_mode('A')
+    mode_a.set_dynamics(np.identity(2))
+
+    mode_b = ha.new_mode('B')
+    mode_b.set_dynamics(np.identity(2))
+    mode_b.set_invariant([[0, 1]], [2])
+
+    trans1 = ha.new_transition(mode_a, mode_b, 'first')
+    trans1.set_guard([[1, 0]], [2])
+
+    trans2 = ha.new_transition(mode_a, mode_b, 'second')
+    trans2.set_guard([[0, 1]], [2])
+
+    ha.do_guard_strengthening()
+
+    # trans1 should now have 2 conditions
+    assert (trans1.guard_csr.toarray() == np.array([[1, 0], [0, 1]], dtype=float)).all()
+    assert (trans1.guard_rhs == np.array([2, 2], dtype=float)).all()
+
+    # trans2 should still have 1 condition since invariant was redundant
+    assert (trans2.guard_csr.toarray() == np.array([[0, 1]], dtype=float)).all()
+
 def test_ha_line_arch18():
     'test for the harmonic oscillator example with line initial set (from ARCH 2018 paper)'
 
@@ -20,15 +47,12 @@ def test_ha_line_arch18():
 
     # with time and affine variable
     mode = ha.new_mode('mode')
-    a_matrix = np.array([[0, 1, 0, 0], [-1, 0, 0, 0], [0, 0, 0, 1], [0, 0, 0, 0]], dtype=float)
-    mode.set_dynamics(a_matrix)
+    mode.set_dynamics([[0, 1, 0, 0], [-1, 0, 0, 0], [0, 0, 0, 1], [0, 0, 0, 0]])
 
     error = ha.new_mode('error')
 
-    csr_mat = csr_matrix(np.array([[1., 0, 0, 0], [-1., 0, 0, 0]], dtype=float))
-    rhs = np.array([4.0, -4.0], dtype=float)
     trans1 = ha.new_transition(mode, error)
-    trans1.set_guard(csr_mat, rhs)
+    trans1.set_guard([[1., 0, 0, 0], [-1., 0, 0, 0]], [4.0, -4.0])
 
     # initial set
     init_lpi = lputil.from_box([(-5, -5), (0, 1), (0, 0), (1, 1)])

@@ -6,8 +6,7 @@ April 2018
 '''
 
 from scipy.sparse import csc_matrix
-from scipy.linalg import expm
-from scipy.sparse.linalg import expm_multiply
+from scipy.sparse.linalg import expm, expm_multiply
 
 import numpy as np
 
@@ -21,8 +20,8 @@ class TimeElapseExpmMult(Freezable):
         self.settings = time_elapser.settings
 
         self.time_elapser = time_elapser
-        self.a_matrix = time_elapser.a_matrix
-        self.b_matrix = None if time_elapser.b_matrix is None else time_elapser.b_matrix
+        self.a_csc = csc_matrix(time_elapser.mode.a_csr)
+        self.b_csc = None if time_elapser.mode.b_csr is None else csc_matrix(time_elapser.mode.b_csr)
         self.dims = time_elapser.dims
 
         self.cur_step = 0
@@ -39,29 +38,23 @@ class TimeElapseExpmMult(Freezable):
 
         dims = self.dims
         Timers.tic('expm')
-        self.one_step_matrix_exp = expm(self.a_matrix * self.time_elapser.step_size)
+        self.one_step_matrix_exp = expm(self.a_csc * self.time_elapser.step_size)
         Timers.toc('expm')
 
-        if self.b_matrix is not None:
-            self.one_step_input_effects_matrix = np.zeros(self.b_matrix.shape, dtype=float)
+        if self.b_csc is not None:
+            self.one_step_input_effects_matrix = np.zeros(self.b_csc.shape, dtype=float)
 
             for c in xrange(self.time_elapser.inputs):
                 # create the a_matrix augmented with a column of the b_matrix as an affine term
-                a = csc_matrix(self.a_matrix)
-                b = self.time_elapser.b_matrix
+                indptr = self.b_csc.indptr
 
-                assert isinstance(a, csc_matrix)
-                assert isinstance(b, csc_matrix)
+                data = np.concatenate((self.a_csc.data, self. b_csc.data[indptr[c]:indptr[c+1]]))
+                indices = np.concatenate((self.a_csc.indices, self.b_csc.indices[indptr[c]:indptr[c+1]]))
+                indptr = np.concatenate((self.a_csc.indptr, [len(data)]))
 
-                indptr = b.indptr
+                aug_a_csc = csc_matrix((data, indices, indptr), shape=(dims + 1, dims + 1))
 
-                data = np.concatenate((a.data, b.data[indptr[c]:indptr[c+1]]))
-                indices = np.concatenate((a.indices, b.indices[indptr[c]:indptr[c+1]]))
-                indptr = np.concatenate((a.indptr, [len(data)]))
-
-                aug_a_matrix = csc_matrix((data, indices, indptr), shape=(dims + 1, dims + 1))
-
-                mat = aug_a_matrix * self.settings.step
+                mat = aug_a_csc * self.settings.step
 
                 # the last column of matrix_exp is the same as multiplying it by the initial state [0, 0, ..., 1]
                 init_state = np.zeros(dims + 1, dtype=float)
@@ -89,7 +82,7 @@ class TimeElapseExpmMult(Freezable):
             self.cur_basis_matrix = np.dot(self.cur_basis_matrix, self.one_step_matrix_exp)
 
             # inputs
-            if self.b_matrix is not None:
+            if self.b_csc is not None:
                 self.cur_input_effects_matrix = np.dot(self.one_step_matrix_exp, self.cur_input_effects_matrix)
 
             Timers.toc('quick_step')
@@ -97,14 +90,14 @@ class TimeElapseExpmMult(Freezable):
             Timers.tic('slow_step')
 
             Timers.tic('expm')
-            mat_exp = expm(self.a_matrix * step_num)
+            mat_exp = expm(self.a_csc * step_num)
             Timers.toc('expm')
 
             self.cur_basis_matrix = mat_exp
 
             # inputs
-            if self.b_matrix is not None:
-                self.cur_input_effects_matrix = np.dot(mat_exp, self.one_step_input_effects_matrix)
+            if self.b_csc is not None:
+                self.cur_input_effects_matrix = mat_exp * self.one_step_input_effects_matrix
 
             Timers.toc('slow_step')
 

@@ -88,11 +88,8 @@ class Core(Freezable):
         skipped_plot = False # if we skip the plot, do multiple steps
 
         while True:
-            output = self.settings.print_output
-            self.plotman.reset_temp_polys()
-
             if self.cur_state is None:
-                self.do_step_pop(output)
+                self.do_step_pop()
             else:
                 try:
                     self.do_step_continuous_post(output)
