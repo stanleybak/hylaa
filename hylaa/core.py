@@ -35,6 +35,14 @@ class Core(Freezable):
 
         self.freeze_attrs()
 
+    def print_waiting_list(self):
+        'print out the waiting list'
+
+        print("Waiting list has {} states".format(len(self.waiting_list)))
+
+        for state in self.waiting_list:
+            print(" {}".format(state))
+
     def is_finished(self):
         'is the computation finished'
 
@@ -43,36 +51,38 @@ class Core(Freezable):
     def check_guards(self):
         '''check for discrete successors with the guards'''
 
-        if self.cur_state.time_elapse.next_step == 1 and self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
-            print("Solving first step guard LP...")
+        transitions = self.cur_state.mode.transitions
 
-        for i in xrange(len(self.cur_state.mode.transitions)):
-            lp_solution = self.cur_star.get_guard_intersection(i)
+        for t in transitions:
+            lp_solution = t.lpi.minimize_full_result(fail_on_unsat=False)
 
             if lp_solution is not None:
-                step_num = self.cur_star.time_elapse.next_step - 1
+                step_num = self.cur_state.cur_step_since_start
+                                    
+                if t.to_mode.a_csr is not None: # add discrete successor
+                    successor_state = StateSet(t.lpi, t.to_mode)
+                    self.waiting_list.append(succcesor_state)
 
-                if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
-                    print("Unsafe at Step: {} / {} ({})".format(step_num, self.settings.num_steps, \
-                                                            self.settings.step * step_num))
+                    print("Added Discrete Successor to '{}' at step {}".format(t.to_mode.name, step_num))
 
-                self.result.init_vars = lp_solution[:self.cur_star.num_init_vars]
+                else: # unsafe state
+                    if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
+                        print("Unsafe at Step: {} / {} ({})".format(step_num, self.settings.num_steps, \
+                                                                self.settings.step_size * step_num))
 
-                end_output_lp_col = self.cur_star.num_init_vars + self.cur_star.mode.output_space_csr.shape[0]
-                self.result.output_vars = lp_solution[self.cur_star.num_init_vars:end_output_lp_col]
+                    # TODO: print out counter-example
 
-                if self.settings.print_lp_on_error:
-                    # print the LP solution and exit
-                    lpi = self.cur_star.get_guard_lpi(i)
-                    lpi.print_lp()
-
-                self.result.safe = False
-                break # no need to keep checking
+                    self.result.safe = False
+                    
+                    break # no need to keep checking
 
     def do_step_continuous_post(self):
         '''do a step where it's part of a continuous post'''
 
-        # advance time by one step
+        # first check guards
+        self.check_guards()
+
+        # next advance time by one step
         if self.cur_state.time_elapse.next_step > self.settings.num_steps:
             self.cur_state = None
         else:
@@ -80,8 +90,55 @@ class Core(Freezable):
                 step_num = self.cur_state.time_elapse.next_step
                 print("Step: {} / {} ({})".format(step_num, self.settings.num_steps, self.settings.step * step_num))
 
-            self.cur_star.step()
-            self.check_guards()
+            self.cur_state.step()
+
+    def do_step_pop(self):
+        'do a step where we pop from the waiting list'
+
+        self.plotman.state_popped() # reset certain per-mode plot variables
+
+        self.cur_step_in_mode = 0
+
+        if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
+            self.print_waiting_list()
+
+        self.cur_state = self.waiting_list.pop()
+
+        if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
+            print("Removed state in mode '{}' at time {:.2f}".format(
+                self.cur_state.mode.name, self.cur_state.cur_step_since_start * self.settings.step_size))
+
+        # TODO: check if cur_state has a true invariant
+
+        if self.cur_state is not None:
+            self.max_steps_remaining = self.settings.num_steps - self.cur_state.cur_step_since_start
+
+            if not self.settings.process_urgent_guards:
+                # force one continuous post step in each mode
+                self.cur_state.step()
+
+        # if a_matrix is None, it's an error mode
+        if self.cur_state is not None and self.cur_state.mode.a_csr is None:
+            if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
+                print("Mode '{}' was an error mode; skipping.".format(self.cur_state.mode.name))
+
+            self.cur_state = None
+
+        # setup the lpi for each outgoing transition
+        if self.cur_state is not None:
+            for transition in self.cur_state.mode.transitions:
+                transition.make_lpi(self.cur_state)
+
+        # pause after discrete post when using PLOT_INTERACTIVE
+        if self.plotman.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
+            self.plotman.interactive.paused = True
+
+        if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
+            if self.cur_state is None:
+                print("Popped state was refined away.")
+            else:
+                print("Doing continuous post in mode '{}'".format(self.cur_state.mode.name))
+            
     def do_step(self):
         'do a single step of the computation'
 
@@ -91,17 +148,10 @@ class Core(Freezable):
             if self.cur_state is None:
                 self.do_step_pop()
             else:
-                try:
-                    self.do_step_continuous_post(output)
-                except FoundErrorTrajectory: # this gets raised if an error mode is reachable and we should quit early
-                    pass
+                self.do_step_continuous_post()
 
             if self.cur_state is not None:
-                skipped_plot = self.plotman.plot_current_star(self.cur_state)
-
-            if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE or \
-                                    not skipped_plot or self.is_finished():
-                break
+                self.plotman.plot_current_state(self.cur_state)
 
         if self.is_finished() and self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
             if not self.result.safe:

@@ -17,8 +17,6 @@ class TimeElapseExpmMult(Freezable):
     'container object for expm + matrix-vec mult method'
 
     def __init__(self, time_elapser):
-        self.settings = time_elapser.settings
-
         self.time_elapser = time_elapser
         self.a_csc = csc_matrix(time_elapser.mode.a_csr)
         self.b_csc = None if time_elapser.mode.b_csr is None else csc_matrix(time_elapser.mode.b_csr)
@@ -54,7 +52,7 @@ class TimeElapseExpmMult(Freezable):
 
                 aug_a_csc = csc_matrix((data, indices, indptr), shape=(dims + 1, dims + 1))
 
-                mat = aug_a_csc * self.settings.step
+                mat = aug_a_csc * self.time_elapser.step_size
 
                 # the last column of matrix_exp is the same as multiplying it by the initial state [0, 0, ..., 1]
                 init_state = np.zeros(dims + 1, dtype=float)
@@ -72,8 +70,8 @@ class TimeElapseExpmMult(Freezable):
         Timers.toc('init_matrices')
 
         if step_num == 0: # step zero, basis matrix is identity matrix
-            self.time_elapser.cur_basis_mat = np.identity(self.dims, dtype=float)
-            self.time_elapser.cur_input_effects_matrix = None
+            self.cur_basis_matrix = np.identity(self.dims, dtype=float)
+            self.cur_input_effects_matrix = None
         elif step_num == 1:
             self.cur_basis_matrix = self.one_step_matrix_exp
             self.cur_input_effects_matrix = self.one_step_input_effects_matrix

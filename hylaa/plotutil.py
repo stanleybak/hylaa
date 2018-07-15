@@ -114,22 +114,11 @@ class DrawnShapes(Freezable):
         self.axes = plotman.axes
         self.mode_colors = plotman.mode_colors
 
-        # create a blank currently-tracked set of states poly
-        self.cur_state_line2d = Line2D([], [], animated=True, color='k', lw=2, mew=2, ms=5, fillstyle='none')
-        self.axes.add_line(self.cur_state_line2d)
-
+        # parent is a string
+        # for modes, prefix is 'mode_'
+        # for cur state, parent is 'cur_state'
         self.parent_to_polys = OrderedDict()
         self.parent_to_markers = OrderedDict()
-
-        if plotman.settings.extra_lines is not None:
-            lines = plotman.settings.extra_lines
-            col = plotman.settings.extra_lines_color
-            width = plotman.settings.extra_lines_width
-            self.extra_lines_col = collections.LineCollection(
-                lines, animated=True, colors=(col), linewidths=(width), linestyle='dashed')
-            self.axes.add_collection(self.extra_lines_col)
-        else:
-            self.extra_lines_col = None
 
         self.freeze_attrs()
 
@@ -144,46 +133,35 @@ class DrawnShapes(Freezable):
         for markers in self.parent_to_markers.values():
             rv.append(markers)
 
-        if self.extra_lines_col:
-            rv.append(self.extra_lines_col)
-
-        rv.append(self.cur_state_line2d)
-
         return rv
-
-    def reset_cur_state(self):
-        '''
-        clear cur_state. call at each step.
-        '''
-
-        self.set_cur_state(None)
 
     def set_cur_state(self, verts):
         'set the currently tracked set of states for one frame'
 
-        l = self.cur_state_line2d
+        polys = self.parent_to_polys.get('cur_state')
+        
+        if polys is None:
+            lw = self.plotman.settings.reachable_poly_width
+            polys = collections.PolyCollection([], lw=lw, animated=True, edgecolor='k', facecolor=None)
+            self.axes.add_collection(polys)
 
-        if verts is None:
-            l.set_visible(False)
-        else:
-            l.set_visible(True)
+            self.parent_to_polys['cur_state'] = polys
 
-            if len(verts) <= 2:
-                l.set_marker('o')
-            else:
-                l.set_marker(None)
+        paths = polys.get_paths()
 
-            xdata = [x for x, _ in verts]
-            ydata = [y for _, y in verts]
+        if polys is not None and len(paths) > 0:
+            paths.pop() # remove the old polygon
 
-            l.set_xdata(xdata)
-            l.set_ydata(ydata)
+        if verts is not None:
+            # create a new polygon
+            codes = [Path.MOVETO] + [Path.LINETO] * (len(verts) - 2) + [Path.CLOSEPOLY]
+            paths.append(Path(verts, codes))
 
     def add_reachable_poly(self, poly_verts, mode_name):
         '''add a polygon which was reachable'''
 
         if len(poly_verts) <= 2 and self.plotman.settings.use_markers_for_small:
-            markers = self.parent_to_markers.get(mode_name)
+            markers = self.parent_to_markers.get('mode_' + mode_name)
 
             if markers is None:
                 face_col, edge_col = self.mode_colors.get_edge_face_colors(mode_name)
@@ -191,7 +169,7 @@ class DrawnShapes(Freezable):
                 markers = Line2D([], [], animated=True, ls='None', alpha=0.5, marker='o', mew=2, ms=5,
                                  mec=edge_col, mfc=face_col)
                 self.axes.add_line(markers)
-                self.parent_to_markers[mode_name] = markers
+                self.parent_to_markers['mode_' + mode_name] = markers
 
             xdata = markers.get_xdata()
             ydata = markers.get_ydata()
@@ -267,6 +245,12 @@ class PlotManager(Freezable):
             assert self.settings.num_angles >= 3, "needed at least 3 directions in plot_settings.num_angles"
 
             self.plot_vecs = lpplot.make_plot_vecs(self.settings.num_angles)
+
+    def state_popped(self):
+        'a state was popped off the waiting list'
+
+        if self.settings.plot_mode != PlotSettings.PLOT_NONE:
+            self.shapes.set_cur_state(None)
 
     def update_axis_limits(self, points_list):
         'update the axes limits to include the passed-in point list'
@@ -375,16 +359,10 @@ class PlotManager(Freezable):
     def plot_current_state(self, state):
         '''
         plot the current SymbolicState according to the plot settings
-
-        returns True if the plot was skipped (due to too many polyons on the screen
         '''
-
-        skipped_plot = True
 
         if self.settings.plot_mode != PlotSettings.PLOT_NONE:
             Timers.tic("plot_current_state()")
-
-            skipped_plot = False
 
             verts = state.verts()
 
@@ -396,8 +374,6 @@ class PlotManager(Freezable):
             self.shapes.add_reachable_poly(verts, state.mode.name)
 
             Timers.toc("plot_current_state()")
-
-        return skipped_plot
 
     def compute_and_animate(self, step_func, is_finished_func):
         'do the computation, plotting during the process'

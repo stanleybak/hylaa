@@ -5,8 +5,6 @@ Tests for Hylaa core object. Made for use with py.test
 import math
 import numpy as np
 
-from scipy.sparse import csr_matrix
-
 from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa.settings import HylaaSettings
 from hylaa.core import Core

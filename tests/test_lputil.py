@@ -1,5 +1,5 @@
 '''
-Tests for LP operations.
+Tests for LP operations. Made for use with py.test
 '''
 
 import math
@@ -90,8 +90,8 @@ def test_verts():
     assert [-4.0, 0.] in verts
     assert verts[0] == verts[-1]
 
-def test_add_constraint():
-    'tests add_constraint on the harmonic oscillator example'
+def test_add_init_constraint():
+    'tests add_init_constraint on the harmonic oscillator example'
 
     lpi = lputil.from_box([[-5, -4], [0, 1]])
 
@@ -106,7 +106,7 @@ def test_add_constraint():
     # add constraint: y >= 4.5
     direction = np.array([0, -1], dtype=float)
 
-    new_row = lputil.add_constraint(lpi, direction, -4.5)
+    new_row = lputil.add_init_constraint(lpi, direction, -4.5)
 
     assert new_row == 6, "new constraint should have been added in row index 6"
 
@@ -141,7 +141,7 @@ def test_try_replace_constraint():
     # add constraint: y >= 4.5
     direction = np.array([0, -1], dtype=float)
 
-    row_index = lputil.add_constraint(lpi, direction, -4.5)
+    row_index = lputil.add_init_constraint(lpi, direction, -4.5)
 
     # minimize y should give 4.5
     miny = lpi.minimize([0, 1, 0, 0])[1]

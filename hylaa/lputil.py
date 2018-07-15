@@ -96,6 +96,7 @@ def set_basis_matrix(lpi, basis_mat):
 
 def check_intersection(lpi, vec, rhs):
     '''check if there is an intersection between the LP constriants and vec <= rhs
+
     This solves an LP optimizing in the given direction... without adding the constraint to the LP
     '''
 
@@ -106,7 +107,7 @@ def check_intersection(lpi, vec, rhs):
 
     return np.dot(result, vec) <= rhs
 
-def add_constraint(lpi, vec, rhs, basis_matrix=None):
+def add_init_constraint(lpi, vec, rhs, basis_matrix=None):
     '''
     add a constraint to the lpi
 
@@ -161,7 +162,7 @@ def try_replace_constraint(lpi, old_row_index, direction, rhs):
 
     lpi.flip_constraint(old_row_index)
 
-    new_row_index = add_constraint(lpi, direction, rhs, basis_matrix=basis_mat)
+    new_row_index = add_init_constraint(lpi, direction, rhs, basis_matrix=basis_mat)
 
     is_sat = lpi.minimize_partial_result([], fail_on_unsat=False) is not None
 

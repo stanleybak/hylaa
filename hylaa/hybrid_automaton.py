@@ -10,6 +10,8 @@ from scipy.sparse import csr_matrix
 from hylaa.util import Freezable
 from hylaa.time_elapse import TimeElapser
 
+from hylaa.glpk.python_sparse_glpk import LpInstance
+
 class LinearConstraint(object):
     'a single csr sparse linear constraint: csr_vec * x <= rhs'
 
@@ -181,6 +183,8 @@ class Transition(Freezable):
 
         self.label = label
 
+        self.lpi = None # assinged upon continuous post
+
         self.freeze_attrs()
 
         from_mode.transitions.append(self)
@@ -194,7 +198,7 @@ class Transition(Freezable):
         if not isinstance(guard_rhs, np.ndarray):
             guard_rhs = np.array(guard_rhs, dtype=float)
         
-        assert self.from_mode.a_csr is not None, "A matrix not assigned in predecessor mode {}".format(self.from_mode)
+        assert self.from_mode.a_csr is not None, "A-matrix not assigned in predecessor mode {}".format(self.from_mode)
         assert guard_csr.shape[1] == self.from_mode.a_csr.shape[0], "guard matrix expected {} columns, got {}".format(
             self.from_mode.a_csr.shape[0], guard_csr.shape[1])
 
@@ -233,6 +237,11 @@ class Transition(Freezable):
             reset_minkowski_constraints_rhs is None, "resets with minkowski sums not yet supported"
                 
         self.reset_csr = reset_csr
+
+    def make_lpi(self, from_state):
+        'make the lpi instance for this transition, from the given state'
+
+        self.lpi = LpInstance(from_state.lpi) # copy the lpi
 
     def __str__(self):
         return self.from_mode.name + " -> " + self.to_mode.name

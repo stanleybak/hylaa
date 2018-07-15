@@ -32,6 +32,9 @@ class HylaaSettings(Freezable):
         self.stdout = HylaaSettings.STDOUT_NORMAL
         self.print_lp_on_error = False # print the LP to stdout upon reaching an error mode?
 
+        ### SIMULATION-EQUIVALENT SEMANTICS ###
+        self.process_urgent_guards = False # force one step within each mode
+
         ### COMPUTATION OPTIMIZATIONS ###
         self.do_guard_strengthening = True # add invariants of target modes to each guards?
 
@@ -48,6 +51,8 @@ class PlotSettings(Freezable):
     def __init__(self):
         self.plot_mode = PlotSettings.PLOT_NONE
 
+        self.filename = None # filename to print data to for certain plot modes
+
         self.xdim_dir = 0 # plotting x dimension number, direction (np.array), or None (uses time)
         self.ydim_dir = 1 # plotting x dimension number, direction (np.array), or None (uses time)
 
@@ -56,16 +61,11 @@ class PlotSettings(Freezable):
 
         self.num_angles = 512 # how many evenly-spaced angles to put into plot_vecs
 
-        self.extra_lines = None # extra lines to draw on the plot. list of lists of x,y pairs
-        self.extra_lines_color = 'gray' # color of extra lines
-        self.extra_lines_width = 2 # width of extra lines
+        self.extra_draw_func = lambda ax: None # extra draw function that gets called each frame, param is axis object
+        
         self.reachable_poly_width = 2 # width of reachable polygon outlines
-
         self.min_frame_time = 0.025 # max 40 fps. This allows multiple frames to be drawn at once if they're fast.
-
         self.extend_plot_range_ratio = 0.1 # extend plot axis range 10% at a time
-
-        self.filename = None # filename to print data to for certain plot modes
 
         self.grid = True
         self.grid_xtics = None # override default xtics value, for example np.linspace(0.0, 5.0, 1.0)

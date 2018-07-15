@@ -11,6 +11,8 @@ from hylaa.timerutil import Timers as Timers
 from hylaa.util import Freezable
 from hylaa.glpk.python_sparse_glpk import LpInstance
 
+from hylaa import lpplot
+
 class StateSet(Freezable):
     '''
     A set of states with a common mode.
@@ -33,7 +35,7 @@ class StateSet(Freezable):
     def step(self):
         'update the star based on values from a new simulation time instant'
 
-        basis_matrix, _ = self.mode.get_basis_matrix(self.cur_step_in_mode)
+        basis_matrix, _ = self.mode.time_elapse.get_basis_matrix(self.cur_step_in_mode)
 
         self.cur_step_in_mode += 1
         self.cur_step_since_start += 1
@@ -47,10 +49,15 @@ class StateSet(Freezable):
         Timers.tic('verts')
 
         if self._verts is None:
-            dims = mode.a_matrix.shape[0]
+            dims = self.mode.a_matrix.shape[0]
             
             self._verts = lpplot.get_verts(self.lpi, num_dims=dims, xdim=0, ydim=1, plot_vecs=None, cur_time=0)
             
         Timers.toc('verts')
 
         return self._verts
+
+    def __str__(self):
+        'short string representation of this state set'
+
+        return "[StateSet in '{}']".format(self.mode.name)
