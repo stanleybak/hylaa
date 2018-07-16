@@ -5,8 +5,10 @@ Tests for LP operations. Made for use with py.test
 import math
 import numpy as np
 
+import swiglpk as glpk
+
 from hylaa import lputil, lpplot
-from hylaa.glpk.python_sparse_glpk import LpInstance
+from hylaa.lpinstance import LpInstance
 
 def test_from_box():
     'tests from_box'
@@ -25,13 +27,19 @@ def test_from_box():
 
     expected_vec = np.array([0, 0, 5, -4, 0, 1], dtype=float)
 
-    fx = LpInstance.GLP_FX
-    up = LpInstance.GLP_UP
+    fx = glpk.GLP_FX
+    up = glpk.GLP_UP
     expected_types = np.array([fx, fx, up, up, up, up], dtype=np.int32)
 
     assert np.allclose(vec, expected_vec)
     assert np.allclose(types, expected_types)
     assert np.allclose(mat.toarray(), expected_mat)
+
+def test_print_lp():
+    'test printing the lp to stdout'
+
+    lpi = lputil.from_box([[-5, -4], [0, 1]])
+    assert str(lpi) is not None
 
 def test_set_basis_matrix():
     'tests lputil set_basis_matrix on harmonic oscillator example'
@@ -54,7 +62,7 @@ def test_set_basis_matrix():
     expected_vec = np.array([0, 0, 5, -4, 0, 1], dtype=float)
 
     assert np.allclose(vec, expected_vec)
-        
+
     assert np.allclose(mat.toarray(), expected_mat)
 
 def test_check_intersection():
@@ -222,14 +230,14 @@ def test_rotated_aggregate():
     verts = lpplot.get_verts(lpi)
 
     assert len(verts) == 7
-    
+
     assert pair_almost_in([0., 0.], verts)
     assert pair_almost_in([1., 0.], verts)
     assert pair_almost_in([2., 1.], verts)
     assert pair_almost_in([2., 2.], verts)
     assert pair_almost_in([1., 2.], verts)
     assert pair_almost_in([0., 1.], verts)
-    
+
     assert verts[0] == verts[-1]
 
 def test_get_basis_matrix():
@@ -241,7 +249,7 @@ def test_get_basis_matrix():
     lputil.set_basis_matrix(lpi, basis)
 
     mat = lputil.get_basis_matrix(lpi)
-        
+
     assert np.allclose(mat, basis)
 
 def test_box_aggregate3():
@@ -256,7 +264,7 @@ def test_box_aggregate3():
 
     basis3 = np.array([[-1, 0], [0, -1]], dtype=float)
     lputil.set_basis_matrix(lpi3, basis3)
-    
+
     agg_dirs = np.array([[1, 0], [0, 1]], dtype=float)
 
     # box aggregation
@@ -266,11 +274,10 @@ def test_box_aggregate3():
     verts = lpplot.get_verts(lpi, plot_vecs=plot_vecs)
 
     assert len(verts) == 5
-    
+
     assert [-2., -0.5] in verts
     assert [-2, 2.] in verts
     assert [2., 2.] in verts
     assert [2., -0.5] in verts
     
     assert verts[0] == verts[-1]
-

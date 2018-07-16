@@ -5,9 +5,8 @@ Methods / Classes in this one shouldn't require non-standard imports.
 '''
 
 import os
-import numpy as np
 
-class Freezable(object):
+class Freezable():
     'a class where you can freeze the fields (prevent new fields from being created)'
 
     _frozen = False

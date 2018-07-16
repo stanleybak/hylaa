@@ -9,7 +9,9 @@ the first N rows are the current-time constraints (equality constraints equal to
 import numpy as np
 from scipy.sparse import csr_matrix, csc_matrix
 
-from hylaa.glpk.python_sparse_glpk import LpInstance
+import swiglpk as glpk
+
+from hylaa.lpinstance import LpInstance
 
 def from_box(box_list):
     'make a new lp instance from a passed-in box'
@@ -38,7 +40,7 @@ def from_box(box_list):
     for n in range(dims):
         data.append(-1)
         inds.append(n)
-        
+
         data.append(1)
         inds.append(dims + n)
 
@@ -103,7 +105,7 @@ def check_intersection(lpi, vec, rhs):
     lpi.set_minimize_direction(vec)
 
     columns = np.array([i for i in range(len(vec))], dtype=int) # get the first len(vec) columns
-    result = lpi.minimize_partial_result(columns, fail_on_unsat=True)
+    result = lpi.minimize(columns=columns, fail_on_unsat=True)
 
     return np.dot(result, vec) <= rhs
 
@@ -164,7 +166,7 @@ def try_replace_constraint(lpi, old_row_index, direction, rhs):
 
     new_row_index = add_init_constraint(lpi, direction, rhs, basis_matrix=basis_mat)
 
-    is_sat = lpi.minimize_partial_result([], fail_on_unsat=False) is not None
+    is_sat = lpi.minimize(columns=[], fail_on_unsat=False) is not None
 
     lpi.flip_constraint(old_row_index) # flip it back
 
@@ -222,15 +224,15 @@ def aggregate(lpi_list, direction_matrix):
     for i in range(num_directions):
         direction = direction_matrix[i]
         assert abs(np.linalg.norm(direction) - 1) < 1e-9, "expected normalized directions, got {}".format(direction)
-        
+
         for lpi in lpi_list:
             lpi.set_minimize_direction(direction)
-            result = lpi.minimize_partial_result(columns)
+            result = lpi.minimize(columns=columns)
             min_val = np.dot(result, direction)
             mins[i] = min(mins[i], min_val)
 
             lpi.set_minimize_direction(-direction)
-            result = lpi.minimize_partial_result(columns)
+            result = lpi.minimize(columns=columns)
             max_val = np.dot(-result, -direction)
             maxes[i] = max(maxes[i], max_val)
 
@@ -256,8 +258,8 @@ def aggregate(lpi_list, direction_matrix):
         direction = direction_matrix[dim]
         
         # column is direction[dim]
-        for i in range(len(direction)):
-            data.append(direction[i])
+        for i, d in enumerate(direction):
+            data.append(d)
             inds.append(i)
 
         data.append(1.0) # <= constraint
@@ -274,9 +276,9 @@ def aggregate(lpi_list, direction_matrix):
 
     constraints = csc_matrix((data, inds, indptrs), dtype=float, shape=(rows + 2*dims, dims))
     constraints.check_format()
-   
+
     rv.set_constraints_csc(constraints, offset=(0, cols))
-    
+
     add_snapshot_variables(rv)
 
     return rv
@@ -290,7 +292,7 @@ def get_dims(lpi):
     dims = 0
 
     for t in types:
-        if t != LpInstance.GLP_FX:
+        if t != glpk.GLP_FX:
             break
 
         dims += 1
@@ -303,7 +305,7 @@ def get_basis_matrix(lpi):
     dims = get_dims(lpi)
     cols = lpi.get_num_cols()
 
-    return lpi.get_subconstraints(cols-dims, 0, dims, dims)
+    return lpi.get_dense_constraints(cols-dims, 0, dims, dims)
 
 def add_snapshot_variables(lpi):
     '''
@@ -369,5 +371,5 @@ def add_snapshot_variables(lpi):
 
     mat = csr_matrix((data, inds, indptrs), shape=(dims, cols + dims), dtype=float)
     mat.check_format()
-    
+
     lpi.set_constraints_csr(mat)

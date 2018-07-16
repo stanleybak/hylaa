@@ -10,7 +10,7 @@ from scipy.sparse import csr_matrix
 from hylaa.util import Freezable
 from hylaa.time_elapse import TimeElapser
 
-from hylaa.glpk.python_sparse_glpk import LpInstance
+from hylaa.lpinstance import LpInstance
 
 class LinearConstraint(object):
     'a single csr sparse linear constraint: csr_vec * x <= rhs'

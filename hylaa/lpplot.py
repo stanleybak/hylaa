@@ -134,7 +134,7 @@ def _minimize(lpi, xdim, ydim, direction):
 
     lpi.set_minimize_direction(optimize_direction)
 
-    res = lpi.minimize_partial_result([n for n in range(dims)])
+    res = lpi.minimize(columns=[n for n in range(dims)])
 
     xcoord = 0 if xdim is None else np.dot(res, xdim)
     ycoord = 0 if ydim is None else np.dot(res, ydim)

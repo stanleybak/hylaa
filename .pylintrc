@@ -43,7 +43,7 @@ load-plugins=
 # R0921 - abstract class not used (pylint looks at one file at a time)
 # R0903 - too few public methods
 # C0303 - trailing whitespace
-disable=
+disable=C0303
 
 
 [REPORTS]

@@ -7,9 +7,9 @@ Aug 2016
 from hylaa import lputil
 
 from hylaa.hybrid_automaton import Mode
-from hylaa.timerutil import Timers as Timers
+from hylaa.timerutil import Timers
 from hylaa.util import Freezable
-from hylaa.glpk.python_sparse_glpk import LpInstance
+from hylaa.lpinstance import LpInstance
 
 from hylaa import lpplot
 
