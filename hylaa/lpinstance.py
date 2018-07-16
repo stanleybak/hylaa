@@ -4,6 +4,8 @@ May 2018
 GLPK python <-> C++ interface
 '''
 
+import sys
+
 import numpy as np
 from scipy.sparse import csr_matrix, csc_matrix
 import swiglpk as glpk
@@ -216,11 +218,14 @@ class LpInstance(Freezable):
         for col in range(csc_mat.shape[1]):
             # we must copy the indices since glpk is offset by 1 :(
             count = int(indptr[col + 1] - indptr[col])
+
             indices_vec = glpk.intArray(count + 1)
+            indices_vec_copy = [0] * (count + 1)
             v_index = 1
 
             for index in range(indptr[col], indptr[col + 1]):
-                indices_vec[v_index] = 1 + offset[1] + int(indices[index])
+                indices_vec[v_index] = 1 + offset[0] + int(indices[index])
+                indices_vec_copy[v_index] = 1 + offset[0] + int(indices[index])
                 v_index += 1
 
             data_row_list = data_list[indptr[col]:indptr[col+1]]
@@ -242,33 +247,10 @@ class LpInstance(Freezable):
         num_cols = glpk.glp_get_num_cols(self.lp)
 
         if len(direction_vec) > num_cols:
-            raise RuntimeError("Error: dirLen({}) > numCols({}) in call to minimize()".format(
-                len(direction_vec), num_cols))
+            raise RuntimeError("dirLen({}) > numCols({})".format(len(direction_vec), num_cols))
 
         for i, direction in enumerate(direction_vec):
             glpk.glp_set_obj_coef(self.lp, 1 + i, direction)
-
-    def minimize_full_result(self, fail_on_unsat=True):
-        'minimize the lp. returns the LP assigment for every column if SAT (as an np.ndarray), else None'
-
-        num_cols = self.get_num_cols()
-
-        columns = np.array([i for i in range(num_cols)], dtype=np.int32)
-        result_vec = np.zeros((num_cols,), dtype=float)
-
-        # minimize() returns 0 on success, 1 on unsat, -1 on error
-
-
-        if res == -1:
-            raise RuntimeError("LP minimize() failed internally")
-
-        if res == 1 and fail_on_unsat:
-            raise RuntimeError("LP minimize() returned UNSAT, but fail_on_unsat was True")
-
-        if res != 0:
-            result_vec = None
-
-        return result_vec
 
     def reset_lp(self):
         'reset all the column and row statuses of the LP'
@@ -425,30 +407,30 @@ class LpInstance(Freezable):
 
         rows = glpk.glp_get_num_rows(self.lp)
 
-        assert row_index >= 0 and row_index < rows, "Invalid row ({}) passed to flip_constraint() (lp has {})".format(
+        assert 0 <= row_index < rows, "Invalid row ({}) passed to flip_constraint() (lp has {})".format(
             row_index, rows)
 
         row_type = glpk.glp_get_row_type(self.lp, row_index + 1)
 
         if row_type == glpk.GLP_UP:
             val = glpk.glp_get_row_ub(self.lp, row_index + 1)
-            glpk.glp_set_row_bnds(self.lp, rowIndex + 1, glpk.GLP_LO, val, 0)
+            glpk.glp_set_row_bnds(self.lp, row_index + 1, glpk.GLP_LO, val, 0)
             rv = False
         elif row_type == glpk.GLP_LO:
             val = glpk.glp_get_row_lb(self.lp, row_index + 1)
             glpk.glp_set_row_bnds(self.lp, row_index + 1, glpk.GLP_UP, 0, val)
             rv = True
         else:
-            raise RuntimeError("Invalid constraint type {} in row {} in flipConstraint()\n".format(row_type, rowIndex))
+            raise RuntimeError("Invalid constraint type {} in row {} in flipConstraint()\n".format(row_type, row_index))
 
         return rv
 
     def del_constraint(self, row_index):
         '''delete a constraint from the lp'''
 
-        rows = glpk.glp_get_num_rows(sel.lp)
+        rows = glpk.glp_get_num_rows(self.lp)
 
-        assert row_index >= 0 and row_index < rows, "Invalid row ({}) passed to del_constraint() (lp has {})".format(
+        assert 0 <= row_index < rows, "Invalid row ({}) passed to del_constraint() (lp has {})".format(
             row_index, rows)
 
         nrs = 1
@@ -462,10 +444,10 @@ class LpInstance(Freezable):
 
         rows = glpk.glp_get_num_rows(self.lp)
 
-        assert row_index >= 0 and row_index < rows, "Invalid row ({}) in set_constraint_rhs() (lp has {})".format(
+        assert 0 <= row_index < rows, "Invalid row ({}) in set_constraint_rhs() (lp has {})".format(
             row_index, rows)
 
-        row_type = glpk.glp_get_row_type(self.lp, rowIndex + 1)
+        row_type = glpk.glp_get_row_type(self.lp, row_index + 1)
 
         if row_type == glpk.GLP_UP:
             glpk.glp_set_row_bnds(self.lp, row_index + 1, glpk.GLP_UP, 0, rhs)

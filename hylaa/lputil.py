@@ -226,13 +226,11 @@ def aggregate(lpi_list, direction_matrix):
         assert abs(np.linalg.norm(direction) - 1) < 1e-9, "expected normalized directions, got {}".format(direction)
 
         for lpi in lpi_list:
-            lpi.set_minimize_direction(direction)
-            result = lpi.minimize(columns=columns)
+            result = lpi.minimize(direction_vec=direction, columns=columns)
             min_val = np.dot(result, direction)
             mins[i] = min(mins[i], min_val)
 
-            lpi.set_minimize_direction(-direction)
-            result = lpi.minimize(columns=columns)
+            result = lpi.minimize(direction_vec=-direction, columns=columns)
             max_val = np.dot(-result, -direction)
             maxes[i] = max(maxes[i], max_val)
 
