@@ -105,7 +105,8 @@ def check_intersection(lpi, vec, rhs):
 
     lpi.set_minimize_direction(vec)
 
-    columns = np.array([i for i in range(len(vec))], dtype=int) # get the first len(vec) columns
+    columns = np.array([lpi.cur_vars_offset + i for i in range(len(vec))], dtype=int)
+
     result = lpi.minimize(columns=columns, fail_on_unsat=True)
 
     return np.dot(result, vec) <= rhs

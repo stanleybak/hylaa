@@ -414,20 +414,22 @@ class LpInstance(Freezable):
             if status == glpk.GLP_NOFEAS: # infeasible
                 rv = None
             elif status == glpk.GLP_OPT: # optimal
+                lp_cols = glpk.glp_get_num_cols(self.lp)
+                
                 if columns is None:
-                    rv = np.zeros(glpk.glp_get_num_cols(self.lp))
+                    rv = np.zeros(lp_cols)
                 else:
                     rv = np.zeros(len(columns))
 
                 # copy the output vars
-                num_cols = len(rv)
+                rv_len = len(rv)
                 
-                for index in range(num_cols):
-                    col = index if columns is None else columns[index]
+                for i in range(rv_len):
+                    col = i if columns is None else columns[i]
 
-                    assert 0 <= col < num_cols, "out of bounds column requested in LP solution: {}".format(col)
+                    assert 0 <= col < lp_cols, "out of bounds column requested in LP solution: {}".format(col)
 
-                    rv[index] = glpk.glp_get_col_prim(self.lp, int(col + 1))
+                    rv[i] = glpk.glp_get_col_prim(self.lp, int(col + 1))
             else: # neither infeasible nor optimal (for example, unbounded)
                 codes = [glpk.GLP_OPT, glpk.GLP_FEAS, glpk.GLP_INFEAS, glpk.GLP_NOFEAS, glpk.GLP_UNBND, glpk.GLP_UNDEF]
                 msgs = ["solution is optimal",

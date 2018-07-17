@@ -12,7 +12,7 @@ import numpy as np
 
 from hylaa import lputil
 
-def get_verts(lpi, num_dims=None, xdim=0, ydim=1, plot_vecs=None, cur_time=0):
+def get_verts(lpi, xdim=0, ydim=1, plot_vecs=None, cur_time=0):
     '''get the vertices defining (an underapproximation) of the outside of the given linear constraints
     These will be usable for plotting, so that rv[0] == rv[-1]. A single point may be returned if the constraints
     are (close to) a single point.
@@ -25,13 +25,6 @@ def get_verts(lpi, num_dims=None, xdim=0, ydim=1, plot_vecs=None, cur_time=0):
     
     if plot_vecs is None:
         plot_vecs = make_plot_vecs()
-
-    if num_dims is None:
-        num_dims = lputil.get_dims(lpi)
-
-    # first set the optimization direction to all zeros
-    zero_vec = np.zeros((num_dims,), dtype=float)
-    lpi.set_minimize_direction(zero_vec)
 
     pts = _find_boundary_pts(lpi, xdim, ydim, plot_vecs)
 
