@@ -115,13 +115,6 @@ class Core(Freezable):
 
         # TODO: check if cur_state has a true invariant
 
-        if self.cur_state is not None:
-            self.max_steps_remaining = self.settings.num_steps - self.cur_state.cur_step_since_start
-
-            if not self.settings.process_urgent_guards:
-                # force one continuous post step in each mode
-                self.cur_state.step()
-
         # if a_matrix is None, it's an error mode
         if self.cur_state is not None and self.cur_state.mode.a_csr is None:
             if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
@@ -131,8 +124,14 @@ class Core(Freezable):
 
         # setup the lpi for each outgoing transition
         if self.cur_state is not None:
+            self.max_steps_remaining = self.settings.num_steps - self.cur_state.cur_step_since_start
+                        
             for transition in self.cur_state.mode.transitions:
                 transition.make_lpi(self.cur_state)
+
+            if not self.settings.process_urgent_guards:
+                # force one continuous post step in each mode
+                self.cur_state.step()
 
         # pause after discrete post when using PLOT_INTERACTIVE
         if self.plotman.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:

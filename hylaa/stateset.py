@@ -41,6 +41,11 @@ class StateSet(Freezable):
         self.cur_step_since_start += 1
 
         lputil.set_basis_matrix(self.lpi, basis_matrix)
+
+        # update each transition's basis matrix
+        for t in self.mode.transitions:
+            lputil.set_basis_matrix(t.lpi, basis_matrix)
+
         self._verts = None # cached vertices no longer valid
 
     def verts(self):
