@@ -499,7 +499,7 @@ class LpInstance(Freezable):
         '''get the rhs vector of the constraints'''
 
         lp_rows = glpk.glp_get_num_rows(self.lp)
-        rv = np.zeros(lp_rows, dtype=int)
+        rv = np.zeros(lp_rows, dtype=float)
 
         for row in range(lp_rows):
             row_type = glpk.glp_get_row_type(self.lp, row + 1)

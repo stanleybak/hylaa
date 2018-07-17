@@ -147,7 +147,7 @@ def add_init_constraint(lpi, vec, rhs, basis_matrix=None):
 
     return rows - 1
 
-def try_replace_constraint(lpi, old_row_index, direction, rhs):
+def try_replace_init_constraint(lpi, old_row_index, direction, rhs):
     '''replace the constraint in row_index by a new constraint, if the new constraint is stronger, otherwise
     create new constriant
 
@@ -371,3 +371,18 @@ def add_snapshot_variables(lpi):
     mat.check_format()
 
     lpi.set_constraints_csr(mat)
+
+def add_curtime_constraints(lpi, csr, rhs_vec):
+    '''
+    add constraints to the lpi
+
+    this adds them on the current time variables (not the initial time variables)
+    '''
+
+    assert isinstance(csr, csr_matrix)
+    assert isinstance(rhs_vec, np.ndarray)
+
+    prerows = lpi.get_num_rows()
+    lpi.add_rows_less_equal(rhs_vec)
+
+    lpi.set_constraints_csr(csr, offset=(prerows, 0))

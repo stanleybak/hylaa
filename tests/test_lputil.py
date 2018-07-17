@@ -7,6 +7,8 @@ import numpy as np
 
 import swiglpk as glpk
 
+from scipy.sparse import csr_matrix
+
 from hylaa import lputil, lpplot
 from hylaa.lpinstance import LpInstance
 
@@ -133,8 +135,8 @@ def test_add_init_constraint():
     assert [1.0, 4.5] in verts
     assert verts[0] == verts[-1]
 
-def test_try_replace_constraint():
-    'tests try_replace_constraint on the harmonic oscillator example'
+def test_try_replace_init_constraint():
+    'tests try_replace_init_constraint on the harmonic oscillator example'
 
     lpi = lputil.from_box([[-5, -4], [0, 1]])
 
@@ -158,14 +160,14 @@ def test_try_replace_constraint():
     assert lpi.get_num_rows() == 7
 
     # try to replace constraint y >= 4.6 (should be stronger than 4.5)
-    row_index = lputil.try_replace_constraint(lpi, row_index, direction, -4.6)
+    row_index = lputil.try_replace_init_constraint(lpi, row_index, direction, -4.6)
 
     assert row_index == 6
     assert lpi.get_num_rows() == 7
 
     # try to replace constraint x <= 0.9 (should be incomparable)
     xdir = np.array([1, 0], dtype=float)
-    row_index = lputil.try_replace_constraint(lpi, row_index, xdir, 0.9)
+    row_index = lputil.try_replace_init_constraint(lpi, row_index, xdir, 0.9)
 
     assert row_index == 7
     assert lpi.get_num_rows() == 8
@@ -281,3 +283,36 @@ def test_box_aggregate3():
     assert [2., -0.5] in verts
     
     assert verts[0] == verts[-1]
+
+def test_add_curtime_constraints():
+    'tests add_curtime_constraints'
+
+    lpi = lputil.from_box([[-5, -4], [0, 1]])
+
+    # new constraint to be added, x <= 3.14, y <= 10
+    csr_constraint = csr_matrix(np.array([[1, 0], [0, 1]], dtype=float))
+    rhs = np.array([3.14, 10], dtype=float)
+
+    lputil.add_curtime_constraints(lpi, csr_constraint, rhs)
+
+    mat, types, vec = lpi.get_constraints()
+
+    expected_mat = np.array([\
+        [-1, 0, 1, 0], \
+        [0, -1, 0, 1], \
+        [0, 0, -1, 0], \
+        [0, 0, 1, 0], \
+        [0, 0, 0, -1], \
+        [0, 0, 0, 1], \
+        [1, 0, 0, 0], \
+        [0, 1, 0, 0]], dtype=float)
+
+    expected_vec = np.array([0, 0, 5, -4, 0, 1, 3.14, 10], dtype=float)
+
+    fx = glpk.GLP_FX
+    up = glpk.GLP_UP
+    expected_types = np.array([fx, fx, up, up, up, up, up, up], dtype=np.int32)
+
+    assert np.allclose(vec, expected_vec)
+    assert np.allclose(types, expected_types)
+    assert np.allclose(mat.toarray(), expected_mat)

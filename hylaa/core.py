@@ -54,14 +54,18 @@ class Core(Freezable):
         transitions = self.cur_state.mode.transitions
 
         for t in transitions:
-            lp_solution = t.lpi.minimize_full_result(fail_on_unsat=False)
+            lp_solution = t.lpi.minimize(fail_on_unsat=False)
+
+            print("lp solution for {} was {}".format(t, lp_solution))
+            print("guard was {} <= {}".format(t.guard_csr.toarray(), t.guard_rhs))
+            print("guard lpi was:\n{}".format(t.lpi))
 
             if lp_solution is not None:
                 step_num = self.cur_state.cur_step_since_start
                                     
                 if t.to_mode.a_csr is not None: # add discrete successor
                     successor_state = StateSet(t.lpi, t.to_mode)
-                    self.waiting_list.append(succcesor_state)
+                    self.waiting_list.append(succesor_state)
 
                     print("Added Discrete Successor to '{}' at step {}".format(t.to_mode.name, step_num))
 
@@ -83,12 +87,13 @@ class Core(Freezable):
         self.check_guards()
 
         # next advance time by one step
-        if self.cur_state.time_elapse.next_step > self.settings.num_steps:
+        if self.cur_state.cur_step_since_start >= self.settings.num_steps:
             self.cur_state = None
         else:
             if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
-                step_num = self.cur_state.time_elapse.next_step
-                print("Step: {} / {} ({})".format(step_num, self.settings.num_steps, self.settings.step * step_num))
+                step_num = self.cur_state.cur_step_since_start
+                total_time = self.settings.step_size * step_num
+                print("Step: {} / {} ({})".format(step_num, self.settings.num_steps, total_time))
 
             self.cur_state.step()
 

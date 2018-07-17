@@ -11,6 +11,7 @@ from hylaa.util import Freezable
 from hylaa.time_elapse import TimeElapser
 
 from hylaa.lpinstance import LpInstance
+from hylaa import lputil
 
 class LinearConstraint(object):
     'a single csr sparse linear constraint: csr_vec * x <= rhs'
@@ -242,6 +243,9 @@ class Transition(Freezable):
         'make the lpi instance for this transition, from the given state'
 
         self.lpi = LpInstance(from_state.lpi) # copy the lpi
+
+        # add the guard condition
+        lputil.add_curtime_constraints(self.lpi, self.guard_csr, self.guard_rhs)
 
     def __str__(self):
         return self.from_mode.name + " -> " + self.to_mode.name
