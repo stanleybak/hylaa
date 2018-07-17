@@ -68,8 +68,6 @@ class TimeElapseExpmMult(Freezable):
     def assign_basis_matrix(self, step_num):
         'first step matrix exp, other steps matrix multiplication'
 
-        print(". remove debugging printing (step = {})".format(step_num))
-
         Timers.tic('init_matrices')
         if self.one_step_matrix_exp is None:
             self.init_matrices()
@@ -78,13 +76,10 @@ class TimeElapseExpmMult(Freezable):
         if step_num == 0: # step zero, basis matrix is identity matrix
             self.cur_basis_matrix = np.identity(self.dims, dtype=float)
             self.cur_input_effects_matrix = None
-            print(". doing step 0")
         elif step_num == 1:
             self.cur_basis_matrix = self.one_step_matrix_exp
             self.cur_input_effects_matrix = self.one_step_input_effects_matrix
-            print(". doing step 1")
         elif step_num == self.cur_step + 1:
-            print(". doing quick step")
             Timers.tic('quick_step')
             self.cur_basis_matrix = np.dot(self.cur_basis_matrix, self.one_step_matrix_exp)
 
@@ -94,7 +89,6 @@ class TimeElapseExpmMult(Freezable):
 
             Timers.toc('quick_step')
         else:
-            print(". doing slow step, step_num desired was {}, cur_step = {}".format(step_num, self.cur_step))
             Timers.tic('slow_step')
 
             Timers.tic('expm')

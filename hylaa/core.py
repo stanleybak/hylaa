@@ -46,7 +46,7 @@ class Core(Freezable):
     def is_finished(self):
         'is the computation finished'
 
-        return self.cur_state is None and len(self.waiting_list) == 0 or not self.result.safe
+        return (self.cur_state is None and len(self.waiting_list) == 0) or not self.result.safe
 
     def check_guards(self):
         '''check for discrete successors with the guards'''
@@ -56,18 +56,15 @@ class Core(Freezable):
         for t in transitions:
             lp_solution = t.lpi.minimize(fail_on_unsat=False)
 
-            print("lp solution for {} was {}".format(t, lp_solution))
-            print("guard was {} <= {}".format(t.guard_csr.toarray(), t.guard_rhs))
-            print("guard lpi was:\n{}".format(t.lpi))
-
             if lp_solution is not None:
                 step_num = self.cur_state.cur_step_since_start
                                     
                 if t.to_mode.a_csr is not None: # add discrete successor
-                    successor_state = StateSet(t.lpi, t.to_mode)
+                    succesor_state = StateSet(t.lpi, t.to_mode)
                     self.waiting_list.append(succesor_state)
 
-                    print("Added Discrete Successor to '{}' at step {}".format(t.to_mode.name, step_num))
+                    if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
+                        print("Added Discrete Successor to '{}' at step {}".format(t.to_mode.name, step_num))
 
                 else: # unsafe state
                     if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
@@ -78,10 +75,15 @@ class Core(Freezable):
 
                     self.result.safe = False
                     
-                    break # no need to keep checking
+                    break # no need to keep checking transitions
 
     def do_step_continuous_post(self):
         '''do a step where it's part of a continuous post'''
+
+        if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
+            step_num = self.cur_state.cur_step_since_start
+            total_time = self.settings.step_size * step_num
+            print("Step: {} / {} ({})".format(step_num, self.settings.num_steps, total_time))
 
         # first check guards
         self.check_guards()
@@ -90,11 +92,6 @@ class Core(Freezable):
         if self.cur_state.cur_step_since_start >= self.settings.num_steps:
             self.cur_state = None
         else:
-            if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
-                step_num = self.cur_state.cur_step_since_start
-                total_time = self.settings.step_size * step_num
-                print("Step: {} / {} ({})".format(step_num, self.settings.num_steps, total_time))
-
             self.cur_state.step()
 
     def do_step_pop(self):
@@ -146,9 +143,7 @@ class Core(Freezable):
     def do_step(self):
         'do a single step of the computation'
 
-        skipped_plot = False # if we skip the plot, do multiple steps
-
-        while True:
+        while not self.is_finished():
             if self.cur_state is None:
                 self.do_step_pop()
             else:
@@ -203,13 +198,15 @@ class Core(Freezable):
 
         return self.result
 
-class CounterExampleSegmant(Freezable):
+class CounterExampleSegment(Freezable):
     'a part of a counter-example trace'
 
     def __init__(self):
         self.mode_name = None
         self.start = None
         self.end = None
+
+        # TODO: inputs[]
         
         self.freeze_attrs()
 

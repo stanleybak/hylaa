@@ -57,7 +57,7 @@ def test_ha_line_arch18():
     init_list = [StateSet(init_lpi, mode)]
 
     # settings
-    settings = HylaaSettings(math.pi/4, math.pi)
+    settings = HylaaSettings(math.pi/4, 2*math.pi)
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
     
     core = Core(ha, settings)
