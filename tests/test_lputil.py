@@ -11,21 +11,28 @@ from scipy.sparse import csr_matrix
 
 from hylaa import lputil, lpplot
 from hylaa.lpinstance import LpInstance
+from hylaa.hybrid_automaton import HybridAutomaton
 
 def test_from_box():
     'tests from_box'
+    
+    lpi = lputil.from_box([[-5, -4], [0, 1]], HybridAutomaton().new_mode('mode_name'))
 
-    lpi = lputil.from_box([[-5, -4], [0, 1]])
+    assert lpi.basis_mat_pos == (0, 0)
+    assert lpi.dims == 2
 
-    mat, types, vec = lpi.get_constraints()
+    mat = lpi.get_full_constraints()
+    types = lpi.get_types()
+    rhs = lpi.get_rhs()
+    names = lpi.get_names()
 
     expected_mat = np.array([\
-        [-1, 0, 1, 0], \
-        [0, -1, 0, 1], \
-        [0, 0, -1, 0], \
-        [0, 0, 1, 0], \
-        [0, 0, 0, -1], \
-        [0, 0, 0, 1]], dtype=float)
+        [1, 0, -1, 0], \
+        [0, 1, 0, -1], \
+        [-1, 0, 0, 0], \
+        [1, 0, 0, 0], \
+        [0, -1, 0, 0], \
+        [0, 1, 0, 0]], dtype=float)
 
     expected_vec = np.array([0, 0, 5, -4, 0, 1], dtype=float)
 
@@ -33,33 +40,36 @@ def test_from_box():
     up = glpk.GLP_UP
     expected_types = np.array([fx, fx, up, up, up, up], dtype=np.int32)
 
-    assert np.allclose(vec, expected_vec)
+    expected_names = ["m0_i0", "m0_i1", "m0_c0", "m0_c1"]
+
+    assert np.allclose(rhs, expected_vec)
     assert np.allclose(types, expected_types)
     assert np.allclose(mat.toarray(), expected_mat)
+    assert names == expected_names
 
 def test_print_lp():
     'test printing the lp to stdout'
 
-    lpi = lputil.from_box([[-5, -4], [0, 1]])
+    lpi = lputil.from_box([[-5, -4], [0, 1]], HybridAutomaton().new_mode('mode_name'))
     assert str(lpi) is not None
 
 def test_set_basis_matrix():
     'tests lputil set_basis_matrix on harmonic oscillator example'
 
-    lpi = lputil.from_box([[-5, -4], [0, 1]])
+    lpi = lputil.from_box([[-5, -4], [0, 1]], HybridAutomaton().new_mode('mode_name'))
 
     basis = np.array([[0, 1], [-1, 0]], dtype=float)
     lputil.set_basis_matrix(lpi, basis)
 
-    mat, _, vec = lpi.get_constraints()
+    mat, vec = lpi.get_full_constraints(), lpi.get_rhs()
 
     expected_mat = np.array([\
-        [-1, 0, 0, 1], \
-        [0, -1, -1, 0], \
-        [0, 0, -1, 0], \
-        [0, 0, 1, 0], \
-        [0, 0, 0, -1], \
-        [0, 0, 0, 1]], dtype=float)
+        [0, 1, -1, 0], \
+        [-1, 0, 0, -1], \
+        [-1, 0, 0, 0], \
+        [1, 0, 0, 0], \
+        [0, -1, 0, 0], \
+        [0, 1, 0, 0]], dtype=float)
 
     expected_vec = np.array([0, 0, 5, -4, 0, 1], dtype=float)
 
@@ -70,7 +80,7 @@ def test_set_basis_matrix():
 def test_check_intersection():
     'tests check_intersection on the harmonic oscillator example'
 
-    lpi = lputil.from_box([[-5, -4], [0, 1]])
+    lpi = lputil.from_box([[-5, -4], [0, 1]], HybridAutomaton().new_mode('mode_name'))
 
     # check if initially y >= 4.5 is possible (should be false)
     direction = np.array([0, -1], dtype=float)
@@ -87,7 +97,7 @@ def test_check_intersection():
 def test_verts():
     'tests verts'
 
-    lpi = lputil.from_box([[-5, -4], [0, 1]])
+    lpi = lputil.from_box([[-5, -4], [0, 1]], HybridAutomaton().new_mode('mode_name'))
 
     plot_vecs = lpplot.make_plot_vecs(4, offset=(math.pi / 4.0))
     verts = lpplot.get_verts(lpi, plot_vecs=plot_vecs)
@@ -103,7 +113,7 @@ def test_verts():
 def test_add_init_constraint():
     'tests add_init_constraint on the harmonic oscillator example'
 
-    lpi = lputil.from_box([[-5, -4], [0, 1]])
+    lpi = lputil.from_box([[-5, -4], [0, 1]], HybridAutomaton().new_mode('mode_name'))
 
     # update basis matrix
     basis_mat = np.array([[0, 1], [-1, 0]], dtype=float)
@@ -138,7 +148,7 @@ def test_add_init_constraint():
 def test_try_replace_init_constraint():
     'tests try_replace_init_constraint on the harmonic oscillator example'
 
-    lpi = lputil.from_box([[-5, -4], [0, 1]])
+    lpi = lputil.from_box([[-5, -4], [0, 1]], HybridAutomaton().new_mode('mode_name'))
 
     # update basis matrix
     basis_mat = np.array([[0, 1], [-1, 0]], dtype=float)
@@ -186,8 +196,8 @@ def test_try_replace_init_constraint():
 def test_box_aggregate():
     'tests box aggregation'
 
-    lpi1 = lputil.from_box([[0, 1], [0, 1]])
-    lpi2 = lputil.from_box([[1, 2], [1, 2]])
+    lpi1 = lputil.from_box([[0, 1], [0, 1]], HybridAutomaton().new_mode('mode_name'))
+    lpi2 = lputil.from_box([[1, 2], [1, 2]], HybridAutomaton().new_mode('mode_name'))
 
     agg_dirs = np.array([[1, 0], [0, 1]], dtype=float)
 
@@ -220,8 +230,8 @@ def pair_almost_in(pair, pair_list, tol=1e-9):
 def test_rotated_aggregate():
     'tests rotated aggregation'
 
-    lpi1 = lputil.from_box([[0, 1], [0, 1]])
-    lpi2 = lputil.from_box([[1, 2], [1, 2]])
+    lpi1 = lputil.from_box([[0, 1], [0, 1]], HybridAutomaton().new_mode('mode_name'))
+    lpi2 = lputil.from_box([[1, 2], [1, 2]], HybridAutomaton().new_mode('mode_name'))
 
     sq2 = math.sqrt(2) / 2.0
 
@@ -245,7 +255,7 @@ def test_rotated_aggregate():
 def test_get_basis_matrix():
     'tests lputil get_basis_matrix on harmonic oscillator example'
 
-    lpi = lputil.from_box([[-5, -4], [0, 1]])
+    lpi = lputil.from_box([[-5, -4], [0, 1]], HybridAutomaton().new_mode('mode_name'))
 
     basis = np.array([[0, 1], [-1, 0]], dtype=float)
     lputil.set_basis_matrix(lpi, basis)
@@ -257,7 +267,7 @@ def test_get_basis_matrix():
 def test_box_aggregate3():
     'tests box aggregation with 3 boxes'
 
-    lpi1 = lputil.from_box([[-2, -1], [-0.5, 0.5]])
+    lpi1 = lputil.from_box([[-2, -1], [-0.5, 0.5]], HybridAutomaton().new_mode('mode_name'))
     lpi2 = LpInstance(lpi1)
     lpi3 = LpInstance(lpi1)
 
@@ -287,7 +297,7 @@ def test_box_aggregate3():
 def test_add_curtime_constraints():
     'tests add_curtime_constraints'
 
-    lpi = lputil.from_box([[-5, -4], [0, 1]])
+    lpi = lputil.from_box([[-5, -4], [0, 1]], HybridAutomaton().new_mode('mode_name'))
 
     # new constraint to be added, x <= 3.14, y <= 10
     csr_constraint = csr_matrix(np.array([[1, 0], [0, 1]], dtype=float))
@@ -295,17 +305,19 @@ def test_add_curtime_constraints():
 
     lputil.add_curtime_constraints(lpi, csr_constraint, rhs)
 
-    mat, types, vec = lpi.get_constraints()
+    mat = lpi.get_full_constraints()
+    vec = lpi.get_rhs()
+    types = lpi.get_types()
 
     expected_mat = np.array([\
-        [-1, 0, 1, 0], \
-        [0, -1, 0, 1], \
-        [0, 0, -1, 0], \
-        [0, 0, 1, 0], \
-        [0, 0, 0, -1], \
-        [0, 0, 0, 1], \
+        [1, 0, -1, 0], \
+        [0, 1, 0, -1], \
+        [-1, 0, 0, 0], \
         [1, 0, 0, 0], \
-        [0, 1, 0, 0]], dtype=float)
+        [0, -1, 0, 0], \
+        [0, 1, 0, 0], \
+        [0, 0, 1, 0], \
+        [0, 0, 0, 1]], dtype=float)
 
     expected_vec = np.array([0, 0, 5, -4, 0, 1, 3.14, 10], dtype=float)
 

@@ -69,18 +69,19 @@ class Mode(Freezable):
     considered an error mode.
     '''
 
-    def __init__(self, parent, name):
-        assert isinstance(parent, HybridAutomaton)
+    def __init__(self, ha, name, mode_id):
+        assert isinstance(ha, HybridAutomaton)
 
-        self.parent = parent
+        self.ha = ha
         self.name = name
+        self.mode_id = mode_id # unique int identified for this mode
 
         # dynamics are x' = Ax + Bu
         self.a_csr = None
         self.b_csr = None
 
         # constraints on input
-        self.u_constraints_csr= None # csr_matrix
+        self.u_constraints_csr = None # csr_matrix
         self.u_constraints_rhs = None # 1-d np.ndarray
 
         self.transitions = [] # outgoing Transition objects
@@ -172,8 +173,9 @@ class Mode(Freezable):
 class Transition(Freezable):
     'A transition of a hybrid automaton'
 
-    def __init__(self, parent, from_mode, to_mode, label=''):
-        self.parent = parent
+    def __init__(self, ha, from_mode, to_mode, label=''):
+        assert isinstance(ha, HybridAutomaton)
+        self.ha = ha
         self.from_mode = from_mode
         self.to_mode = to_mode
 
@@ -255,14 +257,14 @@ class HybridAutomaton(Freezable):
 
     def __init__(self, name='HybridAutomaton'):
         self.name = name
-        self.modes = {}
+        self.modes = {} # map name -> mode
         self.transitions = []
 
         self.freeze_attrs()
 
     def new_mode(self, name):
         '''add a mode'''
-        m = Mode(self, name)
+        m = Mode(self, name, len(self.modes))
         self.modes[m.name] = m
         return m
 
@@ -309,7 +311,7 @@ class HybridAutomaton(Freezable):
                     add_guard_list.append(inv_constraint)
 
             # add all consrtaints in add_guard_list to the transition's guard (construct a new guard matrix)
-            if len(add_guard_list) > 0:
+            if add_guard_list:
                 inds = [n for n in t.guard_csr.indices]
                 data = [x for x in t.guard_csr.data]
                 indptr = [n for n in t.guard_csr.indptr]

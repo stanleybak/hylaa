@@ -4,8 +4,6 @@ May 2018
 GLPK python <-> C++ interface
 '''
 
-import sys
-
 import numpy as np
 from scipy.sparse import csr_matrix, csc_matrix
 import swiglpk as glpk
@@ -15,17 +13,39 @@ from hylaa.util import Freezable
 class LpInstance(Freezable):
     'Linear programming wrapper using glpk (through swiglpk python interface)'
 
-    def __init__(self, other_lpi=None):
-        'create a copy of the passed-in lpi'
+    def __init__(self):
+        'initialize the lp instance'
 
-        if other_lpi is not None:
-            self.lp = glpk.glp_create_prob()
-            glpk.glp_copy_prob(self.lp, other_lpi.lp, glpk.GLP_ON)
-        else:
-            self.lp = glpk.glp_create_prob()
-            glpk.glp_set_obj_dir(self.lp, glpk.GLP_MIN)
+        self.lp = glpk.glp_create_prob()
+
+        # these are assigned on set_reach_vars()
+        self.dims = None
+        self.basis_mat_pos = None # 2-tuple
+        self.cur_vars_offset = None
+
+        # internal bookkeeping
+        self.obj_cols = [] # columns in the LP with an assigned objective coefficient
 
         self.freeze_attrs()
+
+    def clone(self):
+        'create a copy of this lp instance'
+
+        rv = LpInstance()
+
+        glpk.glp_copy_prob(rv.lp, self.lp, glpk.GLP_ON)
+
+        rv.set_reach_vars(self.dims, self.basis_mat_pos)
+        rv.obj_cols = self.obj_cols.copy()
+
+        return rv
+
+    def set_reach_vars(self, dims, basis_mat_pos):
+        'set reachability variables'
+
+        self.dims = dims
+        self.basis_mat_pos = basis_mat_pos
+        self.cur_vars_offset = basis_mat_pos[1] + dims # immediately to the right of the basis matrix
 
     def __del__(self):
         if hasattr(self, 'lp') and self.lp is not None:
@@ -47,7 +67,23 @@ class LpInstance(Freezable):
         inds = glpk.intArray(cols + 1)
         vals = glpk.doubleArray(cols + 1)
 
-        # first print all the column statuses
+        # the column names
+        rv += "   "
+
+        for col in range(1, cols + 1):
+            name = glpk.glp_get_row_name(lp, col)
+            name = "-" if name is None else name
+            
+            if len(name) < 6:
+                name = (" " * (6 - len(name))) + name
+            else:
+                name = name[0:6]
+                    
+            rv += name + " "
+
+        rv += "\n"
+
+        #  the column statuses
         rv += "   "
 
         for col in range(1, cols + 1):
@@ -104,15 +140,18 @@ class LpInstance(Freezable):
 
         return rv
 
-    def add_cols(self, num):
+    def add_cols(self, names):
         'add a certain number of columns to the LP'
+
+        assert isinstance(names, list)
 
         num_cols = glpk.glp_get_num_cols(self.lp)
 
-        glpk.glp_add_cols(self.lp, num)
+        glpk.glp_add_cols(self.lp, len(names))
 
-        for i in range(num):
+        for i, name in enumerate(names):
             glpk.glp_set_col_bnds(self.lp, num_cols + i + 1, glpk.GLP_FR, 0, 0)  # free variable (bounds -inf to inf)
+            glpk.glp_set_col_name(self.lp, num_cols + i + 1, name)
 
     def add_rows_less_equal(self, rhs_vec):
         '''add rows to the LP with <= constraints
@@ -234,23 +273,30 @@ class LpInstance(Freezable):
             glpk.glp_set_mat_col(self.lp, offset[1] + col + 1, count, indices_vec, data_ptr)
 
     def set_minimize_direction(self, direction_vec):
-        '''set the direction for the optimization.
-
-        This only sets up to the length of direction_vec (further columns remain as they were before the call)
+        '''set the direction for the optimization in terms of the current-time variables
         '''
 
         if not isinstance(direction_vec, np.ndarray):
             direction_vec = np.array(direction_vec, dtype=float)
 
         assert len(direction_vec.shape) == 1
+        assert len(direction_vec) <= self.dims
 
         num_cols = glpk.glp_get_num_cols(self.lp)
 
         if len(direction_vec) > num_cols:
             raise RuntimeError("dirLen({}) > numCols({})".format(len(direction_vec), num_cols))
 
+        # set the previous objective columns to zero
+        for i in self.obj_cols:
+            glpk.glp_set_obj_coef(self.lp, i, 0)
+
+        self.obj_cols = []
+
         for i, direction in enumerate(direction_vec):
-            glpk.glp_set_obj_coef(self.lp, 1 + i, direction)
+            col = 1 + self.cur_vars_offset + i
+            self.obj_cols.append(col)
+            glpk.glp_set_obj_coef(self.lp, col, direction)
 
     def reset_lp(self):
         'reset all the column and row statuses of the LP'
@@ -495,6 +541,17 @@ class LpInstance(Freezable):
 
         return rv
 
+    def get_names(self):
+        '''get the symbolic names of each column'''
+
+        cols = glpk.glp_get_num_cols(self.lp)
+        rv = []
+
+        for col in range(cols):
+            rv.append(glpk.glp_get_col_name(self.lp, col + 1))
+
+        return rv
+
     def get_rhs(self):
         '''get the rhs vector of the constraints'''
 
@@ -513,13 +570,8 @@ class LpInstance(Freezable):
 
         return rv
 
-    def get_constraints(self):
+    def get_full_constraints(self):
         '''get the LP matrix as a csr_matrix
-
-        returns a 3-tuple, (mat, types, vec), where mat is constraints, vec is the right-hand side, and
-        types is a np.array of integers corresponding to the type of constraint (defined in swiglpk):
-
-        GLP_FX(== constraint): 5, GLP_UP (<= constraint): 3, GLP_LO (>= constraint): 2
         '''
 
         lp_rows = glpk.glp_get_num_rows(self.lp)
@@ -548,7 +600,7 @@ class LpInstance(Freezable):
         csr_mat = csr_matrix((data, inds, indptr), shape=(lp_rows, lp_cols), dtype=float)
         csr_mat.check_format()
 
-        return csr_mat, self.get_types(), self.get_rhs()
+        return csr_mat
 
     def get_row(self, row):
         '''get a row of the LP matrix as a csr_matrix

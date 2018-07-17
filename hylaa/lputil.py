@@ -9,11 +9,9 @@ the first N rows are the current-time constraints (equality constraints equal to
 import numpy as np
 from scipy.sparse import csr_matrix, csc_matrix
 
-import swiglpk as glpk
-
 from hylaa.lpinstance import LpInstance
 
-def from_box(box_list):
+def from_box(box_list, mode):
     'make a new lp instance from a passed-in box'
 
     lpi = LpInstance()
@@ -21,7 +19,11 @@ def from_box(box_list):
     dims = len(box_list)
 
     lpi.add_rows_equal_zero(dims)
-    lpi.add_cols(2*dims)
+
+    names = ["m{}_i{}".format(mode.mode_id, var_index) for var_index in range(dims)]
+    names += ["m{}_c{}".format(mode.mode_id, var_index) for var_index in range(dims)]
+    
+    lpi.add_cols(names)
 
     rhs = []
 
@@ -36,12 +38,12 @@ def from_box(box_list):
     inds = []
     indptr = [0]
 
-    # -I I for first n rows
+    # I -I for first n rows
     for n in range(dims):
-        data.append(-1)
+        data.append(1)
         inds.append(n)
 
-        data.append(1)
+        data.append(-1)
         inds.append(dims + n)
 
         indptr.append(len(data))
@@ -51,11 +53,11 @@ def from_box(box_list):
 
     for n in range(dims):
         data.append(-1)
-        inds.append(dims + n)
+        inds.append(n)
         indptr.append(len(data))
 
         data.append(1)
-        inds.append(dims + n)
+        inds.append(n)
         indptr.append(len(data))
 
     mat = csr_matrix((data, inds, indptr), shape=(dims + 2*dims, 2*dims), dtype=float)
@@ -63,13 +65,15 @@ def from_box(box_list):
 
     lpi.set_constraints_csr(mat)
 
+    lpi.set_reach_vars(dims, (0, 0))
+
     return lpi
 
 def set_basis_matrix(lpi, basis_mat):
     'modify the lpi in place to set the basis matrix'
 
-    dims = basis_mat.shape[0]
-    assert dims == basis_mat.shape[1], "expected square matrix"
+    assert basis_mat.shape[0] == basis_mat.shape[1], "expected square matrix"
+    assert basis_mat.shape[0] == lpi.dims, "basis matrix wrong shape"
 
     # do it row by row, assume -I is first part, and last N is basis matrix
 
@@ -78,23 +82,20 @@ def set_basis_matrix(lpi, basis_mat):
     inds = []
     indptr = [0]
 
-    num_cols = lpi.get_num_cols()
-
-    # -I I for first n rows
-    for n in range(dims):
+    # BM -I
+    for row in range(lpi.dims):
+        for col in range(lpi.dims):
+            data.append(basis_mat[row, col])
+            inds.append(col)
+            
         data.append(-1)
-        inds.append(n)
-
-        for col in range(dims):
-            data.append(basis_mat[n, col])
-            inds.append(num_cols - dims + col)
+        inds.append(lpi.dims + row)
 
         indptr.append(len(data))
 
-    mat = csr_matrix((data, inds, indptr), shape=(dims, num_cols), dtype=float)
+    mat = csr_matrix((data, inds, indptr), shape=(lpi.dims, 2 * lpi.dims), dtype=float)
     mat.check_format()
-    
-    lpi.set_constraints_csr(mat)
+    lpi.set_constraints_csr(mat, offset=lpi.basis_mat_pos)
 
 def check_intersection(lpi, vec, rhs):
     '''check if there is an intersection between the LP constriants and vec <= rhs
@@ -241,10 +242,11 @@ def aggregate(lpi_list, direction_matrix):
     rows = middle_lpi.get_num_rows()
     cols = middle_lpi.get_num_cols()
 
-    rv = LpInstance(middle_lpi) # copy it
+    rv = middle_lpi.clone()
 
     # add n new columns and 2n new rows, for the minkowski sum constriants
-    rv.add_cols(dims)
+    names = ["agg{}".format(i) for i in range(dims)]
+    rv.add_cols(names)
 
     # csc matrix with constriants
     data = []
@@ -281,74 +283,32 @@ def aggregate(lpi_list, direction_matrix):
 
     return rv
 
-def get_dims(lpi):
-    '''get the number of dimensions of the lpi by counting '==' constriants'''
-
-    # first figure out the dimensions of the basis matrix by counting the number of '==' constraints
-    types = lpi.get_types()
-
-    dims = 0
-
-    for t in types:
-        if t != glpk.GLP_FX:
-            break
-
-        dims += 1
-
-    return dims
-
 def get_basis_matrix(lpi):
     'get the basis matrix from the lpi'
 
-    dims = get_dims(lpi)
-    cols = lpi.get_num_cols()
-
-    return lpi.get_dense_constraints(cols-dims, 0, dims, dims)
+    return lpi.get_dense_constraints(lpi.basis_mat_loc[0], lpi.basis_mat_loc[1], lpi.dims, lpi.dims)
 
 def add_snapshot_variables(lpi):
     '''
     add snapshot variables to the existing lpi
 
-    this adds n new variables (the pre-snapshot variables), which is assigned with new rows to
-    0 BM -I = 0
-
-    and sets the first rows to a fresh setup:
-    -I 0 I = 0
+    this adds n new variables (the post-snapshot variables), which is assigned with new rows to have:
+    I in the columns of the old cur-time variables (this is also the new basis matrix position)
+    -I in the new columns
+    0 everywhere else
     '''
 
     dims = get_dims(lpi)
     cols = lpi.get_num_cols()
     rows = lpi.get_num_rows()
 
-    lpi.add_cols(dims)
+    names = ["ss{}".format(d) for d in range(dims)]
+    lpi.add_cols(names)
     lpi.add_rows_equal_zero(dims)
     
     data = []
     inds = []
     indptrs = [0]
-
-    # set constraints for the last <dims> rows
-    for dim in range(dims):
-        row_csr = lpi.get_row(dim)
-
-        for i in range(len(row_csr.data)):
-
-            if row_csr.indices[i] < dims:
-                assert row_csr.data[i] == -1, "expected negative identity in row {}".format(dim)
-            else:
-                data.append(row_csr.data[i])
-                inds.append(row_csr.indices[i])
-
-        # add -I at the end
-        data.append(-1)
-        inds.append(cols + dim)
-
-        indptrs.append(len(data))
-
-    mat = csr_matrix((data, inds, indptrs), shape=(dims, cols + dims), dtype=float)
-    mat.check_format()
-    
-    lpi.set_constraints_csr(mat, offset=(rows, 0))
     
     # set constraints for the first <dims> rows
     data = []
@@ -357,20 +317,22 @@ def add_snapshot_variables(lpi):
 
     # set constraints for the last <dims> rows
     for dim in range(dims):
-        # -I at the start
-        data.append(-1)
-        inds.append(dim)
-
-        # I at the end (basis matrix)
+        # I at the previous cur_time vars (basis matrix)
         data.append(1)
+        inds.append(lpi.cur_vars_offset + dim)
+
+        # -I at the end
+        data.append(-1)
         inds.append(cols + dim)
 
         indptrs.append(len(data))
 
+    lpi.set_reach_vars(lpi.dims, (lpi.cur_vars_offset, rows))
+
     mat = csr_matrix((data, inds, indptrs), shape=(dims, cols + dims), dtype=float)
     mat.check_format()
 
-    lpi.set_constraints_csr(mat)
+    lpi.set_constraints_csr(mat, offset=(0, rows))
 
 def add_curtime_constraints(lpi, csr, rhs_vec):
     '''
