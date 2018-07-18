@@ -6,7 +6,7 @@ import math
 import numpy as np
 
 from hylaa.hybrid_automaton import HybridAutomaton
-from hylaa.settings import HylaaSettings
+from hylaa.settings import HylaaSettings, PlotSettings
 from hylaa.core import Core
 from hylaa.stateset import StateSet
 from hylaa import lputil
@@ -58,7 +58,6 @@ def test_ha_line_arch18():
 
     # settings
     settings = HylaaSettings(math.pi/4, 2*math.pi)
-    settings.stdout = HylaaSettings.STDOUT_VERBOSE
     settings.plot.store_plot_result = True
     
     core = Core(ha, settings)
@@ -82,3 +81,42 @@ def test_ha_line_arch18():
             x, _ = vert
 
             assert x <= 4.9            
+
+def test_plot_over_time():
+    'test doing a plot over time'
+
+    ha = HybridAutomaton()
+
+    mode = ha.new_mode('mode')
+    mode.set_dynamics([[0, 1], [-1, 0]])
+
+    # initial set
+    init_lpi = lputil.from_box([(-5, -4), (0, 1)], mode)
+    init_list = [StateSet(init_lpi, mode)]
+
+    # settings
+    settings = HylaaSettings(math.pi/4, math.pi)
+    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.plot.store_plot_result = True
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
+    settings.plot.ydim_dir = None # y dimension will be time
+
+    result = Core(ha, settings).run(init_list)
+
+    assert result.safe
+
+    # check the reachable state
+    # we would expect at the end that x = [4, 5], t = pi
+    polys = result.mode_to_polys[mode.name]
+
+    for vert in polys[0]:
+        x, y = vert
+
+        assert abs(y) < 1e-6, "initial poly time is wrong"
+        assert abs(-5 - x) < 1e-6 or abs(-4 - x) < 1e-6
+
+    for vert in polys[-1]:
+        x, y = vert
+
+        assert abs(math.pi - y) < 1e-6, "final poly time is wrong"
+        assert abs(5 - x) < 1e-6 or abs(4 - x) < 1e-6

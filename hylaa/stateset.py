@@ -35,10 +35,10 @@ class StateSet(Freezable):
     def step(self):
         'update the star based on values from a new simulation time instant'
 
-        basis_matrix, _ = self.mode.time_elapse.get_basis_matrix(self.cur_step_in_mode)
-
         self.cur_step_in_mode += 1
         self.cur_step_since_start += 1
+
+        basis_matrix, _ = self.mode.time_elapse.get_basis_matrix(self.cur_step_in_mode)
 
         lputil.set_basis_matrix(self.lpi, basis_matrix)
 
@@ -48,13 +48,18 @@ class StateSet(Freezable):
 
         self._verts = None # cached vertices no longer valid
 
-    def verts(self):
+    def verts(self, plotman):
         'get the vertices for plotting this state set, wraps around so rv[0] == rv[-1]'
 
         Timers.tic('verts')
 
         if self._verts is None:
-            self._verts = lpplot.get_verts(self.lpi, xdim=0, ydim=1, plot_vecs=None)
+            xdim = plotman.settings.xdim_dir
+            ydim = plotman.settings.ydim_dir
+            cur_time = self.cur_step_since_start * plotman.core.settings.step_size
+
+            self._verts = lpplot.get_verts(self.lpi, xdim=xdim, ydim=ydim, plot_vecs=plotman.plot_vecs, \
+                                           cur_time=cur_time)
             
         Timers.toc('verts')
 

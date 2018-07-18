@@ -361,13 +361,10 @@ class PlotManager(Freezable):
         if self.settings.plot_mode != PlotSettings.PLOT_NONE or self.settings.store_plot_result:
 
             Timers.tic('verts()')
-            verts = state.verts()
+            verts = state.verts(self)
             Timers.toc('verts()')
 
             if self.settings.store_plot_result:
-                if self.core.result.mode_to_polys is None:
-                    self.core.result.mode_to_polys = {}
-                
                 if state.mode.name in self.core.result.mode_to_polys:
                     self.core.result.mode_to_polys[state.mode.name].append(verts)
                 else:

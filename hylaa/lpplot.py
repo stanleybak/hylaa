@@ -10,7 +10,7 @@ make_plot_vecs is useful for controlling the accuracy (and decreasing overhead c
 import math
 import numpy as np
 
-def get_verts(lpi, xdim=0, ydim=1, plot_vecs=None):
+def get_verts(lpi, xdim=0, ydim=1, plot_vecs=None, cur_time=0.0):
     '''get the vertices defining (an underapproximation) of the outside of the given linear constraints
     These will be usable for plotting, so that rv[0] == rv[-1]. A single point may be returned if the constraints
     are (close to) a single point.
@@ -30,6 +30,14 @@ def get_verts(lpi, xdim=0, ydim=1, plot_vecs=None):
 
     # wrap polygon back to first point
     verts.append(verts[0])
+
+    if xdim is None:
+        for vert in verts:
+            vert[0] = cur_time
+
+    if ydim is None:
+        for vert in verts:
+            vert[1] = cur_time
 
     return verts
 

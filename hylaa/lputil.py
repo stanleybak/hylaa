@@ -28,6 +28,7 @@ def from_box(box_list, mode):
     rhs = []
 
     for lb, ub in box_list:
+        assert lb <= ub, "lower bound ({}) > upper bound ({})".format(lb, ub)
         rhs.append(-lb)
         rhs.append(ub)
 

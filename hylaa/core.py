@@ -79,13 +79,18 @@ class Core(Freezable):
                     
                     break # no need to keep checking transitions
 
+    def print_current_step_time(self):
+        'print the current step and time'
+
+        step_num = self.cur_state.cur_step_since_start
+        total_time = self.settings.step_size * step_num
+        print("Step: {} / {} ({})".format(step_num, self.settings.num_steps, total_time))
+
     def do_step_continuous_post(self):
         '''do a step where it's part of a continuous post'''
 
         if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
-            step_num = self.cur_state.cur_step_since_start
-            total_time = self.settings.step_size * step_num
-            print("Step: {} / {} ({})".format(step_num, self.settings.num_steps, total_time))
+            self.print_current_step_time()
 
         # first check guards
         self.check_guards()
@@ -122,6 +127,12 @@ class Core(Freezable):
 
             self.cur_state = None
 
+        if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
+            if self.cur_state is None:
+                print("Popped state was refined away.")
+            else:
+                print("Doing continuous post in mode '{}'".format(self.cur_state.mode.name))
+
         # setup the lpi for each outgoing transition
         if self.cur_state is not None:
             self.max_steps_remaining = self.settings.num_steps - self.cur_state.cur_step_since_start
@@ -131,17 +142,15 @@ class Core(Freezable):
 
             if not self.settings.process_urgent_guards:
                 # force one continuous post step in each mode
+                if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
+                    self.print_current_step_time()
+                    
+                self.plotman.plot_current_state(self.cur_state)
                 self.cur_state.step()
 
         # pause after discrete post when using PLOT_INTERACTIVE
         if self.plotman.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
             self.plotman.interactive.paused = True
-
-        if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
-            if self.cur_state is None:
-                print("Popped state was refined away.")
-            else:
-                print("Doing continuous post in mode '{}'".format(self.cur_state.mode.name))
             
     def do_step(self):
         'do a single step of the computation'
@@ -258,7 +267,7 @@ class CounterExampleSegment(Freezable):
         return str(self)
 
 class HylaaResult(Freezable):
-    'Result, assigned to engine.result after computation'
+    'result object returned by core.run()'
 
     def __init__(self):
         self.top_level_timer = None # TimerData for total time
@@ -267,6 +276,6 @@ class HylaaResult(Freezable):
         self.counterexample = [] # if unsafe, a list of CounterExampleSegment objects
 
         # assigned if setting.plot.store_plot_result is True, a map name -> list of lists (the verts at each step)
-        self.mode_to_polys = None 
+        self.mode_to_polys = {}
 
         self.freeze_attrs()
