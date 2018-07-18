@@ -10,12 +10,9 @@ from collections import OrderedDict
 
 import numpy as np
 
-from matplotlib import rcParams
+from matplotlib import collections, animation, colors, rcParams
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-from matplotlib import collections
 from matplotlib.path import Path
-from matplotlib import colors
 from matplotlib.widgets import Button
 from matplotlib.lines import Line2D
 
@@ -360,20 +357,32 @@ class PlotManager(Freezable):
         '''
         plot the current SymbolicState according to the plot settings
         '''
+        
+        if self.settings.plot_mode != PlotSettings.PLOT_NONE or self.settings.store_plot_result:
 
-        if self.settings.plot_mode != PlotSettings.PLOT_NONE:
-            Timers.tic("plot_current_state()")
-
+            Timers.tic('verts()')
             verts = state.verts()
+            Timers.toc('verts()')
 
-            self.shapes.set_cur_state(verts)
+            if self.settings.store_plot_result:
+                if self.core.result.mode_to_polys is None:
+                    self.core.result.mode_to_polys = {}
+                
+                if state.mode.name in self.core.result.mode_to_polys:
+                    self.core.result.mode_to_polys[state.mode.name].append(verts)
+                else:
+                    self.core.result.mode_to_polys[state.mode.name] = [verts]
 
-            if self.settings.label.axes_limits is None:
-                self.update_axis_limits(verts)
+            if self.settings.plot_mode != PlotSettings.PLOT_NONE:
+                Timers.tic("plot_current_state")
+                self.shapes.set_cur_state(verts)
 
-            self.shapes.add_reachable_poly(verts, state.mode.name)
+                if self.settings.label.axes_limits is None:
+                    self.update_axis_limits(verts)
 
-            Timers.toc("plot_current_state()")
+                self.shapes.add_reachable_poly(verts, state.mode.name)
+
+                Timers.toc("plot_current_state")
 
     def compute_and_animate(self, step_func, is_finished_func):
         'do the computation, plotting during the process'
@@ -390,7 +399,7 @@ class PlotManager(Freezable):
 
                 start_time = time.time()
                 while not is_finished_func():
-                    self.shapes.reset_cur_state()
+                    self.shapes.set_cur_state(None)
                     step_func()
 
                     if self.core.cur_state is not None:
@@ -463,9 +472,6 @@ class PlotManager(Freezable):
             bstep.on_clicked(step_pressed)
 
         # process a certain number of frames if the settings desire it
-        for _ in xrange(self.settings.skip_frames):
-            anim_func(True)
-
         if self.settings.plot_mode == PlotSettings.PLOT_IMAGE:
             self.run_to_completion(step_func, is_finished_func)
             self.save_image()
@@ -483,7 +489,7 @@ class PlotManager(Freezable):
 
         while not is_finished_func():
             if compute_plot and self.shapes is not None:
-                self.shapes.reset_cur_state()
+                self.shapes.set_cur_state(None)
 
             step_func()
 

@@ -90,11 +90,12 @@ class Core(Freezable):
         # first check guards
         self.check_guards()
 
-        # next advance time by one step
-        if self.cur_state.cur_step_since_start >= self.settings.num_steps:
-            self.cur_state = None
-        else:
-            self.cur_state.step()
+        if not self.is_finished():
+            # next advance time by one step
+            if self.cur_state.cur_step_since_start >= self.settings.num_steps:
+                self.cur_state = None
+            else:
+                self.cur_state.step()
 
     def do_step_pop(self):
         'do a step where we pop from the waiting list'
@@ -264,5 +265,8 @@ class HylaaResult(Freezable):
         self.safe = True # was the verification result safe?
 
         self.counterexample = [] # if unsafe, a list of CounterExampleSegment objects
+
+        # assigned if setting.plot.store_plot_result is True, a map name -> list of lists (the verts at each step)
+        self.mode_to_polys = None 
 
         self.freeze_attrs()

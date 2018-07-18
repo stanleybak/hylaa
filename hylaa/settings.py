@@ -44,17 +44,20 @@ class PlotSettings(Freezable):
     'plot settings container'
 
     PLOT_NONE = 0 # don't plot (safety checking only; for performance measurement)
-    PLOT_FULL = 1 # plot the computation video live
-    PLOT_INTERACTIVE = 2 # step-by-step live plotting with buttons
+    PLOT_LIVE = 1 # plot the computation live as we're computing
+    PLOT_INTERACTIVE = 2 # live plotting with pauses and buttons upon certain events
     PLOT_IMAGE = 3 # save the image plot to a file
+    PLOT_VIDEO = 4 # save a video to a file
 
     def __init__(self):
         self.plot_mode = PlotSettings.PLOT_NONE
+        
+        self.store_plot_result = False # store the reachable plot data inside the computation result object?
 
         self.filename = None # filename to print data to for certain plot modes
 
         self.xdim_dir = 0 # plotting x dimension number, direction (np.array), or None (uses time)
-        self.ydim_dir = 1 # plotting x dimension number, direction (np.array), or None (uses time)
+        self.ydim_dir = 1 # plotting y dimension number, direction (np.array), or None (uses time)
 
         self.plot_size = (10, 10) # inches
         self.label = LabelSettings() # plot title, axis labels, font sizes, ect.

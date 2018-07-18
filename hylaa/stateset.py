@@ -54,9 +54,7 @@ class StateSet(Freezable):
         Timers.tic('verts')
 
         if self._verts is None:
-            dims = self.mode.a_matrix.shape[0]
-            
-            self._verts = lpplot.get_verts(self.lpi, num_dims=dims, xdim=0, ydim=1, plot_vecs=None, cur_time=0)
+            self._verts = lpplot.get_verts(self.lpi, xdim=0, ydim=1, plot_vecs=None)
             
         Timers.toc('verts')
 

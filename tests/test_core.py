@@ -59,6 +59,7 @@ def test_ha_line_arch18():
     # settings
     settings = HylaaSettings(math.pi/4, 2*math.pi)
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.plot.store_plot_result = True
     
     core = Core(ha, settings)
     result = core.run(init_list)
@@ -72,3 +73,12 @@ def test_ha_line_arch18():
     assert ce.mode == mode
     assert np.allclose(ce.start, np.array([-5, 0.65685, 0, 1], dtype=float))
     assert np.allclose(ce.end, np.array([4, 3.07106, 2.35619, 1], dtype=float))
+
+    # check the reachable state (should always have x <= 3.5)
+    polys = result.mode_to_polys[mode.name]
+
+    for poly in polys:
+        for vert in poly:
+            x, _ = vert
+
+            assert x <= 4.9            
