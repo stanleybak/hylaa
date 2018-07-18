@@ -71,9 +71,11 @@ class Core(Freezable):
                         print("Unsafe at Step: {} / {} ({})".format(step_num, self.settings.num_steps, \
                                                                 self.settings.step_size * step_num))
 
+                                                                
                     # TODO: print out counter-example
 
                     self.result.safe = False
+                    self.assign_counterexample(lp_solution)
                     
                     break # no need to keep checking transitions
 
@@ -158,6 +160,43 @@ class Core(Freezable):
             else:
                 print("Result: System is safe. Error modes are NOT reachable.\n")
 
+    def assign_counterexample(self, lp_solution):
+        '''create and assign the result counter-example from the lp
+        this assignes to self.result.counterexample
+        '''
+
+        names = self.cur_state.lpi.get_names()
+        
+        self.result.counterexample = []
+        seg = None
+
+        for name, value in zip(names, lp_solution):
+
+            # if first initial variable of mode then assign the segment.mode variable
+            if name.startswith('m') and name.endswith('_i0'):
+                if seg is not None: # starting a new segment, append the previous segment
+                    self.result.counterexample.append(seg)
+
+                seg = CounterExampleSegment()
+                
+                mode_id = int(name[1:-3])
+
+                for mode in self.cur_state.mode.ha.modes.values():
+                    if mode.mode_id == mode_id:
+                        seg.mode = mode
+                        break
+
+                assert seg.mode is not None, "mode id {} not found in automaton".format(mode_id)
+            
+            if name.startswith('m'): # mode variable
+                if '_i' in name:
+                    seg.start.append(value)
+                elif '_c' in name:
+                    seg.end.append(value)
+
+        # add the last segment
+        self.result.counterexample.append(seg)
+
     def run(self, init_state_list):
         '''
         Run the computation (main entry point)
@@ -170,12 +209,12 @@ class Core(Freezable):
         for state in init_state_list:
             assert isinstance(state, StateSet), "initial states should be a list of StateSet objects"
 
-        assert len(init_state_list) > 0, "expected list of initial states"
+        assert init_state_list, "expected list of initial states"
 
         self.result = HylaaResult()
 
         # initialize time elapse in each mode of the hybrid automaton
-        ha = init_state_list[0].mode.parent
+        ha = init_state_list[0].mode.ha
 
         for mode in ha.modes.values():
             mode.init_time_elapse(self.settings.step_size)
@@ -202,13 +241,20 @@ class CounterExampleSegment(Freezable):
     'a part of a counter-example trace'
 
     def __init__(self):
-        self.mode_name = None
-        self.start = None
-        self.end = None
+        self.mode = None
+        self.start = []
+        self.end = []
 
         # TODO: inputs[]
         
         self.freeze_attrs()
+
+    def __str__(self):
+        return "[CE_Segment: {} -> {} in '{}']".format( \
+            self.start, self.end, "<None>" if self.mode is None else self.mode.name)
+
+    def __repr__(self):
+        return str(self)
 
 class HylaaResult(Freezable):
     'Result, assigned to engine.result after computation'

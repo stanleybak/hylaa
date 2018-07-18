@@ -53,7 +53,7 @@ def test_ha_line_arch18():
     trans1.set_guard([[1., 0, 0, 0], [-1., 0, 0, 0]], [4.0, -4.0])
 
     # initial set
-    init_lpi = lputil.from_box([(-5, -5), (0, 1), (0, 0), (1, 1)])
+    init_lpi = lputil.from_box([(-5, -5), (0, 1), (0, 0), (1, 1)], mode)
     init_list = [StateSet(init_lpi, mode)]
 
     # settings
@@ -67,6 +67,8 @@ def test_ha_line_arch18():
 
     ce = result.counterexample[0]
 
-    assert ce.mode_name == 'mode'
-    assert np.allclose(ce.start, np.array([-5, -0.66, 0, 1], dtype=float))
-    assert np.allclose(ce.end, np.array([4, 3.07, 2.36, 1], dtype=float))
+    # [-5.0, 0.6568542494923828, 0.0, 1.0] -> [4.0, 3.0710678118654737, 2.356194490192345, 1.0]
+
+    assert ce.mode == mode
+    assert np.allclose(ce.start, np.array([-5, 0.65685, 0, 1], dtype=float))
+    assert np.allclose(ce.end, np.array([4, 3.07106, 2.35619, 1], dtype=float))

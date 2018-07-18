@@ -244,7 +244,7 @@ class Transition(Freezable):
     def make_lpi(self, from_state):
         'make the lpi instance for this transition, from the given state'
 
-        self.lpi = LpInstance(from_state.lpi) # copy the lpi
+        self.lpi = from_state.lpi.clone() 
 
         # add the guard condition
         lputil.add_curtime_constraints(self.lpi, self.guard_csr, self.guard_rhs)
