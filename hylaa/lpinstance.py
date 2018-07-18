@@ -43,9 +43,15 @@ class LpInstance(Freezable):
     def set_reach_vars(self, dims, basis_mat_pos):
         'set reachability variables'
 
+        num_rows = self.get_num_rows()
+        num_cols = self.get_num_cols()
+
+        assert basis_mat_pos[0] + dims <= num_rows
+        assert basis_mat_pos[1] + 2 * dims <= num_cols  # need >= 2*dims for cur_time vars somewhere to the right of BM
+
         self.dims = dims
         self.basis_mat_pos = basis_mat_pos
-        self.cur_vars_offset = basis_mat_pos[1] + dims # immediately to the right of the basis matrix
+        self.cur_vars_offset = num_cols - dims # right-most variables
 
     def __del__(self):
         if hasattr(self, 'lp') and self.lp is not None:
@@ -62,8 +68,6 @@ class LpInstance(Freezable):
 
         rv = "Lp has {} columns (variables) and {} rows (constraints)\n".format(cols, rows)
 
-        stat_labels = ["?(0)?", "BS", "NL", "NU", "NF", "NS", "?(6)?"]
-
         inds = glpk.intArray(cols + 1)
         vals = glpk.doubleArray(cols + 1)
 
@@ -71,7 +75,7 @@ class LpInstance(Freezable):
         rv += "   "
 
         for col in range(1, cols + 1):
-            name = glpk.glp_get_row_name(lp, col)
+            name = glpk.glp_get_col_name(lp, col)
             name = "-" if name is None else name
             
             if len(name) < 6:
@@ -83,7 +87,23 @@ class LpInstance(Freezable):
 
         rv += "\n"
 
+        # optimization direction
+        rv += "min"
+
+        for col in range(1, cols + 1):
+            num = str(glpk.glp_get_obj_coef(lp, col))
+            
+            if len(num) < 6:
+                num = (" " * (6 - len(num))) + num
+            else:
+                num = num[0:6]
+                    
+            rv += num + " "
+
+        rv += "\nsubject to:\n"
+
         #  the column statuses
+        stat_labels = ["?(0)?", "BS", "NL", "NU", "NF", "NS", "?(6)?"]
         rv += "   "
 
         for col in range(1, cols + 1):
@@ -151,6 +171,7 @@ class LpInstance(Freezable):
 
         for i, name in enumerate(names):
             glpk.glp_set_col_bnds(self.lp, num_cols + i + 1, glpk.GLP_FR, 0, 0)  # free variable (bounds -inf to inf)
+
             glpk.glp_set_col_name(self.lp, num_cols + i + 1, name)
 
     def add_rows_less_equal(self, rhs_vec):
@@ -282,10 +303,7 @@ class LpInstance(Freezable):
         assert len(direction_vec.shape) == 1
         assert len(direction_vec) <= self.dims
 
-        num_cols = glpk.glp_get_num_cols(self.lp)
-
-        if len(direction_vec) > num_cols:
-            raise RuntimeError("dirLen({}) > numCols({})".format(len(direction_vec), num_cols))
+        assert len(direction_vec) <= self.dims, "dirLen({}) > dims({})".format(len(direction_vec), self.dims)
 
         # set the previous objective columns to zero
         for i in self.obj_cols:
@@ -333,8 +351,7 @@ class LpInstance(Freezable):
         if simplex_res != 0:
             # sometimes the previous solution is singular wrt. current constraints.
             # for example, if the previous solution is on an orthogonal subspace to the current solution after
-            # changing the basis matrix
-            # need to reset
+            # changing the basis matrix. Try resetting the solution and resolving.
             self.reset_lp()
 
             simplex_res = glpk.glp_simplex(self.lp, params)
@@ -536,11 +553,11 @@ class LpInstance(Freezable):
             row_offset = row - (y + 1)
             got_len = glpk.glp_get_mat_row(self.lp, row, inds_row, vals_row)
 
-            for i in range(got_len):
+            for i in range(1, got_len+1):
                 if inds_row[i] > x and inds_row[i] <= x + w:
                     col_offset = inds_row[i] - (x + 1)
                     rv[row_offset, col_offset] = vals_row[i]
-
+                    
         return rv
 
     def get_names(self):

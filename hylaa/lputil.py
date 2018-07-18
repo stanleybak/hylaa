@@ -134,7 +134,6 @@ def add_init_constraint(lpi, vec, rhs, basis_matrix=None):
 
     lpi.add_rows_less_equal([rhs])
 
-    cols = lpi.get_num_cols()
     rows = lpi.get_num_rows()
 
     indptr = [0, dims]
@@ -145,11 +144,11 @@ def add_init_constraint(lpi, vec, rhs, basis_matrix=None):
     csr_row_mat = csr_matrix((data, inds, indptr), dtype=float, shape=(1, dims))
     csr_row_mat.check_format()
 
-    lpi.set_constraints_csr(csr_row_mat, offset=(rows-1, cols-dims))
+    lpi.set_constraints_csr(csr_row_mat, offset=(rows-1, lpi.basis_mat_pos[1]))
 
     return rows - 1
 
-def try_replace_init_constraint(lpi, old_row_index, direction, rhs):
+def try_replace_init_constraint(lpi, old_row_index, direction, rhs, basis_mat=None):
     '''replace the constraint in row_index by a new constraint, if the new constraint is stronger, otherwise
     create new constriant
 
@@ -158,11 +157,12 @@ def try_replace_init_constraint(lpi, old_row_index, direction, rhs):
     This returns row_index, if the constriant is replaced, or the new row index of the new constraint
     '''
 
+    if basis_mat is None:
+        basis_mat = get_basis_matrix(lpi)
+
     # how can we check if the passed in constraint is stronger than the existing one?
     # if negating the existing constraint, and adding the new one is UNSAT
-
     rv = None
-    basis_mat = get_basis_matrix(lpi)
 
     lpi.flip_constraint(old_row_index)
 
@@ -182,7 +182,6 @@ def try_replace_init_constraint(lpi, old_row_index, direction, rhs):
         lpi.del_constraint(new_row_index)
 
         # replace the old constraint row with the new constraint condition
-        cols = lpi.get_num_cols()
         dims = basis_mat.shape[0]
 
         indptr = [0, dims]
@@ -194,7 +193,7 @@ def try_replace_init_constraint(lpi, old_row_index, direction, rhs):
         csr_row_mat = csr_matrix((data, inds, indptr), dtype=float, shape=(1, dims))
         csr_row_mat.check_format()
 
-        lpi.set_constraints_csr(csr_row_mat, offset=(old_row_index, cols-dims))
+        lpi.set_constraints_csr(csr_row_mat, offset=(old_row_index, lpi.basis_mat_pos[1]))
         lpi.set_constraint_rhs(old_row_index, rhs)
 
         rv = old_row_index
@@ -215,9 +214,8 @@ def aggregate(lpi_list, direction_matrix):
     middle_lpi = lpi_list[middle_index]
     
     # for each direction, minimize and maximize it within the list
-    dims = num_directions = direction_matrix.shape[0]
-    columns = np.array([i for i in range(num_directions)], dtype=int) # get the first len(vec) columns
-    
+    num_directions = direction_matrix.shape[0]
+     
     mins = [np.inf] * num_directions
     mid_mins = [np.inf] * num_directions
     maxes = [-np.inf] * num_directions
@@ -228,6 +226,10 @@ def aggregate(lpi_list, direction_matrix):
         assert abs(np.linalg.norm(direction) - 1) < 1e-9, "expected normalized directions, got {}".format(direction)
 
         for lpi in lpi_list:
+            assert direction_matrix.shape[0] == lpi.dims
+   
+            columns = np.array([lpi.cur_vars_offset + i for i in range(lpi.dims)], dtype=int)
+            
             result = lpi.minimize(direction_vec=direction, columns=columns)
             min_val = np.dot(result, direction)
             mins[i] = min(mins[i], min_val)
@@ -242,6 +244,7 @@ def aggregate(lpi_list, direction_matrix):
 
     rows = middle_lpi.get_num_rows()
     cols = middle_lpi.get_num_cols()
+    dims = middle_lpi.dims
 
     rv = middle_lpi.clone()
 
@@ -287,7 +290,7 @@ def aggregate(lpi_list, direction_matrix):
 def get_basis_matrix(lpi):
     'get the basis matrix from the lpi'
 
-    return lpi.get_dense_constraints(lpi.basis_mat_loc[0], lpi.basis_mat_loc[1], lpi.dims, lpi.dims)
+    return lpi.get_dense_constraints(lpi.basis_mat_pos[0], lpi.basis_mat_pos[1], lpi.dims, lpi.dims)
 
 def add_snapshot_variables(lpi):
     '''
@@ -299,7 +302,7 @@ def add_snapshot_variables(lpi):
     0 everywhere else
     '''
 
-    dims = get_dims(lpi)
+    dims = lpi.dims
     cols = lpi.get_num_cols()
     rows = lpi.get_num_rows()
 
@@ -328,12 +331,11 @@ def add_snapshot_variables(lpi):
 
         indptrs.append(len(data))
 
-    lpi.set_reach_vars(lpi.dims, (lpi.cur_vars_offset, rows))
-
     mat = csr_matrix((data, inds, indptrs), shape=(dims, cols + dims), dtype=float)
     mat.check_format()
 
-    lpi.set_constraints_csr(mat, offset=(0, rows))
+    lpi.set_constraints_csr(mat, offset=(rows, 0))
+    lpi.set_reach_vars(lpi.dims, (rows-1, lpi.cur_vars_offset))
 
 def add_curtime_constraints(lpi, csr, rhs_vec):
     '''
@@ -348,4 +350,4 @@ def add_curtime_constraints(lpi, csr, rhs_vec):
     prerows = lpi.get_num_rows()
     lpi.add_rows_less_equal(rhs_vec)
 
-    lpi.set_constraints_csr(csr, offset=(prerows, 0))
+    lpi.set_constraints_csr(csr, offset=(prerows, lpi.cur_vars_offset))

@@ -61,6 +61,8 @@ def test_set_basis_matrix():
     basis = np.array([[0, 1], [-1, 0]], dtype=float)
     lputil.set_basis_matrix(lpi, basis)
 
+    assert np.allclose(lputil.get_basis_matrix(lpi), basis)
+
     mat, vec = lpi.get_full_constraints(), lpi.get_rhs()
 
     expected_mat = np.array([\
@@ -120,7 +122,7 @@ def test_add_init_constraint():
     lputil.set_basis_matrix(lpi, basis_mat)
 
     # minimize y should give 4.0
-    miny = lpi.minimize([0, 1, 0, 0])[1]
+    miny = lpi.minimize([0, 1], columns=[lpi.cur_vars_offset + 1])[0]
     assert abs(miny - 4.0) < 1e-6
 
     # add constraint: y >= 4.5
@@ -131,7 +133,7 @@ def test_add_init_constraint():
     assert new_row == 6, "new constraint should have been added in row index 6"
 
     # minimize y should give 4.5
-    miny = lpi.minimize([0, 1, 0, 0])[1]
+    miny = lpi.minimize([0, 1], columns=[lpi.cur_vars_offset + 1])[0]
     assert abs(miny - 4.5) < 1e-6
 
     # check verts()
@@ -155,7 +157,7 @@ def test_try_replace_init_constraint():
     lputil.set_basis_matrix(lpi, basis_mat)
 
     # minimize y should give 4.0
-    miny = lpi.minimize([0, 1, 0, 0])[1]
+    miny = lpi.minimize([0, 1], columns=[lpi.cur_vars_offset + 1])[0]
     assert abs(miny - 4.0) < 1e-6
 
     # add constraint: y >= 4.5
@@ -164,7 +166,7 @@ def test_try_replace_init_constraint():
     row_index = lputil.add_init_constraint(lpi, direction, -4.5)
 
     # minimize y should give 4.5
-    miny = lpi.minimize([0, 1, 0, 0])[1]
+    miny = lpi.minimize([0, 1], columns=[lpi.cur_vars_offset + 1])[0]
     assert abs(miny - 4.5) < 1e-6
 
     assert lpi.get_num_rows() == 7
@@ -193,7 +195,7 @@ def test_try_replace_init_constraint():
     assert [0.9, 4.6] in verts
     assert verts[0] == verts[-1]
 
-def test_box_aggregate():
+def test_box_aggregate2():
     'tests box aggregation'
 
     lpi1 = lputil.from_box([[0, 1], [0, 1]], HybridAutomaton().new_mode('mode_name'))
@@ -268,8 +270,8 @@ def test_box_aggregate3():
     'tests box aggregation with 3 boxes'
 
     lpi1 = lputil.from_box([[-2, -1], [-0.5, 0.5]], HybridAutomaton().new_mode('mode_name'))
-    lpi2 = LpInstance(lpi1)
-    lpi3 = LpInstance(lpi1)
+    lpi2 = lpi1.clone()
+    lpi3 = lpi1.clone()
 
     basis2 = np.array([[0, 1], [-1, 0]], dtype=float)
     lputil.set_basis_matrix(lpi2, basis2)
@@ -277,22 +279,56 @@ def test_box_aggregate3():
     basis3 = np.array([[-1, 0], [0, -1]], dtype=float)
     lputil.set_basis_matrix(lpi3, basis3)
 
+    plot_vecs = lpplot.make_plot_vecs(256, offset=0.1) # use an offset to prevent LP dir from being aligned with axis
+
+    # bounds for lpi1 should be [[-2, -1], [-0.5, 0.5]]
+    verts = lpplot.get_verts(lpi1, plot_vecs=plot_vecs)
+
+    assert len(verts) == 5
+    assert verts[0] == verts[-1]
+
+    assert [-2, -0.5] in verts
+    assert [-2, 0.5] in verts
+    assert [-1, 0.5] in verts
+    assert [-1, -0.5] in verts
+
+    # bounds for lpi2 should be [[-0.5, 0.5], [1, 2]]
+    verts = lpplot.get_verts(lpi2, plot_vecs=plot_vecs)
+
+    assert len(verts) == 5
+    assert verts[0] == verts[-1]
+
+    assert [-0.5, 2] in verts
+    assert [-0.5, 1] in verts
+    assert [0.5, 1] in verts
+    assert [0.5, 2] in verts
+
+    # bounds for lpi3 should be [[2, 1], [-0.5, 0.5]]
+    verts = lpplot.get_verts(lpi3, plot_vecs=plot_vecs)
+
+    assert len(verts) == 5
+    assert verts[0] == verts[-1]
+
+    assert [2, -0.5] in verts
+    assert [2, 0.5] in verts
+    assert [1, 0.5] in verts
+    assert [1, -0.5] in verts
+    
     agg_dirs = np.array([[1, 0], [0, 1]], dtype=float)
 
-    # box aggregation
+    # box aggregation, bounds should be [[-2, 2], [-0.5, 2]]
     lpi = lputil.aggregate([lpi1, lpi2, lpi3], agg_dirs)
-
-    plot_vecs = lpplot.make_plot_vecs(256, offset=0.1) # use an offset to prevent LP dir from being aligned with axis
+    assert lpi.cur_vars_offset == 6, "cur_vars_offset{} should be 6 (snapshot var columns)".format(lpi.cur_vars_offset)
+ 
     verts = lpplot.get_verts(lpi, plot_vecs=plot_vecs)
 
     assert len(verts) == 5
+    assert verts[0] == verts[-1]
 
     assert [-2., -0.5] in verts
     assert [-2, 2.] in verts
     assert [2., 2.] in verts
     assert [2., -0.5] in verts
-    
-    assert verts[0] == verts[-1]
 
 def test_add_curtime_constraints():
     'tests add_curtime_constraints'

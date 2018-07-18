@@ -104,10 +104,10 @@ def _minimize(lpi, xdim, ydim, direction):
 
     assert not (xdim is None and ydim is None)
 
-    if xdim != None:
+    if xdim is not None:
         dims = xdim + 1 if isinstance(xdim, int) else len(xdim)
 
-    if ydim != None:
+    if ydim is not None:
         dims = max(dims, ydim + 1) if isinstance(ydim, int) else max(dims, len(ydim))
         
     if isinstance(xdim, int):
@@ -127,7 +127,7 @@ def _minimize(lpi, xdim, ydim, direction):
 
     lpi.set_minimize_direction(optimize_direction)
 
-    res = lpi.minimize(columns=[n for n in range(dims)])
+    res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(dims)])
 
     xcoord = 0 if xdim is None else np.dot(res, xdim)
     ycoord = 0 if ydim is None else np.dot(res, ydim)
