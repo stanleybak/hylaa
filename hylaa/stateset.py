@@ -86,7 +86,8 @@ class StateSet(Freezable):
         row = lputil.add_init_constraint(self.lpi, vec, lc.rhs, basis_matrix=self.basis_matrix)
 
         for t in self.mode.transitions:
-            lputil.add_init_constraint(t.lpi, vec, lc.rhs, basis_matrix=self.basis_matrix)
+            if t.lpi is not None:
+                lputil.add_init_constraint(t.lpi, vec, lc.rhs, basis_matrix=self.basis_matrix)
 
         return row
 

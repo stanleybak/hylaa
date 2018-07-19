@@ -124,8 +124,14 @@ class DrawnShapes(Freezable):
 
         rv = []
 
-        for polys in self.parent_to_polys.values():
-            rv.append(polys)
+        # make sure cur_state is last
+        
+        for name, polys in self.parent_to_polys.items():
+            if name != "cur_state":
+                rv.append(polys)
+
+        if "cur_state" in self.parent_to_polys:
+            rv.append(self.parent_to_polys.get('cur_state'))
 
         for markers in self.parent_to_markers.values():
             rv.append(markers)
@@ -139,7 +145,7 @@ class DrawnShapes(Freezable):
         
         if polys is None:
             lw = self.plotman.settings.reachable_poly_width
-            polys = collections.PolyCollection([], lw=lw, animated=True, edgecolor='k', facecolor=None)
+            polys = collections.PolyCollection([], lw=lw, animated=True, edgecolor='k', facecolor=(0.,0.,0.,0.))
             self.axes.add_collection(polys)
 
             self.parent_to_polys['cur_state'] = polys
@@ -218,9 +224,6 @@ class PlotManager(Freezable):
 
         self.drew_first_frame = False # one-time flag
         self._anim = None # animation object
-
-        if self.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
-            self.settings.min_frame_time = 0.0 # for interactive or video plots, draw every frame
 
         self.plot_vecs = []
         self.init_plot_vecs()
@@ -336,7 +339,7 @@ class PlotManager(Freezable):
                 self.axes.set_ylim(ymin, ymax)
 
             if self.settings.grid:
-                self.axes.grid(True)
+                self.axes.grid(True, linestyle='dashed')
 
                 if self.settings.grid_xtics is not None:
                     self.axes.set_xticks(self.settings.grid_xtics)
@@ -394,17 +397,11 @@ class PlotManager(Freezable):
             else:
                 Timers.tic("frame")
 
-                start_time = time.time()
-                while not is_finished_func():
-                    self.shapes.set_cur_state(None)
-                    step_func()
+                self.shapes.set_cur_state(None)
+                step_func()
 
-                    if self.core.cur_state is not None:
-                        self.plot_current_state(self.core.cur_state)
-
-                    # do several computation steps per frame if they're fast (optimization)
-                    if force_single_frame or time.time() - start_time > self.settings.min_frame_time:
-                        break
+                if self.core.cur_state is not None:
+                    self.plot_current_state(self.core.cur_state)
 
                 # if we just wanted a single step
                 if self.interactive.step:
@@ -418,12 +415,12 @@ class PlotManager(Freezable):
                     frame_timer = Timers.top_level_timer.get_children_recursive('frame')[0]
                     print("Paused After Frame #{}".format(frame_timer.num_calls))
 
-            return self.shapes.get_artists() + [self.axes.xaxis, self.axes.yaxis]
+            return [self.axes.xaxis, self.axes.yaxis] + self.shapes.get_artists()
 
         def init_func():
             'animation init function'
 
-            return self.shapes.get_artists() + [self.axes.xaxis, self.axes.yaxis]
+            return [self.axes.xaxis, self.axes.yaxis] + self.shapes.get_artists()
 
         def anim_iterator():
             'generator for the computation iterator'
@@ -447,6 +444,7 @@ class PlotManager(Freezable):
 
         def step_pressed(_):
             'event function for step button press'
+            
             self.interactive.paused = False
             self.interactive.step = True
 
@@ -473,11 +471,12 @@ class PlotManager(Freezable):
             self.run_to_completion(step_func, is_finished_func)
             self.save_image()
         else:
+            print("doing funcanimation")
+            
             self._anim = animation.FuncAnimation(self.fig, anim_func, iterator, init_func=init_func,
-                                                 interval=self.settings.anim_delay_interval, blit=True, repeat=False)
+                                                 interval=0, blit=True, repeat=False)
 
-            if not self.settings.skip_show_gui:
-                plt.show()
+            plt.show()
 
     def run_to_completion(self, step_func, is_finished_func, compute_plot=True):
         'run to completion, creating the plot at each step'
@@ -507,3 +506,29 @@ class PlotManager(Freezable):
             filename = "plot.png"
 
         plt.savefig(filename, bbox_inches='tight')
+
+# monkey patch function for blitting tick-labels
+# see http://stackoverflow.com/questions/17558096/animated-title-in-matplotlib
+def _blit_draw(_self, artists, bg_cache):
+    'money-patch version of animation._blit_draw'
+    # Handles blitted drawing, which renders only the artists given instead
+    # of the entire figure.
+    updated_ax = []
+    for a in artists:
+        # If we haven't cached the background for this axes object, do
+        # so now. This might not always be reliable, but it's an attempt
+        # to automate the process.
+        if a.axes not in bg_cache:
+            # bg_cache[a.axes] = a.figure.canvas.copy_from_bbox(a.axes.bbox)
+            # change here
+            bg_cache[a.axes] = a.figure.canvas.copy_from_bbox(a.axes.figure.bbox)
+        a.axes.draw_artist(a)
+        updated_ax.append(a.axes)
+
+    # After rendering all the needed artists, blit each axes individually.
+    for ax in set(updated_ax):
+        # and here
+        # ax.figure.canvas.blit(ax.bbox)
+        ax.figure.canvas.blit(ax.figure.bbox)
+
+animation.Animation._blit_draw = _blit_draw # pylint: ignore=protected-access

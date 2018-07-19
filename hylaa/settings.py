@@ -59,7 +59,7 @@ class PlotSettings(Freezable):
         self.xdim_dir = 0 # plotting x dimension number, direction (np.array), or None (uses time)
         self.ydim_dir = 1 # plotting y dimension number, direction (np.array), or None (uses time)
 
-        self.plot_size = (10, 10) # inches
+        self.plot_size = (8, 8) # inches
         self.label = LabelSettings() # plot title, axis labels, font sizes, ect.
 
         self.num_angles = 512 # how many evenly-spaced angles to put into plot_vecs
@@ -67,7 +67,6 @@ class PlotSettings(Freezable):
         self.extra_draw_func = lambda ax: None # extra draw function that gets called each frame, param is axis object
         
         self.reachable_poly_width = 2 # width of reachable polygon outlines
-        self.min_frame_time = 0.025 # max 40 fps. This allows multiple frames to be drawn at once if they're fast.
         self.extend_plot_range_ratio = 0.1 # extend plot axis range 10% at a time
 
         self.grid = True

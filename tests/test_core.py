@@ -154,9 +154,14 @@ def test_init_outside_invariant():
     # x <= 2.5
     mode.set_invariant([[1, 0, 0]], [2.5])
 
-    # initial set
+    # initial set, x = [3, 4]
     init_lpi = lputil.from_box([(3, 4), (0, 1), (1, 1)], mode)
     init_list = [StateSet(init_lpi, mode)]
+
+    # transition to error if x >= 10
+    error = ha.new_mode('error')
+    trans = ha.new_transition(mode, error)
+    trans.set_guard([[-1., 0, 0],], [-10]) 
 
     # settings
     settings = HylaaSettings(1.0, 5.0)
@@ -174,20 +179,22 @@ def test_invariants():
     ha = HybridAutomaton()
 
     mode = ha.new_mode('mode')
-    mode.set_dynamics([[0, 0, 1], [0, 0, 1], [0, 0, 0]]) # x' = 1, y' = 1, a' = 0
+ 
+    # dynamics: x' = 1, y' = 1, a' = 0
+    mode.set_dynamics([[0, 0, 1], [0, 0, 1], [0, 0, 0]])
 
-    # x <= 2.5
+    # invariant: x <= 2.5
     mode.set_invariant([[1, 0, 0]], [2.5])
 
-    # initial set
+    # initial set has x0 = [0, 1]
     init_lpi = lputil.from_box([(0, 1), (0, 1), (1, 1)], mode)
     init_list = [StateSet(init_lpi, mode)]
 
-    # settings
+    # settings, step size = 1.0
     settings = HylaaSettings(1.0, 5.0)
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
     settings.plot.store_plot_result = True
-    settings.plot.plot_mode = PlotSettings.PLOT_IMAGE
+    settings.plot.plot_mode = PlotSettings.PLOT_INTERACTIVE
 
     result = Core(ha, settings).run(init_list)
 
@@ -201,3 +208,5 @@ def test_invariants():
     assert_verts_is_box(polys[1], [[1, 2], [1, 2]])
 
     assert_verts_is_box(polys[2], [[2, 2.5], [2, 3]])
+
+test_invariants()

@@ -86,21 +86,29 @@ class Core(Freezable):
         total_time = self.settings.step_size * step_num
         print("Step: {} / {} ({})".format(step_num, self.settings.num_steps, total_time))
 
-    def do_step_continuous_post(self):
+    def do_step_continuous_post(self, check_guards):
         '''do a step where it's part of a continuous post'''
 
         if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
             self.print_current_step_time()
 
-        # first check guards
-        self.check_guards()
+        if check_guards:
+            self.check_guards()
 
         if not self.is_finished():
             # next advance time by one step
             if self.cur_state.cur_step_since_start >= self.settings.num_steps:
                 self.cur_state = None
             else:
-                self.cur_state.step()
+                still_feasible = self.cur_state.intersect_invariant()
+
+                if still_feasible:
+                    self.cur_state.step()
+                else:
+                    if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
+                        print("State left the invariant after {} steps".format(self.cur_state.cur_step_in_mode))
+                        
+                    self.cur_state = None
 
     def do_step_pop(self):
         'do a step where we pop from the waiting list'
@@ -119,32 +127,25 @@ class Core(Freezable):
                 self.cur_state.mode.name, self.cur_state.cur_step_since_start * self.settings.step_size))
 
         # if a_matrix is None, it's an error mode
-        if self.cur_state is not None and self.cur_state.mode.a_csr is None:
+        if self.cur_state.mode.a_csr is None:
             if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
                 print("Mode '{}' was an error mode; skipping.".format(self.cur_state.mode.name))
 
             self.cur_state = None
-
-        if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
-            if self.cur_state is None:
-                print("Popped state was refined away.")
-            else:
-                print("Doing continuous post in mode '{}'".format(self.cur_state.mode.name))
-
-        # setup the lpi for each outgoing transition
-        if self.cur_state is not None:
+        else:
+            # setup the lpi for each outgoing transition
             self.max_steps_remaining = self.settings.num_steps - self.cur_state.cur_step_since_start
-                        
-            for transition in self.cur_state.mode.transitions:
-                transition.make_lpi(self.cur_state)
 
-            if not self.settings.process_urgent_guards:
-                # force one continuous post step in each mode
-                if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
-                    self.print_current_step_time()
+            still_feasible = self.cur_state.intersect_invariant()
+
+            if not still_feasible:
+                if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
+                    print("Continuous state was outside of the mode's invariant; skipping.")
                     
-                self.plotman.plot_current_state(self.cur_state)
-                self.cur_state.step()
+                self.cur_state = None
+            else:
+                for transition in self.cur_state.mode.transitions:
+                    transition.make_lpi(self.cur_state)
 
         # pause after discrete post when using PLOT_INTERACTIVE
         if self.plotman.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
@@ -153,20 +154,21 @@ class Core(Freezable):
     def do_step(self):
         'do a single step of the computation'
 
-        while not self.is_finished():
+        if not self.is_finished():
             if self.cur_state is None:
                 self.do_step_pop()
             else:
-                self.do_step_continuous_post()
+                check_guards = self.settings.process_urgent_guards or self.cur_step_in_mode > 0
+                self.do_step_continuous_post(check_guards)
 
             if self.cur_state is not None:
                 self.plotman.plot_current_state(self.cur_state)
 
-        if self.is_finished() and self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
-            if not self.result.safe:
-                print("Result: Error modes are reachable.\n")
-            else:
-                print("Result: System is safe. Error modes are NOT reachable.\n")
+            if self.is_finished() and self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
+                if not self.result.safe:
+                    print("Result: Error modes are reachable.\n")
+                else:
+                    print("Result: System is safe. Error modes are NOT reachable.\n")
 
     def assign_counterexample(self, lp_solution):
         '''create and assign the result counter-example from the lp
