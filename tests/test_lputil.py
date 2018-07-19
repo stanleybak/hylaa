@@ -10,8 +10,7 @@ import swiglpk as glpk
 from scipy.sparse import csr_matrix
 
 from hylaa import lputil, lpplot
-from hylaa.lpinstance import LpInstance
-from hylaa.hybrid_automaton import HybridAutomaton
+from hylaa.hybrid_automaton import HybridAutomaton, LinearConstraint
 
 def test_from_box():
     'tests from_box'
@@ -86,16 +85,17 @@ def test_check_intersection():
 
     # check if initially y >= 4.5 is possible (should be false)
     direction = np.array([0, -1], dtype=float)
+    lc = LinearConstraint(direction, -4.5)
 
-    assert not lputil.check_intersection(lpi, direction, -4.5)
+    assert not lputil.check_intersection(lpi, lc)
 
     # after basis matrix update
     basis = np.array([[0, 1], [-1, 0]], dtype=float)
     lputil.set_basis_matrix(lpi, basis)
 
     # now check if y >= 4.5 is possible (should be true)
-    assert lputil.check_intersection(lpi, direction, -4.5)
-
+    assert lputil.check_intersection(lpi, lc)
+    
 def test_verts():
     'tests verts'
 

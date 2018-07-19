@@ -118,8 +118,6 @@ class Core(Freezable):
             print("Removed state in mode '{}' at time {:.2f}".format(
                 self.cur_state.mode.name, self.cur_state.cur_step_since_start * self.settings.step_size))
 
-        # TODO: check if cur_state has a true invariant
-
         # if a_matrix is None, it's an error mode
         if self.cur_state is not None and self.cur_state.mode.a_csr is None:
             if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
@@ -234,7 +232,16 @@ class Core(Freezable):
         
         self.plotman.create_plot()
 
-        self.waiting_list = init_state_list
+        # populate waiting list
+        self.waiting_list = []
+
+        for state in init_state_list:
+            still_sat = state.intersect_invariant()
+
+            if still_sat:
+                self.waiting_list.append(state)
+
+        assert len(self.waiting_list) > 0, "all initial states were outside of their mode invariant"
 
         if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE:
             self.plotman.run_to_completion(self.do_step, self.is_finished, compute_plot=False)

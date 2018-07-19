@@ -10,10 +10,9 @@ from scipy.sparse import csr_matrix
 from hylaa.util import Freezable
 from hylaa.time_elapse import TimeElapser
 
-from hylaa.lpinstance import LpInstance
 from hylaa import lputil
 
-class LinearConstraint(object):
+class LinearConstraint(Freezable):
     'a single csr sparse linear constraint: csr_vec * x <= rhs'
 
     def __init__(self, csr_vec, rhs):
@@ -24,6 +23,8 @@ class LinearConstraint(object):
         
         self.csr = csr_vec
         self.rhs = float(rhs)
+
+        self.freeze_attrs()
 
     def almost_equals(self, other, tol):
         'equality up to a tolerance'

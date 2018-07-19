@@ -28,9 +28,16 @@ class StateSet(Freezable):
         self.cur_step_in_mode = 0
         self.cur_step_since_start = 0
 
+        self.invariant_constraint_rows = None # the LP row of the strongest constraint for each invariant condition
+
         self._verts = None # cached vertices at the current step
 
         self.freeze_attrs()
+
+    def __str__(self):
+        'short string representation of this state set'
+
+        return "[StateSet in '{}']".format(self.mode.name)
 
     def step(self):
         'update the star based on values from a new simulation time instant'
@@ -65,7 +72,8 @@ class StateSet(Freezable):
 
         return self._verts
 
-    def __str__(self):
-        'short string representation of this state set'
+    def intersect_invariant(self):
+        'intersect the current state set with the mode invariant'
 
-        return "[StateSet in '{}']".format(self.mode.name)
+        if self.invariant_constraint_rows is None:
+            self.invariant_constraint_rows = [None] * len(self.mode.inv_list)

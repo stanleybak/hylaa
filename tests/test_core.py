@@ -120,3 +120,84 @@ def test_plot_over_time():
 
         assert abs(math.pi - y) < 1e-6, "final poly time is wrong"
         assert abs(5 - x) < 1e-6 or abs(4 - x) < 1e-6
+
+def assert_verts_is_box(verts, box, tol=1e-6):
+    '''check that a list of verts is almost equal to the passed-in box using assertions
+
+    box is [[xmin, xmax], [ymin, ymax]]
+    '''
+
+    assert len(verts) == 5 and verts[0] == verts[-1]
+
+    pts = [(box[0][0], box[1][0]), (box[0][1], box[1][0]), (box[0][1], box[1][1]), (box[0][0], box[1][1])]
+
+    for pt in pts:
+        found = False
+
+        for vert in verts:
+            x, y = vert
+
+            if abs(x - pt[0]) < tol and abs(y - pt[1]) < tol:
+                found = True
+                break
+
+        assert found, "Point {} was not found in verts: {}".format(pt, verts)
+
+def test_init_outside_invariant():
+    'test when initial state is outside of the mode invariant'
+
+    ha = HybridAutomaton()
+
+    mode = ha.new_mode('mode')
+    mode.set_dynamics([[0, 0, 1], [0, 0, 1], [0, 0, 0]]) # x' = 1, y' = 1, a' = 0
+
+    # x <= 2.5
+    mode.set_invariant([[1, 0, 0]], [2.5])
+
+    # initial set
+    init_lpi = lputil.from_box([(3, 4), (0, 1), (1, 1)], mode)
+    init_list = [StateSet(init_lpi, mode)]
+
+    # settings
+    settings = HylaaSettings(1.0, 5.0)
+    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+
+    try:
+        result = Core(ha, settings).run(init_list)
+        assert False, "running with initial state outside of invariant did not raise RuntimeError"
+    except RuntimeError:
+        pass
+
+def test_invariants():
+    'test invariant trimming'
+
+    ha = HybridAutomaton()
+
+    mode = ha.new_mode('mode')
+    mode.set_dynamics([[0, 0, 1], [0, 0, 1], [0, 0, 0]]) # x' = 1, y' = 1, a' = 0
+
+    # x <= 2.5
+    mode.set_invariant([[1, 0, 0]], [2.5])
+
+    # initial set
+    init_lpi = lputil.from_box([(0, 1), (0, 1), (1, 1)], mode)
+    init_list = [StateSet(init_lpi, mode)]
+
+    # settings
+    settings = HylaaSettings(1.0, 5.0)
+    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.plot.store_plot_result = True
+    settings.plot.plot_mode = PlotSettings.PLOT_IMAGE
+
+    result = Core(ha, settings).run(init_list)
+
+    # check the reachable state
+    polys = result.mode_to_polys[mode.name]
+
+    assert len(polys) == 3, "expected invariant to become false after 3 steps"
+
+    assert_verts_is_box(polys[0], [[0, 1], [0, 1]])
+
+    assert_verts_is_box(polys[1], [[1, 2], [1, 2]])
+
+    assert_verts_is_box(polys[2], [[2, 2.5], [2, 3]])

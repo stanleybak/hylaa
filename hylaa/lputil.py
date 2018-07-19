@@ -98,19 +98,25 @@ def set_basis_matrix(lpi, basis_mat):
     mat.check_format()
     lpi.set_constraints_csr(mat, offset=lpi.basis_mat_pos)
 
-def check_intersection(lpi, vec, rhs):
-    '''check if there is an intersection between the LP constriants and vec <= rhs
+def check_intersection(lpi, lc):
+    '''check if there is an intersection between the LP constriants and the LinearConstraint object lc
 
     This solves an LP optimizing in the given direction... without adding the constraint to the LP
     '''
 
-    lpi.set_minimize_direction(vec)
+    lpi.set_minimize_direction(lc.csr, is_csr=True)
 
-    columns = np.array([lpi.cur_vars_offset + i for i in range(len(vec))], dtype=int)
+    columns = lc.csr.indices[0:lc.csr.indptr[1]]
+    lp_columns = [lpi.cur_vars_offset + c for c in columns]
 
-    result = lpi.minimize(columns=columns, fail_on_unsat=True)
+    lp_res = lpi.minimize(columns=lp_columns)
 
-    return np.dot(result, vec) <= rhs
+    lp_res_csr = csr_matrix((lp_res, columns, [0, len(columns)]), dtype=float, shape=(1, lc.csr.shape[1]))
+    lp_res_csr.check_format()
+
+    dot_res = (lp_res_csr * lc.csr.T)[0, 0]
+
+    return dot_res <= lc.rhs
 
 def add_init_constraint(lpi, vec, rhs, basis_matrix=None):
     '''

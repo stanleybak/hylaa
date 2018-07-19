@@ -293,17 +293,9 @@ class LpInstance(Freezable):
 
             glpk.glp_set_mat_col(self.lp, offset[1] + col + 1, count, indices_vec, data_ptr)
 
-    def set_minimize_direction(self, direction_vec):
+    def set_minimize_direction(self, direction_vec, is_csr=False):
         '''set the direction for the optimization in terms of the current-time variables
         '''
-
-        if not isinstance(direction_vec, np.ndarray):
-            direction_vec = np.array(direction_vec, dtype=float)
-
-        assert len(direction_vec.shape) == 1
-        assert len(direction_vec) <= self.dims
-
-        assert len(direction_vec) <= self.dims, "dirLen({}) > dims({})".format(len(direction_vec), self.dims)
 
         # set the previous objective columns to zero
         for i in self.obj_cols:
@@ -311,10 +303,30 @@ class LpInstance(Freezable):
 
         self.obj_cols = []
 
-        for i, direction in enumerate(direction_vec):
-            col = 1 + self.cur_vars_offset + i
-            self.obj_cols.append(col)
-            glpk.glp_set_obj_coef(self.lp, col, direction)
+        if is_csr:
+            assert isinstance(direction_vec, csr_matrix)
+            assert direction_vec.shape[0] == 1
+            assert direction_vec.shape[1] <= self.dims, "dirLen({}) > dims({})".format(len(direction_vec), self.dims)
+
+            data, inds, indptr = direction_vec.data, direction_vec.indices, direction_vec.indptr
+            
+            for n in range(indptr[1]):
+                col = int(1 + self.cur_vars_offset + inds[n])
+                self.obj_cols.append(col)
+
+                glpk.glp_set_obj_coef(self.lp, col, data[n])
+
+        else: # non-csr
+            if not isinstance(direction_vec, np.ndarray):
+                direction_vec = np.array(direction_vec, dtype=float)
+
+            assert len(direction_vec.shape) == 1
+            assert len(direction_vec) <= self.dims, "dirLen({}) > dims({})".format(len(direction_vec), self.dims)
+
+            for i, direction in enumerate(direction_vec):
+                col = int(1 + self.cur_vars_offset + i)
+                self.obj_cols.append(col)
+                glpk.glp_set_obj_coef(self.lp, col, direction)
 
     def reset_lp(self):
         'reset all the column and row statuses of the LP'
@@ -447,6 +459,7 @@ class LpInstance(Freezable):
                     assert 0 <= col < lp_cols, "out of bounds column requested in LP solution: {}".format(col)
 
                     rv[i] = glpk.glp_get_col_prim(self.lp, int(col + 1))
+
             else: # neither infeasible nor optimal (for example, unbounded)
                 codes = [glpk.GLP_OPT, glpk.GLP_FEAS, glpk.GLP_INFEAS, glpk.GLP_NOFEAS, glpk.GLP_UNBND, glpk.GLP_UNDEF]
                 msgs = ["solution is optimal",
