@@ -56,6 +56,11 @@ class LinearConstraint(Freezable):
 
         return LinearConstraint(self.csr.copy(), self.rhs)
 
+    def negate(self):
+        'return the negation of the condition'
+
+        return LinearConstraint(-1 * self.csr, -self.rhs)
+
     def __str__(self):
         return '[LinearConstraint: {} * x <= {}]'.format(self.csr.toarray(), self.rhs)
 
@@ -73,7 +78,7 @@ class Mode(Freezable):
     def __init__(self, ha, name, mode_id):
         assert isinstance(ha, HybridAutomaton)
 
-        self.ha = ha
+        self.ha = ha # pylint: disable=invalid-name
         self.name = name
         self.mode_id = mode_id # unique int identified for this mode
 
@@ -106,12 +111,12 @@ class Mode(Freezable):
 
         constraints_rhs.shape = (len(constraints_rhs), ) # flatten rhs into a 1-d array
         assert constraints_csr.shape[1] == self.a_csr.shape[0], \
-            "width of invaraiant constraints({}) must equal A matrix size({})".format(
+            "width of invaraiant constraints({}) must equal A matrix size({})".format( \
             constraints_csr.shape[1], self.a_csr.shape[0])
         assert constraints_csr.shape[0] == len(constraints_rhs)
 
         # for efficiency in checking, the invariant is split into a list of individual constraints
-        for row in range(len(constraints_rhs)):
+        for row, rhs in enumerate(constraints_rhs):
             inds = []
             data = []
             indptr = [0]
@@ -125,13 +130,14 @@ class Mode(Freezable):
 
             indptr.append(len(data))
 
-            constraint_vec = csr_matrix((data, inds, indptr), dtype=float, shape=(1, len(constraints_rhs)))
-            self.inv_list.append(LinearConstraint(constraint_vec, constraints_rhs[row]))
+            constraint_vec = csr_matrix((data, inds, indptr), dtype=float, shape=(1, constraints_csr.shape[1]))
+            
+            self.inv_list.append(LinearConstraint(constraint_vec, rhs))
 
     def set_inputs(self, b_csr, u_constraints_csr, u_constraints_rhs):
         'sets the time-varying / uncertain inputs for the mode (optional)'
     
-        assert self.a_matrix is not None, "set_dynamics should be done before set_inputs"
+        assert self.a_csr is not None, "set_dynamics should be done before set_inputs"
         assert isinstance(b_csr, csr_matrix)
         assert isinstance(u_constraints_csr, csr_matrix)
         assert isinstance(u_constraints_rhs, np.ndarray)
@@ -176,7 +182,7 @@ class Transition(Freezable):
 
     def __init__(self, ha, from_mode, to_mode, label=''):
         assert isinstance(ha, HybridAutomaton)
-        self.ha = ha
+        self.ha = ha # pylint: disable=invalid-name
         self.from_mode = from_mode
         self.to_mode = to_mode
 

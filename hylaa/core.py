@@ -236,12 +236,13 @@ class Core(Freezable):
         self.waiting_list = []
 
         for state in init_state_list:
-            still_sat = state.intersect_invariant()
+            still_feasible = state.intersect_invariant()
 
-            if still_sat:
+            if still_feasible:
                 self.waiting_list.append(state)
 
-        assert len(self.waiting_list) > 0, "all initial states were outside of their mode invariant"
+        if not self.waiting_list:
+            raise RuntimeError("Error: All initial states were outside of their mode invariants")
 
         if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE:
             self.plotman.run_to_completion(self.do_step, self.is_finished, compute_plot=False)

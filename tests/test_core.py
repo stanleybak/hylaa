@@ -163,7 +163,7 @@ def test_init_outside_invariant():
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
 
     try:
-        result = Core(ha, settings).run(init_list)
+        Core(ha, settings).run(init_list)
         assert False, "running with initial state outside of invariant did not raise RuntimeError"
     except RuntimeError:
         pass
