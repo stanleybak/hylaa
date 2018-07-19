@@ -28,7 +28,6 @@ class Core(Freezable):
         self.waiting_list = None # list of State Set objects
         
         self.cur_state = None # a StateSet object
-        self.cur_step_in_mode = None # how much dwell time in current continuous post
         self.max_steps_remaining = None # bound on num steps left in current mode ; assigned on pop
 
         self.result = None # a HylaaResult... assigned on run() to store verification result
@@ -70,7 +69,6 @@ class Core(Freezable):
                     if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
                         print("Unsafe at Step: {} / {} ({})".format(step_num, self.settings.num_steps, \
                                                                 self.settings.step_size * step_num))
-
                                                                 
                     # TODO: print out counter-example
 
@@ -100,11 +98,10 @@ class Core(Freezable):
             if self.cur_state.cur_step_since_start >= self.settings.num_steps:
                 self.cur_state = None
             else:
+                self.cur_state.step()
                 still_feasible = self.cur_state.intersect_invariant()
-
-                if still_feasible:
-                    self.cur_state.step()
-                else:
+                
+                if not still_feasible:
                     if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
                         print("State left the invariant after {} steps".format(self.cur_state.cur_step_in_mode))
                         
@@ -115,12 +112,11 @@ class Core(Freezable):
 
         self.plotman.state_popped() # reset certain per-mode plot variables
 
-        self.cur_step_in_mode = 0
-
         if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
             self.print_waiting_list()
 
-        self.cur_state = self.waiting_list.pop()
+        self.result.last_cur_state = self.cur_state = self.waiting_list.pop()
+        self.cur_state.cur_step_in_mode = 0
 
         if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
             print("Removed state in mode '{}' at time {:.2f}".format(
@@ -158,11 +154,8 @@ class Core(Freezable):
             if self.cur_state is None:
                 self.do_step_pop()
             else:
-                check_guards = self.settings.process_urgent_guards or self.cur_step_in_mode > 0
+                check_guards = self.settings.process_urgent_guards or self.cur_state.cur_step_in_mode > 0
                 self.do_step_continuous_post(check_guards)
-
-            if self.cur_state is not None:
-                self.plotman.plot_current_state(self.cur_state)
 
             if self.is_finished() and self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
                 if not self.result.safe:
@@ -247,7 +240,8 @@ class Core(Freezable):
             raise RuntimeError("Error: All initial states were outside of their mode invariants")
 
         if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE:
-            self.plotman.run_to_completion(self.do_step, self.is_finished, compute_plot=False)
+            self.plotman.run_to_completion(self.do_step, self.is_finished, \
+                                           compute_plot=self.settings.plot.store_plot_result)
         else:
             self.plotman.compute_and_animate(self.do_step, self.is_finished)
 
@@ -287,5 +281,8 @@ class HylaaResult(Freezable):
 
         # assigned if setting.plot.store_plot_result is True, a map name -> list of lists (the verts at each step)
         self.mode_to_polys = {}
+
+        # the last core.cur_state object... used for unit testing
+        self.last_cur_state = None
 
         self.freeze_attrs()

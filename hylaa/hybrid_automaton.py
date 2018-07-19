@@ -36,9 +36,9 @@ class LinearConstraint(Freezable):
             rv = False
         elif self.csr.shape != other.csr.shape:
             rv = False
-        elif self.csr.indices != other.csr.indices:
+        elif not (self.csr.indices == other.csr.indices).all():
             rv = False
-        elif self.csr.indptr != self.csr.indptr:
+        elif not (self.csr.indptr == self.csr.indptr).all():
             rv = False
         else:
             for i in range(len(self.csr.data)):

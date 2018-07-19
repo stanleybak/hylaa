@@ -360,7 +360,7 @@ class PlotManager(Freezable):
         '''
         plot the current SymbolicState according to the plot settings
         '''
-        
+
         if self.settings.plot_mode != PlotSettings.PLOT_NONE or self.settings.store_plot_result:
 
             Timers.tic('verts()')
@@ -374,7 +374,7 @@ class PlotManager(Freezable):
                     self.core.result.mode_to_polys[state.mode.name] = [verts]
 
             if self.settings.plot_mode != PlotSettings.PLOT_NONE:
-                Timers.tic("plot_current_state")
+                Timers.tic("add to plot")
                 self.shapes.set_cur_state(verts)
 
                 if self.settings.label.axes_limits is None:
@@ -382,7 +382,7 @@ class PlotManager(Freezable):
 
                 self.shapes.add_reachable_poly(verts, state.mode.name)
 
-                Timers.toc("plot_current_state")
+                Timers.toc("add to plot")
 
     def compute_and_animate(self, step_func, is_finished_func):
         'do the computation, plotting during the process'
@@ -466,7 +466,6 @@ class PlotManager(Freezable):
             bstep = Button(axstep, 'Step', color='0.85', hovercolor='0.85')
             bstep.on_clicked(step_pressed)
 
-        # process a certain number of frames if the settings desire it
         if self.settings.plot_mode == PlotSettings.PLOT_IMAGE:
             self.run_to_completion(step_func, is_finished_func)
             self.save_image()

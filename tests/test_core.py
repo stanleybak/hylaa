@@ -58,7 +58,9 @@ def test_ha_line_arch18():
 
     # settings
     settings = HylaaSettings(math.pi/4, 2*math.pi)
+    settings.stdout = HylaaSettings.STDOUT_VERBOSE
     settings.plot.store_plot_result = True
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
     
     core = Core(ha, settings)
     result = core.run(init_list)
@@ -80,7 +82,7 @@ def test_ha_line_arch18():
         for vert in poly:
             x, _ = vert
 
-            assert x <= 4.9            
+            assert x <= 4.9
 
 def test_plot_over_time():
     'test doing a plot over time'
@@ -194,7 +196,6 @@ def test_invariants():
     settings = HylaaSettings(1.0, 5.0)
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
     settings.plot.store_plot_result = True
-    settings.plot.plot_mode = PlotSettings.PLOT_INTERACTIVE
 
     result = Core(ha, settings).run(init_list)
 
@@ -209,4 +210,29 @@ def test_invariants():
 
     assert_verts_is_box(polys[2], [[2, 2.5], [2, 3]])
 
-test_invariants()
+def test_redundant_invariants():
+    'test removing of redundant invariants'
+
+    ha = HybridAutomaton()
+
+    mode = ha.new_mode('mode')
+ 
+    # dynamics: x' = 1, y' = 1, a' = 0
+    mode.set_dynamics([[0, 0, 1], [0, 0, 1], [0, 0, 0]])
+
+    # invariant: x <= 2.5
+    mode.set_invariant([[1, 0, 0]], [2.5])
+
+    # initial set has x0 = [0, 1]
+    init_lpi = lputil.from_box([(0, 1), (0, 1), (1, 1)], mode)
+    init_list = [StateSet(init_lpi, mode)]
+
+    # settings, step size = 0.1
+    settings = HylaaSettings(0.1, 5.0)
+    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
+
+    result = Core(ha, settings).run(init_list)
+
+    # check last cur_state to ensure redundant constraints were not added
+    assert result.last_cur_state.lpi.get_num_rows() == 3 + 2*3 + 1 # 3 for basis matrix, 2*3 for initial constraints
