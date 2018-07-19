@@ -255,17 +255,19 @@ class CounterExampleSegment(Freezable):
     'a part of a counter-example trace'
 
     def __init__(self):
-        self.mode = None
+        self.mode = None # Mode object
         self.start = []
         self.end = []
+        self.outgoing_transition = None # Transition object
 
         # TODO: inputs[]
         
         self.freeze_attrs()
 
     def __str__(self):
-        return "[CE_Segment: {} -> {} in '{}']".format( \
-            self.start, self.end, "<None>" if self.mode is None else self.mode.name)
+        return "[CE_Segment: {} -> {} in '{}'; out-trans='{}']".format( \
+            self.start, self.end, "<None>" if self.mode is None else self.mode.name, \
+            "<None>" if self.outgoing_transition is None else self.outgoing_transition.name)
 
     def __repr__(self):
         return str(self)

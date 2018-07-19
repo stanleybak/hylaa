@@ -236,3 +236,54 @@ def test_redundant_invariants():
 
     # check last cur_state to ensure redundant constraints were not added
     assert result.last_cur_state.lpi.get_num_rows() == 3 + 2*3 + 1 # 3 for basis matrix, 2*3 for initial constraints
+
+def test_transition():
+    'test a discrete transition'
+
+    ha = HybridAutomaton()
+
+    # mode one: x' = 1, t' = 1, a' = 0 
+    m1 = ha.new_mode('m1')
+    m1.set_dynamics([[0, 0, 1], [0, 0, 1], [0, 0, 0]])
+
+    # mode two: x' = -1, t' = 1, a' = 0 
+    m2 = ha.new_mode('m2')
+    m2.set_dynamics([[0, 0, -1], [0, 0, 1], [0, 0, 0]])
+
+    # invariant: t <= 2.5
+    m1.set_invariant([[0, 1, 0]], [2.5])
+
+    # guard: t >= 2.5
+    trans1 = ha.new_transition(m1, m2, 'trans1')
+    trans1.set_guard([[0, -1, 0]], [-2.5])
+
+    # error t >= 4.5
+    error = ha.new_mode('error')
+    trans2 = ha.new_transition(m2, error, "to_error")
+    trans2.set_guard([[0, -1, 0]], [-4.5])
+
+    # initial set has x0 = [0, 1], t = [0, 0.2], a = 1
+    init_lpi = lputil.from_box([(0, 1), (0, 0.2), (1, 1)], m1)
+    init_list = [StateSet(init_lpi, m1)]
+
+    # settings, step size = 1.0
+    settings = HylaaSettings(1.0, 10.0)
+    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.plot.plot_mode = PlotSettings.PLOT_IMAGE
+    settings.plot.store_plot_result = True
+
+    result = Core(ha, settings).run(init_list)
+    ce = result.counterexample
+
+    assert len(ce) == 2
+    assert ce[0].mode.name == 'm1'
+    assert ce[0].outgoing_transition.name == 'trans1'
+
+    assert ce[1].mode.name == 'm2'
+    assert ce[1].outgoing_transition.name == 'to_error'
+
+    assert ce[1].start[0] + 1e-9 >= 3.0
+    assert ce[1].end[0] - 1e-9 <= 2.0
+
+    assert len(result.mode_to_polys['m1']) == 4
+    assert len(result.mode_to_polys['m2']) == 3

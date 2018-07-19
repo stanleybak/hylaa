@@ -290,7 +290,7 @@ def aggregate(lpi_list, direction_matrix):
 
     rv.set_constraints_csc(constraints, offset=(0, cols))
 
-    add_snapshot_variables(rv)
+    add_snapshot_variables(rv, "ss_ag")
 
     return rv
 
@@ -299,7 +299,7 @@ def get_basis_matrix(lpi):
 
     return lpi.get_dense_constraints(lpi.basis_mat_pos[0], lpi.basis_mat_pos[1], lpi.dims, lpi.dims)
 
-def add_snapshot_variables(lpi):
+def add_snapshot_variables(lpi, basename):
     '''
     add snapshot variables to the existing lpi
 
@@ -313,7 +313,7 @@ def add_snapshot_variables(lpi):
     cols = lpi.get_num_cols()
     rows = lpi.get_num_rows()
 
-    names = ["ss{}".format(d) for d in range(dims)]
+    names = ["{}{}".format(basename, d) for d in range(dims)]
     lpi.add_cols(names)
     lpi.add_rows_equal_zero(dims)
     

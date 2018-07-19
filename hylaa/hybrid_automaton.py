@@ -180,7 +180,7 @@ class Mode(Freezable):
 class Transition(Freezable):
     'A transition of a hybrid automaton'
 
-    def __init__(self, ha, from_mode, to_mode, label=''):
+    def __init__(self, ha, from_mode, to_mode, name=''):
         assert isinstance(ha, HybridAutomaton)
         self.ha = ha # pylint: disable=invalid-name
         self.from_mode = from_mode
@@ -191,7 +191,7 @@ class Transition(Freezable):
 
         self.reset_csr = None
 
-        self.label = label
+        self.name = name
 
         self.lpi = None # assinged upon continuous post
 
@@ -275,9 +275,9 @@ class HybridAutomaton(Freezable):
         self.modes[m.name] = m
         return m
 
-    def new_transition(self, from_mode, to_mode, label=None):
+    def new_transition(self, from_mode, to_mode, name=None):
         '''add a transition'''
-        t = Transition(self, from_mode, to_mode, label=label)
+        t = Transition(self, from_mode, to_mode, name=name)
         self.transitions.append(t)
 
         return t
