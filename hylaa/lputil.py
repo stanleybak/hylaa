@@ -299,6 +299,13 @@ def get_basis_matrix(lpi):
 
     return lpi.get_dense_constraints(lpi.basis_mat_pos[0], lpi.basis_mat_pos[1], lpi.dims, lpi.dims)
 
+def add_reset_variables(lpi, reset_mat, mode_id, transition_id):
+    '''
+    add variables associated with a reset
+
+    this adds new variables for both the initial states and the current states in the new mode
+    '''
+
 def add_snapshot_variables(lpi, basename):
     '''
     add snapshot variables to the existing lpi

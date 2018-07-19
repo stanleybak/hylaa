@@ -45,21 +45,28 @@ class Core(Freezable):
     def is_finished(self):
         'is the computation finished'
 
-        return (self.cur_state is None and len(self.waiting_list) == 0) or not self.result.safe
+        finished = not self.result.safe
+
+        if not finished:
+            finished = self.cur_state is None and not self.waiting_list
+
+        return finished
 
     def check_guards(self):
         '''check for discrete successors with the guards'''
 
         transitions = self.cur_state.mode.transitions
 
-        for t in transitions:
+        for transition_index, t in enumerate(transitions):
             lp_solution = t.lpi.minimize(fail_on_unsat=False)
 
             if lp_solution is not None:
                 step_num = self.cur_state.cur_step_since_start
                                     
                 if t.to_mode.a_csr is not None: # add discrete successor
-                    succesor_state = StateSet(t.lpi, t.to_mode)
+                    new_lpi = t.lpi.clone()
+                    lputil.add_reset_variables(new_lpi, ???)
+                    succesor_state = StateSet(new_lpi, t.to_mode)
                     self.waiting_list.append(succesor_state)
 
                     if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
@@ -84,14 +91,11 @@ class Core(Freezable):
         total_time = self.settings.step_size * step_num
         print("Step: {} / {} ({})".format(step_num, self.settings.num_steps, total_time))
 
-    def do_step_continuous_post(self, check_guards):
+    def do_step_continuous_post(self):
         '''do a step where it's part of a continuous post'''
 
         if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
             self.print_current_step_time()
-
-        if check_guards:
-            self.check_guards()
 
         if not self.is_finished():
             # next advance time by one step
@@ -99,6 +103,9 @@ class Core(Freezable):
                 self.cur_state = None
             else:
                 self.cur_state.step()
+
+                self.check_guards()
+                
                 still_feasible = self.cur_state.intersect_invariant()
                 
                 if not still_feasible:
@@ -153,9 +160,11 @@ class Core(Freezable):
         if not self.is_finished():
             if self.cur_state is None:
                 self.do_step_pop()
+
+                if self.settings.process_urgent_guards and self.cur_state is not None:
+                    self.check_guards()
             else:
-                check_guards = self.settings.process_urgent_guards or self.cur_state.cur_step_in_mode > 0
-                self.do_step_continuous_post(check_guards)
+                self.do_step_continuous_post()
 
             if self.is_finished() and self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
                 if not self.result.safe:

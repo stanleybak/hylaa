@@ -364,3 +364,57 @@ def test_add_curtime_constraints():
     assert np.allclose(vec, expected_vec)
     assert np.allclose(types, expected_types)
     assert np.allclose(mat.toarray(), expected_mat)
+
+def test_add_reset_variables():
+    'tests add_reset_variables'
+    
+    lpi = lputil.from_box([[-5, -4], [0, 1]], HybridAutomaton().new_mode('mode_name'))
+
+    reset_mat = 2 * np.identity(2)
+    mode_id = 1
+    transition_id = 13
+    lputil.add_reset_variables(lpi, reset_mat, mode_id, transition_id)
+
+    assert lpi.dims == 2
+
+    mat = lpi.get_full_constraints()
+    types = lpi.get_types()
+    rhs = lpi.get_rhs()
+    names = lpi.get_names()
+
+    expected_mat = np.array([\
+        [1, 0, -1, 0, 0, 0, 0, 0], \
+        [0, 1, 0, -1, 0, 0, 0, 0], \
+        [-1, 0, 0, 0, 0, 0, 0, 0], \
+        [1, 0, 0, 0, 0, 0, 0, 0], \
+        [0, -1, 0, 0, 0, 0, 0, 0], \
+        [0, 1, 0, 0, 0, 0, 0, 0], \
+        [0, 0, 2, 0, -1, 0, 0, 0], \
+        [0, 0, 0, 2, 0, -1, 0, 0], \
+        [0, 0, 0, 0, -1, 0, 1, 0], \
+        [0, 0, 0, 0, 0, -1, 0, 1]], dtype=float)
+
+    expected_vec = np.array([0, 0, 5, -4, 0, 1], dtype=float)
+
+    fx = glpk.GLP_FX
+    up = glpk.GLP_UP
+    expected_types = np.array([fx, fx, up, up, up, up, fx, fx, fx, fx], dtype=np.int32)
+
+    expected_names = ["m0_i0", "m0_i1", "m0_c0", "m0_c1", "m1_i0_t13", "m1_i2", "m1_c0", "m1_c2"]
+
+    assert np.allclose(rhs, expected_vec)
+    assert np.allclose(types, expected_types)
+    assert np.allclose(mat.toarray(), expected_mat)
+    assert names == expected_names
+
+    assert lpi.basis_mat_pos == (8, 6)
+
+    verts = lpplot.get_verts(lpi, plot_vecs=plot_vecs)
+
+    assert len(verts) == 5
+    
+    assert [-10.0, 0.] in verts
+    assert [-10.0, 2.] in verts
+    assert [-8.0, 2.] in verts
+    assert [-8.0, 0.] in verts
+    assert verts[0] == verts[-1]

@@ -130,6 +130,9 @@ class StateSet(Freezable):
                     row = self.try_replace_constraint(inv_lc, self.invariant_constraint_rows[i])
                     self.invariant_constraint_rows[i] = row
 
+        print(". intersected with {} invariants".format(len(self.mode.inv_list)))
+        print(self.lpi)
+
         is_feasible = self.lpi.minimize(columns=[], fail_on_unsat=False) is not None
 
         return is_feasible
