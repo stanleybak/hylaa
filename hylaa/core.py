@@ -65,7 +65,7 @@ class Core(Freezable):
                                     
                 if t.to_mode.a_csr is not None: # add discrete successor
                     new_lpi = t.lpi.clone()
-                    lputil.add_reset_variables(new_lpi, ???)
+                    lputil.add_reset_variables(new_lpi)
                     succesor_state = StateSet(new_lpi, t.to_mode)
                     self.waiting_list.append(succesor_state)
 

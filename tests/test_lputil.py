@@ -37,12 +37,12 @@ def test_from_box():
 
     fx = glpk.GLP_FX
     up = glpk.GLP_UP
-    expected_types = np.array([fx, fx, up, up, up, up], dtype=np.int32)
+    expected_types = [fx, fx, up, up, up, up]
 
     expected_names = ["m0_i0", "m0_i1", "m0_c0", "m0_c1"]
 
     assert np.allclose(rhs, expected_vec)
-    assert np.allclose(types, expected_types)
+    assert types == expected_types
     assert np.allclose(mat.toarray(), expected_mat)
     assert names == expected_names
 
@@ -359,10 +359,10 @@ def test_add_curtime_constraints():
 
     fx = glpk.GLP_FX
     up = glpk.GLP_UP
-    expected_types = np.array([fx, fx, up, up, up, up, up, up], dtype=np.int32)
+    expected_types = [fx, fx, up, up, up, up, up, up]
 
     assert np.allclose(vec, expected_vec)
-    assert np.allclose(types, expected_types)
+    assert types == expected_types
     assert np.allclose(mat.toarray(), expected_mat)
 
 def test_add_reset_variables():
@@ -391,24 +391,25 @@ def test_add_reset_variables():
         [0, 1, 0, 0, 0, 0, 0, 0], \
         [0, 0, 2, 0, -1, 0, 0, 0], \
         [0, 0, 0, 2, 0, -1, 0, 0], \
-        [0, 0, 0, 0, -1, 0, 1, 0], \
-        [0, 0, 0, 0, 0, -1, 0, 1]], dtype=float)
+        [0, 0, 0, 0, 1, 0, -1, 0], \
+        [0, 0, 0, 0, 0, 1, 0, -1]], dtype=float)
 
-    expected_vec = np.array([0, 0, 5, -4, 0, 1], dtype=float)
+    expected_vec = np.array([0, 0, 5, -4, 0, 1, 0, 0, 0, 0], dtype=float)
 
     fx = glpk.GLP_FX
     up = glpk.GLP_UP
-    expected_types = np.array([fx, fx, up, up, up, up, fx, fx, fx, fx], dtype=np.int32)
+    expected_types = [fx, fx, up, up, up, up, fx, fx, fx, fx]
 
-    expected_names = ["m0_i0", "m0_i1", "m0_c0", "m0_c1", "m1_i0_t13", "m1_i2", "m1_c0", "m1_c2"]
+    expected_names = ["m0_i0", "m0_i1", "m0_c0", "m0_c1", "m1_i0_t13", "m1_i1", "m1_c0", "m1_c1"]
 
     assert np.allclose(rhs, expected_vec)
-    assert np.allclose(types, expected_types)
+    assert types == expected_types
     assert np.allclose(mat.toarray(), expected_mat)
     assert names == expected_names
 
-    assert lpi.basis_mat_pos == (8, 6)
+    assert lpi.basis_mat_pos == (8, 4)
 
+    plot_vecs = lpplot.make_plot_vecs(4, offset=(math.pi / 4.0))
     verts = lpplot.get_verts(lpi, plot_vecs=plot_vecs)
 
     assert len(verts) == 5
@@ -417,4 +418,81 @@ def test_add_reset_variables():
     assert [-10.0, 2.] in verts
     assert [-8.0, 2.] in verts
     assert [-8.0, 0.] in verts
+    assert verts[0] == verts[-1]
+
+    # update the basis matrix to rotate quarter circle
+    basis = np.array([[0, 1], [-1, 0]], dtype=float)
+    lputil.set_basis_matrix(lpi, basis)
+
+    verts = lpplot.get_verts(lpi, plot_vecs=plot_vecs)
+    assert len(verts) == 5
+    
+    assert [0.0, 10.] in verts
+    assert [0.0, 8.] in verts
+    assert [2.0, 8.] in verts
+    assert [2.0, 10.] in verts
+    assert verts[0] == verts[-1]
+
+def test_reset_less_dims():
+    '''tests a reset to a mode with less dimensions
+    project onto just the y variable multiplied by 0.5
+    '''
+    
+    lpi = lputil.from_box([[-5, -4], [0, 1]], HybridAutomaton().new_mode('mode_name'))
+
+    reset_mat = np.array([[0, 0.5]], dtype=float)
+    mode_id = 1
+    transition_id = 13
+    lputil.add_reset_variables(lpi, reset_mat, mode_id, transition_id)
+
+    mat = lpi.get_full_constraints()
+    types = lpi.get_types()
+    rhs = lpi.get_rhs()
+    names = lpi.get_names()
+
+    expected_mat = np.array([\
+        [1, 0, -1, 0, 0, 0], \
+        [0, 1, 0, -1, 0, 0], \
+        [-1, 0, 0, 0, 0, 0], \
+        [1, 0, 0, 0, 0, 0], \
+        [0, -1, 0, 0, 0, 0], \
+        [0, 1, 0, 0, 0, 0], \
+        [0, 0, 0, 0.5, -1, 0], \
+        [0, 0, 0, 0, 1, -1]], dtype=float)
+
+    expected_vec = np.array([0, 0, 5, -4, 0, 1, 0, 0], dtype=float)
+
+    fx = glpk.GLP_FX
+    up = glpk.GLP_UP
+    expected_types = [fx, fx, up, up, up, up, fx, fx]
+
+    expected_names = ["m0_i0", "m0_i1", "m0_c0", "m0_c1", "m1_i0_t13", "m1_c0"]
+
+    assert np.allclose(rhs, expected_vec)
+    assert types == expected_types
+    assert np.allclose(mat.toarray(), expected_mat)
+    assert names == expected_names
+
+    assert lpi.basis_mat_pos == (7, 4)
+    assert lpi.dims == 1
+
+    plot_vecs = lpplot.make_plot_vecs(4, offset=(math.pi / 4.0))
+
+    verts = lpplot.get_verts(lpi, xdim=0, ydim=None, plot_vecs=plot_vecs, cur_time=0)
+
+    assert len(verts) == 3
+    
+    assert [0.5, 0] in verts
+    assert [0, 0] in verts
+    assert verts[0] == verts[-1]
+
+    # update the basis matrix
+    basis = np.array([[2]], dtype=float)
+    lputil.set_basis_matrix(lpi, basis)
+
+    verts = lpplot.get_verts(lpi, xdim=0, ydim=None, plot_vecs=plot_vecs, cur_time=0)
+    assert len(verts) == 3
+
+    assert [1.0, 0] in verts
+    assert [0, 0] in verts
     assert verts[0] == verts[-1]

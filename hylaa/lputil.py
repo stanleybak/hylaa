@@ -306,6 +306,62 @@ def add_reset_variables(lpi, reset_mat, mode_id, transition_id):
     this adds new variables for both the initial states and the current states in the new mode
     '''
 
+    old_dims = lpi.dims
+    cols = lpi.get_num_cols()
+    rows = lpi.get_num_rows()
+
+    if reset_mat is None:
+        reset_mat = np.identity(old_dims)
+
+    assert old_dims == reset_mat.shape[1], "Reset matrix shape is wrong (expected {} cols)".format(old_dims)
+
+    # it may be possible to change the number of dimensions between modes
+    new_dims = reset_mat.shape[0]
+
+    names = ["m{}_i0_t{}".format(mode_id, transition_id)]
+
+    names += ["m{}_i{}".format(mode_id, d) for d in range(1, new_dims)]
+    names += ["m{}_c{}".format(mode_id, d) for d in range(new_dims)]
+    lpi.add_cols(names)
+
+    lpi.add_rows_equal_zero(2*new_dims)
+
+    data = []
+    inds = []
+    indptrs = [0]
+
+    # new_init_vars = reset_mat * old_cur_vars: -I for new mode initial vars, RM for old mode cur_vars
+    for dim in range(new_dims):
+
+        for rm_col, value in enumerate(reset_mat[dim]):
+            if value == 0:
+                continue
+            
+            data.append(value)
+            inds.append(lpi.cur_vars_offset + rm_col)
+
+        data.append(-1)
+        inds.append(cols + dim)
+
+        indptrs.append(len(data))
+
+    # new_cur_vars = BM * new_init_vars: -I for new cur vars, BM (initially identity) for new init vars
+    for dim in range(new_dims):
+        data.append(1)
+        inds.append(cols + dim)
+
+        data.append(-1)
+        inds.append(cols + new_dims + dim)
+
+        indptrs.append(len(data))
+        
+    mat = csr_matrix((data, inds, indptrs), shape=(2*new_dims, cols + 2*new_dims), dtype=float)
+    mat.check_format()
+
+    lpi.set_constraints_csr(mat, offset=(rows, 0))
+    
+    lpi.set_reach_vars(new_dims, (rows+new_dims, cols))
+
 def add_snapshot_variables(lpi, basename):
     '''
     add snapshot variables to the existing lpi

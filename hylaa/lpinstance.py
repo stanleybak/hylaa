@@ -541,10 +541,10 @@ class LpInstance(Freezable):
         '''get the constraint types. These are swiglpk.GLP_FX, swiglpk.GLP_UP, or swiglpk.GLP_LO'''
 
         lp_rows = glpk.glp_get_num_rows(self.lp)
-        rv = np.zeros(lp_rows, dtype=int)
+        rv = []
 
         for row in range(lp_rows):
-            rv[row] = glpk.glp_get_row_type(self.lp, row + 1)
+            rv.append(glpk.glp_get_row_type(self.lp, row + 1))
 
         return rv
 
