@@ -5,6 +5,7 @@ Stanley Bak (Sept 2016)
 
 import numpy as np
 
+import scipy as sp
 from scipy.sparse import csr_matrix
 
 from hylaa.util import Freezable
@@ -190,6 +191,9 @@ class Transition(Freezable):
         self.guard_rhs = None
 
         self.reset_csr = None
+        self.reset_minkowski_csr = None
+        self.reset_minkowski_constraints_csr = None
+        self.reset_minkowski_constraints_rhs = None
 
         self.name = name
 
@@ -218,7 +222,7 @@ class Transition(Freezable):
         self.guard_csr = guard_csr
         self.guard_rhs = guard_rhs
 
-    def set_reset(self, reset_csr, reset_minowski_csr=None, reset_minkowski_constraints_csr=None,
+    def set_reset(self, reset_csr=None, reset_minkowski_csr=None, reset_minkowski_constraints_csr=None,
                   reset_minkowski_constraints_rhs=None):
         '''resets are of the form x' = Rx + My, Cy <= rhs, where y are fresh variables
         the reset_minowski variables can be None if no new variables are needed. If unassigned, the identity
@@ -232,21 +236,48 @@ class Transition(Freezable):
         reset_minkowski_constraints_rhs is rhs
         '''
 
+        assert self.from_mode.a_csr is not None, "A matrix not assigned in predecessor mode {}".format(self.from_mode)
+        assert self.to_mode.a_csr is not None, "A matrix not assigned in successor mode {}".format(self.to_mode)
+
+        if reset_csr is None:
+            assert self.from_mode.a_csr.shape[0] == self.to_mode.a_csr.shape[0], "identity reset but num dims changes"
+            reset_csr = sp.sparse.identity(self.from_mode.a_csr.shape[0], dtype=float, format='csr')
+
         if not isinstance(reset_csr, csr_matrix):
             reset_csr = csr_matrix(reset_csr)
 
-        assert self.from_mode.a_csr is not None, "A matrix not assigned in predecessor mode {}".format(self.from_mode)
-        assert self.to_mode.a_csr is not None, "A matrix not assigned in successor mode {}".format(self.to_mode)
+        if reset_minkowski_csr is not None and not isinstance(reset_minkowski_csr, csr_matrix):
+            reset_minkowski_csr = csr_matrix(reset_minkowski_csr)
+
+        if reset_minkowski_constraints_csr is not None and not isinstance(reset_minkowski_constraints_csr, csr_matrix):
+            reset_minkowski_constraints_csr = csr_matrix(reset_minkowski_constraints_csr)
+
+        if reset_minkowski_constraints_rhs is not None and not isinstance(reset_minkowski_constraints_rhs, np.ndarray):
+            reset_minkowski_constraints_rhs = np.ndarray(reset_minkowski_constraints_rhs)
         
         assert reset_csr.shape[1] == self.from_mode.a_csr.shape[0], "reset matrix expected {} columns, got {}".format(
             self.from_mode.a_csr.shape[0], reset_csr.shape[1])
         assert reset_csr.shape[0] == self.to_mode.a_csr.shape[0], "reset matrix expected {} rows, got {}".format(
             self.to_mode.a_csr.shape[0], reset_csr.shape[0])
 
-        assert reset_minowski_csr is None and reset_minkowski_constraints_csr is None and \
-            reset_minkowski_constraints_rhs is None, "resets with minkowski sums not yet supported"
-                
+        if reset_minkowski_constraints_rhs is not None:
+            assert len(reset_minkowski_constraints_rhs.shape) == 1
+            assert reset_minkowski_constraints_csr is not None
+            assert reset_minkowski_constraints_csr.shape[0] == reset_minkowski_constraints_rhs[0]
+
+            new_vars = reset_minkowski_constraints_csr.shape[1]
+
+            if reset_minkowski_csr is None:
+                reset_minkowski_csr = sp.sparse.identity(new_vars, dtype=float, format='csr')
+
+            assert isinstance(reset_minkowski_csr, csr_matrix)
+            assert reset_minkowski_csr.shape[0] == self.to_mode.a_csr.shape[0]
+            assert reset_minkowski_csr.shape[1] == new_vars
+
         self.reset_csr = reset_csr
+        self.reset_minkowski_csr = reset_minkowski_csr
+        self.reset_minkowski_constraints_csr = reset_minkowski_constraints_csr
+        self.reset_minkowski_constraints_rhs = reset_minkowski_constraints_rhs
 
     def make_lpi(self, from_state):
         'make the lpi instance for this transition, from the given state'

@@ -7,6 +7,7 @@ the first N rows are the current-time constraints (equality constraints equal to
 '''
 
 import numpy as np
+import scipy as sp
 from scipy.sparse import csr_matrix, csc_matrix
 
 from hylaa.lpinstance import LpInstance
@@ -299,26 +300,48 @@ def get_basis_matrix(lpi):
 
     return lpi.get_dense_constraints(lpi.basis_mat_pos[0], lpi.basis_mat_pos[1], lpi.dims, lpi.dims)
 
-def add_reset_variables(lpi, reset_mat, mode_id, transition_id):
+def add_reset_variables(lpi, mode_id, transition_index, reset_csr=None, minkowski_csr=None, \
+                        minkowski_constraints_csr=None, minkowski_constraints_rhs=None):
     '''
     add variables associated with a reset
 
-    this adds new variables for both the initial states and the current states in the new mode
+    general resets are of the form x' = Rx + My, Cy <= rhs, where y are fresh variables
+    the reset_minowski variables can be None if no new variables are needed. If unassigned, the identity
+    reset is assumed
+
+    x' are the new variables
+    x are the old variables       
+    reset_csr is R (None -> identity)
+    minkowski_csr is M
+    minkowski_constraints_csr is C
+    minkowski_constraints_rhs is rhs
+
+    this function adds new variables for both the initial states and the current states in the new mode
     '''
 
     old_dims = lpi.dims
     cols = lpi.get_num_cols()
     rows = lpi.get_num_rows()
 
-    if reset_mat is None:
-        reset_mat = np.identity(old_dims)
+    if reset_csr is None:
+        reset_csr = sp.sparse.identity(old_dims, dtype=float, format='csr')
 
-    assert old_dims == reset_mat.shape[1], "Reset matrix shape is wrong (expected {} cols)".format(old_dims)
+    if minkowski_csr is None:
+        minkowski_csr = csr_matrix((0, 0))
+        minkowski_constraints_csr = csr_matrix((0, 0))
+        minkowski_constraints_rhs = np.array([])
+
+    assert isinstance(reset_csr, csr_matrix)
+    assert isinstance(minkowski_csr, csr_matrix)
+    assert old_dims == reset_csr.shape[1], "Reset matrix shape is wrong (expected {} cols)".format(old_dims)
 
     # it may be possible to change the number of dimensions between modes
-    new_dims = reset_mat.shape[0]
+    new_dims = reset_csr.shape[0]
 
-    names = ["m{}_i0_t{}".format(mode_id, transition_id)]
+    min_vars = minkowski_csr.shape[1]
+
+    names = ["a{}".format(min_var) for min_var in range(min_vars)]
+    names += ["m{}_i0_t{}".format(mode_id, transition_index)]
 
     names += ["m{}_i{}".format(mode_id, d) for d in range(1, new_dims)]
     names += ["m{}_c{}".format(mode_id, d) for d in range(new_dims)]
@@ -326,41 +349,67 @@ def add_reset_variables(lpi, reset_mat, mode_id, transition_id):
 
     lpi.add_rows_equal_zero(2*new_dims)
 
+    lpi.add_rows_less_equal(minkowski_constraints_rhs)
+
     data = []
     inds = []
     indptrs = [0]
 
-    # new_init_vars = reset_mat * old_cur_vars: -I for new mode initial vars, RM for old mode cur_vars
+    # new_init_vars = reset_mat * old_cur_vars + minkow_csr * minkow_vars:
+    # -I for new mode initial vars, RM for old mode cur_vars, MK for minkow_vars
     for dim in range(new_dims):
 
-        for rm_col, value in enumerate(reset_mat[dim]):
-            if value == 0:
-                continue
+        # old cur_vars
+        for index in range(reset_csr.indptr[dim], reset_csr.indptr[dim + 1]):
+            rm_col = reset_csr.indices[index]
+            value = reset_csr.data[index]
             
             data.append(value)
             inds.append(lpi.cur_vars_offset + rm_col)
 
+        # minkow_vars
+        if minkowski_csr.shape[1] > 0:
+            for index in range(minkowski_csr.indptr[dim], minkowski_csr.indptr[dim + 1]):
+                minkowski_col = minkowski_csr.indices[index]
+                value = minkowski_csr.data[index]
+
+                data.append(value)
+                inds.append(cols + minkowski_col)
+
+        # new mode initial vars
         data.append(-1)
-        inds.append(cols + dim)
+        inds.append(cols + min_vars + dim)
 
         indptrs.append(len(data))
 
     # new_cur_vars = BM * new_init_vars: -I for new cur vars, BM (initially identity) for new init vars
     for dim in range(new_dims):
         data.append(1)
-        inds.append(cols + dim)
+        inds.append(cols + min_vars + dim)
 
         data.append(-1)
-        inds.append(cols + new_dims + dim)
+        inds.append(cols + min_vars + new_dims + dim)
 
         indptrs.append(len(data))
-        
-    mat = csr_matrix((data, inds, indptrs), shape=(2*new_dims, cols + 2*new_dims), dtype=float)
+
+    # encode minkowski constraints rows
+    for row in range(minkowski_constraints_csr.shape[0]):
+        for index in range(minkowski_constraints_csr.indptr[row], minkowski_constraints_csr.indptr[row + 1]):
+            col = minkowski_constraints_csr.indices[index]
+            value = minkowski_constraints_csr.data[index]
+            
+            data.append(value)
+            inds.append(cols + col)
+
+        indptrs.append(len(data))
+
+    mat = csr_matrix((data, inds, indptrs), dtype=float, \
+                     shape=(2*new_dims + len(minkowski_constraints_rhs), cols + 2*new_dims + min_vars))
     mat.check_format()
 
     lpi.set_constraints_csr(mat, offset=(rows, 0))
     
-    lpi.set_reach_vars(new_dims, (rows+new_dims, cols))
+    lpi.set_reach_vars(new_dims, (rows+new_dims, cols + minkowski_csr.shape[1]))
 
 def add_snapshot_variables(lpi, basename):
     '''

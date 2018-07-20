@@ -165,14 +165,15 @@ class LpInstance(Freezable):
 
         assert isinstance(names, list)
 
-        num_cols = glpk.glp_get_num_cols(self.lp)
+        if names:
+            num_cols = glpk.glp_get_num_cols(self.lp)
 
-        glpk.glp_add_cols(self.lp, len(names))
+            glpk.glp_add_cols(self.lp, len(names))
 
-        for i, name in enumerate(names):
-            glpk.glp_set_col_bnds(self.lp, num_cols + i + 1, glpk.GLP_FR, 0, 0)  # free variable (bounds -inf to inf)
+            for i, name in enumerate(names):
+                glpk.glp_set_col_bnds(self.lp, num_cols + i + 1, glpk.GLP_FR, 0, 0)  # free variable (bounds -inf to inf)
 
-            glpk.glp_set_col_name(self.lp, num_cols + i + 1, name)
+                glpk.glp_set_col_name(self.lp, num_cols + i + 1, name)
 
     def add_rows_less_equal(self, rhs_vec):
         '''add rows to the LP with <= constraints
@@ -185,24 +186,26 @@ class LpInstance(Freezable):
 
         assert isinstance(rhs_vec, np.ndarray) and len(rhs_vec.shape) == 1, "expected 1-d right-hand-side vector"
 
-        num_rows = glpk.glp_get_num_rows(self.lp)
+        if rhs_vec.shape[0] > 0:
+            num_rows = glpk.glp_get_num_rows(self.lp)
 
-        # create new row for each constraint
-        glpk.glp_add_rows(self.lp, len(rhs_vec))
+            # create new row for each constraint
+            glpk.glp_add_rows(self.lp, len(rhs_vec))
 
-        for i, rhs in enumerate(rhs_vec):
-            glpk.glp_set_row_bnds(self.lp, num_rows + i + 1, glpk.GLP_UP, 0, rhs)  # '<=' constraint
+            for i, rhs in enumerate(rhs_vec):
+                glpk.glp_set_row_bnds(self.lp, num_rows + i + 1, glpk.GLP_UP, 0, rhs)  # '<=' constraint
 
     def add_rows_equal_zero(self, num):
         '''add rows to the LP with == 0 constraints'''
 
-        num_rows = glpk.glp_get_num_rows(self.lp)
+        if num > 0:
+            num_rows = glpk.glp_get_num_rows(self.lp)
 
-        # create new row for each constraint
-        glpk.glp_add_rows(self.lp, num)
+            # create new row for each constraint
+            glpk.glp_add_rows(self.lp, num)
 
-        for i in range(num):
-            glpk.glp_set_row_bnds(self.lp, num_rows + i + 1, glpk.GLP_FX, 0, 0)  # '== 0' constraints
+            for i in range(num):
+                glpk.glp_set_row_bnds(self.lp, num_rows + i + 1, glpk.GLP_FX, 0, 0)  # '== 0' constraints
 
     def set_constraints_csr(self, csr_mat, offset=None):
         '''set the constrains row by row to be equal to the passed-in csr matrix
