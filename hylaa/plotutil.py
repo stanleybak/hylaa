@@ -470,8 +470,6 @@ class PlotManager(Freezable):
             self.run_to_completion(step_func, is_finished_func)
             self.save_image()
         else:
-            print("doing funcanimation")
-            
             self._anim = animation.FuncAnimation(self.fig, anim_func, iterator, init_func=init_func,
                                                  interval=0, blit=True, repeat=False)
 

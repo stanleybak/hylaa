@@ -202,13 +202,16 @@ def test_invariants():
     # check the reachable state
     polys = result.mode_to_polys[mode.name]
 
-    assert len(polys) == 3, "expected invariant to become false after 3 steps"
+    # 4 steps because invariant is allowed to be false for the final step
+    assert len(polys) == 4, "expected invariant to become false after 4 steps"
 
     assert_verts_is_box(polys[0], [[0, 1], [0, 1]])
 
     assert_verts_is_box(polys[1], [[1, 2], [1, 2]])
 
-    assert_verts_is_box(polys[2], [[2, 2.5], [2, 3]])
+    assert_verts_is_box(polys[2], [[2, 3], [2, 3]])
+
+    assert_verts_is_box(polys[3], [[3, 3.5], [3, 4]])
 
 def test_redundant_invariants():
     'test removing of redundant invariants'
@@ -269,7 +272,7 @@ def test_transition():
     # settings, step size = 1.0
     settings = HylaaSettings(1.0, 10.0)
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
-    settings.plot.plot_mode = PlotSettings.PLOT_IMAGE
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
     settings.plot.store_plot_result = True
 
     result = Core(ha, settings).run(init_list)
@@ -287,3 +290,5 @@ def test_transition():
 
     assert len(result.mode_to_polys['m1']) == 4
     assert len(result.mode_to_polys['m2']) == 3
+
+    assert result.last_cur_state.cur_step_since_start == 5

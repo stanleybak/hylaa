@@ -9,8 +9,8 @@ from hylaa.plotutil import PlotManager
 from hylaa.stateset import StateSet
 from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa.timerutil import Timers
-
 from hylaa.util import Freezable
+from hylaa import lputil
 
 class Core(Freezable):
     'main computation object. initialize and call run()'
@@ -65,8 +65,13 @@ class Core(Freezable):
                                     
                 if t.to_mode.a_csr is not None: # add discrete successor
                     new_lpi = t.lpi.clone()
-                    lputil.add_reset_variables(new_lpi)
-                    succesor_state = StateSet(new_lpi, t.to_mode)
+                    
+                    lputil.add_reset_variables(new_lpi, t.to_mode.mode_id, transition_index, \
+                        reset_csr=t.reset_csr, minkowski_csr=t.reset_minkowski_csr, \
+                        minkowski_constraints_csr=t.reset_minkowski_constraints_csr, \
+                        minkowski_constraints_rhs=t.reset_minkowski_constraints_rhs)
+                    
+                    succesor_state = StateSet(new_lpi, t.to_mode, self.cur_state.cur_step_since_start)
                     self.waiting_list.append(succesor_state)
 
                     if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
@@ -80,7 +85,7 @@ class Core(Freezable):
                     # TODO: print out counter-example
 
                     self.result.safe = False
-                    self.assign_counterexample(lp_solution)
+                    self.assign_counterexample(lp_solution, t)
                     
                     break # no need to keep checking transitions
 
@@ -102,10 +107,6 @@ class Core(Freezable):
             if self.cur_state.cur_step_since_start >= self.settings.num_steps:
                 self.cur_state = None
             else:
-                self.cur_state.step()
-
-                self.check_guards()
-                
                 still_feasible = self.cur_state.intersect_invariant()
                 
                 if not still_feasible:
@@ -113,6 +114,9 @@ class Core(Freezable):
                         print("State left the invariant after {} steps".format(self.cur_state.cur_step_in_mode))
                         
                     self.cur_state = None
+                else:    
+                    self.cur_state.step()
+                    self.check_guards()
 
     def do_step_pop(self):
         'do a step where we pop from the waiting list'
@@ -172,7 +176,7 @@ class Core(Freezable):
                 else:
                     print("Result: System is safe. Error modes are NOT reachable.\n")
 
-    def assign_counterexample(self, lp_solution):
+    def assign_counterexample(self, lp_solution, last_transition):
         '''create and assign the result counter-example from the lp
         this assignes to self.result.counterexample
         '''
@@ -185,13 +189,25 @@ class Core(Freezable):
         for name, value in zip(names, lp_solution):
 
             # if first initial variable of mode then assign the segment.mode variable
-            if name.startswith('m') and name.endswith('_i0'):
+            if name.startswith('m') and '_i0' in name:
                 if seg is not None: # starting a new segment, append the previous segment
                     self.result.counterexample.append(seg)
 
                 seg = CounterExampleSegment()
+
+                parts = name.split('_')
+
+                if len(parts) == 2:
+                    assert not self.result.counterexample, "only the initial mode has not predecessor transition"
+                else:
+                    assert len(parts) == 3
+                    
+                    # assign precessor transition
+                    transition_index = int(parts[2][1:])
+                    t = self.result.counterexample[-1].mode.transitions[transition_index]
+                    self.result.counterexample[-1].outgoing_transition = t
                 
-                mode_id = int(name[1:-3])
+                mode_id = int(parts[0][1:])
 
                 for mode in self.cur_state.mode.ha.modes.values():
                     if mode.mode_id == mode_id:
@@ -205,6 +221,9 @@ class Core(Freezable):
                     seg.start.append(value)
                 elif '_c' in name:
                     seg.end.append(value)
+
+        # add the final transition which is not encoded in the names of the variables
+        seg.outgoing_transition = last_transition
 
         # add the last segment
         self.result.counterexample.append(seg)

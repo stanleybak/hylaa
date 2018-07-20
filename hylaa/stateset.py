@@ -20,7 +20,7 @@ class StateSet(Freezable):
     A set of states with a common mode.
     '''
 
-    def __init__(self, lpi, mode):
+    def __init__(self, lpi, mode, cur_step_since_start=0):
         assert isinstance(lpi, LpInstance)
         assert isinstance(mode, Mode)
 
@@ -28,7 +28,7 @@ class StateSet(Freezable):
         self.lpi = lpi
 
         self.cur_step_in_mode = 0
-        self.cur_step_since_start = 0
+        self.cur_step_since_start = cur_step_since_start
 
         self.invariant_constraint_rows = None # the LP row of the strongest constraint for each invariant condition
 
@@ -129,9 +129,6 @@ class StateSet(Freezable):
                     # strengthen existing constraint possibly
                     row = self.try_replace_constraint(inv_lc, self.invariant_constraint_rows[i])
                     self.invariant_constraint_rows[i] = row
-
-        print(". intersected with {} invariants".format(len(self.mode.inv_list)))
-        print(self.lpi)
 
         is_feasible = self.lpi.minimize(columns=[], fail_on_unsat=False) is not None
 
