@@ -71,6 +71,56 @@ def from_box(box_list, mode):
 
     return lpi
 
+def from_constraints(csr, rhs, mode):
+    'make a new lp instance from a passed-in set of constraints and rhs'
+
+    if not isinstance(csr, csr_matrix):
+        csr = csr_matrix(csr, dtype=float)
+
+    if not isinstance(rhs, np.ndarray):
+        rhs = np.array(rhs, dtype=float)
+
+    assert len(rhs.shape) == 1
+    assert csr.shape[0] == len(rhs)
+    dims = csr.shape[1]
+
+    lpi = LpInstance()
+
+    lpi.add_rows_equal_zero(dims)
+
+    names = ["m{}_i{}".format(mode.mode_id, var_index) for var_index in range(dims)]
+    names += ["m{}_c{}".format(mode.mode_id, var_index) for var_index in range(dims)]
+    
+    lpi.add_cols(names)
+
+    lpi.add_rows_less_equal(rhs)
+
+    # make constraints as csr_matrix
+    data = []
+    inds = []
+    indptr = [0]
+
+    # I -I for first n rows
+    for n in range(dims):
+        data.append(1)
+        inds.append(n)
+
+        data.append(-1)
+        inds.append(dims + n)
+
+        indptr.append(len(data))
+
+    basis_cosntraints = csr_matrix((data, inds, indptr), shape=(dims, 2*dims), dtype=float)
+    basis_cosntraints.check_format()
+
+    lpi.set_constraints_csr(basis_cosntraints)
+
+    lpi.set_constraints_csr(csr, offset=(dims, 0))
+
+    lpi.set_reach_vars(dims, (0, 0))
+
+    return lpi
+
 def set_basis_matrix(lpi, basis_mat):
     'modify the lpi in place to set the basis matrix'
 

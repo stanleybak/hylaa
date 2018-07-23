@@ -214,6 +214,7 @@ class LpInstance(Freezable):
         '''
 
         assert isinstance(csr_mat, csr_matrix)
+        assert csr_mat.dtype == float
 
         if offset is None:
             offset = (0, 0)
@@ -257,6 +258,7 @@ class LpInstance(Freezable):
         '''
 
         assert isinstance(csc_mat, csc_matrix)
+        assert csc_mat.dtype == float
 
         if offset is None:
             offset = (0, 0)

@@ -9,9 +9,6 @@ Upon reaching x >= 9.9 (after 5 steps), a reset is taken which sets: x' := [0, 1
 Dynamics in mode 2 are x' = 1, y' = 1
 '''
 
-import numpy as np
-from scipy.sparse import csr_matrix
-
 from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa.settings import HylaaSettings, PlotSettings
 from hylaa.core import Core

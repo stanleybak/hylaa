@@ -561,3 +561,50 @@ def test_reset_minkowski():
     assert [0, 0.] in verts
     assert [15, 0.] in verts
     assert verts[0] == verts[-1]
+
+def test_init_triangle():
+    'tests initialization from a non-box initial set of states'
+
+    # x + y < 1, x > 0, y > 0
+
+    constraints_mat = [[1, 1], [-1, 0], [0, -1]]
+    constraints_rhs = [1, 0, 0]
+
+    lpi = lputil.from_constraints(constraints_mat, constraints_rhs, HybridAutomaton().new_mode('mode_name'))
+
+    mat = lpi.get_full_constraints()
+    types = lpi.get_types()
+    rhs = lpi.get_rhs()
+    names = lpi.get_names()
+
+    expected_mat = np.array([\
+        [1, 0, -1, 0], \
+        [0, 1, 0, -1], \
+        [1, 1, 0, 0], \
+        [-1, 0, 0, 0], \
+        [0, -1, 0, 0]], dtype=float)
+
+    expected_vec = np.array([0, 0, 1, 0, 0], dtype=float)
+
+    fx = glpk.GLP_FX
+    up = glpk.GLP_UP
+    expected_types = [fx, fx, up, up, up]
+
+    expected_names = ["m0_i0", "m0_i1", "m0_c0", "m0_c1"]
+
+    assert np.allclose(rhs, expected_vec)
+    assert types == expected_types
+    assert np.allclose(mat.toarray(), expected_mat)
+    assert names == expected_names
+
+    # check verts
+
+    plot_vecs = lpplot.make_plot_vecs(4, offset=(math.pi / 4.0))
+    verts = lpplot.get_verts(lpi, plot_vecs=plot_vecs)
+
+    assert len(verts) == 4
+    
+    assert [0., 1.] in verts
+    assert [0., 0.] in verts
+    assert [1., 0] in verts
+    assert verts[0] == verts[-1]
