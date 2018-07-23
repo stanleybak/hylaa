@@ -253,7 +253,7 @@ class Transition(Freezable):
             reset_minkowski_constraints_csr = csr_matrix(reset_minkowski_constraints_csr)
 
         if reset_minkowski_constraints_rhs is not None and not isinstance(reset_minkowski_constraints_rhs, np.ndarray):
-            reset_minkowski_constraints_rhs = np.ndarray(reset_minkowski_constraints_rhs)
+            reset_minkowski_constraints_rhs = np.array(reset_minkowski_constraints_rhs, dtype=float)
         
         assert reset_csr.shape[1] == self.from_mode.a_csr.shape[0], "reset matrix expected {} columns, got {}".format(
             self.from_mode.a_csr.shape[0], reset_csr.shape[1])
@@ -263,7 +263,7 @@ class Transition(Freezable):
         if reset_minkowski_constraints_rhs is not None:
             assert len(reset_minkowski_constraints_rhs.shape) == 1
             assert reset_minkowski_constraints_csr is not None
-            assert reset_minkowski_constraints_csr.shape[0] == reset_minkowski_constraints_rhs[0]
+            assert reset_minkowski_constraints_csr.shape[0] == len(reset_minkowski_constraints_rhs)
 
             new_vars = reset_minkowski_constraints_csr.shape[1]
 

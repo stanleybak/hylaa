@@ -70,9 +70,9 @@ class Core(Freezable):
                         reset_csr=t.reset_csr, minkowski_csr=t.reset_minkowski_csr, \
                         minkowski_constraints_csr=t.reset_minkowski_constraints_csr, \
                         minkowski_constraints_rhs=t.reset_minkowski_constraints_rhs)
-                    
-                    succesor_state = StateSet(new_lpi, t.to_mode, self.cur_state.cur_step_since_start)
-                    self.waiting_list.append(succesor_state)
+
+                    successor_state = StateSet(new_lpi, t.to_mode, self.cur_state.cur_step_since_start)
+                    self.waiting_list.append(successor_state)
 
                     if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
                         print("Added Discrete Successor to '{}' at step {}".format(t.to_mode.name, step_num))
