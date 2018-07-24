@@ -76,14 +76,27 @@ class Core(Freezable):
                         minkowski_constraints_rhs=t.reset_minkowski_constraints_rhs)
 
                     # make sure it's still SAT
-                    assert new_lpi.minimize(columns=[], fail_on_unsat=False) is not None, \
-                      "Continuous state was empty after applying reset in transition {}".format(t)
+                    if new_lpi.minimize(columns=[], fail_on_unsat=False) is None:
+                        if self.settings.action_on_unsat_set == HylaaSettings.UNSAT_ERROR:
+                            raise RuntimeError("Continuous state was empty after applying reset in transition {}" \
+                                               .format(t))
+                        elif self.settings.action_on_unsat_set == HylaaSettings.UNSAT_WARN:
+                            if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
+                                print("Warning: Continuous state was empty after applying reset in transition {}" \
+                                      .format(t))
+                        elif self.settings.action_on_unsat_set == HylaaSettings.UNSAT_TRACE:
+                            print("Continuous state was empty after applying reset in transition {}. Saving Trace." \
+                                      .format(t))
+                            self.result.safe = False
+                            self.result.counterexample = make_counterexample( \
+                                                        self.hybrid_automaton, t.lpi, lp_solution, t)
+                            break # no need to keep checking transitions
+                    else:
+                        successor_state = StateSet(new_lpi, t.to_mode, self.cur_state.cur_step_since_start)
+                        self.waiting_list.append(successor_state)
 
-                    successor_state = StateSet(new_lpi, t.to_mode, self.cur_state.cur_step_since_start)
-                    self.waiting_list.append(successor_state)
-
-                    if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
-                        print("Added Discrete Successor to '{}' at step {}".format(t.to_mode.name, step_num))
+                        if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
+                            print("Added Discrete Successor to '{}' at step {}".format(t.to_mode.name, step_num))
 
                 else: # unsafe state
                     if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
@@ -93,7 +106,7 @@ class Core(Freezable):
                     # TODO: print out counter-example
 
                     self.result.safe = False
-                    self.assign_counterexample(lp_solution, t)
+                    self.result.counterexample = make_counterexample(self.hybrid_automaton, t.lpi, lp_solution, t)
                     
                     break # no need to keep checking transitions
 
@@ -134,12 +147,13 @@ class Core(Freezable):
         if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
             self.print_waiting_list()
 
-        self.result.last_cur_state = self.cur_state = self.waiting_list.pop()
+        self.result.last_cur_state = self.cur_state = self.waiting_list.pop(0) # pop front
         self.cur_state.cur_step_in_mode = 0
 
         if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
-            print("Removed state in mode '{}' at time {:.2f}".format(
-                self.cur_state.mode.name, self.cur_state.cur_step_since_start * self.settings.step_size))
+            print("Removed state in mode '{}' at time {:.2f} (Waiting list has {} left)".format(
+                self.cur_state.mode.name, self.cur_state.cur_step_since_start * self.settings.step_size, \
+                len(self.waiting_list)))
 
         # if a_matrix is None, it's an error mode
         if self.cur_state.mode.a_csr is None:
@@ -183,58 +197,6 @@ class Core(Freezable):
                     print("Result: Error modes are reachable.\n")
                 else:
                     print("Result: System is safe. Error modes are NOT reachable.\n")
-
-    def assign_counterexample(self, lp_solution, last_transition):
-        '''create and assign the result counter-example from the lp
-        this assignes to self.result.counterexample
-        '''
-
-        names = self.cur_state.lpi.get_names()
-        
-        self.result.counterexample = []
-        seg = None
-
-        for name, value in zip(names, lp_solution):
-
-            # if first initial variable of mode then assign the segment.mode variable
-            if name.startswith('m') and '_i0' in name:
-                if seg is not None: # starting a new segment, append the previous segment
-                    self.result.counterexample.append(seg)
-
-                seg = CounterExampleSegment()
-
-                parts = name.split('_')
-
-                if len(parts) == 2:
-                    assert not self.result.counterexample, "only the initial mode has not predecessor transition"
-                else:
-                    assert len(parts) == 3
-                    
-                    # assign precessor transition
-                    transition_index = int(parts[2][1:])
-                    t = self.result.counterexample[-1].mode.transitions[transition_index]
-                    self.result.counterexample[-1].outgoing_transition = t
-                
-                mode_id = int(parts[0][1:])
-
-                for mode in self.cur_state.mode.ha.modes.values():
-                    if mode.mode_id == mode_id:
-                        seg.mode = mode
-                        break
-
-                assert seg.mode is not None, "mode id {} not found in automaton".format(mode_id)
-            
-            if name.startswith('m'): # mode variable
-                if '_i' in name:
-                    seg.start.append(value)
-                elif '_c' in name:
-                    seg.end.append(value)
-
-        # add the final transition which is not encoded in the names of the variables
-        seg.outgoing_transition = last_transition
-
-        # add the last segment
-        self.result.counterexample.append(seg)
 
     def run(self, init_state_list):
         '''
@@ -298,6 +260,58 @@ class Core(Freezable):
         Timers.reset()
 
         return self.result
+
+def make_counterexample(ha, lpi, lp_solution, last_transition):
+    '''make and return the result counter-example from the lp solution'''
+    
+    names = lpi.get_names()
+
+    counterexample = []
+    seg = None
+
+    for name, value in zip(names, lp_solution):
+
+        # if first initial variable of mode then assign the segment.mode variable
+        if name.startswith('m') and '_i0' in name:
+            if seg is not None: # starting a new segment, append the previous segment
+                counterexample.append(seg)
+
+            seg = CounterExampleSegment()
+
+            parts = name.split('_')
+
+            if len(parts) == 2:
+                assert not counterexample, "only the initial mode has not predecessor transition"
+            else:
+                assert len(parts) == 3
+
+                # assign precessor transition
+                transition_index = int(parts[2][1:])
+                t = counterexample[-1].mode.transitions[transition_index]
+                counterexample[-1].outgoing_transition = t
+
+            mode_id = int(parts[0][1:])
+
+            for mode in ha.modes.values():
+                if mode.mode_id == mode_id:
+                    seg.mode = mode
+                    break
+
+            assert seg.mode is not None, "mode id {} not found in automaton".format(mode_id)
+
+        if name.startswith('m'): # mode variable
+            if '_i' in name:
+                seg.start.append(value)
+            elif '_c' in name:
+                seg.end.append(value)
+
+    # add the final transition which is not encoded in the names of the variables
+    seg.outgoing_transition = last_transition
+
+    # add the last segment
+    counterexample.append(seg)
+
+    return counterexample
 
 class CounterExampleSegment(Freezable):
     'a part of a counter-example trace'

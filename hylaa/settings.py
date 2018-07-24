@@ -22,6 +22,10 @@ class HylaaSettings(Freezable):
     STDOUT_VERBOSE = 2
     STDOUT_DEBUG = 3
 
+    UNSAT_ERROR = 0
+    UNSAT_WARN = 1
+    UNSAT_TRACE = 2
+
     def __init__(self, step_size, max_time):
         plot_settings = PlotSettings()
 
@@ -40,6 +44,9 @@ class HylaaSettings(Freezable):
         # invariant / guard boundary, and so two steps would be added to the waiting list rather than one.
         # You can disable this by setting it to 0.0
         self.extra_step_size_epsilon = 1e-7
+
+        # if the continuous post set every becomes unsat, what action should be taken?
+        self.action_on_unsat_set = HylaaSettings.UNSAT_ERROR
 
         self.freeze_attrs()
 
