@@ -20,7 +20,11 @@ class Core(Freezable):
         assert isinstance(ha, HybridAutomaton)
 
         self.hybrid_automaton = ha
+        
         self.settings = hylaa_settings
+
+        # add the extra step size into the settings
+        self.settings.step_size += self.settings.extra_step_size_epsilon
 
         self.plotman = PlotManager(self)
 
@@ -256,9 +260,6 @@ class Core(Freezable):
 
         if self.settings.do_guard_strengthening:
             ha.do_guard_strengthening()
-
-        if self.settings.do_epsilon_strengthening is not None:
-            ha.do_epsilon_strengthening(self.settings.do_epsilon_strengthening)
         
         self.plotman.create_plot()
 
@@ -266,13 +267,25 @@ class Core(Freezable):
         self.waiting_list = []
 
         for state in init_state_list:
+            is_feasible = state.lpi.minimize(columns=[], fail_on_unsat=False) is not None
+
+            if not is_feasible:
+                if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
+                    print("Removed infeasible initial set in mode {}".format(state.mode.name))
+                    
+                continue
+            
             still_feasible = state.intersect_invariant()
 
             if still_feasible:
                 self.waiting_list.append(state)
+            else:
+                if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
+                    print("Removed infeasible initial set after invariant intersection in mode {}".format( \
+                        state.mode.name))
 
         if not self.waiting_list:
-            raise RuntimeError("Error: All initial states were outside of their mode invariants")
+            raise RuntimeError("Error: No valid initial states were defined.")
 
         if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE:
             self.plotman.run_to_completion(self.do_step, self.is_finished, \

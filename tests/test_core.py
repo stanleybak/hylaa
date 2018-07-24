@@ -293,8 +293,8 @@ def test_transition():
 
     assert result.last_cur_state.cur_step_since_start == 5
 
-def test_epsilon_strengthening():
-    'test performing epsilon strengthening of the invariants and epsilon relaxation of the guards'
+def test_time_triggered():
+    'test to make sure exact time-triggered guards only have a single sucessor state'
 
     ha = HybridAutomaton()
 
@@ -338,11 +338,11 @@ def test_epsilon_strengthening():
     assert ce[1].mode.name == 'm2'
     assert ce[1].outgoing_transition.name == 'to_error'
 
-    assert abs(ce[0].start[0] - 0.0) < 1e-9
-    assert abs(ce[0].end[0] - 2.0) < 1e-9
+    assert abs(ce[0].start[0] - 0.0) < 1e-5
+    assert abs(ce[0].end[0] - 2.0) < 1e-5
 
-    assert abs(ce[1].start[0] - 2.0) < 1e-9
-    assert abs(ce[1].end[0] - 4.0) < 1e-9
+    assert abs(ce[1].start[0] - 2.0) < 1e-5
+    assert abs(ce[1].end[0] - 4.0) < 1e-5
 
     assert len(result.mode_to_polys['m1']) == 3 # time 0, 1, 2
     assert len(result.mode_to_polys['m2']) == 3 # times 2, 3, 4
