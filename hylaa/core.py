@@ -71,6 +71,10 @@ class Core(Freezable):
                         minkowski_constraints_csr=t.reset_minkowski_constraints_csr, \
                         minkowski_constraints_rhs=t.reset_minkowski_constraints_rhs)
 
+                    # make sure it's still SAT
+                    assert new_lpi.minimize(columns=[], fail_on_unsat=False) is not None, \
+                      "Continuous state was empty after applying reset in transition {}".format(t)
+
                     successor_state = StateSet(new_lpi, t.to_mode, self.cur_state.cur_step_since_start)
                     self.waiting_list.append(successor_state)
 
@@ -114,7 +118,7 @@ class Core(Freezable):
                         print("State left the invariant after {} steps".format(self.cur_state.cur_step_in_mode))
                         
                     self.cur_state = None
-                else:    
+                else:
                     self.cur_state.step()
                     self.check_guards()
 
@@ -252,6 +256,9 @@ class Core(Freezable):
 
         if self.settings.do_guard_strengthening:
             ha.do_guard_strengthening()
+
+        if self.settings.do_epsilon_strengthening is not None:
+            ha.do_epsilon_strengthening(self.settings.do_epsilon_strengthening)
         
         self.plotman.create_plot()
 

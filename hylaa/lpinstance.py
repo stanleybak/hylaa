@@ -398,7 +398,7 @@ class LpInstance(Freezable):
 
             msgs = [ \
                 "Unable to start the search, because the initial basis specified " + \
-                "in the problem object is invalid—the number of basic (auxiliary " + \
+                "in the problem object is invalid-the number of basic (auxiliary " + \
                 "and structural) variables is not the same as the number of rows " + \
                 "in the problem object.", 
 

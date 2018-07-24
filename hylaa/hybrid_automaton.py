@@ -369,3 +369,24 @@ class HybridAutomaton(Freezable):
 
                 t.guard_csr = new_guard_csr
                 t.guard_rhs = new_guard_rhs
+
+    def do_epsilon_strengthening(self, epsilon):
+        '''
+        Strengthen the invariants and weaken the guards by a small amount. 
+
+        This is useful when the time step causes the simulation to end exactly on an invariant / guard boundary, 
+        which would normally mean that there are two steps with successors sine the guard is true at the boundary, 
+        and at the next step when the invariant becomes false.
+
+        This also makes transitions more robust to small numerical errors that can occur when LP solving.
+        '''
+
+        # stengthen invariants (make them harder to be satisfied)
+        for mode in self.modes.values():
+            for lc in mode.inv_list:
+                lc.rhs -= epsilon
+                
+        # weaken guards (make them easier to reach)
+        for t in self.transitions:
+            for i in range(t.guard_rhs.shape[0]):
+                t.guard_rhs[i] += epsilon

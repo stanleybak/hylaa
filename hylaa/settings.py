@@ -32,11 +32,10 @@ class HylaaSettings(Freezable):
         self.stdout = HylaaSettings.STDOUT_NORMAL
         self.print_lp_on_error = False # print the LP to stdout upon reaching an error mode?
 
-        ### SIMULATION-EQUIVALENT SEMANTICS ###
+        ### SIMULATION-EQUIVALENT SEMANTICS / COMPUTATION OPTIMIZATIONS ###
         self.process_urgent_guards = False # force one step within each mode
-
-        ### COMPUTATION OPTIMIZATIONS ###
-        self.do_guard_strengthening = True # add invariants of target modes to each guards?
+        self.do_epsilon_strengthening = 1e-6 # strengthen guards and weaken invariants by this amount (None=skip)
+        self.do_guard_strengthening = True # add invariants of target modes to each guard?
 
         self.freeze_attrs()
 

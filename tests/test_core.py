@@ -123,7 +123,7 @@ def test_plot_over_time():
         assert abs(math.pi - y) < 1e-6, "final poly time is wrong"
         assert abs(5 - x) < 1e-6 or abs(4 - x) < 1e-6
 
-def assert_verts_is_box(verts, box, tol=1e-6):
+def assert_verts_is_box(verts, box, tol=1e-5):
     '''check that a list of verts is almost equal to the passed-in box using assertions
 
     box is [[xmin, xmax], [ymin, ymax]]
@@ -292,3 +292,57 @@ def test_transition():
     assert len(result.mode_to_polys['m2']) == 3
 
     assert result.last_cur_state.cur_step_since_start == 5
+
+def test_epsilon_strengthening():
+    'test performing epsilon strengthening of the invariants and epsilon relaxation of the guards'
+
+    ha = HybridAutomaton()
+
+    # mode one: x' = 1, a' = 0 
+    m1 = ha.new_mode('m1')
+    m1.set_dynamics([[0, 1], [0, 0]])
+
+    # mode two: x' = 1, a' = 0 
+    m2 = ha.new_mode('m2')
+    m2.set_dynamics([[0, 1], [0, 0]])
+
+    # invariant: x <= 2.0
+    m1.set_invariant([[1, 0]], [2.0])
+
+    # guard: x >= 2.0
+    trans1 = ha.new_transition(m1, m2, 'trans1')
+    trans1.set_guard([[-1, 0]], [-2.0])
+
+    # error x >= 4.0
+    error = ha.new_mode('error')
+    trans2 = ha.new_transition(m2, error, "to_error")
+    trans2.set_guard([[-1, 0]], [-4.0])
+
+    # initial set has x = 0, a = 1
+    init_lpi = lputil.from_box([(0, 0), (1, 1)], m1)
+    init_list = [StateSet(init_lpi, m1)]
+
+    # settings, step size = 1.0
+    settings = HylaaSettings(1.0, 10.0)
+    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
+    settings.plot.store_plot_result = True
+
+    result = Core(ha, settings).run(init_list)
+    ce = result.counterexample
+
+    assert len(ce) == 2
+    assert ce[0].mode.name == 'm1'
+    assert ce[0].outgoing_transition.name == 'trans1'
+
+    assert ce[1].mode.name == 'm2'
+    assert ce[1].outgoing_transition.name == 'to_error'
+
+    assert abs(ce[0].start[0] - 0.0) < 1e-9
+    assert abs(ce[0].end[0] - 2.0) < 1e-9
+
+    assert abs(ce[1].start[0] - 2.0) < 1e-9
+    assert abs(ce[1].end[0] - 4.0) < 1e-9
+
+    assert len(result.mode_to_polys['m1']) == 3 # time 0, 1, 2
+    assert len(result.mode_to_polys['m2']) == 3 # times 2, 3, 4
