@@ -562,12 +562,13 @@ def make_direction_matrix(point, a_csr):
     dims = len(point)
     rv = []
 
-    cur_vec = np.array(point)
-    cur_vec.shape = (dims, 1)
+    cur_vec = np.array(point, dtype=float)
 
     while len(rv) < dims:
-        print("start, cur_vec = {}".format(cur_vec))
-        cur_vec = a_csr * cur_vec
+        if cur_vec is None:
+            cur_vec = np.random.rand(dims,)
+        else:
+            cur_vec = a_csr * cur_vec
 
         # project out the previous vectors
         for prev_vec in rv:
@@ -579,11 +580,9 @@ def make_direction_matrix(point, a_csr):
 
         assert not math.isinf(norm) and not math.isnan(norm), "vector norm was infinite in arnoldi"
 
-        print("norm = {}, rv len = {}".format(norm, len(rv)))
-
         if norm < 1e-6:
             # super small norm... basically it's in the subspace spaned by previous vectors, restart
-            cur_vec = np.random.rand(dims, 1)
+            cur_vec = None
         else:
             cur_vec = cur_vec / norm
 

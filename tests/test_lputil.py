@@ -650,51 +650,48 @@ def test_make_direction_matrix():
     point, while the second should be orthogonal to the first
     '''
 
-    a_csr = csr_matrix(np.array([1, 0], [0, 1], dtype=float))
+    a_csr = csr_matrix(np.array([[1, 0], [0, 1]], dtype=float))
     pt = [2, 2] # derivative should be <2, 2>
 
     mat = lputil.make_direction_matrix(pt, a_csr)
 
     assert mat.shape == (2, 2)
 
-    # first row should be <1, 1> (normalized version of derivative)
-    assert abs(mat[0][0] - 1.0) < 1e-6
-    assert abs(mat[0][1] - 1.0) < 1e-6
+    # first row should be <sqrt(2)/2, sqrt(2)/2> (normalized version of derivative)
+    assert abs(mat[0][0] - math.sqrt(2)/2) < 1e-6
+    assert abs(mat[0][1] - math.sqrt(2)/2) < 1e-6
 
-    for row_a in mat:
+    for a, row_a in enumerate(mat):
         assert abs(np.linalg.norm(row_a) - 1.0) < 1e-6, "rows should be normalized"
 
-        for row_b in mat:
-            if row_a == row_b:
+        for b, row_b in enumerate(mat):
+            if a == b:
                 continue
 
             assert np.dot(row_a, row_b) < 1e-6, "rows should be orthononal"
-
-    assert False
-
+    
 def test_direction_matrix_empty():
     '''test make_direction matrix when the dynamics matrix is empty
 
     it should just return any orthonormal set of vectors of the appropriate dimension
     '''
 
-    a_csr = csr_matrix(np.zeros((5, 5)))
-    pt = [0] * 5
+    dims = 5
+    a_csr = csr_matrix(np.zeros((dims, dims)))
+    pt = [0] * dims
 
     mat = lputil.make_direction_matrix(pt, a_csr)
 
-    assert mat.shape == (3, 3)
+    assert mat.shape == (dims, dims)
 
-    for row_a in mat:
+    for a, row_a in enumerate(mat):
         assert abs(np.linalg.norm(row_a) - 1.0) < 1e-6, "rows should be normalized"
 
-        for row_b in mat:
-            if row_a == row_b:
+        for b, row_b in enumerate(mat):
+            if a == b:
                 continue
 
             assert np.dot(row_a, row_b) < 1e-6, "rows should be orthononal"
-
-test_direction_matrix_empty()
 
 def test_aggregate_on_subspace():
     '''
