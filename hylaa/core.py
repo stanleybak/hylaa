@@ -3,6 +3,8 @@ Main Hylaa Reachability Implementation
 Stanley Bak, 2018
 '''
 
+import numpy as np
+
 from hylaa.settings import HylaaSettings, PlotSettings
 
 from hylaa.plotutil import PlotManager
@@ -38,13 +40,26 @@ class Core(Freezable):
 
         self.freeze_attrs()
 
+    def print_normal(self, msg):
+        'print function for STDOUT_NORMAL and above'
+
+        if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
+            print(msg)
+
+    def print_verbose(self, msg):
+        'print function for STDOUT_VERBOSE and above'
+
+        if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
+            print(msg)
+
     def print_waiting_list(self):
         'print out the waiting list'
 
-        print("Waiting list has {} states".format(len(self.waiting_list)))
+        if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
+            print("Waiting list has {} states".format(len(self.waiting_list)))
 
-        for state in self.waiting_list:
-            print(" {}".format(state))
+            for state in self.waiting_list:
+                print(" {}".format(state))
 
     def is_finished(self):
         'is the computation finished'
@@ -56,72 +71,75 @@ class Core(Freezable):
 
         return finished
 
+    def take_transition(self, t, transition_index):
+        '''take the passed-in transition from the current state (may add to the waiting list)'''
+
+        new_lpi = t.lpi.clone()
+
+        lputil.add_reset_variables(new_lpi, t.to_mode.mode_id, transition_index, \
+            reset_csr=t.reset_csr, minkowski_csr=t.reset_minkowski_csr, \
+            minkowski_constraints_csr=t.reset_minkowski_constraints_csr, \
+            minkowski_constraints_rhs=t.reset_minkowski_constraints_rhs)
+
+        # make sure the successor is feasible
+        if new_lpi.is_feasible():
+            successor_state = StateSet(new_lpi, t.to_mode, self.cur_state.cur_step_since_start)
+            self.waiting_list.append(successor_state)
+
+            self.print_verbose("Added Discrete Successor to '{}' at step {}".format( \
+                t.to_mode.name, self.cur_state.cur_step_since_start))
+        else:
+            # succesor is infeasible, check if it's the reset's fault, or due to numerical precision
+            t.lpi.reset_lp()
+
+            if t.lpi.is_feasible():
+                # it was due to the reset. The user probably provided bad reset parameters.
+                raise RuntimeError(("Continuous state was empty after applying reset in transition {}, " + \
+                                   "was the reset correctly specified?").format(t))
+            else:
+                # it was due to numerical issues, it should be ok to remove the original (unsat) state
+                self.print_verbose("Continuous state discovered to be UNSAT during transition, removing state")
+
+                self.cur_state = None
+
+    def error_reached(self, t):
+        'an error mode was reached after taking transition t, report and create counterexample'
+
+        step_num = self.cur_state.cur_step_since_start
+        self.print_normal("Unsafe at Step: {} / {} ({})".format(step_num, self.settings.num_steps, \
+                            self.settings.step_size * step_num))
+
+        self.result.safe = False
+        self.result.counterexample = make_counterexample(self.hybrid_automaton, t)
+
     def check_guards(self):
         '''check for discrete successors with the guards'''
 
         transitions = self.cur_state.mode.transitions
 
         for transition_index, t in enumerate(transitions):
-            lp_solution = t.lpi.minimize(fail_on_unsat=False)
+            if t.lpi.is_feasible():                                    
+                if t.to_mode.is_error():
+                    self.error_reached(t)
+                    break
+                else:
+                    self.take_transition(t, transition_index)
 
-            if lp_solution is not None:
-                step_num = self.cur_state.cur_step_since_start
-                                    
-                if t.to_mode.a_csr is not None: # add discrete successor
-                    new_lpi = t.lpi.clone()
-                    
-                    lputil.add_reset_variables(new_lpi, t.to_mode.mode_id, transition_index, \
-                        reset_csr=t.reset_csr, minkowski_csr=t.reset_minkowski_csr, \
-                        minkowski_constraints_csr=t.reset_minkowski_constraints_csr, \
-                        minkowski_constraints_rhs=t.reset_minkowski_constraints_rhs)
-
-                    # make sure it's still SAT
-                    if new_lpi.minimize(columns=[], fail_on_unsat=False) is None:
-                        if self.settings.action_on_unsat_set == HylaaSettings.UNSAT_ERROR:
-                            raise RuntimeError("Continuous state was empty after applying reset in transition {}" \
-                                               .format(t))
-                        elif self.settings.action_on_unsat_set == HylaaSettings.UNSAT_WARN:
-                            if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
-                                print("Warning: Continuous state was empty after applying reset in transition {}" \
-                                      .format(t))
-                        elif self.settings.action_on_unsat_set == HylaaSettings.UNSAT_TRACE:
-                            print("Continuous state was empty after applying reset in transition {}. Saving Trace." \
-                                      .format(t))
-                            self.result.safe = False
-                            self.result.counterexample = make_counterexample( \
-                                                        self.hybrid_automaton, t.lpi, lp_solution, t)
-                            break # no need to keep checking transitions
-                    else:
-                        successor_state = StateSet(new_lpi, t.to_mode, self.cur_state.cur_step_since_start)
-                        self.waiting_list.append(successor_state)
-
-                        if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
-                            print("Added Discrete Successor to '{}' at step {}".format(t.to_mode.name, step_num))
-
-                else: # unsafe state
-                    if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
-                        print("Unsafe at Step: {} / {} ({})".format(step_num, self.settings.num_steps, \
-                                                                self.settings.step_size * step_num))
-                                                                
-                    # TODO: print out counter-example
-
-                    self.result.safe = False
-                    self.result.counterexample = make_counterexample(self.hybrid_automaton, t.lpi, lp_solution, t)
-                    
-                    break # no need to keep checking transitions
+                    # current state may have become infeasible
+                    if self.cur_state is None:
+                        break
 
     def print_current_step_time(self):
         'print the current step and time'
 
         step_num = self.cur_state.cur_step_since_start
         total_time = self.settings.step_size * step_num
-        print("Step: {} / {} ({})".format(step_num, self.settings.num_steps, total_time))
+        self.print_verbose("Step: {} / {} ({})".format(step_num, self.settings.num_steps, total_time))
 
     def do_step_continuous_post(self):
         '''do a step where it's part of a continuous post'''
 
-        if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
-            self.print_current_step_time()
+        self.print_current_step_time()
 
         if not self.is_finished():
             # next advance time by one step
@@ -131,8 +149,7 @@ class Core(Freezable):
                 still_feasible = self.cur_state.intersect_invariant()
                 
                 if not still_feasible:
-                    if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
-                        print("State left the invariant after {} steps".format(self.cur_state.cur_step_in_mode))
+                    self.print_normal("State left the invariant after {} steps".format(self.cur_state.cur_step_in_mode))
                         
                     self.cur_state = None
                 else:
@@ -143,22 +160,18 @@ class Core(Freezable):
         'do a step where we pop from the waiting list'
 
         self.plotman.state_popped() # reset certain per-mode plot variables
-
-        if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
-            self.print_waiting_list()
+        self.print_waiting_list()
 
         self.result.last_cur_state = self.cur_state = self.waiting_list.pop(0) # pop front
         self.cur_state.cur_step_in_mode = 0
 
-        if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
-            print("Removed state in mode '{}' at time {:.2f} (Waiting list has {} left)".format(
+        self.print_normal("Removed state in mode '{}' at time {:.2f} (Waiting list has {} left)".format( \
                 self.cur_state.mode.name, self.cur_state.cur_step_since_start * self.settings.step_size, \
                 len(self.waiting_list)))
 
         # if a_matrix is None, it's an error mode
         if self.cur_state.mode.a_csr is None:
-            if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
-                print("Mode '{}' was an error mode; skipping.".format(self.cur_state.mode.name))
+            self.print_normal("Mode '{}' was an error mode; skipping.".format(self.cur_state.mode.name))
 
             self.cur_state = None
         else:
@@ -168,8 +181,7 @@ class Core(Freezable):
             still_feasible = self.cur_state.intersect_invariant()
 
             if not still_feasible:
-                if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
-                    print("Continuous state was outside of the mode's invariant; skipping.")
+                self.print_normal("Continuous state was outside of the mode's invariant; skipping.")
                     
                 self.cur_state = None
             else:
@@ -192,11 +204,11 @@ class Core(Freezable):
             else:
                 self.do_step_continuous_post()
 
-            if self.is_finished() and self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
+            if self.is_finished():
                 if not self.result.safe:
-                    print("Result: Error modes are reachable.\n")
+                    self.print_normal("Result: Error modes are reachable.\n")
                 else:
-                    print("Result: System is safe. Error modes are NOT reachable.\n")
+                    self.print_normal("Result: System is safe. Error modes are NOT reachable.\n")
 
     def run(self, init_state_list):
         '''
@@ -232,8 +244,7 @@ class Core(Freezable):
             is_feasible = state.lpi.minimize(columns=[], fail_on_unsat=False) is not None
 
             if not is_feasible:
-                if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
-                    print("Removed infeasible initial set in mode {}".format(state.mode.name))
+                self.print_normal("Removed infeasible initial set in mode {}".format(state.mode.name))
                     
                 continue
             
@@ -242,8 +253,7 @@ class Core(Freezable):
             if still_feasible:
                 self.waiting_list.append(state)
             else:
-                if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
-                    print("Removed infeasible initial set after invariant intersection in mode {}".format( \
+                self.print_normal("Removed infeasible initial set after invariant intersection in mode {}".format( \
                         state.mode.name))
 
         if not self.waiting_list:
@@ -261,9 +271,11 @@ class Core(Freezable):
 
         return self.result
 
-def make_counterexample(ha, lpi, lp_solution, last_transition):
+def make_counterexample(ha, transition_to_error):
     '''make and return the result counter-example from the lp solution'''
-    
+
+    lpi = transition_to_error.lpi
+    lp_solution = lpi.minimize() # resolves the LP to get the full unsafe solution
     names = lpi.get_names()
 
     counterexample = []
@@ -306,7 +318,7 @@ def make_counterexample(ha, lpi, lp_solution, last_transition):
                 seg.end.append(value)
 
     # add the final transition which is not encoded in the names of the variables
-    seg.outgoing_transition = last_transition
+    seg.outgoing_transition = transition_to_error
 
     # add the last segment
     counterexample.append(seg)

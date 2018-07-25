@@ -99,6 +99,11 @@ class Mode(Freezable):
 
         self.freeze_attrs()
 
+    def is_error(self):
+        'is this an error mode'
+
+        return self.a_csr is None
+
     def set_invariant(self, constraints_csr, constraints_rhs):
         'sets the invariant'
 
@@ -213,8 +218,10 @@ class Transition(Freezable):
             guard_rhs = np.array(guard_rhs, dtype=float)
         
         assert self.from_mode.a_csr is not None, "A-matrix not assigned in predecessor mode {}".format(self.from_mode)
-        assert guard_csr.shape[1] == self.from_mode.a_csr.shape[0], "guard matrix expected {} columns, got {}".format(
-            self.from_mode.a_csr.shape[0], guard_csr.shape[1])
+
+        if guard_csr.shape[0] > 0:
+            assert guard_csr.shape[1] == self.from_mode.a_csr.shape[0], "guard matrix expected {} columns, got {}".format(
+                self.from_mode.a_csr.shape[0], guard_csr.shape[1])
 
         guard_rhs.shape = (len(guard_rhs), ) # flatten into a 1-d array
         assert guard_rhs.shape[0] == guard_csr.shape[0]
@@ -369,24 +376,3 @@ class HybridAutomaton(Freezable):
 
                 t.guard_csr = new_guard_csr
                 t.guard_rhs = new_guard_rhs
-
-    def do_epsilon_strengthening(self, epsilon):
-        '''
-        Strengthen the invariants and weaken the guards by a small amount. 
-
-        This is useful when the time step causes the simulation to end exactly on an invariant / guard boundary, 
-        which would normally mean that there are two steps with successors sine the guard is true at the boundary, 
-        and at the next step when the invariant becomes false.
-
-        This also makes transitions more robust to small numerical errors that can occur when LP solving.
-        '''
-
-        # stengthen invariants (make them harder to be satisfied)
-        for mode in self.modes.values():
-            for lc in mode.inv_list:
-                lc.rhs -= epsilon
-                
-        # weaken guards (make them easier to reach)
-        for t in self.transitions:
-            for i in range(t.guard_rhs.shape[0]):
-                t.guard_rhs[i] += epsilon

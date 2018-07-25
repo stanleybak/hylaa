@@ -4,6 +4,7 @@ Tests for Hylaa core object. Made for use with py.test
 
 import math
 import numpy as np
+from scipy.sparse import csr_matrix
 
 from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa.settings import HylaaSettings, PlotSettings
@@ -346,3 +347,51 @@ def test_time_triggered():
 
     assert len(result.mode_to_polys['m1']) == 3 # time 0, 1, 2
     assert len(result.mode_to_polys['m2']) == 3 # times 2, 3, 4
+
+def test_aggregation():
+    'test the aggregation of states across discrete transitions'
+
+    # m1 dynamics: x' == 1, y' == 0, x0, y0: [0, 1], step: 1.0
+    # m1 invariant: x <= 3
+    # m1 -> m2 guard: True
+    # m2 dynamics: x' == 0, y' == 1
+    # time bound: 4
+    # excepted final states to be: x: [0, 3], y: [4,5]
+
+    ha = HybridAutomaton()
+
+    # mode one: x' = 1, y' = 0, a' = 0 
+    m1 = ha.new_mode('m1')
+    m1.set_dynamics([[0, 0, 1], [0, 0, 0], [0, 0, 0]])
+
+    # mode two: x' = 0, y' = 1, a' = 0 
+    m2 = ha.new_mode('m2')
+    m2.set_dynamics([[0, 0, 0], [0, 0, 1], [0, 0, 0]])
+
+    # invariant: x <= 3.0
+    m1.set_invariant([[1, 0, 0]], [3.0])
+
+    # guard: True
+    trans1 = ha.new_transition(m1, m2, 'trans1')
+    trans1.set_guard(csr_matrix((0, 0)), [])
+
+    # initial set has x0 = [0, 1], t = [0, 1], a = 1
+    init_lpi = lputil.from_box([(0, 1), (0, 1), (1, 1)], m1)
+    init_list = [StateSet(init_lpi, m1)]
+
+    # settings, step size = 1.0
+    settings = HylaaSettings(1.0, 4.0)
+    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
+    settings.plot.store_plot_result = True
+
+    result = Core(ha, settings).run(init_list)
+
+    polys2 = result.mode_to_polys['m2']
+
+    assert 4 <= len(polys2) <= 5
+
+    assert_verts_is_box(polys2[0], [[0, 3], [0, 1]])
+    assert_verts_is_box(polys2[1], [[0, 3], [1, 2]])
+    assert_verts_is_box(polys2[2], [[0, 3], [2, 3]])
+    assert_verts_is_box(polys2[3], [[0, 3], [3, 4]])

@@ -25,6 +25,7 @@ class LpInstance(Freezable):
 
         # internal bookkeeping
         self.obj_cols = [] # columns in the LP with an assigned objective coefficient
+        self.names = [] # column names
 
         self.freeze_attrs()
 
@@ -34,6 +35,7 @@ class LpInstance(Freezable):
         rv = LpInstance()
 
         glpk.glp_copy_prob(rv.lp, self.lp, glpk.GLP_ON)
+        rv.names = self.names.copy()
 
         rv.set_reach_vars(self.dims, self.basis_mat_pos)
         rv.obj_cols = self.obj_cols.copy()
@@ -74,8 +76,8 @@ class LpInstance(Freezable):
         # the column names
         rv += "   "
 
-        for col in range(1, cols + 1):
-            name = glpk.glp_get_col_name(lp, col)
+        for col in range(cols):
+            name = self.names[col]
             name = "-" if name is None else name
             
             if len(name) < 6:
@@ -164,16 +166,16 @@ class LpInstance(Freezable):
         'add a certain number of columns to the LP'
 
         assert isinstance(names, list)
+        num_vars = len(names)
 
-        if names:
+        if num_vars > 0:
             num_cols = glpk.glp_get_num_cols(self.lp)
 
-            glpk.glp_add_cols(self.lp, len(names))
+            self.names += names
+            glpk.glp_add_cols(self.lp, num_vars)
 
-            for i, name in enumerate(names):
-                glpk.glp_set_col_bnds(self.lp, num_cols + i + 1, glpk.GLP_FR, 0, 0)  # free variable (bounds -inf to inf)
-
-                glpk.glp_set_col_name(self.lp, num_cols + i + 1, name)
+            for i in range(num_vars):
+                glpk.glp_set_col_bnds(self.lp, num_cols + i + 1, glpk.GLP_FR, 0, 0)  # free variable (-inf, inf)
 
     def add_rows_less_equal(self, rhs_vec):
         '''add rows to the LP with <= constraints
@@ -346,11 +348,17 @@ class LpInstance(Freezable):
         for c in range(cols):
             glpk.glp_set_col_stat(self.lp, c + 1, glpk.GLP_NF)
 
+    def is_feasible(self):
+        'check if the lp is feasible'
+
+        return self.minimize(columns=[], fail_on_unsat=False) is not None
+
     def minimize(self, direction_vec=None, columns=None, fail_on_unsat=True):
         '''minimize the lp
 
         if direction_vec is not None, this will first assign the optimization direction
         if columns is not None, will only return the requested columns (default= all columns)
+        if fail_on_unsat is True and the LP is infeasible, a UnsatError is raised
 
         returns None if UNSAT, otherwise the optimization result. Use columns=[] if you're not interested in the result
         '''
@@ -377,7 +385,7 @@ class LpInstance(Freezable):
         rv = self.process_simplex_result(simplex_res, columns)
 
         if rv is None and fail_on_unsat:
-            raise RuntimeError("minimize returned UNSAT and fail_on_unsafe was True")
+            raise UnsatError("minimize returned UNSAT and fail_on_unsafe was True")
 
         return rv
 
@@ -542,6 +550,18 @@ class LpInstance(Freezable):
             raise RuntimeError("Invalid constraint type {} in row {} in set_constraint_rhs()".format(
                 row_type, row_index))
 
+    def write_lp_glpk(self, filename):
+        '''write the lp in GLPK format'''
+
+        if glpk.glp_write_prob(self.lp, 0, filename) != 0:
+            raise RuntimeError('Error saving GLPK-format LP to {}'.format(filename))
+
+    def write_lp_cplex(self, filename):
+        '''write the lp in CPLEX format'''
+
+        if glpk.glp_write_lp(self.lp, None, filename) != 0:
+            raise RuntimeError('Error saving CLPEX-format LP to {}'.format(filename))
+
     def get_types(self):
         '''get the constraint types. These are swiglpk.GLP_FX, swiglpk.GLP_UP, or swiglpk.GLP_LO'''
 
@@ -581,13 +601,7 @@ class LpInstance(Freezable):
     def get_names(self):
         '''get the symbolic names of each column'''
 
-        cols = glpk.glp_get_num_cols(self.lp)
-        rv = []
-
-        for col in range(cols):
-            rv.append(glpk.glp_get_col_name(self.lp, col + 1))
-
-        return rv
+        return self.names
 
     def get_rhs(self):
         '''get the rhs vector of the constraints'''
@@ -682,3 +696,6 @@ class LpInstance(Freezable):
         'get the number of LP iterations performed so far'
 
         return glpk.glp_get_it_cnt(self.lp)
+
+class UnsatError(RuntimeError):
+    'raised if an LP is infeasible'

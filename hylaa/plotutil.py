@@ -358,8 +358,10 @@ class PlotManager(Freezable):
 
     def plot_current_state(self, state):
         '''
-        plot the current SymbolicState according to the plot settings
+        plot the current SymbolicState according to the plot settings. returns still_feasible
         '''
+
+        rv = True
 
         if self.settings.plot_mode != PlotSettings.PLOT_NONE or self.settings.store_plot_result:
 
@@ -367,22 +369,28 @@ class PlotManager(Freezable):
             verts = state.verts(self)
             Timers.toc('verts()')
 
-            if self.settings.store_plot_result:
-                if state.mode.name in self.core.result.mode_to_polys:
-                    self.core.result.mode_to_polys[state.mode.name].append(verts)
-                else:
-                    self.core.result.mode_to_polys[state.mode.name] = [verts]
+            if verts is None:
+                rv = False
+            else:
 
-            if self.settings.plot_mode != PlotSettings.PLOT_NONE:
-                Timers.tic("add to plot")
-                self.shapes.set_cur_state(verts)
+                if self.settings.store_plot_result:
+                    if state.mode.name in self.core.result.mode_to_polys:
+                        self.core.result.mode_to_polys[state.mode.name].append(verts)
+                    else:
+                        self.core.result.mode_to_polys[state.mode.name] = [verts]
 
-                if self.settings.label.axes_limits is None:
-                    self.update_axis_limits(verts)
+                if self.settings.plot_mode != PlotSettings.PLOT_NONE:
+                    Timers.tic("add to plot")
+                    self.shapes.set_cur_state(verts)
 
-                self.shapes.add_reachable_poly(verts, state.mode.name)
+                    if self.settings.label.axes_limits is None:
+                        self.update_axis_limits(verts)
 
-                Timers.toc("add to plot")
+                    self.shapes.add_reachable_poly(verts, state.mode.name)
+
+                    Timers.toc("add to plot")
+
+        return rv
 
     def compute_and_animate(self, step_func, is_finished_func):
         'do the computation, plotting during the process'
@@ -401,7 +409,9 @@ class PlotManager(Freezable):
                 step_func()
 
                 if self.core.cur_state is not None:
-                    self.plot_current_state(self.core.cur_state)
+                    if not self.plot_current_state(self.core.cur_state):
+                        self.core.print_verbose("Continuous state discovered to be UNSAT during plot, removing state")
+                        self.core.cur_state = None
 
                 # if we just wanted a single step
                 if self.interactive.step:
@@ -410,10 +420,9 @@ class PlotManager(Freezable):
 
                 Timers.toc("frame")
 
-                if self.interactive.paused and not force_single_frame and \
-                   self.core.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
+                if self.interactive.paused and not force_single_frame:
                     frame_timer = Timers.top_level_timer.get_children_recursive('frame')[0]
-                    print("Paused After Frame #{}".format(frame_timer.num_calls))
+                    self.core.print_normal("Paused After Frame #{}".format(frame_timer.num_calls))
 
             return [self.axes.xaxis, self.axes.yaxis] + self.shapes.get_artists()
 
@@ -487,7 +496,9 @@ class PlotManager(Freezable):
             step_func()
 
             if compute_plot and self.core.cur_state is not None:
-                self.plot_current_state(self.core.cur_state)
+                if not self.plot_current_state(self.core.cur_state):
+                    self.core.print_verbose("Continuous state discovered to be UNSAT during plot, removing state")
+                    self.core.cur_state = None
 
         Timers.toc("total")
 

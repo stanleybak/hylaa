@@ -55,7 +55,7 @@ class StateSet(Freezable):
 
         # update each transition's basis matrix
         for t in self.mode.transitions:
-            lputil.set_basis_matrix(t.lpi,self.basis_matrix)
+            lputil.set_basis_matrix(t.lpi, self.basis_matrix)
 
         self._verts = None # cached vertices no longer valid
 
