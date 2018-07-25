@@ -520,3 +520,33 @@ def add_curtime_constraints(lpi, csr, rhs_vec):
     lpi.add_rows_less_equal(rhs_vec)
 
     lpi.set_constraints_csr(csr, offset=(prerows, lpi.cur_vars_offset))
+
+def get_box_center(lpi):
+    '''get the center of the box overapproximation of the passed-in lpi'''
+
+    dims = lpi.dims
+    pt = []
+
+    for dim in range(dims):
+        col = lpi.cur_vars_offset + dim
+        min_dir = [1 if i == dim else 0 for i in range(dims)]
+        max_dir = [-1 if i == dim else 0 for i in range(dims)]
+        
+        min_val = lpi.minimize(direction_vec=min_dir, columns=[col])[0]
+        max_val = lpi.minimize(direction_vec=max_dir, columns=[col])[0]
+
+        pt.append((min_val + max_val) / 2.0)
+
+    return pt
+
+def make_direction_matrix(point, a_csr):
+    '''make the direction matrix for aggregation bloating
+
+    this is essentially a set of full rank, linearly-independent vectors, extracted from the dynamics using something
+    similar to the arnoldi iteration
+
+    point is the point where to sample the dynamics
+    a_csr is the dynamics matrix
+    '''
+
+    return None

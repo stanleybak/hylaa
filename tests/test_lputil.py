@@ -4,10 +4,11 @@ Tests for LP operations. Made for use with py.test
 
 import math
 import numpy as np
-
-import swiglpk as glpk
+import scipy as sp
 
 from scipy.sparse import csr_matrix
+
+import swiglpk as glpk
 
 from hylaa import lputil, lpplot
 from hylaa.hybrid_automaton import HybridAutomaton, LinearConstraint
@@ -608,3 +609,37 @@ def test_init_triangle():
     assert [0., 0.] in verts
     assert [1., 0] in verts
     assert verts[0] == verts[-1]
+
+def test_get_box_center():
+    'test get_box_center'
+
+    lpi = lputil.from_box([[-5, -4], [0, 1]], HybridAutomaton().new_mode('mode_name'))
+
+    pt = lputil.get_box_center(lpi)
+    assert len(pt) == 2
+    assert abs(pt[0] - (-4.5)) < 1e-4
+    assert abs(pt[1] - (0.5)) < 1e-4
+
+    basis = np.array([[0, 1], [-1, 0]], dtype=float)
+    lputil.set_basis_matrix(lpi, basis)
+
+    pt = lputil.get_box_center(lpi)
+    assert len(pt) == 2
+    assert abs(pt[0] - (0.5)) < 1e-4
+    assert abs(pt[1] - (4.5)) < 1e-4
+
+    # try it rotated 1/4 around the circle
+    a_mat = np.array([[0, 1], [-1, 0]], dtype=float)
+
+    bm = sp.linalg.expm(a_mat * math.pi / 4)
+    lputil.set_basis_matrix(lpi, bm)
+
+    expected = np.dot(bm, np.array([[-4.5], [0.5]], dtype=float))
+
+    pt = lputil.get_box_center(lpi)
+
+    assert len(pt) == 2
+    assert abs(pt[0] - expected[0][0]) < 1e-4
+    assert abs(pt[1] - expected[1][0]) < 1e-4
+
+

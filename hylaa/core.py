@@ -156,13 +156,56 @@ class Core(Freezable):
                     self.cur_state.step()
                     self.check_guards()
 
+    def pop_waiting_list(self):
+        'pop a state off the waiting list, possibly doing state-set aggreation'
+
+        if not self.settings.aggregation:
+            rv = self.waiting_list.pop(0)
+        else:
+            # aggregation is on, first find the state with the minimum time on the waiting list
+            first = None
+
+            for state in self.waiting_list:
+                if first is None or state.cur_step_since_start < first.cur_step_since_start:
+                    first = state
+
+            self.print_verbose("Minimum time state on waiting list: {}".format(first))
+
+            # remove all states with the same mode as 'first' for aggregation
+            new_waiting_list = []
+            agg_list = []
+
+            for state in self.waiting_list:
+                if state.mode == first.mode:
+                    agg_list.append(state)
+                else:
+                    new_waiting_list.append(state)
+
+            self.waiting_list = new_waiting_list # assign new waiting list
+
+            self.print_verbose("Removed {} states for aggregation".format(len(agg_list)))
+
+            if len(agg_list) == 1:
+                rv = agg_list[0]
+            else:
+                # create a new state from the aggregation
+                mid_index = len(agg_list) // 2
+                
+                direction_matrix = self.make_direction_matrix(agg_list[mid_index])
+                lpi_list = [state.lpi for state in agg_list]
+                new_lpi = lputil.aggregate(lpi_list, direction_matrix)
+
+                rv = StateSet(new_lpi, first.mode, cur_step_since_start=first.cur_step_since_start)
+                
+        return rv
+
     def do_step_pop(self):
         'do a step where we pop from the waiting list'
 
         self.plotman.state_popped() # reset certain per-mode plot variables
         self.print_waiting_list()
 
-        self.result.last_cur_state = self.cur_state = self.waiting_list.pop(0) # pop front
+        self.result.last_cur_state = self.cur_state = self.pop_waiting_list()
         self.cur_state.cur_step_in_mode = 0
 
         self.print_normal("Removed state in mode '{}' at time {:.2f} (Waiting list has {} left)".format( \

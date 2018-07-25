@@ -35,6 +35,7 @@ class HylaaSettings(Freezable):
         ### SIMULATION-EQUIVALENT SEMANTICS / COMPUTATION OPTIMIZATIONS ###
         self.process_urgent_guards = False # force one step within each mode
         self.do_guard_strengthening = True # add invariants of target modes to each guard?
+        self.aggregation = True
 
         # increase the step size slightly by this amount; this is good for when you would end up exactly on an
         # invariant / guard boundary, and so two steps would be added to the waiting list rather than one.
