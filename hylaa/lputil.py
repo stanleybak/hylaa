@@ -553,7 +553,7 @@ def make_direction_matrix(point, a_csr):
     a_csr is the dynamics matrix
     '''
 
-    Timers.tic('arnoldi')
+    Timers.tic('make_direction_matrix')
 
     start = time.time()
 
@@ -565,29 +565,18 @@ def make_direction_matrix(point, a_csr):
             frac = self.cur_it * self.cur_it / float(iterations * iterations)
             eta = elapsed / frac - elapsed
 
-            print "arnoldi iteration {} / {}, Elapsed: {:.2f}m, ETA: {:.2f}m".format(self.cur_it-1, iterations, \
-                elapsed / 60.0, eta / 60.0)
-
-        Timers.tic('arnoldi mult')
         cur_vec = self.mult(self.a_matrix, self.v_mat[self.cur_it - 1])
-        Timers.toc('arnoldi mult')
 
         for c in xrange(self.cur_it):
             prev_vec = self.v_mat[c]
 
-            Timers.tic('arnoldi dot')
             dot_val = np.dot(prev_vec, cur_vec)
-            Timers.toc('arnoldi dot')
 
             self.h_mat[c, self.cur_it - 1] = dot_val
 
-            Timers.tic('arnoldi axpy')
             cur_vec -= prev_vec * dot_val
-            Timers.toc('arnoldi axpy')
 
-        Timers.tic('arnoldi norm')
         norm = np.linalg.norm(cur_vec, 2)
-        Timers.toc('arnoldi norm')
 
         assert not math.isinf(norm) and not math.isnan(norm), "vector norm was infinite in arnoldi"
 
@@ -616,6 +605,6 @@ def make_direction_matrix(point, a_csr):
         pv_mat = self.key_dir_mat * self.v_mat.transpose()
         pv_mat *= self.init_norm
 
-    Timers.toc('arnoldi')
+    Timers.toc('make_direction_matrix')
 
     return pv_mat, self.h_mat
