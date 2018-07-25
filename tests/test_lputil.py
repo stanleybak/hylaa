@@ -4,8 +4,8 @@ Tests for LP operations. Made for use with py.test
 
 import math
 import numpy as np
-import scipy as sp
 
+from scipy.linalg import expm
 from scipy.sparse import csr_matrix
 
 import swiglpk as glpk
@@ -631,7 +631,7 @@ def test_get_box_center():
     # try it rotated 1/4 around the circle
     a_mat = np.array([[0, 1], [-1, 0]], dtype=float)
 
-    bm = sp.linalg.expm(a_mat * math.pi / 4)
+    bm = expm(a_mat * math.pi / 4)
     lputil.set_basis_matrix(lpi, bm)
 
     expected = np.dot(bm, np.array([[-4.5], [0.5]], dtype=float))
@@ -642,4 +642,40 @@ def test_get_box_center():
     assert abs(pt[0] - expected[0][0]) < 1e-4
     assert abs(pt[1] - expected[1][0]) < 1e-4
 
+def test_make_direction_matrix():
+    '''
+    test making the direction matrix on a 2d example. The first vector should match the dynamics as the passed-in 
+    point, while the second should be orthogonal to the first
+    '''
 
+    assert False
+
+def test_direction_matrix_empty():
+    '''test make_direction matrix when the dynamics matrix is empty
+
+    it should just return any orthonormal set of vectors of the appropriate dimension
+    '''
+
+    a_csr = csr_matrix(np.zeros(3, 3))
+    pt = [0, 0, 0]
+
+    mat = lputil.make_direction_matrix(pt, a_csr)
+
+    assert mat.shape == (3, 3)
+
+    for row_a in mat:
+        assert abs(np.linalg.norm(row_a) - 1.0) < 1e-6, "rows should be normalized"
+        
+        for row_b in mat:
+            if row_a == row_b:
+                continue
+
+            assert np.dot(row_a, row_b) < 1e-6, "rows should be orthononal"
+
+def test_aggregate_on_subspace():
+    '''
+    test aggregation when the dynamics and sets are only on a subspace. The aggregation minkowski variables 
+    should not include directions on the subspace, since they aren't necessary. 
+    '''
+
+    assert False

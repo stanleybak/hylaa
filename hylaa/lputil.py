@@ -263,6 +263,10 @@ def aggregate(lpi_list, direction_matrix):
     return a new lpi consisting of an aggregation of the passed-in list
 
     This uses minkowski sum with template directions.
+
+    each row of direction matrix a vector which are mutually orthogonal, along which we should perform bloating
+
+    use lputil.make_direction_matrix() to create this
     '''
 
     assert direction_matrix.shape[0] == direction_matrix.shape[1], "expected square direction matrix"
@@ -542,11 +546,76 @@ def get_box_center(lpi):
 def make_direction_matrix(point, a_csr):
     '''make the direction matrix for aggregation bloating
 
-    this is essentially a set of full rank, linearly-independent vectors, extracted from the dynamics using something
+    this is a set of full rank, linearly-independent vectors, extracted from the dynamics using something
     similar to the arnoldi iteration
 
     point is the point where to sample the dynamics
     a_csr is the dynamics matrix
     '''
 
-    return None
+    Timers.tic('arnoldi')
+
+    start = time.time()
+
+    while self.cur_it < iterations + 1:
+        if self.print_status:
+            elapsed = time.time() - start + self.elapsed
+
+            # we expect quadratic scalability for arnoldi
+            frac = self.cur_it * self.cur_it / float(iterations * iterations)
+            eta = elapsed / frac - elapsed
+
+            print "arnoldi iteration {} / {}, Elapsed: {:.2f}m, ETA: {:.2f}m".format(self.cur_it-1, iterations, \
+                elapsed / 60.0, eta / 60.0)
+
+        Timers.tic('arnoldi mult')
+        cur_vec = self.mult(self.a_matrix, self.v_mat[self.cur_it - 1])
+        Timers.toc('arnoldi mult')
+
+        for c in xrange(self.cur_it):
+            prev_vec = self.v_mat[c]
+
+            Timers.tic('arnoldi dot')
+            dot_val = np.dot(prev_vec, cur_vec)
+            Timers.toc('arnoldi dot')
+
+            self.h_mat[c, self.cur_it - 1] = dot_val
+
+            Timers.tic('arnoldi axpy')
+            cur_vec -= prev_vec * dot_val
+            Timers.toc('arnoldi axpy')
+
+        Timers.tic('arnoldi norm')
+        norm = np.linalg.norm(cur_vec, 2)
+        Timers.toc('arnoldi norm')
+
+        assert not math.isinf(norm) and not math.isnan(norm), "vector norm was infinite in arnoldi"
+
+        self.h_mat[self.cur_it, self.cur_it-1] = norm
+
+        if norm >= self.tol:
+            Timers.tic('arnoldi norm div')
+            cur_vec = cur_vec / norm
+            Timers.toc('arnoldi norm div')
+
+            self.v_mat[self.cur_it] = cur_vec
+        elif self.cur_it > 1:
+            #cur_vec *= 0
+            #print "break! norm {} <= tol {}".format(norm, self.tol)
+            self.v_mat = self.v_mat[:self.cur_it+1, :]
+            self.h_mat = self.h_mat[:self.cur_it+1, :self.cur_it]
+            break
+
+        self.cur_it += 1
+
+    self.elapsed += time.time() - start
+
+    if self.key_dir_mat is None:
+        pv_mat = None
+    else:
+        pv_mat = self.key_dir_mat * self.v_mat.transpose()
+        pv_mat *= self.init_norm
+
+    Timers.toc('arnoldi')
+
+    return pv_mat, self.h_mat
