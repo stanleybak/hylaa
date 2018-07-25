@@ -102,8 +102,8 @@ class Timers(object):
     def tic(name):
         'start a timer'
 
-        if len(Timers.stack) == 0:
-            assert name == "total", "There should only be one top-level timer named total (got {})".format(name)
+        if not Timers.stack:
+            assert Timers.top_level_timer is None or name == Timers.top_level_timer.name, "multiple top level timers"
 
             td = Timers.top_level_timer
         else:
@@ -111,10 +111,10 @@ class Timers(object):
 
         # create timer object if it doesn't exist
         if td is None:
-            parent = None if len(Timers.stack) == 0 else Timers.stack[-1]
+            parent = None if not Timers.stack else Timers.stack[-1]
             td = TimerData(name, parent)
 
-            if len(Timers.stack) == 0:
+            if not Timers.stack:
                 Timers.top_level_timer = td
             else:
                 Timers.stack[-1].children.append(td)

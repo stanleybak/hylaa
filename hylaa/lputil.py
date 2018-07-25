@@ -6,11 +6,14 @@ first N columns correspond to the current-time variables, and
 the first N rows are the current-time constraints (equality constraints equal to zero)
 '''
 
+import math
+
 import numpy as np
 import scipy as sp
 from scipy.sparse import csr_matrix, csc_matrix
 
 from hylaa.lpinstance import LpInstance
+from hylaa.timerutil import Timers
 
 def from_box(box_list, mode):
     'make a new lp instance from a passed-in box'
@@ -555,24 +558,20 @@ def make_direction_matrix(point, a_csr):
 
     Timers.tic('make_direction_matrix')
 
-    start = time.time()
+    assert isinstance(a_csr, csr_matrix)
+    dims = len(point)
+    rv = []
 
-    while self.cur_it < iterations + 1:
-        if self.print_status:
-            elapsed = time.time() - start + self.elapsed
+    cur_vec = np.array(point)
+    cur_vec.shape = (dims, 1)
 
-            # we expect quadratic scalability for arnoldi
-            frac = self.cur_it * self.cur_it / float(iterations * iterations)
-            eta = elapsed / frac - elapsed
+    while len(rv) < dims:
+        print("start, cur_vec = {}".format(cur_vec))
+        cur_vec = a_csr * cur_vec
 
-        cur_vec = self.mult(self.a_matrix, self.v_mat[self.cur_it - 1])
-
-        for c in xrange(self.cur_it):
-            prev_vec = self.v_mat[c]
-
+        # project out the previous vectors
+        for prev_vec in rv:
             dot_val = np.dot(prev_vec, cur_vec)
-
-            self.h_mat[c, self.cur_it - 1] = dot_val
 
             cur_vec -= prev_vec * dot_val
 
@@ -580,31 +579,16 @@ def make_direction_matrix(point, a_csr):
 
         assert not math.isinf(norm) and not math.isnan(norm), "vector norm was infinite in arnoldi"
 
-        self.h_mat[self.cur_it, self.cur_it-1] = norm
+        print("norm = {}, rv len = {}".format(norm, len(rv)))
 
-        if norm >= self.tol:
-            Timers.tic('arnoldi norm div')
+        if norm < 1e-6:
+            # super small norm... basically it's in the subspace spaned by previous vectors, restart
+            cur_vec = np.random.rand(dims, 1)
+        else:
             cur_vec = cur_vec / norm
-            Timers.toc('arnoldi norm div')
 
-            self.v_mat[self.cur_it] = cur_vec
-        elif self.cur_it > 1:
-            #cur_vec *= 0
-            #print "break! norm {} <= tol {}".format(norm, self.tol)
-            self.v_mat = self.v_mat[:self.cur_it+1, :]
-            self.h_mat = self.h_mat[:self.cur_it+1, :self.cur_it]
-            break
-
-        self.cur_it += 1
-
-    self.elapsed += time.time() - start
-
-    if self.key_dir_mat is None:
-        pv_mat = None
-    else:
-        pv_mat = self.key_dir_mat * self.v_mat.transpose()
-        pv_mat *= self.init_norm
+            rv.append(cur_vec)
 
     Timers.toc('make_direction_matrix')
 
-    return pv_mat, self.h_mat
+    return np.array(rv, dtype=float)

@@ -9,6 +9,7 @@ from scipy.sparse import csr_matrix, csc_matrix
 import swiglpk as glpk
 
 from hylaa.util import Freezable
+from hylaa.timerutil import Timers
 
 class LpInstance(Freezable):
     'Linear programming wrapper using glpk (through swiglpk python interface)'
@@ -215,6 +216,8 @@ class LpInstance(Freezable):
         offset is an optional tuple (num_rows, num_cols) which tells you the top-left offset for the assignment
         '''
 
+        Timers.tic('set_constraints_csr')
+
         assert isinstance(csr_mat, csr_matrix)
         assert csr_mat.dtype == float
 
@@ -253,11 +256,15 @@ class LpInstance(Freezable):
 
             glpk.glp_set_mat_row(self.lp, offset[0] + row + 1, count, indices_vec, data_ptr)
 
+        Timers.toc('set_constraints_csr')
+
     def set_constraints_csc(self, csc_mat, offset=None):
         '''set the constrains column by column to be equal to the passed-in csc matrix
 
         offset is an optional tuple (num_rows, num_cols) which tells you the top-left offset for the assignment
         '''
+
+        Timers.tic('set_constraints_csc')
 
         assert isinstance(csc_mat, csc_matrix)
         assert csc_mat.dtype == float
@@ -299,6 +306,8 @@ class LpInstance(Freezable):
             data_ptr = glpk.as_doubleArray(data_row_list)
 
             glpk.glp_set_mat_col(self.lp, offset[1] + col + 1, count, indices_vec, data_ptr)
+
+        Timers.toc('set_constraints_csr')
 
     def set_minimize_direction(self, direction_vec, is_csr=False):
         '''set the direction for the optimization in terms of the current-time variables
@@ -363,6 +372,8 @@ class LpInstance(Freezable):
         returns None if UNSAT, otherwise the optimization result. Use columns=[] if you're not interested in the result
         '''
 
+        Timers.tic('minimize')
+
         if direction_vec is not None:
             self.set_minimize_direction(direction_vec)
 
@@ -371,7 +382,9 @@ class LpInstance(Freezable):
         glpk.glp_init_smcp(params)
         params.msg_lev = glpk.GLP_MSG_OFF
 
+        Timers.tic('glp_simplex')
         simplex_res = glpk.glp_simplex(self.lp, params)
+        Timers.toc('glp_simplex')
 
         if simplex_res != 0:
             # sometimes the previous solution is singular wrt. current constraints.
@@ -383,6 +396,8 @@ class LpInstance(Freezable):
 
         # process simplex result
         rv = self.process_simplex_result(simplex_res, columns)
+
+        Timers.toc('minimize')
 
         if rv is None and fail_on_unsat:
             raise UnsatError("minimize returned UNSAT and fail_on_unsafe was True")

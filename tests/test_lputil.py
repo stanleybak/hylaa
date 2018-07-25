@@ -12,6 +12,7 @@ import swiglpk as glpk
 
 from hylaa import lputil, lpplot
 from hylaa.hybrid_automaton import HybridAutomaton, LinearConstraint
+from hylaa.timerutil import Timers
 
 def test_from_box():
     'tests from_box'
@@ -642,6 +643,7 @@ def test_get_box_center():
     assert abs(pt[0] - expected[0][0]) < 1e-4
     assert abs(pt[1] - expected[1][0]) < 1e-4
 
+
 def test_make_direction_matrix():
     '''
     test making the direction matrix on a 2d example. The first vector should match the dynamics as the passed-in 
@@ -661,7 +663,7 @@ def test_make_direction_matrix():
 
     for row_a in mat:
         assert abs(np.linalg.norm(row_a) - 1.0) < 1e-6, "rows should be normalized"
-        
+
         for row_b in mat:
             if row_a == row_b:
                 continue
@@ -676,8 +678,8 @@ def test_direction_matrix_empty():
     it should just return any orthonormal set of vectors of the appropriate dimension
     '''
 
-    a_csr = csr_matrix(np.zeros(3, 3))
-    pt = [0, 0, 0]
+    a_csr = csr_matrix(np.zeros((5, 5)))
+    pt = [0] * 5
 
     mat = lputil.make_direction_matrix(pt, a_csr)
 
@@ -685,12 +687,14 @@ def test_direction_matrix_empty():
 
     for row_a in mat:
         assert abs(np.linalg.norm(row_a) - 1.0) < 1e-6, "rows should be normalized"
-        
+
         for row_b in mat:
             if row_a == row_b:
                 continue
 
             assert np.dot(row_a, row_b) < 1e-6, "rows should be orthononal"
+
+test_direction_matrix_empty()
 
 def test_aggregate_on_subspace():
     '''
@@ -706,7 +710,7 @@ def test_aggregate_on_subspace():
 
     mode = HybridAutomaton().new_mode('mode_name')
     lpi1 = lputil.from_box([[0, 1], [0, 1], [1, 1]], mode)
-    lpi2 = lputil.from_box([[4, 5], [0, 1]], [1, 1], mode)
+    lpi2 = lputil.from_box([[4, 5], [0, 1], [1, 1]], mode)
 
     #a_csr = csr_matrix(np.array([[0, 0, 1], [0, 0, 0], [0, 0, 0]], dtype=float))
     agg_dirs = np.array([[1, 0, 0], [0, 1, 1], [0, 1, -1]], dtype=float)
@@ -722,7 +726,7 @@ def test_aggregate_on_subspace():
     assert pair_almost_in([0., 1.], verts)
     assert pair_almost_in([5., 1.], verts)
     assert pair_almost_in([5., 0.], verts)
-    
+
     assert verts[0] == verts[-1]
 
     # make sure only one aggregation variable was introduced
