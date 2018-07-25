@@ -103,9 +103,12 @@ class Timers(object):
         'start a timer'
 
         if not Timers.stack:
-            assert Timers.top_level_timer is None or name == Timers.top_level_timer.name, "multiple top level timers"
-
-            td = Timers.top_level_timer
+            if name != "total":
+                # fake a top-level timer... this is useful for unit tests that don't have top-level timers
+                Timers.tic("total")
+                td = Timers.stack[-1].get_child(name)
+            else:
+                td = Timers.top_level_timer
         else:
             td = Timers.stack[-1].get_child(name)
 

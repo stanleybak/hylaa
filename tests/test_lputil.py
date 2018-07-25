@@ -710,7 +710,8 @@ def test_aggregate_on_subspace():
     lpi2 = lputil.from_box([[4, 5], [0, 1], [1, 1]], mode)
 
     #a_csr = csr_matrix(np.array([[0, 0, 1], [0, 0, 0], [0, 0, 0]], dtype=float))
-    agg_dirs = np.array([[1, 0, 0], [0, 1, 1], [0, 1, -1]], dtype=float)
+    sqr = math.sqrt(2) / 2
+    agg_dirs = np.array([[1, 0, 0], [0, sqr, sqr], [0, sqr, -sqr]], dtype=float)
 
     # box aggregation
     lpi = lputil.aggregate([lpi1, lpi2], agg_dirs)
@@ -730,5 +731,45 @@ def test_aggregate_on_subspace():
     names = lpi.get_names()
 
     expected_names = ["m0_i0", "m0_i1", "m0_i3", "m0_c0", "m0_c1", "m0_c2", "agg0", "m0_c0", "m0_c1", "m0_c2"]
+
+    assert names == expected_names
+
+def test_aggregate_self():
+    '''
+    test aggregation on an identical set. This shouldn't create new variables. 
+    '''
+
+    # dynamics are x' == 1, y' == 0, a' == 0
+    # lpi1 is [0, 1] x [0, 1] x [1, 1]
+    # lpi2 is [3, 4] x [0, 1] x [1, 1]
+
+    # aggregation shouldn't need to introduce a variable along the y direction
+
+    mode = HybridAutomaton().new_mode('mode_name')
+    lpi1 = lputil.from_box([[0, 1], [0, 1], [1, 1]], mode)
+    lpi2 = lputil.from_box([[0, 1], [0, 1], [1, 1]], mode)
+
+    #a_csr = csr_matrix(np.array([[0, 0, 1], [0, 0, 0], [0, 0, 0]], dtype=float))
+    sqr = math.sqrt(2) / 2
+    agg_dirs = np.array([[1, 0, 0], [0, sqr, sqr], [0, sqr, -sqr]], dtype=float)
+
+    # box aggregation
+    lpi = lputil.aggregate([lpi1, lpi2], agg_dirs)
+
+    verts = lpplot.get_verts(lpi)
+
+    assert len(verts) == 5
+
+    assert pair_almost_in([0., 0.], verts)
+    assert pair_almost_in([0., 1.], verts)
+    assert pair_almost_in([1., 1.], verts)
+    assert pair_almost_in([1., 0.], verts)
+
+    assert verts[0] == verts[-1]
+
+    # make sure only one aggregation variable was introduced
+    names = lpi.get_names()
+
+    expected_names = ["m0_i0", "m0_i1", "m0_i3", "m0_c0", "m0_c1", "m0_c2"]
 
     assert names == expected_names

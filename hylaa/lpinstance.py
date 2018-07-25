@@ -307,7 +307,7 @@ class LpInstance(Freezable):
 
             glpk.glp_set_mat_col(self.lp, offset[1] + col + 1, count, indices_vec, data_ptr)
 
-        Timers.toc('set_constraints_csr')
+        Timers.toc('set_constraints_csc')
 
     def set_minimize_direction(self, direction_vec, is_csr=False):
         '''set the direction for the optimization in terms of the current-time variables
