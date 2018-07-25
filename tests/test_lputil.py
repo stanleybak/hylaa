@@ -648,6 +648,26 @@ def test_make_direction_matrix():
     point, while the second should be orthogonal to the first
     '''
 
+    a_csr = csr_matrix(np.array([1, 0], [0, 1], dtype=float))
+    pt = [2, 2] # derivative should be <2, 2>
+
+    mat = lputil.make_direction_matrix(pt, a_csr)
+
+    assert mat.shape == (2, 2)
+
+    # first row should be <1, 1> (normalized version of derivative)
+    assert abs(mat[0][0] - 1.0) < 1e-6
+    assert abs(mat[0][1] - 1.0) < 1e-6
+
+    for row_a in mat:
+        assert abs(np.linalg.norm(row_a) - 1.0) < 1e-6, "rows should be normalized"
+        
+        for row_b in mat:
+            if row_a == row_b:
+                continue
+
+            assert np.dot(row_a, row_b) < 1e-6, "rows should be orthononal"
+
     assert False
 
 def test_direction_matrix_empty():
