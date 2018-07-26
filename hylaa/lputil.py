@@ -312,17 +312,18 @@ def aggregate(lpi_list, direction_matrix):
     dims = middle_lpi.dims
 
     rv = middle_lpi.clone()
+    create_agg_var = []
     
     for i in range(num_directions):
         if abs(mid_mins[i] - mins[i]) < 1e-13 and abs(mid_maxes[i] - maxes[i]) < 1e-13:
             create_agg_var.append(False)
         else:
-            crate_agg_var.append(True)
+            create_agg_var.append(True)
             
     num_agg_dims = sum([1 if needs_var else 0 for needs_var in create_agg_var])
         
     # add n new columns and 2n new rows, for the minkowski sum constriants
-    names = ["agg{}".format(i) for i in range(dims)]
+    names = ["agg{}".format(i) for i in range(num_agg_dims)]
     rv.add_cols(names)
 
     # csc matrix with constriants
@@ -332,6 +333,9 @@ def aggregate(lpi_list, direction_matrix):
     rhs = []
 
     for dim in range(dims):
+        if not create_agg_var[dim]:
+            continue
+        
         direction = direction_matrix[dim]
         
         # column is direction[dim]
