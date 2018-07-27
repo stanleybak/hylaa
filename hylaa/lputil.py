@@ -332,6 +332,8 @@ def aggregate(lpi_list, direction_matrix):
     indptrs = [0]
     rhs = []
 
+    constraint_row_offset = 0
+
     for dim in range(dims):
         if not create_agg_var[dim]:
             continue
@@ -344,23 +346,25 @@ def aggregate(lpi_list, direction_matrix):
             inds.append(i)
 
         data.append(1.0) # <= constraint
-        inds.append(rows + 2*dim)
+        inds.append(rows + constraint_row_offset)
         rhs.append(maxes[dim] - mid_maxes[dim])
 
         data.append(-1.0) # >= constraint
-        inds.append(rows + 2*dim + 1)
+        inds.append(rows + constraint_row_offset + 1)
         rhs.append(-(mins[dim] - mid_mins[dim]))
+
+        constraint_row_offset += 2
 
         indptrs.append(len(data))
 
     rv.add_rows_less_equal(rhs)
 
-    constraints = csc_matrix((data, inds, indptrs), dtype=float, shape=(rows + 2*dims, dims))
+    constraints = csc_matrix((data, inds, indptrs), dtype=float, shape=(rows + 2*num_agg_dims, num_agg_dims))
     constraints.check_format()
 
     rv.set_constraints_csc(constraints, offset=(0, cols))
 
-    add_snapshot_variables(rv, "ss_ag")
+    add_snapshot_variables(rv, "snap")
 
     return rv
 

@@ -371,6 +371,8 @@ class PlotManager(Freezable):
 
             if verts is None:
                 rv = False
+
+                print(".plotutil verts() returned None for lpi:\n{}".format(state.lpi))
             else:
 
                 if self.settings.store_plot_result:
@@ -433,7 +435,7 @@ class PlotManager(Freezable):
 
         def anim_iterator():
             'generator for the computation iterator'
-            Timers.tic("total")
+            Timers.tic("anim_iterator")
 
             # do the computation until its done
             while not is_finished_func():
@@ -442,7 +444,7 @@ class PlotManager(Freezable):
             # redraw one more (will clear cur_state)
             #yield False
 
-            Timers.toc("total")
+            Timers.toc("anim_iterator")
 
             if self.core.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
                 Timers.print_stats()
@@ -487,7 +489,7 @@ class PlotManager(Freezable):
     def run_to_completion(self, step_func, is_finished_func, compute_plot=True):
         'run to completion, creating the plot at each step'
 
-        Timers.tic("total")
+        Timers.tic("run_to_completion")
 
         while not is_finished_func():
             if compute_plot and self.shapes is not None:
@@ -500,10 +502,7 @@ class PlotManager(Freezable):
                     self.core.print_verbose("Continuous state discovered to be UNSAT during plot, removing state")
                     self.core.cur_state = None
 
-        Timers.toc("total")
-
-        if self.core.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
-            Timers.print_stats()
+        Timers.toc("run_to_completion")
 
     def save_image(self):
         'save an image file'

@@ -9,7 +9,7 @@ from hylaa.settings import HylaaSettings, PlotSettings
 
 from hylaa.plotutil import PlotManager
 from hylaa.stateset import StateSet
-from hylaa.hybrid_automaton import HybridAutomaton
+from hylaa.hybrid_automaton import HybridAutomaton, was_tt_taken
 from hylaa.timerutil import Timers
 from hylaa.util import Freezable
 from hylaa import lputil
@@ -25,9 +25,6 @@ class Core(Freezable):
         
         self.settings = hylaa_settings
 
-        # add the extra step size into the settings
-        self.settings.step_size += self.settings.extra_step_size_epsilon
-
         self.plotman = PlotManager(self)
 
         # computation
@@ -35,6 +32,8 @@ class Core(Freezable):
         
         self.cur_state = None # a StateSet object
         self.max_steps_remaining = None # bound on num steps left in current mode ; assigned on pop
+
+        self.took_tt_transition = False # flag for if a tt was taken and the cur_state should be removed
 
         self.result = None # a HylaaResult... assigned on run() to store verification result
 
@@ -88,6 +87,14 @@ class Core(Freezable):
 
             self.print_verbose("Added Discrete Successor to '{}' at step {}".format( \
                 t.to_mode.name, self.cur_state.cur_step_since_start))
+
+            # if it's a time-triggered transition, we may remove the state now
+            if self.settings.optimize_tt_transitions and t.time_triggered:
+                if was_tt_taken(t):
+                    self.print_verbose("Transtion was time-triggered, finished with current state analysis")
+                    self.took_tt_transition = True
+                else:
+                    self.print_verbose("Transtion was NOT taken as time-triggered, due to runtime checks not passing")
         else:
             # succesor is infeasible, check if it's the reset's fault, or due to numerical precision
             t.lpi.reset_lp()
@@ -145,6 +152,9 @@ class Core(Freezable):
             # next advance time by one step
             if self.cur_state.cur_step_since_start >= self.settings.num_steps:
                 self.cur_state = None
+            elif self.took_tt_transition:
+                self.took_tt_transition = False
+                self.cur_state = None
             else:
                 still_feasible = self.cur_state.intersect_invariant()
                 
@@ -183,15 +193,17 @@ class Core(Freezable):
 
             self.waiting_list = new_waiting_list # assign new waiting list
 
-            self.print_verbose("Removed {} states for aggregation".format(len(agg_list)))
-
             if len(agg_list) == 1:
                 rv = agg_list[0]
+                self.print_verbose("Removed single state: {}".format(rv))
             else:
+                self.print_verbose("Removed {} states for aggregation".format(len(agg_list)))
                 # create a new state from the aggregation
                 mid_index = len(agg_list) // 2
-                
-                direction_matrix = self.make_direction_matrix(agg_list[mid_index])
+                mid_lpi = agg_list[mid_index].lpi
+                pt = lputil.get_box_center(mid_lpi)
+                direction_matrix = lputil.make_direction_matrix(pt, agg_list[mid_index].mode.a_csr)
+
                 lpi_list = [state.lpi for state in agg_list]
                 new_lpi = lputil.aggregate(lpi_list, direction_matrix)
 
@@ -262,6 +274,8 @@ class Core(Freezable):
         fixed_dim_list, if used, is a list of dimensions with fixed initial values
         '''
 
+        Timers.tic("total")
+
         for state in init_state_list:
             assert isinstance(state, StateSet), "initial states should be a list of StateSet objects"
 
@@ -277,6 +291,9 @@ class Core(Freezable):
 
         if self.settings.do_guard_strengthening:
             ha.do_guard_strengthening()
+
+        if self.settings.optimize_tt_transitions:
+            ha.detect_tt_transitions()
         
         self.plotman.create_plot()
 
@@ -307,6 +324,11 @@ class Core(Freezable):
                                            compute_plot=self.settings.plot.store_plot_result)
         else:
             self.plotman.compute_and_animate(self.do_step, self.is_finished)
+
+        Timers.toc("total")
+
+        if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
+            Timers.print_stats()
 
         # assign results
         self.result.top_level_timer = Timers.top_level_timer

@@ -52,8 +52,8 @@ class TimerData(object):
 
         if self.parent is None:
             return self.name
-        else:
-            return "{}.{}".format(self.parent.full_name(), self.name)
+
+        return "{}.{}".format(self.parent.full_name(), self.name)
 
     def tic(self):
         'start the timer'
@@ -77,7 +77,7 @@ class TimerData(object):
         self.total_secs += time.time() - self.last_start_time
         self.last_start_time = None
 
-class Timers(object):
+class Timers():
     '''
     a static class for doing timer messuarements. Use
     Timers.tic(name) and Timers.tic(name) to start and stop timers, use
@@ -102,13 +102,17 @@ class Timers(object):
     def tic(name):
         'start a timer'
 
+        #print("Tic({})".format(name))
+
         if not Timers.stack:
-            if name != "total":
-                # fake a top-level timer... this is useful for unit tests that don't have top-level timers
-                Timers.tic("total")
-                td = Timers.stack[-1].get_child(name)
-            else:
-                td = Timers.top_level_timer
+            top = Timers.top_level_timer
+
+            if top is not None and top.name != name:
+                # overwrite old top level timer
+                #print("Overwriting old top-level timer {} with new top-level timer {}".format(top.name, name))
+                top = Timers.top_level_timer = None
+
+            td = top
         else:
             td = Timers.stack[-1].get_child(name)
 
@@ -128,6 +132,8 @@ class Timers(object):
     @staticmethod
     def toc(name):
         'stop a timer'
+
+        #print("Toc({})".format(name))
 
         assert Timers.stack[-1].name == name, "Out of order toc(). Expected to first stop timer {}".format(
             Timers.stack[-1].full_name())

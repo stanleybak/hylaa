@@ -319,6 +319,13 @@ def test_time_triggered():
     trans2 = ha.new_transition(m2, error, "to_error")
     trans2.set_guard([[-1, 0]], [-4.0])
 
+
+    # manually run ha.detect_tt_transitions() and check the result
+    ha.detect_tt_transitions()
+
+    assert trans1.time_triggered
+    assert not trans2.time_triggered # not time-triggered because invariant of m2 is True
+
     # initial set has x = 0, a = 1
     init_lpi = lputil.from_box([(0, 0), (1, 1)], m1)
     init_list = [StateSet(init_lpi, m1)]

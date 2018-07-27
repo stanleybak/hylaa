@@ -204,6 +204,8 @@ class Transition(Freezable):
 
         self.lpi = None # assinged upon continuous post
 
+        self.time_triggered = False # assigned automatically if settings.optimize_tt_transitions == True
+
         self.freeze_attrs()
 
         from_mode.transitions.append(self)
@@ -220,8 +222,8 @@ class Transition(Freezable):
         assert self.from_mode.a_csr is not None, "A-matrix not assigned in predecessor mode {}".format(self.from_mode)
 
         if guard_csr.shape[0] > 0:
-            assert guard_csr.shape[1] == self.from_mode.a_csr.shape[0], "guard matrix expected {} columns, got {}".format(
-                self.from_mode.a_csr.shape[0], guard_csr.shape[1])
+            assert guard_csr.shape[1] == self.from_mode.a_csr.shape[0], "guard matrix expected {} columns, got {}" \
+                                                          .format(self.from_mode.a_csr.shape[0], guard_csr.shape[1])
 
         guard_rhs.shape = (len(guard_rhs), ) # flatten into a 1-d array
         assert guard_rhs.shape[0] == guard_csr.shape[0]
@@ -376,3 +378,131 @@ class HybridAutomaton(Freezable):
 
                 t.guard_csr = new_guard_csr
                 t.guard_rhs = new_guard_rhs
+
+    def detect_tt_transitions(self):
+        '''
+        Mark all time-triggered transitions within the automaton.
+
+        This checks for guards where one of the conditions is an inequality involving a single variable, x <= K,
+        where the mode invariant has the opposite condition, x >= K (encoded as -x <= -K),
+        and the derivative of variable x only depends on a single variable: x' == 5a,
+        and the derivative of that variable is all zeros: a' == 0,
+
+        at verification-time, a further check will make sure that a is a constant (not an interval), not equal to 0, 
+        and that x is flat (not an interval)
+        '''
+
+        for mode in self.modes.values():
+            if mode.a_csr is None: # skip error modes
+                continue
+            
+            # find all variables with derivative equal to zero
+            constant_vars = []
+            
+            for i in range(mode.a_csr.shape[0]):
+                nonzeros = mode.a_csr[i].getnnz()
+
+                if nonzeros == 0: # row of all zeros
+                    constant_vars.append(i)
+
+            if not constant_vars:
+                continue
+
+            # find all derivatives that only depend on constant vars
+            tt_vars = []
+            for row_index, row in enumerate(mode.a_csr):
+                if row.getnnz() == 0: # skip constant variables
+                    continue
+                
+                all_constant = True
+
+                for i, col in enumerate(row.indices):
+                    if row.data[i] != 0 and not col in constant_vars:
+                        all_constant = False
+                        break
+
+                if all_constant:
+                    tt_vars.append(row_index)
+
+            if not tt_vars:
+                continue
+
+            # at this point, we know which variables are constantly changing... check guards / invariants
+            for t in mode.transitions:
+                if is_time_triggered(t, tt_vars):
+                    t.time_triggered = True
+
+def is_time_triggered(t, tt_vars):
+    'is the passed-in transition time triggered?'
+
+    rv = False
+
+    if len(t.guard_rhs) == 1:
+        all_tt_vars = True
+        for i, col in enumerate(t.guard_csr.indices):
+            if t.guard_csr.data[i] != 0 and not col in tt_vars:
+                all_tt_vars = False
+                break
+
+        if all_tt_vars:
+            # check if there is a mode invariant with the opposite condition
+            found_invariant = False
+
+            for lc in t.from_mode.inv_list:
+                if lc.rhs == -1 * t.guard_rhs[0] and (-1 * lc.csr != t.guard_csr[0]).nnz == 0:
+                    found_invariant = True
+                    break
+
+            if found_invariant:
+                rv = True
+                
+    return rv
+
+def was_tt_taken(t):
+    '''do the run-time checks to see if this transition was a time-triggred one
+
+    if we have x >= K, with x' = 5a,
+    make sure that a is a constant (not an interval), not equal to 0, and that x is flat (not an interval)
+    '''
+
+    assert len(t.guard_rhs) == 1
+    dims = t.lpi.dims
+    rv = False
+
+    # first look at the guard, and see which variables it depends on (find 'a')
+    affine_vars = []
+
+    for i, col in enumerate(t.guard_csr.indices):
+        if t.guard_csr.data[i] != 0:
+            affine_vars.append(col)
+
+    all_affine_nonzero = True
+
+    for var in affine_vars:
+        min_dir = [1 if n == var else 0 for n in range(dims)]
+        max_dir = [-1 if n == var else 0 for n in range(dims)]
+        col = t.lpi.cur_vars_offset + var
+        
+        min_val = t.lpi.minimize(direction_vec=min_dir, columns=[col])[0]
+        max_val = t.lpi.minimize(direction_vec=max_dir, columns=[col])[0]
+
+        if abs(max_val - min_val) > 1e-9 or abs(max_val) < 1e-9:
+            all_affine_nonzero = False
+            break
+
+    if all_affine_nonzero:
+        # make sure x is flat... first find x
+
+        state_cols = [t.lpi.cur_vars_offset + n for n in range(dims)]
+        direction = t.guard_csr.toarray()[0]
+
+        min_state = t.lpi.minimize(direction_vec=direction, columns=state_cols)
+        max_state = t.lpi.minimize(direction_vec=-1 * direction, columns=state_cols)
+
+        min_val = np.dot(min_state, direction)
+        max_val = np.dot(max_state, direction)
+
+        if abs(max_val - min_val) < 1e-9:
+            rv = True
+
+    return rv

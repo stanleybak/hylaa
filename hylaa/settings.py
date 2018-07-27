@@ -33,14 +33,10 @@ class HylaaSettings(Freezable):
         self.print_lp_on_error = False # print the LP to stdout upon reaching an error mode?
 
         ### SIMULATION-EQUIVALENT SEMANTICS / COMPUTATION OPTIMIZATIONS ###
-        self.process_urgent_guards = False # force one step within each mode
+        self.process_urgent_guards = False # allow zero continuous-post steps between transitions?
         self.do_guard_strengthening = True # add invariants of target modes to each guard?
-        self.aggregation = True
-
-        # increase the step size slightly by this amount; this is good for when you would end up exactly on an
-        # invariant / guard boundary, and so two steps would be added to the waiting list rather than one.
-        # You can disable this by setting it to 0.0
-        self.extra_step_size_epsilon = 1e-7
+        self.optimize_tt_transitions = True # auto-detect time-triggered transitions and use single-step semantics?
+        self.aggregation = True # do set aggregation across discrete transitions?
 
         self.freeze_attrs()
 

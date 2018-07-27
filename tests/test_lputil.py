@@ -12,7 +12,6 @@ import swiglpk as glpk
 
 from hylaa import lputil, lpplot
 from hylaa.hybrid_automaton import HybridAutomaton, LinearConstraint
-from hylaa.timerutil import Timers
 
 def test_from_box():
     'tests from_box'
@@ -730,7 +729,7 @@ def test_aggregate_on_subspace():
     # make sure only one aggregation variable was introduced
     names = lpi.get_names()
 
-    expected_names = ["m0_i0", "m0_i1", "m0_i3", "m0_c0", "m0_c1", "m0_c2", "agg0", "m0_c0", "m0_c1", "m0_c2"]
+    expected_names = ["m0_i0", "m0_i1", "m0_i2", "m0_c0", "m0_c1", "m0_c2", "agg0", "snap0", "snap1", "snap2"]
 
     assert names == expected_names
 
@@ -739,12 +738,7 @@ def test_aggregate_self():
     test aggregation on an identical set. This shouldn't create new variables. 
     '''
 
-    # dynamics are x' == 1, y' == 0, a' == 0
-    # lpi1 is [0, 1] x [0, 1] x [1, 1]
-    # lpi2 is [3, 4] x [0, 1] x [1, 1]
-
-    # aggregation shouldn't need to introduce a variable along the y direction
-
+    # aggregation shouldn't introduce any variables
     mode = HybridAutomaton().new_mode('mode_name')
     lpi1 = lputil.from_box([[0, 1], [0, 1], [1, 1]], mode)
     lpi2 = lputil.from_box([[0, 1], [0, 1], [1, 1]], mode)
@@ -770,6 +764,6 @@ def test_aggregate_self():
     # make sure only one aggregation variable was introduced
     names = lpi.get_names()
 
-    expected_names = ["m0_i0", "m0_i1", "m0_i3", "m0_c0", "m0_c1", "m0_c2"]
+    expected_names = ["m0_i0", "m0_i1", "m0_i2", "m0_c0", "m0_c1", "m0_c2", "snap0", "snap1", "snap2"]
 
     assert names == expected_names
