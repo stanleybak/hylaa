@@ -366,6 +366,8 @@ def aggregate(lpi_list, direction_matrix):
 
     add_snapshot_variables(rv, "snap")
 
+    assert rv.is_feasible(), "aggregated set was UNSAT"
+
     return rv
 
 def get_basis_matrix(lpi):

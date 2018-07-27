@@ -274,6 +274,7 @@ class Core(Freezable):
         fixed_dim_list, if used, is a list of dimensions with fixed initial values
         '''
 
+        Timers.reset()
         Timers.tic("total")
 
         for state in init_state_list:
