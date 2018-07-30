@@ -321,6 +321,10 @@ def aggregate(lpi_list, direction_matrix):
             create_agg_var.append(True)
             
     num_agg_dims = sum([1 if needs_var else 0 for needs_var in create_agg_var])
+
+    print(".lp.agg directions:\n{}".format(direction_matrix))
+    print(".lputil.aggregate. mins = {}, maxes = {}, num_agg_dirs = {}".format(mins, maxes, num_agg_dims))
+    print(".lputil.aggregate. mid_mins = {}, mid_maxes = {}".format(mid_mins, mid_maxes))
         
     # add n new columns and 2n new rows, for the minkowski sum constriants
     names = ["agg{}".format(i) for i in range(num_agg_dims)]
@@ -577,10 +581,14 @@ def make_direction_matrix(point, a_csr):
     Timers.tic('make_direction_matrix')
 
     assert isinstance(a_csr, csr_matrix)
+    cur_vec = np.array(point, dtype=float)
+    
+    assert len(point) == a_csr.shape[0], "expected point dims({}) to equal A-matrix dims({})".format( \
+                len(point), a_csr.shape[0])
+    
     dims = len(point)
     rv = []
 
-    cur_vec = np.array(point, dtype=float)
 
     while len(rv) < dims:
         if cur_vec is None:
@@ -599,7 +607,7 @@ def make_direction_matrix(point, a_csr):
         assert not math.isinf(norm) and not math.isnan(norm), "vector norm was infinite in arnoldi"
 
         if norm < 1e-6:
-            # super small norm... basically it's in the subspace spaned by previous vectors, restart
+            # super small norm... basically it's in the subspace spanned by previous vectors, restart
             cur_vec = None
         else:
             cur_vec = cur_vec / norm
@@ -607,5 +615,49 @@ def make_direction_matrix(point, a_csr):
             rv.append(cur_vec)
 
     Timers.toc('make_direction_matrix')
+
+    return np.array(rv, dtype=float)
+
+def reorthogonalize_matrix(mat, dims):
+    '''given an input matrix (one 'dims'-dimensional vector per row), return a new matrix such that the vectors are in 
+    the same order, but orthonormal (project out earlier vectors and scale), with the passed-in number of dimensions 
+    (a smaller matrix may be returned, or new vectors may be generated to fill the nullspace if the dims > dim(mat)'''
+
+    assert mat.shape[1] == dims, "mat should have width equal to dims({})".format(dims)
+
+    # take approach similar to arnoldi, except without the matrix-vector multiplication (see make_direction_matrix)
+
+    Timers.tic('reorthogonalize_matrix')
+
+    rv = []
+
+    next_index = 0
+
+    while len(rv) < dims:
+        if next_index >= mat.shape[0]:
+            cur_vec = np.random.rand(dims,)
+        else:
+            cur_vec = mat[next_index]
+            next_index += 1
+
+        # project out the previous vectors
+        for prev_vec in rv:
+            dot_val = np.dot(prev_vec, cur_vec)
+
+            cur_vec -= prev_vec * dot_val
+
+        norm = np.linalg.norm(cur_vec, 2)
+
+        assert not math.isinf(norm) and not math.isnan(norm), "vector norm was infinite in arnoldi"
+
+        if norm < 1e-6:
+            # super small norm... basically it's in the subspace spanned by previous vectors, restart
+            cur_vec = None
+        else:
+            cur_vec = cur_vec / norm
+
+            rv.append(cur_vec)
+
+    Timers.toc('reorthogonalize_matrix')
 
     return np.array(rv, dtype=float)

@@ -8,7 +8,7 @@ import numpy as np
 from hylaa.settings import HylaaSettings, PlotSettings
 
 from hylaa.plotutil import PlotManager
-from hylaa.stateset import StateSet
+from hylaa.stateset import StateSet, TransitionPredecessor, AggregationPredecessor
 from hylaa.hybrid_automaton import HybridAutomaton, was_tt_taken
 from hylaa.timerutil import Timers
 from hylaa.util import Freezable
@@ -36,6 +36,9 @@ class Core(Freezable):
         self.took_tt_transition = False # flag for if a tt was taken and the cur_state should be removed
 
         self.result = None # a HylaaResult... assigned on run() to store verification result
+
+        # make random number generation (for example, to find orthogonal directions) deterministic
+        np.random.seed(seed=0)
 
         self.freeze_attrs()
 
@@ -82,7 +85,9 @@ class Core(Freezable):
 
         # make sure the successor is feasible
         if new_lpi.is_feasible():
-            successor_state = StateSet(new_lpi, t.to_mode, self.cur_state.cur_step_since_start)
+
+            predecessor = TransitionPredecessor(self.cur_state, t, t.lpi.clone())
+            successor_state = StateSet(new_lpi, t.to_mode, self.cur_state.cur_step_since_start, predecessor)
             self.waiting_list.append(successor_state)
 
             self.print_verbose("Added Discrete Successor to '{}' at step {}".format( \
@@ -91,10 +96,10 @@ class Core(Freezable):
             # if it's a time-triggered transition, we may remove the state now
             if self.settings.optimize_tt_transitions and t.time_triggered:
                 if was_tt_taken(t):
-                    self.print_verbose("Transtion was time-triggered, finished with current state analysis")
+                    self.print_verbose("Transition was time-triggered, finished with current state analysis")
                     self.took_tt_transition = True
                 else:
-                    self.print_verbose("Transtion was NOT taken as time-triggered, due to runtime checks not passing")
+                    self.print_verbose("Transition was NOT taken as time-triggered, due to runtime checks not passing")
         else:
             # succesor is infeasible, check if it's the reset's fault, or due to numerical precision
             t.lpi.reset_lp()
@@ -200,14 +205,33 @@ class Core(Freezable):
                 self.print_verbose("Removed {} states for aggregation".format(len(agg_list)))
                 # create a new state from the aggregation
                 mid_index = len(agg_list) // 2
-                mid_lpi = agg_list[mid_index].lpi
-                pt = lputil.get_box_center(mid_lpi)
-                direction_matrix = lputil.make_direction_matrix(pt, agg_list[mid_index].mode.a_csr)
+                mid_state = agg_list[mid_index]
+                
+                if mid_state.predecessor is None: # aggregation with initial states, just use current mode dynamics
+                    pt = lputil.get_box_center(mid_state.lpi)
+                    agg_dir_mat = lputil.make_direction_matrix(pt, mid_state.mode.a_csr)
+                else: # aggregation with a predecessor
+                    pred = mid_state.predecessor
+                    assert isinstance(pred, TransitionPredecessor)
+                    premode = pred.parent.mode
+                    pt = lputil.get_box_center(pred.transition_lpi)
+                     
+                    premode_dir_mat = lputil.make_direction_matrix(pt, premode.a_csr)
+
+                    if pred.transition.reset_csr is None:
+                        agg_dir_mat = premode_dir_mat
+                    else:
+                        projected_dir_mat = premode_dir_mat * pred.transition.reset_csr.transpose()
+
+                        # re-orthgohonalize (and create new vectors if necessary)
+                        dims = mid_state.mode.a_csr.shape[0]
+                        agg_dir_mat = lputil.reorthogonalize_matrix(projected_dir_mat, dims)
 
                 lpi_list = [state.lpi for state in agg_list]
-                new_lpi = lputil.aggregate(lpi_list, direction_matrix)
+                new_lpi = lputil.aggregate(lpi_list, agg_dir_mat)
 
-                rv = StateSet(new_lpi, first.mode, cur_step_since_start=first.cur_step_since_start)
+                predecessor = AggregationPredecessor(lpi_list)
+                rv = StateSet(new_lpi, first.mode, first.cur_step_since_start, predecessor)
                 
         return rv
 

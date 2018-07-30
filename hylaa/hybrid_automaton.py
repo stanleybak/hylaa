@@ -202,13 +202,18 @@ class Transition(Freezable):
 
         self.name = name
 
-        self.lpi = None # assinged upon continuous post
+        self.lpi = None # assinged upon continuous post. This gets reused, so use lpi.clone() if you want to save it
 
         self.time_triggered = False # assigned automatically if settings.optimize_tt_transitions == True
 
         self.freeze_attrs()
 
         from_mode.transitions.append(self)
+
+    def set_guard_true(self):
+        '''sets the guard to be True (always enabled)'''
+
+        self.set_guard(csr_matrix((0, 0)), [])
 
     def set_guard(self, guard_csr, guard_rhs):
         '''set the guard'''

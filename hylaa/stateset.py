@@ -4,6 +4,8 @@ Stanley Bak
 Aug 2016
 '''
 
+from collections import namedtuple
+
 import numpy as np
 
 from hylaa import lputil
@@ -15,12 +17,16 @@ from hylaa.lpinstance import LpInstance
 
 from hylaa import lpplot
 
+# predecessor types
+AggregationPredecessor = namedtuple('AggregationPredecessor', ['parents'])
+TransitionPredecessor = namedtuple('TransitionPredecessor', ['parent', 'transition', 'transition_lpi'])
+
 class StateSet(Freezable):
     '''
     A set of states with a common mode.
     '''
 
-    def __init__(self, lpi, mode, cur_step_since_start=0):
+    def __init__(self, lpi, mode, cur_step_since_start=0, predecessor=None):
         assert isinstance(lpi, LpInstance)
         assert isinstance(mode, Mode)
 
@@ -30,7 +36,13 @@ class StateSet(Freezable):
         self.cur_step_in_mode = 0
         self.cur_step_since_start = cur_step_since_start
 
-        self.invariant_constraint_rows = None # the LP row of the strongest constraint for each invariant condition
+        # the predecessor to this StateSet
+        assert isinstance(predecessor, (type(None), AggregationPredecessor, TransitionPredecessor))
+        self.predecessor = predecessor
+        
+        # the LP row of the strongest constraint for each invariant condition
+        # this is used to eliminate redundant constraints as the lpi is intersected with the invariant at each step
+        self.invariant_constraint_rows = None 
 
         self.basis_matrix = np.identity(mode.a_csr.shape[0])
 

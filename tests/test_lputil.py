@@ -767,3 +767,38 @@ def test_aggregate_self():
     expected_names = ["m0_i0", "m0_i1", "m0_i2", "m0_c0", "m0_c1", "m0_c2", "snap0", "snap1", "snap2"]
 
     assert names == expected_names
+
+def test_reorthogonalize_matrix():
+    'tests the reorthgonalize_matrix function'
+
+    mat = np.array([[1, 0, 0], [1, 1, 0], [1, 1, 0.5]], dtype=float)
+    out = lputil.reorthogonalize_matrix(mat, 3)
+    expected = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=float)
+    assert np.allclose(out, expected)
+
+    mat = np.array([[1, 0, 0], [1, 0, 0], [0, 0, 0.5]], dtype=float)
+    out = lputil.reorthogonalize_matrix(mat, 3)
+    expected = np.array([[1, 0, 0], [0, 0, 1], [0, 1, 0]], dtype=float)
+    assert np.allclose(out, expected)
+
+    sqr = math.sqrt(2) / 2
+    mat = np.array([[1, 1], [0, 0], [2, 2]], dtype=float)
+    out = lputil.reorthogonalize_matrix(mat, 2)
+    assert np.allclose(out[0], np.array([sqr, sqr], dtype=float))
+
+    mat = np.array([[1, 1, 0, 0, 0], [0, 0, 2, 0, 0], [2, 1, 2.5, 0, 0]], dtype=float)
+    out = lputil.reorthogonalize_matrix(mat, 5)
+
+    assert out.shape == (5, 5)
+    assert np.allclose(out[0], np.array([sqr, sqr, 0, 0, 0], dtype=float))
+    assert np.allclose(out[1], np.array([0, 0, 1, 0, 0], dtype=float))
+    assert np.allclose(out[2][2:], np.array([0, 0, 0], dtype=float))
+
+    for a, row_a in enumerate(out):
+        assert abs(np.linalg.norm(row_a) - 1.0) < 1e-6, "rows should be normalized"
+
+        for b, row_b in enumerate(out):
+            if a == b:
+                continue
+
+            assert np.dot(row_a, row_b) < 1e-6, "rows should be orthononal"
