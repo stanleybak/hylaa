@@ -142,13 +142,13 @@ class Timers():
         Timers.stack.pop()
 
     @staticmethod
-    def print_stats():
+    def print_stats(print_func=print):
         'print statistics about performance timers to stdout'
 
-        Timers.print_stats_recursive(Timers.top_level_timer, 0)
+        Timers.print_stats_recursive(Timers.top_level_timer, 0, print_func)
 
     @staticmethod
-    def print_stats_recursive(td, level):
+    def print_stats_recursive(td, level, print_func):
         'recursively print information about a timer'
 
         percent_threshold = 0.0
@@ -164,7 +164,7 @@ class Timers():
             percent_str = " ({:.1f}%)".format(percent)
 
         if percent >= percent_threshold:
-            print("{}{} Time ({} calls): {:.2f} sec{}".format(" " * level * 2, \
+            print_func("{}{} Time ({} calls): {:.2f} sec{}".format(" " * level * 2, \
                 td.name.capitalize(), td.num_calls, td.total_secs, percent_str))
 
         total_children_secs = 0
@@ -172,14 +172,14 @@ class Timers():
         for child in td.children:
             total_children_secs += child.total_secs
 
-            Timers.print_stats_recursive(child, level + 1)
+            Timers.print_stats_recursive(child, level + 1, print_func)
 
-        if len(td.children) > 0:
+        if td.children:
             other = td.total_secs - total_children_secs
             other_percent = 100 * other / td.total_secs
 
             if other_percent >= percent_threshold:
                 percent_str = " ({:.1f}%)".format(other_percent)
 
-                print("{}Other: {:.2f} sec{}".format(" " * (level + 1) * 2, \
+                print_func("{}Other: {:.2f} sec{}".format(" " * (level + 1) * 2, \
                     other, percent_str))

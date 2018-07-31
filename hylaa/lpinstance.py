@@ -313,6 +313,8 @@ class LpInstance(Freezable):
         '''set the direction for the optimization in terms of the current-time variables
         '''
 
+        Timers.tic("set_minimize_direction")
+
         # set the previous objective columns to zero
         for i in self.obj_cols:
             glpk.glp_set_obj_coef(self.lp, i, 0)
@@ -343,6 +345,8 @@ class LpInstance(Freezable):
                 col = int(1 + self.cur_vars_offset + i)
                 self.obj_cols.append(col)
                 glpk.glp_set_obj_coef(self.lp, col, direction)
+
+        Timers.toc("set_minimize_direction")
 
     def reset_lp(self):
         'reset all the column and row statuses of the LP'

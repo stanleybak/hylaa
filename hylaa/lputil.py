@@ -137,6 +137,7 @@ def set_basis_matrix(lpi, basis_mat):
     inds = []
     indptr = [0]
 
+    Timers.tic("make_csr")
     # 0 BM 0 -I 0
     for row in range(lpi.dims):
         for col in range(lpi.dims):
@@ -149,7 +150,12 @@ def set_basis_matrix(lpi, basis_mat):
         indptr.append(len(data))
 
     mat = csr_matrix((data, inds, indptr), shape=(lpi.dims, lpi.cur_vars_offset + lpi.dims), dtype=float)
+    Timers.toc("make_csr")
+
+    Timers.tic("check_format")
     mat.check_format()
+    Timers.toc("check_format")
+        
     lpi.set_constraints_csr(mat, offset=(lpi.basis_mat_pos[0], 0))
 
 def check_intersection(lpi, lc, tol=1e-13):
@@ -158,6 +164,8 @@ def check_intersection(lpi, lc, tol=1e-13):
     This solves an LP optimizing in the given direction... without adding the constraint to the LP
     '''
 
+    Timers.tic("check_intersection")
+
     lpi.set_minimize_direction(lc.csr, is_csr=True)
 
     columns = lc.csr.indices[0:lc.csr.indptr[1]]
@@ -165,10 +173,9 @@ def check_intersection(lpi, lc, tol=1e-13):
 
     lp_res = lpi.minimize(columns=lp_columns)
 
-    lp_res_csr = csr_matrix((lp_res, columns, [0, len(columns)]), dtype=float, shape=(1, lc.csr.shape[1]))
-    lp_res_csr.check_format()
+    dot_res = np.dot(lc.csr.data, lp_res)
 
-    dot_res = (lp_res_csr * lc.csr.T)[0, 0]
+    Timers.toc("check_intersection")
 
     return dot_res + tol <= lc.rhs
 

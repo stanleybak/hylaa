@@ -130,6 +130,8 @@ class Core(Freezable):
     def check_guards(self):
         '''check for discrete successors with the guards'''
 
+        Timers.tic("check_guards")
+
         transitions = self.cur_state.mode.transitions
 
         for transition_index, t in enumerate(transitions):
@@ -144,6 +146,8 @@ class Core(Freezable):
                     if self.cur_state is None:
                         break
 
+        Timers.toc("check_guards")
+
     def print_current_step_time(self):
         'print the current step and time'
 
@@ -153,6 +157,8 @@ class Core(Freezable):
 
     def do_step_continuous_post(self):
         '''do a step where it's part of a continuous post'''
+
+        Timers.tic('do_step_continuous_post')
 
         self.print_current_step_time()
 
@@ -180,6 +186,8 @@ class Core(Freezable):
                         self.cur_state = None
                     else:
                         self.check_guards()
+
+        Timers.toc('do_step_continuous_post')
 
     def pop_waiting_list(self):
         'pop a state off the waiting list, possibly doing state-set aggreation'
@@ -249,6 +257,8 @@ class Core(Freezable):
     def do_step_pop(self):
         'do a step where we pop from the waiting list'
 
+        Timers.tic('do_step_pop')
+
         self.plotman.state_popped() # reset certain per-mode plot variables
         self.print_waiting_list()
 
@@ -281,9 +291,13 @@ class Core(Freezable):
         # pause after discrete post when using PLOT_INTERACTIVE
         if self.plotman.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
             self.plotman.interactive.paused = True
-            
+
+        Timers.toc('do_step_pop')
+                
     def do_step(self):
         'do a single step of the computation'
+
+        Timers.tic('do_step')
 
         if not self.is_finished():
             if self.cur_state is None:
@@ -299,6 +313,8 @@ class Core(Freezable):
                     self.print_normal("Result: Error modes are reachable.\n")
                 else:
                     self.print_normal("Result: System is safe. Error modes are NOT reachable.\n")
+
+        Timers.toc('do_step')
 
     def setup(self, init_state_list):
         'setup the computation (called by run())'
@@ -377,8 +393,15 @@ class Core(Freezable):
 
         Timers.toc("total")
 
+        if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
+            def print_func(msg):
+                'print function for print_stats()'
+                cprint(msg, self.settings.stdout_colors[HylaaSettings.STDOUT_VERBOSE])
+                
+            Timers.print_stats(print_func)
+
         if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
-            Timers.print_stats()
+            self.print_normal("Total Runtime: {:.2f} sec".format(Timers.top_level_timer.total_secs))
 
         # assign results
         self.result.top_level_timer = Timers.top_level_timer

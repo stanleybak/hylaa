@@ -73,18 +73,28 @@ class StateSet(Freezable):
     def step(self):
         'update the star based on values from a new simulation time instant'
 
+        Timers.tic("step")
+
         self.cur_step_in_mode += 1
         self.cur_step_since_start += 1
 
+        Timers.tic('get_bm')
         self.basis_matrix, _ = self.mode.time_elapse.get_basis_matrix(self.cur_step_in_mode)
+        Timers.toc('get_bm')
 
+        Timers.tic('set_bm')
         lputil.set_basis_matrix(self.lpi, self.basis_matrix)
+        Timers.toc('set_bm')
 
+        Timers.tic('transitions_setbm')
         # update each transition's basis matrix
         for t in self.mode.transitions:
             lputil.set_basis_matrix(t.lpi, self.basis_matrix)
+        Timers.toc('transitions_setbm')
 
         self._verts = None # cached vertices no longer valid
+
+        Timers.toc("step")
 
     def verts(self, plotman):
         'get the vertices for plotting this state set, wraps around so rv[0] == rv[-1]'
@@ -120,12 +130,17 @@ class StateSet(Freezable):
 
         returns whether the state set is still feasbile after intersection'''
 
+        Timers.tic("intersect_invariant")
+
+        has_intersection = False
+
         if self.invariant_constraint_rows is None:
             self.invariant_constraint_rows = [None] * len(self.mode.inv_list)
 
         for invariant_index, lc in enumerate(self.mode.inv_list):
             if lputil.check_intersection(self.lpi, lc.negate()):
 
+                has_intersection = True
                 old_row = self.invariant_constraint_rows[invariant_index]
                 vec = lc.csr.toarray()[0]
                 rhs = lc.rhs
@@ -145,6 +160,8 @@ class StateSet(Freezable):
                     for t in self.mode.transitions:
                         t.intersect_invariant(invariant_index, self.basis_matrix)
 
-        is_feasible = self.lpi.minimize(columns=[], fail_on_unsat=False) is not None
+        is_feasible = True if not has_intersection else self.lpi.minimize(columns=[], fail_on_unsat=False) is not None
+
+        Timers.toc("intersect_invariant")
 
         return is_feasible
