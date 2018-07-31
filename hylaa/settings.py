@@ -17,10 +17,7 @@ from hylaa.util import Freezable
 class HylaaSettings(Freezable):
     'Settings for the computation'
 
-    STDOUT_NONE = 0
-    STDOUT_NORMAL = 1
-    STDOUT_VERBOSE = 2
-    STDOUT_DEBUG = 3
+    STDOUT_NONE, STDOUT_NORMAL, STDOUT_VERBOSE, STDOUT_DEBUG = range(4)
 
     def __init__(self, step_size, max_time):
         plot_settings = PlotSettings()
@@ -30,7 +27,7 @@ class HylaaSettings(Freezable):
 
         self.plot = plot_settings
         self.stdout = HylaaSettings.STDOUT_NORMAL
-        self.print_lp_on_error = False # print the LP to stdout upon reaching an error mode?
+        self.stdout_colors = [None, "white", "yellow", "blue"] # colors for each level of printing
 
         ### SIMULATION-EQUIVALENT SEMANTICS / COMPUTATION OPTIMIZATIONS ###
         self.process_urgent_guards = False # allow zero continuous-post steps between transitions?

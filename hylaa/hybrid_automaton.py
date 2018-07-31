@@ -203,6 +203,7 @@ class Transition(Freezable):
         self.name = name
 
         self.lpi = None # assinged upon continuous post. This gets reused, so use lpi.clone() if you want to save it
+        self.invariant_constraint_rows = [] # assigned upon continuous post
 
         self.time_triggered = False # assigned automatically if settings.optimize_tt_transitions == True
 
@@ -301,6 +302,29 @@ class Transition(Freezable):
         # add the guard condition
         lputil.add_curtime_constraints(self.lpi, self.guard_csr, self.guard_rhs)
 
+        # list of most-recent constraint row for each invariant condition
+        self.invariant_constraint_rows = [None] * len(self.from_mode.inv_list)
+
+    def intersect_invariant(self, invariant_index, basis_matrix):
+        '''perform an intersection with this transition's lpi and an invariant condition
+
+        add an init-constraint to the lpi'''
+
+        old_row = self.invariant_constraint_rows[invariant_index]
+        lc = self.from_mode.inv_list[invariant_index]
+        vec = lc.csr.toarray()[0]
+        rhs = lc.rhs
+
+        if old_row is None:
+            # new constriant
+            row = lputil.add_init_constraint(self.lpi, vec, rhs, basis_matrix)
+            self.invariant_constraint_rows[invariant_index] = row
+        else:
+            
+            # strengthen existing constraint possibly
+            row = lputil.try_replace_init_constraint(self.lpi, old_row, vec, rhs, basis_matrix)
+            self.invariant_constraint_rows[invariant_index] = row
+
     def __str__(self):
         return self.from_mode.name + " -> " + self.to_mode.name
 
@@ -316,6 +340,9 @@ class HybridAutomaton(Freezable):
 
     def new_mode(self, name):
         '''add a mode'''
+
+        assert not name in self.modes, "Mode with name '{}' already exists in the automaton".format(name)
+        
         m = Mode(self, name, len(self.modes))
         self.modes[m.name] = m
         return m
@@ -463,33 +490,42 @@ def is_time_triggered(t, tt_vars):
                 
     return rv
 
-def was_tt_taken(t):
+def was_tt_taken(state_lpi, t):
     '''do the run-time checks to see if this transition was a time-triggred one
 
-    if we have x >= K, with x' = 5a,
+    if we have x <= K, with x' = -5 * a,
     make sure that a is a constant (not an interval), not equal to 0, and that x is flat (not an interval)
     '''
 
-    assert len(t.guard_rhs) == 1
-    dims = t.lpi.dims
+    assert len(t.guard_rhs) == 1, "should true due to static-time check"
+    dims = state_lpi.dims
     rv = False
 
-    # first look at the guard, and see which variables it depends on (find 'a')
-    affine_vars = []
+    # first look at the guard, and see which variables it uses (find 'x' in x <= K, x' == a)
+    guard_vars = []
 
     for i, col in enumerate(t.guard_csr.indices):
         if t.guard_csr.data[i] != 0:
-            affine_vars.append(col)
+            guard_vars.append(col)
+
+    # next, find all the 'a' in x' == a
+    affine_vars = {}
+    a_csr = t.from_mode.a_csr
+
+    for var in guard_vars:
+        for index in range(a_csr.indptr[var], a_csr.indptr[var+1]):
+            if a_csr.data[index] != 0:
+                affine_vars[a_csr.indices[index]] = True # insert it into the dict
 
     all_affine_nonzero = True
 
     for var in affine_vars:
         min_dir = [1 if n == var else 0 for n in range(dims)]
         max_dir = [-1 if n == var else 0 for n in range(dims)]
-        col = t.lpi.cur_vars_offset + var
-        
-        min_val = t.lpi.minimize(direction_vec=min_dir, columns=[col])[0]
-        max_val = t.lpi.minimize(direction_vec=max_dir, columns=[col])[0]
+        col = state_lpi.cur_vars_offset + var
+
+        min_val = state_lpi.minimize(direction_vec=min_dir, columns=[col])[0]
+        max_val = state_lpi.minimize(direction_vec=max_dir, columns=[col])[0]
 
         if abs(max_val - min_val) > 1e-9 or abs(max_val) < 1e-9:
             all_affine_nonzero = False
@@ -498,11 +534,11 @@ def was_tt_taken(t):
     if all_affine_nonzero:
         # make sure x is flat... first find x
 
-        state_cols = [t.lpi.cur_vars_offset + n for n in range(dims)]
+        state_cols = [state_lpi.cur_vars_offset + n for n in range(dims)]
         direction = t.guard_csr.toarray()[0]
 
-        min_state = t.lpi.minimize(direction_vec=direction, columns=state_cols)
-        max_state = t.lpi.minimize(direction_vec=-1 * direction, columns=state_cols)
+        min_state = state_lpi.minimize(direction_vec=direction, columns=state_cols)
+        max_state = state_lpi.minimize(direction_vec=-1 * direction, columns=state_cols)
 
         min_val = np.dot(min_state, direction)
         max_val = np.dot(max_state, direction)

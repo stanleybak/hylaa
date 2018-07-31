@@ -17,7 +17,7 @@ class LpInstance(Freezable):
     def __init__(self):
         'initialize the lp instance'
 
-        self.lp = glpk.glp_create_prob()
+        self.lp = glpk.glp_create_prob() # pylint: disable=invalid-name
 
         # these are assigned on set_reach_vars()
         self.dims = None

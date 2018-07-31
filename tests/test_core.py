@@ -10,7 +10,7 @@ from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa.settings import HylaaSettings, PlotSettings
 from hylaa.core import Core
 from hylaa.stateset import StateSet, TransitionPredecessor, AggregationPredecessor
-from hylaa import lputil, lpplot
+from hylaa import lputil
 from hylaa.lpinstance import LpInstance
 
 def test_guard_strengthening():
@@ -218,33 +218,6 @@ def test_invariants():
     assert_verts_is_box(polys[2], [[2, 3], [2, 3]])
 
     assert_verts_is_box(polys[3], [[3, 3.5], [3, 4]])
-
-def test_redundant_invariants():
-    'test removing of redundant invariants'
-
-    ha = HybridAutomaton()
-
-    mode = ha.new_mode('mode')
- 
-    # dynamics: x' = 1, y' = 1, a' = 0
-    mode.set_dynamics([[0, 0, 1], [0, 0, 1], [0, 0, 0]])
-
-    # invariant: x <= 2.5
-    mode.set_invariant([[1, 0, 0]], [2.5])
-
-    # initial set has x0 = [0, 1]
-    init_lpi = lputil.from_box([(0, 1), (0, 1), (1, 1)], mode)
-    init_list = [StateSet(init_lpi, mode)]
-
-    # settings, step size = 0.1
-    settings = HylaaSettings(0.1, 5.0)
-    settings.stdout = HylaaSettings.STDOUT_VERBOSE
-    settings.plot.plot_mode = PlotSettings.PLOT_NONE
-
-    result = Core(ha, settings).run(init_list)
-
-    # check last cur_state to ensure redundant constraints were not added
-    assert result.last_cur_state.lpi.get_num_rows() == 3 + 2*3 + 1 # 3 for basis matrix, 2*3 for initial constraints
 
 def test_transition():
     'test a discrete transition'
@@ -545,3 +518,69 @@ def test_agg_to_more_vars():
 
     assert_verts_is_box(polys[0], [[1, 4], [3, 3]])
     assert_verts_is_box(polys[1], [[1, 4], [4, 4]])
+
+def test_redundant_invariants():
+    'test removing of redundant invariants'
+
+    ha = HybridAutomaton()
+
+    mode = ha.new_mode('mode')
+ 
+    # dynamics: x' = 1, y' = 1, a' = 0
+    mode.set_dynamics([[0, 0, 1], [0, 0, 1], [0, 0, 0]])
+
+    # invariant: x <= 2.5
+    mode.set_invariant([[1, 0, 0]], [2.5])
+
+    # initial set has x0 = [0, 1]
+    init_lpi = lputil.from_box([(0, 1), (0, 1), (1, 1)], mode)
+    init_list = [StateSet(init_lpi, mode)]
+
+    # settings, step size = 0.1
+    settings = HylaaSettings(0.1, 5.0)
+    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
+
+    result = Core(ha, settings).run(init_list)
+
+    # check last cur_state to ensure redundant constraints were not added
+    assert result.last_cur_state.lpi.get_num_rows() == 3 + 2*3 + 1 # 3 for basis matrix, 2*3 for initial constraints
+
+def test_redundant_inv_transition():
+    'test removing of redundant invariants with a transition'
+
+    ha = HybridAutomaton()
+
+    mode1 = ha.new_mode('mode1')
+ 
+    # dynamics: x' = 1, y' = 1, a' = 0
+    mode1.set_dynamics([[0, 0, 1], [0, 0, 1], [0, 0, 0]])
+
+    # invariant: x <= 2.5
+    mode1.set_invariant([[1, 0, 0]], [2.5])
+
+    mode2 = ha.new_mode('mode2')
+    mode2.set_dynamics([[0, 0, 0], [0, 0, 0], [0, 0, 0]])
+
+    ha.new_transition(mode1, mode2).set_guard([[-1, 0, 0]], [-2.5]) # x >= 2.5
+
+    # initial set has x0 = [0, 1]
+    init_lpi = lputil.from_box([(0, 1), (0, 1), (1, 1)], mode1)
+    init_list = [StateSet(init_lpi, mode1)]
+
+    # settings, step size = 0.1
+    settings = HylaaSettings(0.1, 5.0)
+    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
+
+    core = Core(ha, settings)
+    core.setup(init_list)
+
+    for _ in range(20):
+        core.do_step()
+
+    assert core.result.last_cur_state.lpi.get_num_rows() == 3 + 2*3 + 1 # 3 for basis matrix, 2*3 for init constraints
+
+    assert len(core.waiting_list) > 2
+
+    core.plotman.run_to_completion(core.do_step, core.is_finished)

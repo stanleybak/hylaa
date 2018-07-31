@@ -115,42 +115,7 @@ class StateSet(Freezable):
 
         return self._verts
 
-    def add_constraint(self, lc):
-        '''add a constraint to the lpi (and the lpi of all transitions)
-        returns the row of the newly-added constraint
-        '''
-
-        vec = lc.csr.toarray()[0] # this gets multiplied by the basis matrix anyways, so dense is fine
-
-        row = lputil.add_init_constraint(self.lpi, vec, lc.rhs, basis_matrix=self.basis_matrix)
-
-        for t in self.mode.transitions:
-            if t.lpi is not None:
-                lputil.add_init_constraint(t.lpi, vec, lc.rhs, basis_matrix=self.basis_matrix)
-
-        return row
-
-    def try_replace_constraint(self, lc, old_row):
-        '''try stengthening an existing constraint with a new linear constraint condition
-        returns the row of the newly-added constraint, or old_row if the old constraint is replaced
-        '''
-
-        vec = lc.csr.toarray()[0] # this gets multiplied by the basis matrix anyways, so dense is fine
-
-        row = lputil.try_replace_init_constraint(self.lpi, old_row, vec, lc.rhs, basis_mat=self.basis_matrix)
-
-        for t in self.mode.transitions:
-            if row == old_row:
-                # constraint was replaced
-                t_row = lputil.try_replace_init_constraint(t.lpi, old_row, vec, lc.rhs, basis_mat=self.basis_matrix)
-                assert t_row == row, "constraint should be replaced at same row"
-            else:
-                # new constraint was added
-                lputil.add_init_constraint(t.lpi, vec, lc.rhs, basis_matrix=self.basis_matrix)
-
-        return row
-
-    def intersect_invariant(self):
+    def intersect_invariant(self, skip_trainsitions=False):
         '''intersect the current state set with the mode invariant
 
         returns whether the state set is still feasbile after intersection'''
@@ -158,16 +123,27 @@ class StateSet(Freezable):
         if self.invariant_constraint_rows is None:
             self.invariant_constraint_rows = [None] * len(self.mode.inv_list)
 
-        for i, inv_lc in enumerate(self.mode.inv_list):
-            if lputil.check_intersection(self.lpi, inv_lc.negate()):
-                if self.invariant_constraint_rows[i] is None:
+        for invariant_index, lc in enumerate(self.mode.inv_list):
+            if lputil.check_intersection(self.lpi, lc.negate()):
+
+                old_row = self.invariant_constraint_rows[invariant_index]
+                vec = lc.csr.toarray()[0]
+                rhs = lc.rhs
+
+                if old_row is None:
                     # new constriant
-                    row = self.add_constraint(inv_lc)
-                    self.invariant_constraint_rows[i] = row
+                    row = lputil.add_init_constraint(self.lpi, vec, rhs, self.basis_matrix)
+                    self.invariant_constraint_rows[invariant_index] = row
                 else:
+
                     # strengthen existing constraint possibly
-                    row = self.try_replace_constraint(inv_lc, self.invariant_constraint_rows[i])
-                    self.invariant_constraint_rows[i] = row
+                    row = lputil.try_replace_init_constraint(self.lpi, old_row, vec, rhs, self.basis_matrix)
+                    self.invariant_constraint_rows[invariant_index] = row
+
+                ### add constraint to each transition lpi as well ###
+                if not skip_trainsitions:
+                    for t in self.mode.transitions:
+                        t.intersect_invariant(invariant_index, self.basis_matrix)
 
         is_feasible = self.lpi.minimize(columns=[], fail_on_unsat=False) is not None
 

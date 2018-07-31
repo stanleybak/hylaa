@@ -4,6 +4,7 @@ Stanley Bak, 2018
 '''
 
 import numpy as np
+from termcolor import cprint
 
 from hylaa.settings import HylaaSettings, PlotSettings
 
@@ -46,22 +47,24 @@ class Core(Freezable):
         'print function for STDOUT_NORMAL and above'
 
         if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
-            print(msg)
+            cprint(msg, self.settings.stdout_colors[HylaaSettings.STDOUT_NORMAL])
 
     def print_verbose(self, msg):
         'print function for STDOUT_VERBOSE and above'
 
         if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
-            print(msg)
+            cprint(msg, self.settings.stdout_colors[HylaaSettings.STDOUT_VERBOSE])
 
     def print_waiting_list(self):
         'print out the waiting list'
 
         if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
-            print("Waiting list has {} states".format(len(self.waiting_list)))
+            col = self.settings.stdout_colors[HylaaSettings.STDOUT_VERBOSE]
+            
+            cprint("Waiting list has {} states".format(len(self.waiting_list)), col)
 
             for state in self.waiting_list:
-                print(" {}".format(state))
+                cprint(" {}".format(state), col)
 
     def is_finished(self):
         'is the computation finished'
@@ -95,11 +98,11 @@ class Core(Freezable):
 
             # if it's a time-triggered transition, we may remove the state now
             if self.settings.optimize_tt_transitions and t.time_triggered:
-                if was_tt_taken(t):
+                if was_tt_taken(self.cur_state.lpi, t):
                     self.print_verbose("Transition was time-triggered, finished with current state analysis")
                     self.took_tt_transition = True
                 else:
-                    self.print_verbose("Transition was NOT taken as time-triggered, due to runtime checks not passing")
+                    self.print_verbose("Transition was NOT taken as time-triggered, due to runtime checks")
         else:
             # succesor is infeasible, check if it's the reset's fault, or due to numerical precision
             t.lpi.reset_lp()
@@ -119,7 +122,7 @@ class Core(Freezable):
 
         step_num = self.cur_state.cur_step_since_start
         self.print_normal("Unsafe at Step: {} / {} ({})".format(step_num, self.settings.num_steps, \
-                            self.settings.step_size * step_num))
+                            round(self.settings.step_size * step_num, 12)))
 
         self.result.safe = False
         self.result.counterexample = make_counterexample(self.hybrid_automaton, t)
@@ -130,7 +133,7 @@ class Core(Freezable):
         transitions = self.cur_state.mode.transitions
 
         for transition_index, t in enumerate(transitions):
-            if t.lpi.is_feasible():                                    
+            if t.lpi.is_feasible():
                 if t.to_mode.is_error():
                     self.error_reached(t)
                     break
@@ -145,7 +148,7 @@ class Core(Freezable):
         'print the current step and time'
 
         step_num = self.cur_state.cur_step_since_start
-        total_time = self.settings.step_size * step_num
+        total_time = round(self.settings.step_size * step_num, 12)
         self.print_verbose("Step: {} / {} ({})".format(step_num, self.settings.num_steps, total_time))
 
     def do_step_continuous_post(self):
@@ -191,7 +194,8 @@ class Core(Freezable):
                 if first is None or state.cur_step_since_start < first.cur_step_since_start:
                     first = state
 
-            self.print_verbose("Minimum time state on waiting list: {}".format(first))
+            self.print_verbose("Minimum time state on waiting list: {} at step {}".format( \
+                    first, first.cur_step_since_start))
 
             # remove all states with the same mode as 'first' for aggregation
             new_waiting_list = []
@@ -264,7 +268,7 @@ class Core(Freezable):
             # setup the lpi for each outgoing transition
             self.max_steps_remaining = self.settings.num_steps - self.cur_state.cur_step_since_start
 
-            still_feasible = self.cur_state.intersect_invariant()
+            still_feasible = self.cur_state.intersect_invariant(skip_trainsitions=True)
 
             if not still_feasible:
                 self.print_normal("Continuous state was outside of the mode's invariant; skipping.")
@@ -333,7 +337,7 @@ class Core(Freezable):
                     
                 continue
             
-            still_feasible = state.intersect_invariant()
+            still_feasible = state.intersect_invariant(skip_trainsitions=True)
 
             if still_feasible:
                 self.waiting_list.append(state)
@@ -345,6 +349,12 @@ class Core(Freezable):
             raise RuntimeError("Error: No valid initial states were defined.")
 
         Timers.toc('setup')
+
+    def run_to_completion(self):
+        'run the model to completion (called by run() if not plot is desired)'
+
+        self.plotman.run_to_completion(self.do_step, self.is_finished, \
+                               compute_plot=self.settings.plot.store_plot_result)
 
     def run(self, init_state_list):
         '''
@@ -361,8 +371,7 @@ class Core(Freezable):
         self.setup(init_state_list)
 
         if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE:
-            self.plotman.run_to_completion(self.do_step, self.is_finished, \
-                                           compute_plot=self.settings.plot.store_plot_result)
+            self.run_to_completion()
         else:
             self.plotman.compute_and_animate(self.do_step, self.is_finished)
 
