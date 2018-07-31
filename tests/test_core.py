@@ -133,9 +133,7 @@ def assert_verts_is_box(verts, box, tol=1e-5):
 
     is_flat = abs(box[0][0] - box[0][1]) < tol or abs(box[1][0] - box[1][1]) < tol
 
-    print(".isflat = {}".format(is_flat))
-
-    expected_verts = 2 if is_flat else 5
+    expected_verts = 3 if is_flat else 5
 
     assert len(verts) == expected_verts and verts[0] == verts[-1]
 
@@ -512,8 +510,6 @@ def test_agg_to_more_vars():
     init_lpi = lputil.from_box([(0, 1), (1, 1)], m1)
     init_list = [StateSet(init_lpi, m1)]
 
-    print("init lpi verts = {}".format(lpplot.get_verts(init_lpi)))
-
     # settings, step size = 1.0
     settings = HylaaSettings(1.0, 4.0)
     settings.stdout = HylaaSettings.STDOUT_NONE
@@ -535,14 +531,10 @@ def test_agg_to_more_vars():
                 'agg0', 'snap0', 'snap1', 'snap2'] # post aggregation variables
     assert names == expected
 
-    print("keys = {}".format(result.mode_to_polys.keys()))
-
     polys = result.mode_to_polys['m1']
 
     # 4 steps because invariant is allowed to be false for the final step
     assert 4 <= len(polys) <= 5, "expected invariant to become false after 4/5 steps"
-
-    print("polys[0] = {}".format(polys[0]))
 
     assert_verts_is_box(polys[0], [[0, 1], [1, 1]])
     assert_verts_is_box(polys[1], [[1, 2], [1, 1]])

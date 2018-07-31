@@ -96,16 +96,16 @@ class StateSet(Freezable):
 
             if not self.assigned_plot_dim:
                 self.assigned_plot_dim = True
-                xdim = plotman.settings.xdim_dir
-                ydim = plotman.settings.ydim_dir
+                self.xdim = plotman.settings.xdim_dir
+                self.ydim = plotman.settings.ydim_dir
 
-                if isinstance(xdim, dict):
-                    assert self.mode.name in xdim, "mode {} not in xdim plot direction dict".format(self.mode.name)
-                    self.xdim = xdim[self.mode.name]
+                if isinstance(self.xdim, dict):
+                    assert self.mode.name in self.xdim, "mode {} not in xdim plot direction dict".format(self.mode.name)
+                    self.xdim = self.xdim[self.mode.name]
 
-                if isinstance(ydim, dict):
-                    assert self.mode.name in ydim, "mode {} not in ydim plot direction dict".format(self.mode.name)
-                    self.ydim = ydim[self.mode.name]
+                if isinstance(self.ydim, dict):
+                    assert self.mode.name in self.ydim, "mode {} not in ydim plot direction dict".format(self.mode.name)
+                    self.ydim = self.ydim[self.mode.name]
 
             self._verts = lpplot.get_verts(self.lpi, xdim=self.xdim, ydim=self.ydim, plot_vecs=plotman.plot_vecs, \
                                            cur_time=cur_time)
