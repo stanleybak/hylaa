@@ -218,6 +218,20 @@ def test_box_aggregate2():
     
     assert verts[0] == verts[-1]
 
+    # test setting basis matrix after aggregation
+    lputil.set_basis_matrix(lpi, np.identity(2))
+
+    verts = lpplot.get_verts(lpi)
+
+    assert len(verts) == 5
+    
+    assert [0., 0.] in verts
+    assert [0, 2.] in verts
+    assert [2., 0.] in verts
+    assert [2., 2.] in verts
+    
+    assert verts[0] == verts[-1]
+
 def pair_almost_in(pair, pair_list, tol=1e-9):
     'check if a pair is in a pair list (up to small tolerance)'
 
@@ -732,6 +746,9 @@ def test_aggregate_on_subspace():
     expected_names = ["m0_i0", "m0_i1", "m0_i2", "m0_c0", "m0_c1", "m0_c2", "agg0", "snap0", "snap1", "snap2"]
 
     assert names == expected_names
+
+    assert lpi.basis_mat_pos == (lpi.get_num_rows() - 3, lpi.get_num_cols() - 7)
+    assert lpi.cur_vars_offset == lpi.get_num_cols() - 3
 
 def test_aggregate_self():
     '''

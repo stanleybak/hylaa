@@ -10,7 +10,7 @@ from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa.settings import HylaaSettings, PlotSettings
 from hylaa.core import Core
 from hylaa.stateset import StateSet, TransitionPredecessor, AggregationPredecessor
-from hylaa import lputil
+from hylaa import lputil, lpplot
 from hylaa.lpinstance import LpInstance
 
 def test_guard_strengthening():
@@ -131,7 +131,13 @@ def assert_verts_is_box(verts, box, tol=1e-5):
     box is [[xmin, xmax], [ymin, ymax]]
     '''
 
-    assert len(verts) == 5 and verts[0] == verts[-1]
+    is_flat = abs(box[0][0] - box[0][1]) < tol or abs(box[1][0] - box[1][1]) < tol
+
+    print(".isflat = {}".format(is_flat))
+
+    expected_verts = 2 if is_flat else 5
+
+    assert len(verts) == expected_verts and verts[0] == verts[-1]
 
     pts = [(box[0][0], box[1][0]), (box[0][1], box[1][0]), (box[0][1], box[1][1]), (box[0][0], box[1][1])]
 
@@ -364,7 +370,9 @@ def test_aggregation():
     # m1 -> m2 guard: True
     # m2 dynamics: x' == 0, y' == 1
     # time bound: 4
-    # excepted final states to be: x: [0, 3], y: [4,5]
+    # excepted final states to be: x: [0, 4], y: [4,5]
+    # x is [1, 4] because no transitions are allowed at step 0 (simulation-equiv semantics) and a transition is
+    #        allowed one step after the invariant becomes false
     # y is [4,5] because after aggregation, the time elapsed for the aggregated set will be 0.0, the minimum
 
     ha = HybridAutomaton()
@@ -390,7 +398,7 @@ def test_aggregation():
 
     # settings, step size = 1.0
     settings = HylaaSettings(1.0, 4.0)
-    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.stdout = HylaaSettings.STDOUT_NONE
     settings.plot.plot_mode = PlotSettings.PLOT_NONE
     settings.plot.store_plot_result = True
 
@@ -401,14 +409,14 @@ def test_aggregation():
 
     assert state.mode == m2
     assert isinstance(state.predecessor, AggregationPredecessor)
-    unagg_state = state.predecessor.parents[0]
+    unagg_state = state.predecessor.states[0]
     assert isinstance(unagg_state, StateSet)
 
     assert unagg_state.mode == m2
     assert isinstance(unagg_state.predecessor, TransitionPredecessor)
     assert unagg_state.predecessor.transition == trans1
     assert isinstance(unagg_state.predecessor.transition_lpi, LpInstance)
-    prestate = unagg_state.predecessor.parent
+    prestate = unagg_state.predecessor.state
     assert isinstance(prestate, StateSet)
 
     assert prestate.mode == m1
@@ -419,10 +427,10 @@ def test_aggregation():
 
     assert 4 <= len(polys2) <= 5
 
-    assert_verts_is_box(polys2[0], [[0, 3], [0, 1]])
-    assert_verts_is_box(polys2[1], [[0, 3], [1, 2]])
-    assert_verts_is_box(polys2[2], [[0, 3], [2, 3]])
-    assert_verts_is_box(polys2[3], [[0, 3], [3, 4]])
+    assert_verts_is_box(polys2[0], [[1, 4], [0, 1]])
+    assert_verts_is_box(polys2[1], [[1, 4], [1, 2]])
+    assert_verts_is_box(polys2[2], [[1, 4], [2, 3]])
+    assert_verts_is_box(polys2[3], [[1, 4], [3, 4]])
 
 def test_agg_with_reset():
     'test the aggregation of states with a reset'
@@ -458,7 +466,7 @@ def test_agg_with_reset():
 
     # settings, step size = 1.0
     settings = HylaaSettings(1.0, 4.0)
-    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.stdout = HylaaSettings.STDOUT_NONE
     settings.plot.plot_mode = PlotSettings.PLOT_NONE
 
     result = Core(ha, settings).run(init_list)
@@ -473,9 +481,75 @@ def test_agg_with_reset():
                 'agg0', 'snap0', 'snap1'] # post aggregation variables
     assert names == expected
 
-    assert False
-
 def test_agg_to_more_vars():
     'test the aggregation of states with a reset to a mode with new variables'
 
-    assert False
+    ha = HybridAutomaton()
+
+    # mode one: x' = 1, a' = 0 
+    m1 = ha.new_mode('m1')
+    m1.set_dynamics([[0, 1], [0, 0]])
+
+    # mode two: x' = 0, a' = 0, y' == 1 
+    m2 = ha.new_mode('m2')
+    m2.set_dynamics([[0, 0, 0], [0, 0, 0], [0, 1, 0]])
+
+    # invariant: x <= 3.0
+    m1.set_invariant([[1, 0]], [3.0])
+
+    # guard: True
+    trans1 = ha.new_transition(m1, m2, 'trans1')
+    trans1.set_guard_true()
+
+    reset_mat = [[1, 0], [0, 1], [0, 0]]
+    reset_minkowski = [[0], [0], [1]]
+    reset_minkowski_constraints = [[1], [-1]]
+    reset_minkowski_rhs = [3, -3] # y0 == 3
+    
+    trans1.set_reset(reset_mat, reset_minkowski, reset_minkowski_constraints, reset_minkowski_rhs)
+
+    # initial set has x0 = [0, 1], a = 1
+    init_lpi = lputil.from_box([(0, 1), (1, 1)], m1)
+    init_list = [StateSet(init_lpi, m1)]
+
+    print("init lpi verts = {}".format(lpplot.get_verts(init_lpi)))
+
+    # settings, step size = 1.0
+    settings = HylaaSettings(1.0, 4.0)
+    settings.stdout = HylaaSettings.STDOUT_NONE
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
+    settings.plot.store_plot_result = True
+    settings.plot.xdim_dir = 0
+    settings.plot.ydim_dir = {'m1': 1, 'm2': 2}
+
+    result = Core(ha, settings).run(init_list)
+
+    names = result.last_cur_state.lpi.get_names()
+
+    assert "agg0" in names
+    assert "agg1" not in names
+ 
+    expected = ['m0_i0', 'm0_i1', 'm0_c0', 'm0_c1', # initial state variables
+                'a0', # reset minkowsk variable
+                'm1_i0_t0', 'm1_i1', 'm1_i2', 'm1_c0', 'm1_c1', 'm1_c2', # post reset variables
+                'agg0', 'snap0', 'snap1', 'snap2'] # post aggregation variables
+    assert names == expected
+
+    print("keys = {}".format(result.mode_to_polys.keys()))
+
+    polys = result.mode_to_polys['m1']
+
+    # 4 steps because invariant is allowed to be false for the final step
+    assert 4 <= len(polys) <= 5, "expected invariant to become false after 4/5 steps"
+
+    print("polys[0] = {}".format(polys[0]))
+
+    assert_verts_is_box(polys[0], [[0, 1], [1, 1]])
+    assert_verts_is_box(polys[1], [[1, 2], [1, 1]])
+    assert_verts_is_box(polys[2], [[2, 3], [1, 1]])
+    assert_verts_is_box(polys[3], [[3, 4], [1, 1]])
+
+    polys = result.mode_to_polys['m2']
+
+    assert_verts_is_box(polys[0], [[1, 4], [3, 3]])
+    assert_verts_is_box(polys[1], [[1, 4], [4, 4]])

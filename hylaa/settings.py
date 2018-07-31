@@ -56,8 +56,8 @@ class PlotSettings(Freezable):
 
         self.filename = None # filename to print data to for certain plot modes
 
-        self.xdim_dir = 0 # plotting x dimension number, direction (np.array), or None (uses time)
-        self.ydim_dir = 1 # plotting y dimension number, direction (np.array), or None (uses time)
+        self.xdim_dir = 0 # plotting x dimension number, direction (np.array), None (time), or dict: mode_name -> dir
+        self.ydim_dir = 1 # plotting y dimension number, direction (np.array), None (time), or dict: mode_name -> dir
 
         self.plot_size = (8, 8) # inches
         self.label = LabelSettings() # plot title, axis labels, font sizes, ect.

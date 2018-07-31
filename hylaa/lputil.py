@@ -137,20 +137,20 @@ def set_basis_matrix(lpi, basis_mat):
     inds = []
     indptr = [0]
 
-    # BM -I
+    # 0 BM 0 -I 0
     for row in range(lpi.dims):
         for col in range(lpi.dims):
             data.append(basis_mat[row, col])
-            inds.append(col)
+            inds.append(col + lpi.basis_mat_pos[1])
             
         data.append(-1)
-        inds.append(lpi.dims + row)
+        inds.append(lpi.cur_vars_offset + row)
 
         indptr.append(len(data))
 
-    mat = csr_matrix((data, inds, indptr), shape=(lpi.dims, 2 * lpi.dims), dtype=float)
+    mat = csr_matrix((data, inds, indptr), shape=(lpi.dims, lpi.cur_vars_offset + lpi.dims), dtype=float)
     mat.check_format()
-    lpi.set_constraints_csr(mat, offset=lpi.basis_mat_pos)
+    lpi.set_constraints_csr(mat, offset=(lpi.basis_mat_pos[0], 0))
 
 def check_intersection(lpi, lc, tol=1e-13):
     '''check if there is an intersection between the LP constriants and the LinearConstraint object lc
@@ -322,10 +322,6 @@ def aggregate(lpi_list, direction_matrix):
             
     num_agg_dims = sum([1 if needs_var else 0 for needs_var in create_agg_var])
 
-    print(".lp.agg directions:\n{}".format(direction_matrix))
-    print(".lputil.aggregate. mins = {}, maxes = {}, num_agg_dirs = {}".format(mins, maxes, num_agg_dims))
-    print(".lputil.aggregate. mid_mins = {}, mid_maxes = {}".format(mid_mins, mid_maxes))
-        
     # add n new columns and 2n new rows, for the minkowski sum constriants
     names = ["agg{}".format(i) for i in range(num_agg_dims)]
     rv.add_cols(names)
@@ -533,7 +529,7 @@ def add_snapshot_variables(lpi, basename):
     mat.check_format()
 
     lpi.set_constraints_csr(mat, offset=(rows, 0))
-    lpi.set_reach_vars(lpi.dims, (rows-1, lpi.cur_vars_offset))
+    lpi.set_reach_vars(lpi.dims, (rows, lpi.cur_vars_offset))
 
 def add_curtime_constraints(lpi, csr, rhs_vec):
     '''

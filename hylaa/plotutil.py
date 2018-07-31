@@ -145,7 +145,7 @@ class DrawnShapes(Freezable):
         
         if polys is None:
             lw = self.plotman.settings.reachable_poly_width
-            polys = collections.PolyCollection([], lw=lw, animated=True, edgecolor='k', facecolor=(0.,0.,0.,0.))
+            polys = collections.PolyCollection([], lw=lw, animated=True, edgecolor='k', facecolor=(0., 0., 0., 0.))
             self.axes.add_collection(polys)
 
             self.parent_to_polys['cur_state'] = polys
@@ -369,28 +369,22 @@ class PlotManager(Freezable):
             verts = state.verts(self)
             Timers.toc('verts()')
 
-            if verts is None:
-                rv = False
+            if self.settings.store_plot_result:
+                if state.mode.name in self.core.result.mode_to_polys:
+                    self.core.result.mode_to_polys[state.mode.name].append(verts)
+                else:
+                    self.core.result.mode_to_polys[state.mode.name] = [verts]
 
-                print(".plotutil verts() returned None for lpi:\n{}".format(state.lpi))
-            else:
+            if self.settings.plot_mode != PlotSettings.PLOT_NONE:
+                Timers.tic("add to plot")
+                self.shapes.set_cur_state(verts)
 
-                if self.settings.store_plot_result:
-                    if state.mode.name in self.core.result.mode_to_polys:
-                        self.core.result.mode_to_polys[state.mode.name].append(verts)
-                    else:
-                        self.core.result.mode_to_polys[state.mode.name] = [verts]
+                if self.settings.label.axes_limits is None:
+                    self.update_axis_limits(verts)
 
-                if self.settings.plot_mode != PlotSettings.PLOT_NONE:
-                    Timers.tic("add to plot")
-                    self.shapes.set_cur_state(verts)
+                self.shapes.add_reachable_poly(verts, state.mode.name)
 
-                    if self.settings.label.axes_limits is None:
-                        self.update_axis_limits(verts)
-
-                    self.shapes.add_reachable_poly(verts, state.mode.name)
-
-                    Timers.toc("add to plot")
+                Timers.toc("add to plot")
 
         return rv
 

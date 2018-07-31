@@ -86,7 +86,7 @@ class Core(Freezable):
         # make sure the successor is feasible
         if new_lpi.is_feasible():
 
-            predecessor = TransitionPredecessor(self.cur_state, t, t.lpi.clone())
+            predecessor = TransitionPredecessor(self.cur_state.clone(), t, t.lpi.clone())
             successor_state = StateSet(new_lpi, t.to_mode, self.cur_state.cur_step_since_start, predecessor)
             self.waiting_list.append(successor_state)
 
@@ -110,7 +110,7 @@ class Core(Freezable):
                                    "was the reset correctly specified?").format(t))
             else:
                 # it was due to numerical issues, it should be ok to remove the original (unsat) state
-                self.print_verbose("Continuous state discovered to be UNSAT during transition, removing state")
+                self.print_normal("Continuous state discovered to be UNSAT during transition, removing state")
 
                 self.cur_state = None
 
@@ -169,7 +169,14 @@ class Core(Freezable):
                     self.cur_state = None
                 else:
                     self.cur_state.step()
-                    self.check_guards()
+
+                    if not self.cur_state.lpi.is_feasible():
+                        self.print_normal("State became infeasible after updating basis matrix. " + \
+                                          "Likely was barely feasible + numerical issues); removing state")
+
+                        self.cur_state = None
+                    else:
+                        self.check_guards()
 
     def pop_waiting_list(self):
         'pop a state off the waiting list, possibly doing state-set aggreation'
@@ -213,7 +220,7 @@ class Core(Freezable):
                 else: # aggregation with a predecessor
                     pred = mid_state.predecessor
                     assert isinstance(pred, TransitionPredecessor)
-                    premode = pred.parent.mode
+                    premode = pred.state.mode
                     pt = lputil.get_box_center(pred.transition_lpi)
                      
                     premode_dir_mat = lputil.make_direction_matrix(pt, premode.a_csr)
@@ -230,7 +237,7 @@ class Core(Freezable):
                 lpi_list = [state.lpi for state in agg_list]
                 new_lpi = lputil.aggregate(lpi_list, agg_dir_mat)
 
-                predecessor = AggregationPredecessor(lpi_list)
+                predecessor = AggregationPredecessor(agg_list) # Note: these objects weren't clone()'d
                 rv = StateSet(new_lpi, first.mode, first.cur_step_since_start, predecessor)
                 
         return rv
@@ -289,17 +296,10 @@ class Core(Freezable):
                 else:
                     self.print_normal("Result: System is safe. Error modes are NOT reachable.\n")
 
-    def run(self, init_state_list):
-        '''
-        Run the computation (main entry point)
+    def setup(self, init_state_list):
+        'setup the computation (called by run())'
 
-        init_star is the initial state
-
-        fixed_dim_list, if used, is a list of dimensions with fixed initial values
-        '''
-
-        Timers.reset()
-        Timers.tic("total")
+        Timers.tic('setup')
 
         for state in init_state_list:
             assert isinstance(state, StateSet), "initial states should be a list of StateSet objects"
@@ -343,6 +343,22 @@ class Core(Freezable):
 
         if not self.waiting_list:
             raise RuntimeError("Error: No valid initial states were defined.")
+
+        Timers.toc('setup')
+
+    def run(self, init_state_list):
+        '''
+        Run the computation (main entry point)
+
+        init_star is the initial state
+
+        fixed_dim_list, if used, is a list of dimensions with fixed initial values
+        '''
+
+        Timers.reset()
+        Timers.tic("total")
+
+        self.setup(init_state_list)
 
         if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE:
             self.plotman.run_to_completion(self.do_step, self.is_finished, \

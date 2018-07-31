@@ -18,8 +18,8 @@ from hylaa.lpinstance import LpInstance
 from hylaa import lpplot
 
 # predecessor types
-AggregationPredecessor = namedtuple('AggregationPredecessor', ['parents'])
-TransitionPredecessor = namedtuple('TransitionPredecessor', ['parent', 'transition', 'transition_lpi'])
+AggregationPredecessor = namedtuple('AggregationPredecessor', ['states'])
+TransitionPredecessor = namedtuple('TransitionPredecessor', ['state', 'transition', 'transition_lpi'])
 
 class StateSet(Freezable):
     '''
@@ -48,7 +48,22 @@ class StateSet(Freezable):
 
         self._verts = None # cached vertices at the current step
 
+        self.assigned_plot_dim = False # set to True on first call to verts()
+        self.xdim = None # set on first call to verts()
+        self.ydim = None # set on first call to verts()
+
         self.freeze_attrs()
+
+    def clone(self):
+        'deep copy this StateSet'
+
+        rv = StateSet(self.lpi.clone(), self.mode, self.cur_step_since_start, self.predecessor)
+
+        rv.cur_step_in_mode = self.cur_step_in_mode
+        rv.invariant_constraint_rows = self.invariant_constraint_rows.copy()
+        rv.basis_matrix = self.basis_matrix.copy()
+
+        return rv
 
     def __str__(self):
         'short string representation of this state set'
@@ -77,12 +92,24 @@ class StateSet(Freezable):
         Timers.tic('verts')
 
         if self._verts is None:
-            xdim = plotman.settings.xdim_dir
-            ydim = plotman.settings.ydim_dir
             cur_time = self.cur_step_since_start * plotman.core.settings.step_size
 
-            self._verts = lpplot.get_verts(self.lpi, xdim=xdim, ydim=ydim, plot_vecs=plotman.plot_vecs, \
+            if not self.assigned_plot_dim:
+                self.assigned_plot_dim = True
+                xdim = plotman.settings.xdim_dir
+                ydim = plotman.settings.ydim_dir
+
+                if isinstance(xdim, dict):
+                    assert self.mode.name in xdim, "mode {} not in xdim plot direction dict".format(self.mode.name)
+                    self.xdim = xdim[self.mode.name]
+
+                if isinstance(ydim, dict):
+                    assert self.mode.name in ydim, "mode {} not in ydim plot direction dict".format(self.mode.name)
+                    self.ydim = ydim[self.mode.name]
+
+            self._verts = lpplot.get_verts(self.lpi, xdim=self.xdim, ydim=self.ydim, plot_vecs=plotman.plot_vecs, \
                                            cur_time=cur_time)
+            assert self._verts is not None, "verts() was unsat"
             
         Timers.toc('verts')
 
