@@ -142,7 +142,7 @@ def make_settings():
     # see hylaa.settings for a list of reachability settings
     settings = HylaaSettings(0.1, 200.0) # step: 0.1, bound: 200.0
     settings.plot.plot_mode = PlotSettings.PLOT_NONE
-    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.stdout = HylaaSettings.STDOUT_NORMAL
 
 
     settings.plot.xdim_dir = 0

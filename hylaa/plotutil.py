@@ -440,9 +440,6 @@ class PlotManager(Freezable):
 
             Timers.toc("anim_iterator")
 
-            if self.core.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
-                Timers.print_stats()
-
         def next_pressed(_):
             'event function for next button press'
             self.interactive.paused = False

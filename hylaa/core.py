@@ -55,6 +55,12 @@ class Core(Freezable):
         if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
             cprint(msg, self.settings.stdout_colors[HylaaSettings.STDOUT_VERBOSE])
 
+    def print_debug(self, msg):
+        'print function for STDOUT_DEBUG and above'
+
+        if self.settings.stdout >= HylaaSettings.STDOUT_DEBUG:
+            cprint(msg, self.settings.stdout_colors[HylaaSettings.STDOUT_DEBUG])
+
     def print_waiting_list(self):
         'print out the waiting list'
 
@@ -234,18 +240,23 @@ class Core(Freezable):
                     assert isinstance(pred, TransitionPredecessor)
                     premode = pred.state.mode
                     pt = lputil.get_box_center(pred.transition_lpi)
-                     
+                    self.print_debug("aggreagtion point: {}".format(pt))
+                    
                     premode_dir_mat = lputil.make_direction_matrix(pt, premode.a_csr)
+                    self.print_debug("premode dir mat:\n{}".format(premode_dir_mat))
 
                     if pred.transition.reset_csr is None:
                         agg_dir_mat = premode_dir_mat
                     else:
                         projected_dir_mat = premode_dir_mat * pred.transition.reset_csr.transpose()
 
+                        self.print_debug("projected dir mat:\n{}".format(projected_dir_mat))
+
                         # re-orthgohonalize (and create new vectors if necessary)
                         dims = mid_state.mode.a_csr.shape[0]
                         agg_dir_mat = lputil.reorthogonalize_matrix(projected_dir_mat, dims)
 
+                self.print_debug("agg dir mat:\n{}".format(agg_dir_mat))
                 lpi_list = [state.lpi for state in agg_list]
                 new_lpi = lputil.aggregate(lpi_list, agg_dir_mat)
 
@@ -334,11 +345,11 @@ class Core(Freezable):
         for mode in ha.modes.values():
             mode.init_time_elapse(self.settings.step_size)
 
+        if self.settings.optimize_tt_transitions:
+            ha.detect_tt_transitions(self.print_debug)
+
         if self.settings.do_guard_strengthening:
             ha.do_guard_strengthening()
-
-        if self.settings.optimize_tt_transitions:
-            ha.detect_tt_transitions()
         
         self.plotman.create_plot()
 

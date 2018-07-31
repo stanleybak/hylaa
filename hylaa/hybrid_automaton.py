@@ -167,7 +167,7 @@ class Mode(Freezable):
         if not isinstance(a_csr, csr_matrix):
             a_csr = csr_matrix(a_csr)
 
-        assert a_csr.shape[0] == a_csr.shape[1]
+        assert a_csr.shape[0] == a_csr.shape[1], "expected square dynamics matrix, got {}".format(a_csr.shape)
 
         self.a_csr = a_csr
 
@@ -360,7 +360,7 @@ class HybridAutomaton(Freezable):
         '''
 
         for t in self.transitions:
-            if t.from_mode == t.to_mode:
+            if t.from_mode == t.to_mode or t.time_triggered:
                 continue
 
             inv_list = t.to_mode.inv_list
@@ -411,7 +411,7 @@ class HybridAutomaton(Freezable):
                 t.guard_csr = new_guard_csr
                 t.guard_rhs = new_guard_rhs
 
-    def detect_tt_transitions(self):
+    def detect_tt_transitions(self, print_func=print):
         '''
         Mark all time-triggered transitions within the automaton.
 
@@ -456,18 +456,23 @@ class HybridAutomaton(Freezable):
                 if all_constant:
                     tt_vars.append(row_index)
 
+            print_func("Checking mode '{}', tt_vars = {}, num transitions = {}".format( \
+                mode.name, tt_vars, len(mode.transitions)))
+
             if not tt_vars:
                 continue
 
             # at this point, we know which variables are constantly changing... check guards / invariants
             for t in mode.transitions:
-                if is_time_triggered(t, tt_vars):
+                if is_time_triggered(t, tt_vars, print_func):
                     t.time_triggered = True
 
-def is_time_triggered(t, tt_vars):
+def is_time_triggered(t, tt_vars, print_func):
     'is the passed-in transition time triggered?'
 
     rv = False
+
+    print_func("checking transition {}, t.guard.rhs = {}".format(t, t.guard_rhs))
 
     if len(t.guard_rhs) == 1:
         all_tt_vars = True
@@ -476,18 +481,25 @@ def is_time_triggered(t, tt_vars):
                 all_tt_vars = False
                 break
 
+        print_func("t.guard_csr = {}, all_tt_vars = {}".format(t.guard_csr.toarray(), all_tt_vars))
+
         if all_tt_vars:
             # check if there is a mode invariant with the opposite condition
             found_invariant = False
 
             for lc in t.from_mode.inv_list:
+                print_func("checking invariant {} <= {}".format(lc.csr.toarray(), lc.rhs))
+                
                 if lc.rhs == -1 * t.guard_rhs[0] and (-1 * lc.csr != t.guard_csr[0]).nnz == 0:
+                    print_func("found opposite invariant!")
                     found_invariant = True
                     break
 
             if found_invariant:
                 rv = True
-                
+
+        print_func("Transition {} {} time triggered".format(t, "is" if rv else "is NOT"))
+                   
     return rv
 
 def was_tt_taken(state_lpi, t):
