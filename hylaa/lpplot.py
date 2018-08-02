@@ -46,7 +46,7 @@ def get_verts(lpi, xdim=0, ydim=1, plot_vecs=None, cur_time=0.0):
 
     return verts
 
-def make_plot_vecs(num_angles=256, offset=0):
+def make_plot_vecs(num_angles=256, offset=0.01):
     'make plot_vecs with equally spaced directions, returning the result'
 
     plot_vecs = []

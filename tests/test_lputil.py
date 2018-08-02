@@ -5,6 +5,8 @@ Tests for LP operations. Made for use with py.test
 import math
 import numpy as np
 
+import matplotlib.pyplot as plt
+
 from scipy.linalg import expm
 from scipy.sparse import csr_matrix
 
@@ -543,7 +545,7 @@ def test_reset_minkowski():
     # basis matrix should be at 9, 6
     assert lpi.basis_mat_pos == (9, 6)
 
-    expected_names = ["m0_i0", "m0_i1", "m0_c0", "m0_c1", "a0", "a1", "m1_i0_t13", "m1_i1", "m1_i2", \
+    expected_names = ["m0_i0", "m0_i1", "m0_c0", "m0_c1", "reset0", "reset1", "m1_i0_t13", "m1_i1", "m1_i2", \
                           "m1_c0", "m1_c1", "m1_c2"]
 
     assert lpi.get_names() == expected_names
@@ -819,3 +821,43 @@ def test_reorthogonalize_matrix():
                 continue
 
             assert np.dot(row_a, row_b) < 1e-6, "rows should be orthononal"
+
+def test_aggregate3():
+    'tests aggregation of 3 sets, inspired by the harmonic oscillator system'
+
+    mode = HybridAutomaton().new_mode('mode_name')
+    lpi1 = lputil.from_box([[0, 1], [0, 1]], mode)
+
+    # middle set is a diamond
+    mat = [[1, 1], [-1, -1], [1, -1], [-1, 1]]
+    s = 3.5
+    rhs = [6+s, -(6-s), s, s]
+    lpi2 = lputil.from_constraints(mat, rhs, mode)
+    
+    lpi3 = lputil.from_box([[5, 6], [5, 6]], mode)
+
+    lpi_list = [lpi1, lpi2, lpi3]
+
+    for lpi in lpi_list:
+        xs, ys = zip(*lpplot.get_verts(lpi))
+        plt.plot(xs, ys, 'k-')
+
+    agg_dirs = np.array([[1, 0], [0, 1]], dtype=float)
+
+    lpi = lputil.aggregate(lpi_list, agg_dirs)
+
+    xs, ys = zip(*lpplot.get_verts(lpi))
+    plt.plot(xs, ys, 'r--')
+
+    plt.show()
+
+
+    # check if point (0.1, 0.1) is in the lp
+    v = 0.1
+    rhs = np.array([v, -v, v, -v], dtype=float)
+    lputil.add_curtime_constraints(lpi, csr_matrix([[1, 0], [-1, 0], [0, 1], [-1, 0]], dtype=float), rhs)
+
+    assert lpi.is_feasible(), "point {}, {} was not in the aggregated set".format(v, v)
+
+
+test_aggregate3()

@@ -324,7 +324,7 @@ class LpInstance(Freezable):
         if is_csr:
             assert isinstance(direction_vec, csr_matrix)
             assert direction_vec.shape[0] == 1
-            assert direction_vec.shape[1] <= self.dims, "dirLen({}) > dims({})".format(len(direction_vec), self.dims)
+            assert direction_vec.shape[1] <= self.dims, "dirLen({}) > dims({})".format(direction_vec.shape[1], self.dims)
 
             data, inds, indptr = direction_vec.data, direction_vec.indices, direction_vec.indptr
             

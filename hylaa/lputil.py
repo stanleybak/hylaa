@@ -122,6 +122,8 @@ def from_constraints(csr, rhs, mode):
 
     lpi.set_reach_vars(dims, (0, 0))
 
+    assert lpi.is_feasible(), "lpi created from constraints was infeasible"
+
     return lpi
 
 def set_basis_matrix(lpi, basis_mat):
@@ -293,8 +295,7 @@ def aggregate(lpi_list, direction_matrix):
     maxes = [-np.inf] * num_directions
     mid_maxes = [-np.inf] * num_directions
 
-    for i in range(num_directions):
-        direction = direction_matrix[i]
+    for i, direction in enumerate(direction_matrix):
         assert abs(np.linalg.norm(direction) - 1) < 1e-9, "expected normalized directions, got {}".format(direction)
 
         for lpi in lpi_list:
@@ -305,6 +306,10 @@ def aggregate(lpi_list, direction_matrix):
             result = lpi.minimize(direction_vec=direction, columns=columns)
             min_val = np.dot(result, direction)
             mins[i] = min(mins[i], min_val)
+
+            if i == 0:
+                print(".min_val = {}".format(min_val))
+                print("result point = {}".format(result))
 
             result = lpi.minimize(direction_vec=-direction, columns=columns)
             max_val = np.dot(-result, -direction)
@@ -341,6 +346,11 @@ def aggregate(lpi_list, direction_matrix):
 
     constraint_row_offset = 0
 
+    print(".aggregate() get rid of debug")
+    #mins[0] -= 0.01
+    print("mid_min[0] = {}".format(mid_mins[0]))
+    print("mins[0] = {}".format(mins[0]))
+
     for dim in range(dims):
         if not create_agg_var[dim]:
             continue
@@ -350,7 +360,7 @@ def aggregate(lpi_list, direction_matrix):
         # column is direction[dim]
         for i, d in enumerate(direction):
             data.append(d)
-            inds.append(i)
+            inds.append(i + middle_lpi.basis_mat_pos[0]) # at the row of the current basis matrix
 
         data.append(1.0) # <= constraint
         inds.append(rows + constraint_row_offset)
@@ -374,6 +384,14 @@ def aggregate(lpi_list, direction_matrix):
     add_snapshot_variables(rv, "snap")
 
     assert rv.is_feasible(), "aggregated set was UNSAT"
+
+
+    columns = [rv.cur_vars_offset + i for i in range(rv.dims)]
+    result = rv.minimize(direction_vec=direction_matrix[0], columns=columns)
+    min_val = np.dot(result, direction_matrix[0])
+    print("dir[0] = {}".format(direction_matrix[0]))
+    print("min_val in dir[0] of rv is {}".format(min_val))
+    print("result point = {}".format(result))
 
     return rv
 
@@ -422,7 +440,7 @@ def add_reset_variables(lpi, mode_id, transition_index, reset_csr=None, minkowsk
 
     min_vars = minkowski_csr.shape[1]
 
-    names = ["a{}".format(min_var) for min_var in range(min_vars)]
+    names = ["reset{}".format(min_var) for min_var in range(min_vars)]
     names += ["m{}_i0_t{}".format(mode_id, transition_index)]
 
     names += ["m{}_i{}".format(mode_id, d) for d in range(1, new_dims)]

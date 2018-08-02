@@ -6,6 +6,8 @@ import math
 import numpy as np
 from scipy.sparse import csr_matrix
 
+import matplotlib.pyplot as plt
+
 from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa.settings import HylaaSettings, PlotSettings
 from hylaa.core import Core
@@ -499,7 +501,7 @@ def test_agg_to_more_vars():
     assert "agg1" not in names
  
     expected = ['m0_i0', 'm0_i1', 'm0_c0', 'm0_c1', # initial state variables
-                'a0', # reset minkowsk variable
+                'reset0', # reset minkowsk variable
                 'm1_i0_t0', 'm1_i1', 'm1_i2', 'm1_c0', 'm1_c1', 'm1_c2', # post reset variables
                 'agg0', 'snap0', 'snap1', 'snap2'] # post aggregation variables
     assert names == expected
@@ -632,23 +634,22 @@ def test_agg_ha():
 
     m1 = ha.new_mode('green')
     m1.set_dynamics([[0, 1], [-1, 0]])
-    m1.set_invariant([[0., -1.]], [0.5]) # y >= -0.5
 
     m2 = ha.new_mode('cyan')
     m2.set_dynamics([[0, 0, 0], [0, 0, -2], [0, 0, 0]])
-    m2.set_invariant([0., -1., 0], [2.5]) # y >= 2.5
 
     t1 = ha.new_transition(m1, m2)
-    t1.set_guard([[0., -1.]], [0.0]) # y >= 0
+    t1.set_guard_true()
     reset_mat = [[1, 0], [0, 1], [0, 0]]
     t1.set_reset(reset_mat, [[0], [0], [1]], [[1], [-1]], [1, -1]) # create 3rd variable with a0 = 1
 
     mode = ha.modes['green']
-    init_lpi = lputil.from_box([(-5.5, -4.5), (0, 1.0)], mode)
+    init_lpi = lputil.from_box([(-5, -4), (-0.5, 0.5)], mode)
     
     init_list = [StateSet(init_lpi, mode)]
 
-    settings = HylaaSettings(1.0, 2.0)
+    step = math.pi/4
+    settings = HylaaSettings(step, 2*step)
     settings.process_urgent_guards = True
     settings.plot.plot_mode = PlotSettings.PLOT_NONE
     settings.stdout = HylaaSettings.STDOUT_DEBUG
@@ -658,8 +659,17 @@ def test_agg_ha():
     core.setup(init_list)
 
     core.do_step() # pop
+    xs, ys = zip(*core.cur_state.verts(core.plotman))
+    plt.plot(xs, ys, 'k-')
+    
     core.do_step() # 0
+    xs, ys = zip(*core.cur_state.verts(core.plotman))
+    plt.plot(xs, ys, 'k-')
+
     core.do_step() # 1
+    xs, ys = zip(*core.cur_state.verts(core.plotman))
+    plt.plot(xs, ys, 'k-')
+    
     core.do_step() # 2
     assert len(core.waiting_list) > 1
     core.do_step() # pop
@@ -667,9 +677,19 @@ def test_agg_ha():
 
     lpi = core.cur_state.lpi
 
+    xs, ys = zip(*core.cur_state.verts(core.plotman))
+    plt.plot(xs, ys, 'k-')
+
+    #plt.xlim(-6, -5)
+    #plt.ylim(-0.5, 0.5)
+    plt.show()
+    
+
     # minimize 100 * y + x, should give point (-5.5, 0)
     offset = lpi.cur_vars_offset
     cols = [offset, offset + 1]
     pt = lpi.minimize([1, 100, 0], cols)
 
-    assert np.allclose(pt, [-5.5, 0])
+    assert np.allclose(pt, [-5.5, 0]), "pt was {} (expected [-5.5, 0])".format(pt)
+
+test_agg_ha()
