@@ -98,6 +98,32 @@ def test_check_intersection():
 
     # now check if y >= 4.5 is possible (should be true)
     assert lputil.check_intersection(lpi, lc)
+
+def assert_verts_is_box(verts, box, tol=1e-5):
+    '''check that a list of verts is almost equal to the passed-in box using assertions
+
+    box is [[xmin, xmax], [ymin, ymax]]
+    '''
+
+    is_flat = abs(box[0][0] - box[0][1]) < tol or abs(box[1][0] - box[1][1]) < tol
+
+    expected_verts = 3 if is_flat else 5
+
+    assert len(verts) == expected_verts and verts[0] == verts[-1]
+
+    pts = [(box[0][0], box[1][0]), (box[0][1], box[1][0]), (box[0][1], box[1][1]), (box[0][0], box[1][1])]
+
+    for pt in pts:
+        found = False
+
+        for vert in verts:
+            x, y = vert
+
+            if abs(x - pt[0]) < tol and abs(y - pt[1]) < tol:
+                found = True
+                break
+
+        assert found, "Point {} was not found in verts: {}".format(pt, verts)
     
 def test_verts():
     'tests verts'
@@ -107,13 +133,7 @@ def test_verts():
     plot_vecs = lpplot.make_plot_vecs(4, offset=(math.pi / 4.0))
     verts = lpplot.get_verts(lpi, plot_vecs=plot_vecs)
 
-    assert len(verts) == 5
-    
-    assert [-5.0, 0.] in verts
-    assert [-5.0, 1.] in verts
-    assert [-4.0, 1.] in verts
-    assert [-4.0, 0.] in verts
-    assert verts[0] == verts[-1]
+    assert_verts_is_box(verts, [(-5, -4), (0, 1)])
 
 def test_add_init_constraint():
     'tests add_init_constraint on the harmonic oscillator example'
@@ -150,7 +170,7 @@ def test_add_init_constraint():
     assert [1.0, 4.5] in verts
     assert verts[0] == verts[-1]
 
-def test_try_replace_init_constraint():
+def test_replace_init_constraint():
     'tests try_replace_init_constraint on the harmonic oscillator example'
 
     lpi = lputil.from_box([[-5, -4], [0, 1]], HybridAutomaton().new_mode('mode_name'))
@@ -822,7 +842,7 @@ def test_reorthogonalize_matrix():
 
             assert np.dot(row_a, row_b) < 1e-6, "rows should be orthononal"
 
-def test_aggregate3():
+def fail_aggregate3():
     'tests aggregation of 3 sets, inspired by the harmonic oscillator system'
 
     mode = HybridAutomaton().new_mode('mode_name')
@@ -849,7 +869,7 @@ def test_aggregate3():
     xs, ys = zip(*lpplot.get_verts(lpi))
     plt.plot(xs, ys, 'r--')
 
-    plt.show()
+    #plt.show()
 
 
     # check if point (0.1, 0.1) is in the lp
@@ -859,5 +879,102 @@ def test_aggregate3():
 
     assert lpi.is_feasible(), "point {}, {} was not in the aggregated set".format(v, v)
 
+def test_box_inputs():
+    'tests from_box with a simple input effects matrix'
 
-test_aggregate3()
+    # x' = Ax + Bu
+    # A = identity
+    # B = [1, 2]^t
+    # u is bounded between [1, 10]
+
+    # (init) step 0: [0, 1] x [0, 1]
+    # step 1: [1, 11] x [1, 21]
+    # step 2: [2, 21] x [2, 41]
+
+    mode = HybridAutomaton().new_mode('mode_name')
+    mode.set_dynamics(np.identity(2))
+    mode.set_inputs([[1], [2]], [[1], [-1]], [10, -1])
+    
+    lpi = lputil.from_box([[0, 1], [0, 1]], mode)
+
+    assert lpi.basis_mat_pos == (0, 0)
+    assert lpi.dims == 2
+    assert lpi.cur_vars_offset == 2
+    assert lpi.input_effects_offsets == (6, 4) # row 6, column 4 for total input effects offsets 
+
+    # step 0
+    mat = lpi.get_full_constraints()
+    types = lpi.get_types()
+    rhs = lpi.get_rhs()
+    names = lpi.get_names()
+
+    expected_mat = np.array([\
+        [1, 0, -1, 0, 1, 0], \
+        [0, 1, 0, -1, 0, 1], \
+        [-1, 0, 0, 0, 0, 0], \
+        [1, 0, 0, 0, 0, 0], \
+        [0, -1, 0, 0, 0, 0], \
+        [0, 1, 0, 0, 0, 0], \
+        [0, 0, 0, 0, -1, 0], \
+        [0, 0, 0, 0, 0, -1]], dtype=float)
+
+    expected_vec = np.array([0, 0, 5, -4, 0, 1, 0, 0], dtype=float)
+
+    fx = glpk.GLP_FX
+    up = glpk.GLP_UP
+    expected_types = [fx, fx, up, up, up, up, fx, fx]
+
+    expected_names = ["m0_i0", "m0_i1", "m0_c0", "m0_c1", "m0_ti0", "m0_ti1"]
+
+    assert np.allclose(rhs, expected_vec)
+    assert types == expected_types
+    assert np.allclose(mat.toarray(), expected_mat)
+    assert names == expected_names
+
+    # do step 1
+    mode.init_time_elapse(1.0)
+    basis_mat, input_mat = mode.time_elapse.get_basis_matrix(1)
+
+    lputil.set_basis_matrix(lpi, basis_mat)
+    lputil.add_input_matrix(lpi, input_mat)
+
+    mat = lpi.get_full_constraints()
+    types = lpi.get_types()
+    rhs = lpi.get_rhs()
+    names = lpi.get_names()
+
+    expected_mat = np.array([\
+        [1, 0, -1, 0, 1, 0, 0], \
+        [0, 1, 0, -1, 0, 1, 0], \
+        [-1, 0, 0, 0, 0, 0, 0], \
+        [1, 0, 0, 0, 0, 0, 0], \
+        [0, -1, 0, 0, 0, 0, 0], \
+        [0, 1, 0, 0, 0, 0, 0], \
+        [0, 0, 0, 0, -1, 0, 1], \
+        [0, 0, 0, 0, 0, -1, 2], \
+        [0, 0, 0, 0, 0, 0, 1], \
+        [0, 0, 0, 0, 0, 0, -1]], dtype=float)
+
+    expected_vec = np.array([0, 0, 5, -4, 0, 1, 0, 0, 10, -1], dtype=float)
+
+    fx = glpk.GLP_FX
+    up = glpk.GLP_UP
+    expected_types = [fx, fx, up, up, up, up, fx, fx, up, up, fx, fx]
+
+    expected_names = ["m0_i0", "m0_i1", "m0_c0", "m0_c1", "m0_ti0", "m0_ti1", "m0_I1"]
+
+    assert np.allclose(rhs, expected_vec)
+    assert types == expected_types
+    assert np.allclose(mat.toarray(), expected_mat)
+    assert names == expected_names
+
+    verts = lpplot.get_verts(lpi, plot_vecs=plot_vecs)
+    assert_verts_is_box(verts, [(1, 11), (1, 21)])
+
+    # do step 2
+    basis_mat, input_mat = mode.time_elapse.get_basis_matrix(2)
+    lputil.set_basis_matrix(lpi, basis_mat)
+    lputil.add_input_matrix(lpi, input_mat)
+
+    verts = lpplot.get_verts(lpi, plot_vecs=plot_vecs)
+    assert_verts_is_box(verts, [(2, 21), (2, 41)])
