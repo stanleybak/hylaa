@@ -142,7 +142,7 @@ class Mode(Freezable):
             
             self.inv_list.append(LinearConstraint(constraint_vec, rhs))
 
-    def _check_inputs(self, b_csr, u_constraints_csr, u_constraints_rhs):
+    def _check_inputs(self, b_csr, u_constraints_csr, u_constraints_rhs, allow_constants):
         'Run assersion checks on input matrices'
 
         assert u_constraints_csr.shape[0] == u_constraints_rhs.shape[0], "u_constraints rows shoud match rhs len"
@@ -156,38 +156,45 @@ class Mode(Freezable):
 
         #make sure there are not inputs that are fixed to a constant. This is for efficiency reasons. It is better 
         #to add an affine variable to the a matrix and including this as part of A.
-        num_inputs = b_csr.shape[1]
+        if not allow_constants:
+            num_inputs = b_csr.shape[1]
 
-        for i in range(num_inputs):
-            # does this input only affect a single variable? --> does b_col have a single nonzero?
-            b_col = b_csr[:, i].toarray()
-            nonzeros = sum([1 if x != 0 else 0 for x in b_col])
+            for i in range(num_inputs):
+                # does this input only affect a single variable? --> does b_col have a single nonzero?
+                b_col = b_csr[:, i].toarray()
+                nonzeros = sum([1 if x != 0 else 0 for x in b_col])
 
-            if nonzeros != 1:
-                continue
+                if nonzeros != 1:
+                    continue
 
-            # check if is there a fixed lower and upper bound for this input
-            lb_row = np.array([0 if n != i else 1 for n in range(num_inputs)], dtype=float)
-            ub_row = np.array([0 if n != i else -1 for n in range(num_inputs)], dtype=float)
-            lb = ub = None
+                # check if is there a fixed lower and upper bound for this input
+                lb_row = np.array([0 if n != i else 1 for n in range(num_inputs)], dtype=float)
+                ub_row = np.array([0 if n != i else -1 for n in range(num_inputs)], dtype=float)
+                lb = ub = None
 
-            for row, rhs in zip(u_constraints_csr, u_constraints_rhs):
-                row = row.toarray()
-                if np.array_equiv(lb_row, row):
-                    lb = rhs
-                elif np.array_equiv(ub_row, row):
-                    ub = -rhs
+                for row, rhs in zip(u_constraints_csr, u_constraints_rhs):
+                    row = row.toarray()
+                    if np.array_equiv(lb_row, row):
+                        lb = rhs
+                    elif np.array_equiv(ub_row, row):
+                        ub = -rhs
 
-            if ub is None or lb is None:
-                continue
-            
-            assert abs(ub-lb) > 1e-9, ("Time-varying input #{} is fixed to {}. This is a (very) inefficient way" + \
-              "encode affine terms. Instead, introduce a fixed affine varible in the A matrix with a' = 0 and a(0)" + \
-              " = 1, and refer to that variable in any differential equations that have affine terms.").format(i, lb)
+                if ub is None or lb is None:
+                    continue
+
+                assert abs(ub-lb) > 1e-9, ("Time-varying input #{} is fixed to {}. This is a (very) inefficient " + \
+                    "way encode affine terms. Instead, introduce a fixed affine varible in the A matrix with a' = 0" + \
+                    " and a(0) = 1, and refer to that variable in any differential equations that use affine " + \
+                    "terms.").format(i, lb)
                 
 
-    def set_inputs(self, b_csr, u_constraints_csr, u_constraints_rhs):
-        'sets the time-varying / uncertain inputs for the mode (optional)'
+    def set_inputs(self, b_csr, u_constraints_csr, u_constraints_rhs, allow_constants=False):
+        '''sets the time-varying / uncertain inputs for the mode (optional)
+
+        if allow_constants is True, this will permit inputs that are fixed to constants. This is inefficient though,
+        you should instead add an affine variables to the A matrix that's initially equal to 1 with derivative 0, and
+        refer to that variable in the A matrix, rather than adding inputs.
+        '''
     
         assert self.a_csr is not None, "set_dynamics should be done before set_inputs"
         if not isinstance(b_csr, csr_matrix):
@@ -202,7 +209,7 @@ class Mode(Freezable):
         u_constraints_rhs.shape = (len(u_constraints_rhs), ) # flatten init_rhs into a 1-d array
 
         # additional checks on inputs
-        self._check_inputs(b_csr, u_constraints_csr, u_constraints_rhs)
+        self._check_inputs(b_csr, u_constraints_csr, u_constraints_rhs, allow_constants)
 
         self.b_csr = b_csr
 

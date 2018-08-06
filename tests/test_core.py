@@ -627,6 +627,60 @@ def test_tt_with_invstr():
     assert trans1.time_triggered
     assert not trans2.time_triggered # not time-triggered because invariant of m2 is True
 
+def test_inputs_reset():
+    'test a system with both inputs and a reset'
+
+    # 2-d system with one input
+    # x' = x, y' = u, u \in [1, 1]
+    # x0 = 1, y0 = 0
+    # inv1: y <= 2.5
+    
+    # guard: y >= 2.5
+    # reset: x := 1, y += 10 [should go from (e^3, 3.0) -> (1, 4.0)]
+
+    # mode2:
+    # oinv
+    # x' = 2x, y' = Bu, u \in [1, 2], B = 2
+    # (1, 4.0) -> (e^2, [6, 8]) -> (e^4, [8, 12])
+
+    # mode2 -> error y >= 12
+
+    ha = HybridAutomaton()
+    m1 = ha.new_mode('m1')
+    m1.set_dynamics([[1, 0], [0, 0]])
+    m1.set_inputs([[1]], [[1], [-1]], [1, -1])
+    m1.set_invariant([0, 1], [2.5])
+
+    m2 = ha.new_mode('m2')
+    m2.set_dynamics([[2, 0], [0, 0]])
+    m2.set_inputs([[2]], [[1], [-1]], [2, -2])
+
+    error = ha.new_mode('error')
+
+    t1 = ha.new_transition(m1, m2)
+    t1.set_guard([[0, -1]], [-2.5]) # y >= 2.5
+    reset_mat = [[0, 0], [0, 1]]
+    min_mat = np.identity(2)
+    min_cons = [[1], [-1], [1], [-1]]
+    min_rhs = [1, -1, 10, -10]
+    t1.set_reset(reset_mat, min_mat, min_cons, min_rhs)
+
+    t2 = ha.new_transition(m2, error)
+    t2.set_guard([0, -1], [-12])
+
+    init_box = [[1, 1], [0, 0]]
+    lpi = lputil.from_box(init_box, m1)
+
+    settings = HylaaSettings(1.0, 10.0)
+    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.plot.store_plot_result = True
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
+
+    core = Core(ha, settings)
+    init_list = [StateSet(lpi, mode)]
+    result = core.run(init_list)
+
+
 def fail_agg_ha():
     'test aggregation with the harmonic oscillator dynamics'
 
