@@ -23,6 +23,7 @@ class LpInstance(Freezable):
         self.dims = None
         self.basis_mat_pos = None # 2-tuple
         self.cur_vars_offset = None
+        self.input_effects_offsets = None # None or 2-tuple, row of input constraints / col of accumulated input effects
 
         # internal bookkeeping
         self.obj_cols = [] # columns in the LP with an assigned objective coefficient
@@ -38,12 +39,12 @@ class LpInstance(Freezable):
         glpk.glp_copy_prob(rv.lp, self.lp, glpk.GLP_ON)
         rv.names = self.names.copy()
 
-        rv.set_reach_vars(self.dims, self.basis_mat_pos)
+        rv.set_reach_vars(self.dims, self.basis_mat_pos, self.cur_vars_offset, self.input_effects_offsets)
         rv.obj_cols = self.obj_cols.copy()
 
         return rv
 
-    def set_reach_vars(self, dims, basis_mat_pos):
+    def set_reach_vars(self, dims, basis_mat_pos, cur_vars_offset, input_effects_offsets):
         'set reachability variables'
 
         num_rows = self.get_num_rows()
@@ -54,7 +55,8 @@ class LpInstance(Freezable):
 
         self.dims = dims
         self.basis_mat_pos = basis_mat_pos
-        self.cur_vars_offset = num_cols - dims # right-most variables
+        self.cur_vars_offset = cur_vars_offset #num_cols - dims # right-most variables
+        self.input_effects_offsets = input_effects_offsets
 
     def __del__(self):
         if hasattr(self, 'lp') and self.lp is not None:

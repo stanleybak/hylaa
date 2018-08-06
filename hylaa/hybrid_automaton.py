@@ -6,7 +6,7 @@ Stanley Bak (Sept 2016)
 import numpy as np
 
 import scipy as sp
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, csc_matrix
 
 from hylaa.util import Freezable
 from hylaa.time_elapse import TimeElapser
@@ -88,7 +88,7 @@ class Mode(Freezable):
         self.b_csr = None
 
         # constraints on input
-        self.u_constraints_csr = None # csr_matrix
+        self.u_constraints_csc = None # csc_matrix
         self.u_constraints_rhs = None # 1-d np.ndarray
 
         self.transitions = [] # outgoing Transition objects
@@ -121,6 +121,8 @@ class Mode(Freezable):
             constraints_csr.shape[1], self.a_csr.shape[0])
         assert constraints_csr.shape[0] == len(constraints_rhs)
 
+        assert lputil.is_feasible(constraints_csr, constraints_rhs), "invariant constraints were infeasible"
+
         # for efficiency in checking, the invariant is split into a list of individual constraints
         for row, rhs in enumerate(constraints_rhs):
             inds = []
@@ -140,14 +142,8 @@ class Mode(Freezable):
             
             self.inv_list.append(LinearConstraint(constraint_vec, rhs))
 
-    def set_inputs(self, b_csr, u_constraints_csr, u_constraints_rhs):
-        'sets the time-varying / uncertain inputs for the mode (optional)'
-    
-        assert self.a_csr is not None, "set_dynamics should be done before set_inputs"
-        assert isinstance(b_csr, csr_matrix)
-        assert isinstance(u_constraints_csr, csr_matrix)
-        assert isinstance(u_constraints_rhs, np.ndarray)
-        u_constraints_rhs.shape = (len(u_constraints_rhs), ) # flatten init_rhs into a 1-d array
+    def _check_inputs(self, b_csr, u_constraints_csr, u_constraints_rhs):
+        'Run assersion checks on input matrices'
 
         assert u_constraints_csr.shape[0] == u_constraints_rhs.shape[0], "u_constraints rows shoud match rhs len"
         assert u_constraints_csr.shape[1] == b_csr.shape[1], "u_constraints cols should match b.width"
@@ -155,11 +151,64 @@ class Mode(Freezable):
         assert b_csr.shape[0] == self.a_csr.shape[0], \
                 "B-mat shape {} incompatible with A-mat shape {}".format(b_csr.shape, self.a_csr.shape)
 
-        self.b_csr = b_csr
-        self.u_constraints_csr = u_constraints_csr
-        self.u_constraints_rhs = u_constraints_rhs
+        # make sure the input constraints are feasible
+        assert lputil.is_feasible(u_constraints_csr, u_constraints_rhs), "input constraints were infeasible"
 
-        raise RuntimeError("Inputs not currently supported")
+        #make sure there are not inputs that are fixed to a constant. This is for efficiency reasons. It is better 
+        #to add an affine variable to the a matrix and including this as part of A.
+        num_inputs = b_csr.shape[1]
+
+        for i in range(num_inputs):
+            # does this input only affect a single variable? --> does b_col have a single nonzero?
+            b_col = b_csr[:, i].toarray()
+            nonzeros = sum([1 if x != 0 else 0 for x in b_col])
+
+            if nonzeros != 1:
+                continue
+
+            # check if is there a fixed lower and upper bound for this input
+            lb_row = np.array([0 if n != i else 1 for n in range(num_inputs)], dtype=float)
+            ub_row = np.array([0 if n != i else -1 for n in range(num_inputs)], dtype=float)
+            lb = ub = None
+
+            for row, rhs in zip(u_constraints_csr, u_constraints_rhs):
+                row = row.toarray()
+                if np.array_equiv(lb_row, row):
+                    lb = rhs
+                elif np.array_equiv(ub_row, row):
+                    ub = -rhs
+
+            if ub is None or lb is None:
+                continue
+            
+            assert abs(ub-lb) > 1e-9, ("Time-varying input #{} is fixed to {}. This is a (very) inefficient way" + \
+              "encode affine terms. Instead, introduce a fixed affine varible in the A matrix with a' = 0 and a(0)" + \
+              " = 1, and refer to that variable in any differential equations that have affine terms.").format(i, lb)
+                
+
+    def set_inputs(self, b_csr, u_constraints_csr, u_constraints_rhs):
+        'sets the time-varying / uncertain inputs for the mode (optional)'
+    
+        assert self.a_csr is not None, "set_dynamics should be done before set_inputs"
+        if not isinstance(b_csr, csr_matrix):
+            b_csr = csr_matrix(b_csr, dtype=float)
+            
+        if not isinstance(u_constraints_csr, csr_matrix):
+            u_constraints_csr = csr_matrix(u_constraints_csr, dtype=float)
+            
+        if not isinstance(u_constraints_rhs, np.ndarray):
+            u_constraints_rhs = np.array(u_constraints_rhs, dtype=float)
+        
+        u_constraints_rhs.shape = (len(u_constraints_rhs), ) # flatten init_rhs into a 1-d array
+
+        # additional checks on inputs
+        self._check_inputs(b_csr, u_constraints_csr, u_constraints_rhs)
+
+        self.b_csr = b_csr
+
+        # inputs will be assigned column-by-column, so store constraints in csc matrices
+        self.u_constraints_csc = csc_matrix(u_constraints_csr)
+        self.u_constraints_rhs = u_constraints_rhs
 
     def set_dynamics(self, a_csr):
         'sets the autonomous system dynamics (A matrix)'
@@ -231,6 +280,8 @@ class Transition(Freezable):
             assert guard_csr.shape[1] == self.from_mode.a_csr.shape[0], "guard matrix expected {} columns, got {}" \
                                                           .format(self.from_mode.a_csr.shape[0], guard_csr.shape[1])
 
+        assert lputil.is_feasible(guard_csr, guard_rhs), "guard constraints were infeasible"
+
         guard_rhs.shape = (len(guard_rhs), ) # flatten into a 1-d array
         assert guard_rhs.shape[0] == guard_csr.shape[0]
 
@@ -288,6 +339,9 @@ class Transition(Freezable):
             assert isinstance(reset_minkowski_csr, csr_matrix)
             assert reset_minkowski_csr.shape[0] == self.to_mode.a_csr.shape[0]
             assert reset_minkowski_csr.shape[1] == new_vars
+
+            assert lputil.is_feasible(reset_minkowski_constraints_csr, reset_minkowski_constraints_rhs), \
+                "reset minkowski variable constraints were infeasible"
 
         self.reset_csr = reset_csr
         self.reset_minkowski_csr = reset_minkowski_csr

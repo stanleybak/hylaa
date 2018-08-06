@@ -18,17 +18,6 @@ from hylaa.timerutil import Timers
 def from_box(box_list, mode):
     'make a new lp instance from a passed-in box'
 
-    lpi = LpInstance()
-
-    dims = len(box_list)
-
-    lpi.add_rows_equal_zero(dims)
-
-    names = ["m{}_i{}".format(mode.mode_id, var_index) for var_index in range(dims)]
-    names += ["m{}_c{}".format(mode.mode_id, var_index) for var_index in range(dims)]
-    
-    lpi.add_cols(names)
-
     rhs = []
 
     for lb, ub in box_list:
@@ -36,26 +25,14 @@ def from_box(box_list, mode):
         rhs.append(-lb)
         rhs.append(ub)
 
-    lpi.add_rows_less_equal(rhs)
-
     # make constraints as csr_matrix
+    dims = len(box_list)
     data = []
     inds = []
     indptr = [0]
 
-    # I -I for first n rows
-    for n in range(dims):
-        data.append(1)
-        inds.append(n)
-
-        data.append(-1)
-        inds.append(dims + n)
-
-        indptr.append(len(data))
-
     # -1 <= -lb
     # 1 <= ub
-
     for n in range(dims):
         data.append(-1)
         inds.append(n)
@@ -65,14 +42,10 @@ def from_box(box_list, mode):
         inds.append(n)
         indptr.append(len(data))
 
-    mat = csr_matrix((data, inds, indptr), shape=(dims + 2*dims, 2*dims), dtype=float)
-    mat.check_format()
+    csr = csr_matrix((data, inds, indptr), shape=(2*dims, dims), dtype=float)
+    csr.check_format()
 
-    lpi.set_constraints_csr(mat)
-
-    lpi.set_reach_vars(dims, (0, 0))
-
-    return lpi
+    return from_constraints(csr, rhs, mode)
 
 def from_constraints(csr, rhs, mode):
     'make a new lp instance from a passed-in set of constraints and rhs'
@@ -85,10 +58,11 @@ def from_constraints(csr, rhs, mode):
 
     assert len(rhs.shape) == 1
     assert csr.shape[0] == len(rhs)
+    assert is_feasible(csr, rhs), "initial constraints are not feasible"
+    
     dims = csr.shape[1]
 
     lpi = LpInstance()
-
     lpi.add_rows_equal_zero(dims)
 
     names = ["m{}_i{}".format(mode.mode_id, var_index) for var_index in range(dims)]
@@ -97,6 +71,12 @@ def from_constraints(csr, rhs, mode):
     lpi.add_cols(names)
 
     lpi.add_rows_less_equal(rhs)
+
+    has_inputs = mode.b_csr is not None
+
+    if has_inputs:
+        names = ["m{}_ti{}".format(mode.mode_id, n) for n in range(dims)]
+        lpi.add_cols(names)
 
     # make constraints as csr_matrix
     data = []
@@ -111,18 +91,34 @@ def from_constraints(csr, rhs, mode):
         data.append(-1)
         inds.append(dims + n)
 
+        if has_inputs:
+            data.append(1)
+            inds.append(2*dims+n)
+
         indptr.append(len(data))
+        
+    num_cols = 2*dims if not has_inputs else 3*dims
+    basis_constraints = csr_matrix((data, inds, indptr), shape=(dims, num_cols), dtype=float)
+    basis_constraints.check_format()
 
-    basis_cosntraints = csr_matrix((data, inds, indptr), shape=(dims, 2*dims), dtype=float)
-    basis_cosntraints.check_format()
+    lpi.set_constraints_csr(basis_constraints)
 
-    lpi.set_constraints_csr(basis_cosntraints)
-
+    # add constraints on initial conditions
     lpi.set_constraints_csr(csr, offset=(dims, 0))
 
-    lpi.set_reach_vars(dims, (0, 0))
+    # add total input effects
+    if has_inputs:
+        rows_before = lpi.get_num_rows()
+        ie_pos = (rows_before, 2*dims)
+        lpi.add_rows_equal_zero(dims)
 
-    assert lpi.is_feasible(), "lpi created from constraints was infeasible"
+        # -I
+        csr = -1 * sp.sparse.identity(dims, dtype=float, format='csr')
+        lpi.set_constraints_csr(csr, offset=ie_pos)
+    else:
+        ie_pos = None
+
+    lpi.set_reach_vars(dims, (0, 0), dims, ie_pos)
 
     return lpi
 
@@ -139,8 +135,7 @@ def set_basis_matrix(lpi, basis_mat):
     inds = []
     indptr = [0]
 
-    Timers.tic("make_csr")
-    # 0 BM 0 -I 0
+    # 0 BM 0 -I 0 (I? <- if inputs exist)
     for row in range(lpi.dims):
         for col in range(lpi.dims):
             data.append(basis_mat[row, col])
@@ -149,16 +144,65 @@ def set_basis_matrix(lpi, basis_mat):
         data.append(-1)
         inds.append(lpi.cur_vars_offset + row)
 
+        if lpi.input_effects_offsets is not None:
+            data.append(1)
+            inds.append(row + lpi.input_effects_offsets[1])
+
         indptr.append(len(data))
 
-    mat = csr_matrix((data, inds, indptr), shape=(lpi.dims, lpi.cur_vars_offset + lpi.dims), dtype=float)
-    Timers.toc("make_csr")
+    mat = csr_matrix((data, inds, indptr), shape=(lpi.dims, lpi.get_num_cols()), dtype=float)
 
-    Timers.tic("check_format")
     mat.check_format()
-    Timers.toc("check_format")
         
     lpi.set_constraints_csr(mat, offset=(lpi.basis_mat_pos[0], 0))
+
+def add_input_matrix(lpi, input_mat, mode):
+    'add an input effects matrix to this lpi'
+
+    assert lpi.input_effects_offsets is not None
+    assert mode.b_csr is not None
+    assert mode.b_csr.shape[1] == input_mat.shape[1]
+    assert input_mat.shape[0] == mode.a_csr.shape[0]
+    assert lpi.dims == mode.a_csr.shape[0]
+
+    num_inputs = input_mat.shape[1]
+    num_constraints = len(mode.u_constraints_rhs)
+
+    # add new row/cols
+    names = ["m{}_I{}".format(mode.mode_id, i) for i in range(num_inputs)]
+    pre_cols = lpi.get_num_cols()
+    lpi.add_cols(names)
+
+    pre_rows = lpi.get_num_rows()
+    lpi.add_rows_less_equal(mode.u_constraints_rhs)
+
+    # set constaints on the rows/cols, as well as the input basis matrix using a csc_matrix
+    data = []
+    inds = []
+    indptr = [0]
+
+    for c in range(num_inputs):
+        # input basis matrix column c
+        for row in range(lpi.dims):
+            data.append(input_mat[row, c])
+            inds.append(row + lpi.input_effects_offsets[0])
+
+        # constraints_csr column c
+        for i in range(mode.u_constraints_csc.indptr[c], mode.u_constraints_csc.indptr[c+1]):
+            row = mode.u_constraints_csc.indices[i]
+            val = mode.u_constraints_csc.data[i]
+
+            data.append(val)
+            inds.append(pre_rows + row)
+
+        indptr.append(len(data))
+
+    num_rows = pre_rows + num_constraints
+    
+    csc = csc_matrix((data, inds, indptr), shape=(num_rows, num_inputs), dtype=float)
+    csc.check_format()
+
+    lpi.set_constraints_csc(csc, offset=(0, pre_cols))
 
 def check_intersection(lpi, lc, tol=1e-13):
     '''check if there is an intersection between the LP constriants and the LinearConstraint object lc
@@ -682,3 +726,20 @@ def reorthogonalize_matrix(mat, dims):
     Timers.toc('reorthogonalize_matrix')
 
     return np.array(rv, dtype=float)
+
+def is_feasible(csr, rhs):
+    'are the passed in constraints feasible?'
+
+    if not isinstance(csr, csr_matrix):
+        csr = csr_matrix(csr, dtype=float)
+
+    assert len(rhs) == csr.shape[0], "constraints RHS differs from number of rows"
+
+    lpi = LpInstance()
+    names = ["x{}".format(n) for n in range(csr.shape[1])]
+    lpi.add_cols(names)
+    lpi.add_rows_less_equal(rhs)
+
+    lpi.set_constraints_csr(csr)
+
+    return lpi.is_feasible()

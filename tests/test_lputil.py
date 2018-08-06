@@ -879,28 +879,72 @@ def fail_aggregate3():
 
     assert lpi.is_feasible(), "point {}, {} was not in the aggregated set".format(v, v)
 
+def test_reject_constant_inputs():
+    'tests the detection of B matrix + constraints where an input is fixed to a constant'
+
+    # x' = Ax + Bu
+    # x: [[1, 0], [0, 1]]
+
+    mode = HybridAutomaton().new_mode('mode_name')
+    mode.set_dynamics(np.identity(2))
+
+    b_mat = np.identity(2)
+    b_con = [[1, 0], [-1, 0], [0, -1], [0, -1]]
+    b_rhs = [1, 0, 2, -2]
+
+    try:
+        mode.set_inputs(b_mat, b_con, b_rhs)
+        assert False, "expected fixed inputs to be rejected"
+    except AssertionError:
+        pass
+
+    b_rhs = [1, 0, 2, -1]
+    mode.set_inputs(b_mat, b_con, b_rhs)
+    # should be okay
+
+    b_mat = [[1, 1], [1, 1]]
+    b_rhs = [1, 0, 2, -2]
+    mode.set_inputs(b_mat, b_con, b_rhs)
+    # should be okay (b_mat is not identity)
+
+    b_mat = np.identity(2)
+    b_con = [[1, 1], [-1, -1], [1, -1], [-1, 1]]
+    b_rhs = [1, 0, 2, -2]
+    mode.set_inputs(b_mat, b_con, b_rhs)
+    # should be okay
+
+    b_mat = np.identity(2)
+    b_con = [[1, 1], [-1, -1], [1, -1], [-1, 1]]
+    b_rhs = [1, -2, 2, -2]
+    try:
+        mode.set_inputs(b_mat, b_con, b_rhs)
+        assert False, "expected unsat inputs to be rejected"
+    except AssertionError:
+        pass
+
 def test_box_inputs():
     'tests from_box with a simple input effects matrix'
 
     # x' = Ax + Bu
-    # A = identity
-    # B = [1, 2]^t
-    # u is bounded between [1, 10]
+    # A = 0
+    # B = [[1, 0], [0, 2]]
+    # u1 and u2 are bounded between [1, 10]
 
     # (init) step 0: [0, 1] x [0, 1]
-    # step 1: [1, 11] x [1, 21]
-    # step 2: [2, 21] x [2, 41]
+    # step 1: [1, 11] x [2, 21]
+    # step 2: [2, 21] x [4, 41]
 
     mode = HybridAutomaton().new_mode('mode_name')
-    mode.set_dynamics(np.identity(2))
-    mode.set_inputs([[1], [2]], [[1], [-1]], [10, -1])
-    
-    lpi = lputil.from_box([[0, 1], [0, 1]], mode)
+    mode.set_dynamics(np.zeros((2, 2)))
+    mode.set_inputs([[1, 0], [0, 2]], [[1, 0], [-1, 0], [0, 1], [0, -1]], [10, -1, 10, -1])
+
+    init_box = [[0, 1], [0, 1]]
+    lpi = lputil.from_box(init_box, mode)
 
     assert lpi.basis_mat_pos == (0, 0)
     assert lpi.dims == 2
     assert lpi.cur_vars_offset == 2
-    assert lpi.input_effects_offsets == (6, 4) # row 6, column 4 for total input effects offsets 
+    assert lpi.input_effects_offsets == (6, 4) # row 6, column 4 for total input effects offsets
 
     # step 0
     mat = lpi.get_full_constraints()
@@ -918,7 +962,7 @@ def test_box_inputs():
         [0, 0, 0, 0, -1, 0], \
         [0, 0, 0, 0, 0, -1]], dtype=float)
 
-    expected_vec = np.array([0, 0, 5, -4, 0, 1, 0, 0], dtype=float)
+    expected_vec = np.array([0, 0, 0, 1, 0, 1, 0, 0], dtype=float)
 
     fx = glpk.GLP_FX
     up = glpk.GLP_UP
@@ -931,12 +975,15 @@ def test_box_inputs():
     assert np.allclose(mat.toarray(), expected_mat)
     assert names == expected_names
 
+    verts = lpplot.get_verts(lpi)
+    assert_verts_is_box(verts, init_box)
+
     # do step 1
     mode.init_time_elapse(1.0)
     basis_mat, input_mat = mode.time_elapse.get_basis_matrix(1)
 
     lputil.set_basis_matrix(lpi, basis_mat)
-    lputil.add_input_matrix(lpi, input_mat)
+    lputil.add_input_matrix(lpi, input_mat, mode)
 
     mat = lpi.get_full_constraints()
     types = lpi.get_types()
@@ -944,37 +991,40 @@ def test_box_inputs():
     names = lpi.get_names()
 
     expected_mat = np.array([\
-        [1, 0, -1, 0, 1, 0, 0], \
-        [0, 1, 0, -1, 0, 1, 0], \
-        [-1, 0, 0, 0, 0, 0, 0], \
-        [1, 0, 0, 0, 0, 0, 0], \
-        [0, -1, 0, 0, 0, 0, 0], \
-        [0, 1, 0, 0, 0, 0, 0], \
-        [0, 0, 0, 0, -1, 0, 1], \
-        [0, 0, 0, 0, 0, -1, 2], \
-        [0, 0, 0, 0, 0, 0, 1], \
-        [0, 0, 0, 0, 0, 0, -1]], dtype=float)
+        [1, 0, -1, 0, 1, 0, 0, 0], \
+        [0, 1, 0, -1, 0, 1, 0, 0], \
+        [-1, 0, 0, 0, 0, 0, 0, 0], \
+        [1, 0, 0, 0, 0, 0, 0, 0], \
+        [0, -1, 0, 0, 0, 0, 0, 0], \
+        [0, 1, 0, 0, 0, 0, 0, 0], \
+        [0, 0, 0, 0, -1, 0, 1, 0], \
+        [0, 0, 0, 0, 0, -1, 0, 2], \
+        [0, 0, 0, 0, 0, 0, 1, 0], \
+        [0, 0, 0, 0, 0, 0, -1, 0], \
+        [0, 0, 0, 0, 0, 0, 0, 1], \
+        [0, 0, 0, 0, 0, 0, 0, -1]], dtype=float)
 
-    expected_vec = np.array([0, 0, 5, -4, 0, 1, 0, 0, 10, -1], dtype=float)
+    expected_vec = np.array([0, 0, 0, 1, 0, 1, 0, 0, 10, -1, 10, -1], dtype=float)
 
     fx = glpk.GLP_FX
     up = glpk.GLP_UP
-    expected_types = [fx, fx, up, up, up, up, fx, fx, up, up, fx, fx]
+    expected_types = [fx, fx, up, up, up, up, fx, fx, up, up, up, up]
 
-    expected_names = ["m0_i0", "m0_i1", "m0_c0", "m0_c1", "m0_ti0", "m0_ti1", "m0_I1"]
+    expected_names = ["m0_i0", "m0_i1", "m0_c0", "m0_c1", "m0_ti0", "m0_ti1", "m0_I0", "m0_I1"]
 
     assert np.allclose(rhs, expected_vec)
     assert types == expected_types
     assert np.allclose(mat.toarray(), expected_mat)
     assert names == expected_names
 
-    verts = lpplot.get_verts(lpi, plot_vecs=plot_vecs)
-    assert_verts_is_box(verts, [(1, 11), (1, 21)])
+    verts = lpplot.get_verts(lpi)
+
+    assert_verts_is_box(verts, [(1, 11), (2, 21)])
 
     # do step 2
     basis_mat, input_mat = mode.time_elapse.get_basis_matrix(2)
     lputil.set_basis_matrix(lpi, basis_mat)
-    lputil.add_input_matrix(lpi, input_mat)
+    lputil.add_input_matrix(lpi, input_mat, mode)
 
-    verts = lpplot.get_verts(lpi, plot_vecs=plot_vecs)
-    assert_verts_is_box(verts, [(2, 21), (2, 41)])
+    verts = lpplot.get_verts(lpi)
+    assert_verts_is_box(verts, [(2, 21), (4, 41)])
