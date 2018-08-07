@@ -18,7 +18,7 @@ class LinearConstraint(Freezable):
 
     def __init__(self, csr_vec, rhs):
         if not isinstance(csr_vec, csr_matrix):
-            csr_vec = csr_matrix(csr_vec)
+            csr_vec = csr_matrix(csr_vec, dtype=float)
             
         assert csr_vec.shape[0] == 1, "expected single row constraint vector"
         
@@ -110,7 +110,7 @@ class Mode(Freezable):
         assert self.a_csr is not None, "A matrix must be set first"
         
         if not isinstance(constraints_csr, csr_matrix):
-            constraints_csr = csr_matrix(constraints_csr)
+            constraints_csr = csr_matrix(constraints_csr, dtype=float)
             
         if not isinstance(constraints_rhs, np.ndarray):
             constraints_rhs = np.array(constraints_rhs, dtype=float)
@@ -185,7 +185,7 @@ class Mode(Freezable):
                 assert abs(ub-lb) > 1e-9, ("Time-varying input #{} is fixed to {}. This is a (very) inefficient " + \
                     "way encode affine terms. Instead, introduce a fixed affine varible in the A matrix with a' = 0" + \
                     " and a(0) = 1, and refer to that variable in any differential equations that use affine " + \
-                    "terms.").format(i, lb)
+                    "terms. This check can be disabled by using 'allow_constants=True' in set_inputs().").format(i, lb)
                 
 
     def set_inputs(self, b_csr, u_constraints_csr, u_constraints_rhs, allow_constants=False):
@@ -221,7 +221,7 @@ class Mode(Freezable):
         'sets the autonomous system dynamics (A matrix)'
 
         if not isinstance(a_csr, csr_matrix):
-            a_csr = csr_matrix(a_csr)
+            a_csr = csr_matrix(a_csr, dtype=float)
 
         assert a_csr.shape[0] == a_csr.shape[1], "expected square dynamics matrix, got {}".format(a_csr.shape)
 
@@ -270,7 +270,7 @@ class Transition(Freezable):
     def set_guard_true(self):
         '''sets the guard to be True (always enabled)'''
 
-        self.set_guard(csr_matrix((0, 0)), [])
+        self.set_guard(csr_matrix((0, 0), dtype=float), [])
 
     def set_guard(self, guard_csr, guard_rhs):
         '''set the guard'''
@@ -317,13 +317,13 @@ class Transition(Freezable):
             reset_csr = sp.sparse.identity(self.from_mode.a_csr.shape[0], dtype=float, format='csr')
 
         if not isinstance(reset_csr, csr_matrix):
-            reset_csr = csr_matrix(reset_csr)
+            reset_csr = csr_matrix(reset_csr, dtype=float)
 
         if reset_minkowski_csr is not None and not isinstance(reset_minkowski_csr, csr_matrix):
-            reset_minkowski_csr = csr_matrix(reset_minkowski_csr)
+            reset_minkowski_csr = csr_matrix(reset_minkowski_csr, dtype=float)
 
         if reset_minkowski_constraints_csr is not None and not isinstance(reset_minkowski_constraints_csr, csr_matrix):
-            reset_minkowski_constraints_csr = csr_matrix(reset_minkowski_constraints_csr)
+            reset_minkowski_constraints_csr = csr_matrix(reset_minkowski_constraints_csr, dtype=float)
 
         if reset_minkowski_constraints_rhs is not None and not isinstance(reset_minkowski_constraints_rhs, np.ndarray):
             reset_minkowski_constraints_rhs = np.array(reset_minkowski_constraints_rhs, dtype=float)
@@ -345,7 +345,9 @@ class Transition(Freezable):
 
             assert isinstance(reset_minkowski_csr, csr_matrix)
             assert reset_minkowski_csr.shape[0] == self.to_mode.a_csr.shape[0]
-            assert reset_minkowski_csr.shape[1] == new_vars
+            assert reset_minkowski_csr.shape[1] == new_vars, \
+                "expected num reset_minkowski columns({}) to match reset_minkowski_constraints columns({})".format(
+                reset_minkowski_csr.shape[1], new_vars)
 
             assert lputil.is_feasible(reset_minkowski_constraints_csr, reset_minkowski_constraints_rhs), \
                 "reset minkowski variable constraints were infeasible"

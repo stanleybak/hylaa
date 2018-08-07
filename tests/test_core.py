@@ -133,9 +133,10 @@ def assert_verts_is_box(verts, box, tol=1e-5):
     box is [[xmin, xmax], [ymin, ymax]]
     '''
 
+    is_point = abs(box[0][0] - box[0][1]) < tol and abs(box[1][0] - box[1][1]) < tol
     is_flat = abs(box[0][0] - box[0][1]) < tol or abs(box[1][0] - box[1][1]) < tol
 
-    expected_verts = 3 if is_flat else 5
+    expected_verts = 2 if is_point else (3 if is_flat else 5)
 
     assert len(verts) == expected_verts and verts[0] == verts[-1]
 
@@ -647,12 +648,12 @@ def test_inputs_reset():
     ha = HybridAutomaton()
     m1 = ha.new_mode('m1')
     m1.set_dynamics([[1, 0], [0, 0]])
-    m1.set_inputs([[1]], [[1], [-1]], [1, -1])
-    m1.set_invariant([0, 1], [2.5])
+    m1.set_inputs([[0], [1]], [[1], [-1]], [1, -1], allow_constants=True)
+    m1.set_invariant([[0, 1]], [2.5])
 
     m2 = ha.new_mode('m2')
     m2.set_dynamics([[2, 0], [0, 0]])
-    m2.set_inputs([[2]], [[1], [-1]], [2, -2])
+    m2.set_inputs([[0], [2]], [[1], [-1]], [2, -1])
 
     error = ha.new_mode('error')
 
@@ -660,7 +661,7 @@ def test_inputs_reset():
     t1.set_guard([[0, -1]], [-2.5]) # y >= 2.5
     reset_mat = [[0, 0], [0, 1]]
     min_mat = np.identity(2)
-    min_cons = [[1], [-1], [1], [-1]]
+    min_cons = [[1, 0], [-1, 0], [0, 1], [0, -1]]
     min_rhs = [1, -1, 10, -10]
     t1.set_reset(reset_mat, min_mat, min_cons, min_rhs)
 
@@ -676,8 +677,22 @@ def test_inputs_reset():
     settings.plot.plot_mode = PlotSettings.PLOT_NONE
 
     core = Core(ha, settings)
-    init_list = [StateSet(lpi, mode)]
-    result = core.run(init_list)
+    init_list = [StateSet(lpi, m1)]
+    core.setup(init_list)
+
+    core.do_step() # pop
+    core.do_step() # continuous_post()
+
+    lpi = core.result.last_cur_state.lpi
+    print(lpi)
+
+    assert lpi.get_names() == ['m0_i0', 'm0_i1', 'm0_c0', 'm0_c1', 'm0_ti0', 'm0_ti1', 'm0_I0', 'm0_I1']
+
+    assert_verts_is_box(lpi.verts(), [[math.exp(1), math.exp(1)], [1, 1]])
+
+    core.run_to_completion()
+
+    result = core.result
 
     polys1 = result.mode_to_polys['m1']
     
@@ -717,7 +732,7 @@ def test_inputs_reset():
     assert c2.outgoing_transition == t2
     assert np.allclose(c2.start, [1, 4])
     assert np.allclose(c2.end, [math.exp(4), 12])
-    assert len(c2.reset_minkowski_vars) == 0
+    assert not c2.reset_minkowski_vars
     assert len(c2.inputs) == 3
 
     for i in c1.inputs:
