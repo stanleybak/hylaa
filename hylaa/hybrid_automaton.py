@@ -361,7 +361,7 @@ class Transition(Freezable):
         '''
 
         # optimized version: first check if every constraint is satisfiable, before checking that they're
-        # all satisfied at the same time. The first part can be done by only changing the objective function.
+        # all satisfied at the same time. The first part can be done quickly by only changing the objective function.
         rv = None
         all_sat = True
 
@@ -372,16 +372,12 @@ class Transition(Freezable):
             result = lpi.minimize(columns=columns)
 
             dot_res = np.dot(result, row.data)
-            print("checking with guard row {} <= {}, dot_res = {}".format(row.toarray()[0], self.guard_rhs[i], dot_res))
 
             if dot_res > self.guard_rhs[i]:
                 all_sat = False
                 break
 
-        print(". all_sat = {}".format(all_sat))
-
         if all_sat:
-            print(". all sat!, checking full lp")
             # make the full lpi including all the guard constraints simultaneously
             t_lpi = lpi.clone()
 

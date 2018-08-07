@@ -5,6 +5,7 @@ Stanley Bak, 2018
 
 import numpy as np
 from termcolor import cprint
+from collections import deque
 
 from hylaa.settings import HylaaSettings, PlotSettings
 
@@ -424,28 +425,25 @@ def make_counterexample(ha, transition_to_error, lpi):
     names = lpi.get_names()
 
     counterexample = []
-    seg = None
 
     for name, value in zip(names, lp_solution):
 
         # if first initial variable of mode then assign the segment.mode variable
         if name.startswith('m') and '_i0' in name:
-            if seg is not None: # starting a new segment, append the previous segment
-                counterexample.append(seg)
-
             seg = CounterExampleSegment()
+            counterexample.append(seg)
 
             parts = name.split('_')
 
             if len(parts) == 2:
-                assert not counterexample, "only the initial mode has not predecessor transition"
+                assert len(counterexample) == 1, "only the initial mode should have no predecessor transition"
             else:
                 assert len(parts) == 3
 
-                # assign precessor transition
+                # assign outgoing transition of previous counterexample segment
                 transition_index = int(parts[2][1:])
-                t = counterexample[-1].mode.transitions[transition_index]
-                counterexample[-1].outgoing_transition = t
+                t = counterexample[-2].mode.transitions[transition_index]
+                counterexample[-2].outgoing_transition = t
 
             mode_id = int(parts[0][1:])
 
@@ -461,12 +459,18 @@ def make_counterexample(ha, transition_to_error, lpi):
                 seg.start.append(value)
             elif '_c' in name:
                 seg.end.append(value)
+            elif '_I' in name:
+                if '_I0' in name:
+                    seg.inputs.appendleft([])
+                    
+                # inputs are in backwards order due to how the LP is constructed, prepend it
+                seg.inputs[0].append(value)
+
+        elif name.startswith('reset'):
+            seg.reset_minkowski_vars.append(value)
 
     # add the final transition which is not encoded in the names of the variables
     seg.outgoing_transition = transition_to_error
-
-    # add the last segment
-    counterexample.append(seg)
 
     return counterexample
 
@@ -480,14 +484,13 @@ class CounterExampleSegment(Freezable):
         self.outgoing_transition = None # Transition object
         self.reset_minkowski_vars = [] # a list of minkowski variables in the outgoing reset
 
-        self.inputs = None # inputs at each step
+        self.inputs = deque() # inputs at each step (a deque of m-tuples, where m is the number of inputs)
         
         self.freeze_attrs()
 
     def __str__(self):
-        return "[CE_Segment: {} -> {} in '{}'; out-trans='{}']".format( \
-            self.start, self.end, "<None>" if self.mode is None else self.mode.name, \
-            "<None>" if self.outgoing_transition is None else self.outgoing_transition.name)
+        return "[CE_Segment: {} -> {} in '{}']".format( \
+            self.start, self.end, "<None>" if self.mode is None else self.mode.name)
 
     def __repr__(self):
         return str(self)

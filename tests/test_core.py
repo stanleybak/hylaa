@@ -721,10 +721,9 @@ def test_inputs_reset():
     assert np.allclose(c1.end, [math.exp(3), 3])
     assert len(c1.reset_minkowski_vars) == 2
     assert abs(c1.reset_minkowski_vars[0] - 1) < 1e-9
-    assert abs(c1.reset_minkowski_vars[1] - 1) < 1e-9
-    
-    assert len(c1.inputs) == 3
+    assert abs(c1.reset_minkowski_vars[1] - 2) < 1e-9
 
+    assert len(c1.inputs) == 3
     for i in c1.inputs:
         assert len(i) == 1
         assert abs(i[0] - 1) < 1e-9
@@ -732,12 +731,12 @@ def test_inputs_reset():
     c2 = result.counterexample[1]
     assert c2.mode == m2
     assert c2.outgoing_transition == t2
-    assert np.allclose(c2.start, [1, 4])
-    assert np.allclose(c2.end, [math.exp(4), 12])
+    assert np.allclose(c2.start, [1, 5])
+    assert np.allclose(c2.end, [math.exp(4), 13])
     assert not c2.reset_minkowski_vars
-    assert len(c2.inputs) == 3
+    assert len(c2.inputs) == 2
 
-    for i in c1.inputs:
+    for i in c2.inputs:
         assert len(i) == 1
         assert abs(i[0] - 2) < 1e-9
         
