@@ -636,10 +636,9 @@ def test_inputs_reset():
     # inv1: y <= 2.5
     
     # guard: y >= 2.5
-    # reset: x := 1, y += 10 [should go from (e^3, 3.0) -> (1, 4.0)]
+    # reset: x := 1, y += 1 [should go from (e^3, 3.0) -> (1, 4.0)]
 
     # mode2:
-    # oinv
     # x' = 2x, y' = Bu, u \in [1, 2], B = 2
     # (1, 4.0) -> (e^2, [6, 8]) -> (e^4, [8, 12])
 
@@ -680,6 +679,49 @@ def test_inputs_reset():
     init_list = [StateSet(lpi, mode)]
     result = core.run(init_list)
 
+    polys1 = result.mode_to_polys['m1']
+    
+    assert_verts_is_box(polys1[0], [[1, 1], [0, 0]])
+    assert_verts_is_box(polys1[1], [[math.exp(1), math.exp(1)], [1, 1]])
+    assert_verts_is_box(polys1[2], [[math.exp(2), math.exp(2)], [2, 2]])
+    assert_verts_is_box(polys1[3], [[math.exp(3), math.exp(3)], [3, 3]])
+    assert len(polys1) == 4
+
+    # reset: x := 1, y += 1 [should go from (e^3, 3.0) -> (1, 4.0)]
+    # (1, 4.0) -> (e^2, [6, 8]) -> (e^4, [8, 12])
+    polys2 = result.mode_to_polys['m2']
+    assert_verts_is_box(polys2[0], [[1, 1], [4, 4]])
+    assert_verts_is_box(polys2[1], [[math.exp(2), math.exp(2)], [6, 8]])
+    assert_verts_is_box(polys2[2], [[math.exp(4), math.exp(4)], [8, 12]])
+    assert len(polys2) == 3
+
+    # check counterexamples
+    assert len(result.counterexample) == 2
+    
+    c1 = result.counterexample[0]
+    assert c1.mode == m1
+    assert c1.outgoing_transition == t1
+    assert np.allclose(c1.start, [1, 0])
+    assert np.allclose(c1.end, [math.exp(3), 3])
+    assert len(c1.reset_minkowski_vars) == 2
+    assert abs(c1.reset_minkowski_vars[0] - 1) < 1e-9
+    assert abs(c1.reset_minkowski_vars[1] - 1) < 1e-9
+    
+    assert len(c1.inputs) == 3
+
+    for i in c1.inputs:
+        assert abs(i - 1) < 1e-9
+
+    c2 = result.counterexample[1]
+    assert c2.mode == m2
+    assert c2.outgoing_transition == t2
+    assert np.allclose(c2.start, [1, 4])
+    assert np.allclose(c2.end, [math.exp(4), 12])
+    assert len(c2.reset_minkowski_vars) == 0
+    assert len(c2.inputs) == 3
+
+    for i in c1.inputs:
+        assert abs(i - 2) < 1e-9
 
 def fail_agg_ha():
     'test aggregation with the harmonic oscillator dynamics'

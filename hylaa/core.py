@@ -482,8 +482,9 @@ class CounterExampleSegment(Freezable):
         self.start = []
         self.end = []
         self.outgoing_transition = None # Transition object
+        self.reset_minkowski_vars = [] # a list of minkowski variables in the outgoing reset
 
-        # TODO: inputs[]
+        self.inputs = None # inputs at each step
         
         self.freeze_attrs()
 
