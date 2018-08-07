@@ -258,14 +258,12 @@ class Transition(Freezable):
 
         self.name = name
 
-        self.lpi = None # assinged upon continuous post. This gets reused, so use lpi.clone() if you want to save it
-        self.invariant_constraint_rows = [] # assigned upon continuous post
-
         self.time_triggered = False # assigned automatically if settings.optimize_tt_transitions == True
 
-        self.freeze_attrs()
-
+        self.transition_index = len(from_mode.transitions)
         from_mode.transitions.append(self)
+
+        self.freeze_attrs()
 
     def set_guard_true(self):
         '''sets the guard to be True (always enabled)'''
@@ -346,7 +344,7 @@ class Transition(Freezable):
             assert isinstance(reset_minkowski_csr, csr_matrix)
             assert reset_minkowski_csr.shape[0] == self.to_mode.a_csr.shape[0]
             assert reset_minkowski_csr.shape[1] == new_vars, \
-                "expected num reset_minkowski columns({}) to match reset_minkowski_constraints columns({})".format(
+                "expected num reset_minkowski columns({}) to match reset_minkowski_constraints columns({})".format( \
                 reset_minkowski_csr.shape[1], new_vars)
 
             assert lputil.is_feasible(reset_minkowski_constraints_csr, reset_minkowski_constraints_rhs), \
@@ -357,36 +355,43 @@ class Transition(Freezable):
         self.reset_minkowski_constraints_csr = reset_minkowski_constraints_csr
         self.reset_minkowski_constraints_rhs = reset_minkowski_constraints_rhs
 
-    def make_lpi(self, from_state):
-        'make the lpi instance for this transition, from the given state'
+    def get_guard_intersection(self, lpi):
+        '''do an intersection between this guard and the passed-in lpi
+        if there is an intersection, return a new lpi that equals the intersection, otherwise return None
+        '''
 
-        self.lpi = from_state.lpi.clone() 
+        # optimized version: first check if every constraint is satisfiable, before checking that they're
+        # all satisfied at the same time. The first part can be done by only changing the objective function.
+        rv = None
+        all_sat = True
 
-        # add the guard condition
-        lputil.add_curtime_constraints(self.lpi, self.guard_csr, self.guard_rhs)
+        for i, row in enumerate(self.guard_csr):
+            # row is csr_matrix of a single row
+            lpi.set_minimize_direction(row, is_csr=True)
+            columns = [lpi.cur_vars_offset + i for i in row.indices]
+            result = lpi.minimize(columns=columns)
 
-        # list of most-recent constraint row for each invariant condition
-        self.invariant_constraint_rows = [None] * len(self.from_mode.inv_list)
+            dot_res = np.dot(result, row.data)
+            print("checking with guard row {} <= {}, dot_res = {}".format(row.toarray()[0], self.guard_rhs[i], dot_res))
 
-    def intersect_invariant(self, invariant_index, basis_matrix):
-        '''perform an intersection with this transition's lpi and an invariant condition
+            if dot_res > self.guard_rhs[i]:
+                all_sat = False
+                break
 
-        add an init-constraint to the lpi'''
+        print(". all_sat = {}".format(all_sat))
 
-        old_row = self.invariant_constraint_rows[invariant_index]
-        lc = self.from_mode.inv_list[invariant_index]
-        vec = lc.csr.toarray()[0]
-        rhs = lc.rhs
+        if all_sat:
+            print(". all sat!, checking full lp")
+            # make the full lpi including all the guard constraints simultaneously
+            t_lpi = lpi.clone()
 
-        if old_row is None:
-            # new constriant
-            row = lputil.add_init_constraint(self.lpi, vec, rhs, basis_matrix)
-            self.invariant_constraint_rows[invariant_index] = row
-        else:
-            
-            # strengthen existing constraint possibly
-            row = lputil.try_replace_init_constraint(self.lpi, old_row, vec, rhs, basis_matrix)
-            self.invariant_constraint_rows[invariant_index] = row
+            # add the guard condition
+            lputil.add_curtime_constraints(t_lpi, self.guard_csr, self.guard_rhs)
+
+            if t_lpi.is_feasible():
+                rv = t_lpi
+
+        return rv
 
     def __str__(self):
         return self.from_mode.name + " -> " + self.to_mode.name

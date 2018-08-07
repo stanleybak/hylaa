@@ -27,7 +27,7 @@ class HylaaSettings(Freezable):
 
         self.plot = plot_settings
         self.stdout = HylaaSettings.STDOUT_NORMAL
-        self.stdout_colors = [None, "white", "yellow", "blue"] # colors for each level of printing
+        self.stdout_colors = [None, "white", "blue", "yellow"] # colors for each level of printing
 
         ### SIMULATION-EQUIVALENT SEMANTICS / COMPUTATION OPTIMIZATIONS ###
         self.process_urgent_guards = False # allow zero continuous-post steps between transitions?

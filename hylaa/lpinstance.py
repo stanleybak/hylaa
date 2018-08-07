@@ -4,6 +4,8 @@ May 2018
 GLPK python <-> C++ interface
 '''
 
+from termcolor import colored
+
 import numpy as np
 from scipy.sparse import csr_matrix, csc_matrix
 import swiglpk as glpk
@@ -53,6 +55,10 @@ class LpInstance(Freezable):
         assert basis_mat_pos[0] + dims <= num_rows
         assert basis_mat_pos[1] + 2 * dims <= num_cols  # need >= 2*dims for cur_time vars somewhere to the right of BM
 
+        if input_effects_offsets is not None:
+            assert input_effects_offsets[0] + dims <= num_rows
+            assert input_effects_offsets[1] + dims <= num_cols
+
         self.dims = dims
         self.basis_mat_pos = basis_mat_pos
         self.cur_vars_offset = cur_vars_offset #num_cols - dims # right-most variables
@@ -67,6 +73,26 @@ class LpInstance(Freezable):
         'get the LP as string (useful for debugging)'
 
         lp = self.lp
+
+        def cur_var_print(s):
+            'print function for current variables'
+
+            return colored(s, on_color="on_cyan")
+
+        def bm_print(s):
+            'print function for basis matrix'
+
+            return colored(s, on_color="on_red")
+
+        def input_print(s):
+            'print function for input offset'
+
+            return colored(s, on_color="on_green")
+
+        def zero_print(s):
+            'print function for zeros'
+
+            return colored(s, 'white', attrs=['dark'])
 
         rows = glpk.glp_get_num_rows(lp)
         cols = glpk.glp_get_num_cols(lp)
@@ -87,8 +113,11 @@ class LpInstance(Freezable):
                 name = (" " * (6 - len(name))) + name
             else:
                 name = name[0:6]
-                    
-            rv += name + " "
+
+            if self.cur_vars_offset <= col < self.cur_vars_offset + self.dims: 
+                rv += colored(name, on_color="on_cyan") + " "
+            else:
+                rv += name + " "
 
         rv += "\n"
 
@@ -96,14 +125,18 @@ class LpInstance(Freezable):
         rv += "min"
 
         for col in range(1, cols + 1):
-            num = str(glpk.glp_get_obj_coef(lp, col))
+            val = glpk.glp_get_obj_coef(lp, col)
+            num = str(val)
             
             if len(num) < 6:
                 num = (" " * (6 - len(num))) + num
             else:
                 num = num[0:6]
-                    
-            rv += num + " "
+
+            if val == 0:
+                rv += zero_print(num) + " "
+            else:
+                rv += num + " "
 
         rv += "\nsubject to:\n"
 
@@ -135,7 +168,16 @@ class LpInstance(Freezable):
                 else:
                     num = num[0:6]
 
-                rv += num + " "
+                if self.basis_mat_pos[0] <= row - 1 < self.basis_mat_pos[0] + self.dims and \
+                        self.basis_mat_pos[1] <= col - 1 < self.basis_mat_pos[1] + self.dims:
+                    rv += bm_print(num) + " "
+                elif self.input_effects_offsets[0] <= row - 1 < self.input_effects_offsets[0] + self.dims and \
+                        self.input_effects_offsets[1] <= col - 1 < self.input_effects_offsets[1] + self.dims:
+                    rv += input_print(num) + " "
+                elif val == 0:
+                    rv += zero_print(num) + " "
+                else:
+                    rv += num + " "
 
             row_type = glpk.glp_get_row_type(lp, row)
 
@@ -159,12 +201,18 @@ class LpInstance(Freezable):
                 else:
                     num = num[0:6]
 
-                rv += num
+                if val == 0:
+                    rv += zero_print(num) + " "
+                else:
+                    rv += num + " "
 
             rv += "\n"
 
-        return rv
+        rv += "Key: " + bm_print("Basis Matrix") + " " + cur_var_print("Cur Vars") + " " + \
+          input_print("Input Effects Offset") + "\n"
 
+        return rv
+    
     def add_cols(self, names):
         'add a certain number of columns to the LP'
 
@@ -326,7 +374,8 @@ class LpInstance(Freezable):
         if is_csr:
             assert isinstance(direction_vec, csr_matrix)
             assert direction_vec.shape[0] == 1
-            assert direction_vec.shape[1] <= self.dims, "dirLen({}) > dims({})".format(direction_vec.shape[1], self.dims)
+            assert direction_vec.shape[1] <= self.dims, "dirLen({}) > dims({})".format(
+                direction_vec.shape[1], self.dims)
 
             data, inds, indptr = direction_vec.data, direction_vec.indices, direction_vec.indptr
             

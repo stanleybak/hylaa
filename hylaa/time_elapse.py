@@ -54,4 +54,3 @@ class TimeElapser(Freezable):
             assert input_effects_mat.shape == (self.dims, self.inputs)
 
         return basis_mat, input_effects_mat
-

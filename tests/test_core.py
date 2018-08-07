@@ -12,7 +12,7 @@ from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa.settings import HylaaSettings, PlotSettings
 from hylaa.core import Core
 from hylaa.stateset import StateSet, TransitionPredecessor, AggregationPredecessor
-from hylaa import lputil
+from hylaa import lputil, lpplot
 from hylaa.lpinstance import LpInstance
 
 def test_guard_strengthening():
@@ -637,13 +637,13 @@ def test_inputs_reset():
     # inv1: y <= 2.5
     
     # guard: y >= 2.5
-    # reset: x := 1, y += 1 [should go from (e^3, 3.0) -> (1, 4.0)]
+    # reset: x := 1, y += 2 [should go from (e^3, 3.0) -> (1, 5.0)]
 
     # mode2:
     # x' = 2x, y' = Bu, u \in [1, 2], B = 2
-    # (1, 4.0) -> (e^2, [6, 8]) -> (e^4, [8, 12])
+    # (1, 5.0) -> (e^2, [7, 9]) -> (e^4, [9, 13])
 
-    # mode2 -> error y >= 12
+    # mode2 -> error y >= 13
 
     ha = HybridAutomaton()
     m1 = ha.new_mode('m1')
@@ -662,11 +662,11 @@ def test_inputs_reset():
     reset_mat = [[0, 0], [0, 1]]
     min_mat = np.identity(2)
     min_cons = [[1, 0], [-1, 0], [0, 1], [0, -1]]
-    min_rhs = [1, -1, 10, -10]
+    min_rhs = [1, -1, 2, -2]
     t1.set_reset(reset_mat, min_mat, min_cons, min_rhs)
 
     t2 = ha.new_transition(m2, error)
-    t2.set_guard([0, -1], [-12])
+    t2.set_guard([0, -1], [-13]) # y >= 13
 
     init_box = [[1, 1], [0, 0]]
     lpi = lputil.from_box(init_box, m1)
@@ -681,33 +681,34 @@ def test_inputs_reset():
     core.setup(init_list)
 
     core.do_step() # pop
-    core.do_step() # continuous_post()
+    core.do_step() # continuous_post() to time 1
 
     lpi = core.result.last_cur_state.lpi
-    print(lpi)
 
-    assert lpi.get_names() == ['m0_i0', 'm0_i1', 'm0_c0', 'm0_c1', 'm0_ti0', 'm0_ti1', 'm0_I0', 'm0_I1']
+    assert lpi.get_names() == ['m0_i0', 'm0_i1', 'm0_c0', 'm0_c1', 'm0_ti0', 'm0_ti1', 'm0_I0']
 
-    assert_verts_is_box(lpi.verts(), [[math.exp(1), math.exp(1)], [1, 1]])
+    assert_verts_is_box(lpplot.get_verts(lpi), [[math.exp(1), math.exp(1)], [1, 1]])
+
+    core.do_step() # continuous_post() to time 2
+    assert_verts_is_box(lpplot.get_verts(core.result.last_cur_state.lpi), [[math.exp(2), math.exp(2)], [2, 2]])
+
+    core.do_step() # continuous_post() to time 3
+    assert_verts_is_box(lpplot.get_verts(core.result.last_cur_state.lpi), [[math.exp(3), math.exp(3)], [3, 3]])
+
+    core.do_step() # trim to invariant
+    assert core.cur_state is None
+    assert len(core.waiting_list) == 1
 
     core.run_to_completion()
 
     result = core.result
 
-    polys1 = result.mode_to_polys['m1']
-    
-    assert_verts_is_box(polys1[0], [[1, 1], [0, 0]])
-    assert_verts_is_box(polys1[1], [[math.exp(1), math.exp(1)], [1, 1]])
-    assert_verts_is_box(polys1[2], [[math.exp(2), math.exp(2)], [2, 2]])
-    assert_verts_is_box(polys1[3], [[math.exp(3), math.exp(3)], [3, 3]])
-    assert len(polys1) == 4
-
-    # reset: x := 1, y += 1 [should go from (e^3, 3.0) -> (1, 4.0)]
-    # (1, 4.0) -> (e^2, [6, 8]) -> (e^4, [8, 12])
+    # reset: x := 1, y += 2 [should go from (e^3, 3.0) -> (1, 5.0)]
+    # (1, 5.0) -> (e^2, [7, 9]) -> (e^4, [9, 13])
     polys2 = result.mode_to_polys['m2']
-    assert_verts_is_box(polys2[0], [[1, 1], [4, 4]])
-    assert_verts_is_box(polys2[1], [[math.exp(2), math.exp(2)], [6, 8]])
-    assert_verts_is_box(polys2[2], [[math.exp(4), math.exp(4)], [8, 12]])
+    assert_verts_is_box(polys2[0], [[1, 1], [5, 5]])
+    assert_verts_is_box(polys2[1], [[math.exp(2), math.exp(2)], [7, 9]])
+    assert_verts_is_box(polys2[2], [[math.exp(4), math.exp(4)], [9, 13]])
     assert len(polys2) == 3
 
     # check counterexamples
@@ -725,7 +726,8 @@ def test_inputs_reset():
     assert len(c1.inputs) == 3
 
     for i in c1.inputs:
-        assert abs(i - 1) < 1e-9
+        assert len(i) == 1
+        assert abs(i[0] - 1) < 1e-9
 
     c2 = result.counterexample[1]
     assert c2.mode == m2
@@ -736,8 +738,9 @@ def test_inputs_reset():
     assert len(c2.inputs) == 3
 
     for i in c1.inputs:
-        assert abs(i - 2) < 1e-9
-
+        assert len(i) == 1
+        assert abs(i[0] - 2) < 1e-9
+        
 def fail_agg_ha():
     'test aggregation with the harmonic oscillator dynamics'
 

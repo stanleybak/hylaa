@@ -470,6 +470,67 @@ def test_add_reset_variables():
     assert [2.0, 10.] in verts
     assert verts[0] == verts[-1]
 
+def test_add_reset_inputs():
+    'tests add_reset_variables'
+
+    mode = HybridAutomaton().new_mode('mode_name')
+    
+    lpi = lputil.from_box([[-5, -4], [0, 1]], mode)
+
+    reset_csr = csr_matrix(2 * np.identity(2))
+    mode_id = 1
+    transition_id = 13
+    lputil.add_reset_variables(lpi, mode_id, transition_id, reset_csr=reset_csr, successor_has_inputs=True)
+
+    assert lpi.dims == 2
+
+    mat = lpi.get_full_constraints()
+    types = lpi.get_types()
+    rhs = lpi.get_rhs()
+    names = lpi.get_names()
+
+    expected_mat = np.array([\
+        [1, 0, -1, 0, 0, 0, 0, 0, 0, 0], \
+        [0, 1, 0, -1, 0, 0, 0, 0, 0, 0], \
+        [-1, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
+        [0, -1, 0, 0, 0, 0, 0, 0, 0, 0], \
+        [0, 1, 0, 0, 0, 0, 0, 0, 0, 0], \
+        [0, 0, 2, 0, -1, 0, 0, 0, 0, 0], \
+        [0, 0, 0, 2, 0, -1, 0, 0, 0, 0], \
+        [0, 0, 0, 0, 1, 0, -1, 0, 1, 0], \
+        [0, 0, 0, 0, 0, 1, 0, -1, 0, 1], \
+        [0, 0, 0, 0, 0, 0, 0, 0, -1, 0], \
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, -1]], dtype=float)
+
+    expected_vec = np.array([0, 0, 5, -4, 0, 1, 0, 0, 0, 0, 0, 0], dtype=float)
+
+    fx = glpk.GLP_FX
+    up = glpk.GLP_UP
+    expected_types = [fx, fx, up, up, up, up, fx, fx, fx, fx, fx, fx]
+
+    expected_names = ["m0_i0", "m0_i1", "m0_c0", "m0_c1", "m1_i0_t13", "m1_i1", "m1_c0", "m1_c1", "m1_ti0", "m1_ti1"]
+
+    assert np.allclose(rhs, expected_vec)
+    assert types == expected_types
+    assert np.allclose(mat.toarray(), expected_mat)
+    assert names == expected_names
+
+    assert lpi.basis_mat_pos == (8, 4)
+
+    assert lpi.input_effects_offsets == (10, 8)
+
+    plot_vecs = lpplot.make_plot_vecs(4, offset=(math.pi / 4.0))
+    verts = lpplot.get_verts(lpi, plot_vecs=plot_vecs)
+
+    assert len(verts) == 5
+    
+    assert [-10.0, 0.] in verts
+    assert [-10.0, 2.] in verts
+    assert [-8.0, 2.] in verts
+    assert [-8.0, 0.] in verts
+    assert verts[0] == verts[-1]
+
 def test_reset_less_dims():
     '''tests a reset to a mode with less dimensions
     project onto just the y variable multiplied by 0.5
@@ -983,7 +1044,7 @@ def test_box_inputs():
     basis_mat, input_mat = mode.time_elapse.get_basis_matrix(1)
 
     lputil.set_basis_matrix(lpi, basis_mat)
-    lputil.add_input_matrix(lpi, input_mat, mode)
+    lputil.add_input_effects_matrix(lpi, input_mat, mode)
 
     mat = lpi.get_full_constraints()
     types = lpi.get_types()
@@ -1024,7 +1085,7 @@ def test_box_inputs():
     # do step 2
     basis_mat, input_mat = mode.time_elapse.get_basis_matrix(2)
     lputil.set_basis_matrix(lpi, basis_mat)
-    lputil.add_input_matrix(lpi, input_mat, mode)
+    lputil.add_input_effects_matrix(lpi, input_mat, mode)
 
     verts = lpplot.get_verts(lpi)
     assert_verts_is_box(verts, [(2, 21), (4, 41)])

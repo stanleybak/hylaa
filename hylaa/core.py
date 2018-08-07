@@ -82,27 +82,25 @@ class Core(Freezable):
 
         return finished
 
-    def take_transition(self, t, transition_index):
+    def take_transition(self, t, t_lpi):
         '''take the passed-in transition from the current state (may add to the waiting list)'''
 
-        new_lpi = t.lpi.clone()
-
-        lputil.add_reset_variables(new_lpi, t.to_mode.mode_id, transition_index, \
+        successor_has_inputs = t.to_mode.b_csr is not None
+        
+        lputil.add_reset_variables(t_lpi, t.to_mode.mode_id, t.transition_index, \
             reset_csr=t.reset_csr, minkowski_csr=t.reset_minkowski_csr, \
             minkowski_constraints_csr=t.reset_minkowski_constraints_csr, \
-            minkowski_constraints_rhs=t.reset_minkowski_constraints_rhs)
+            minkowski_constraints_rhs=t.reset_minkowski_constraints_rhs, successor_has_inputs=successor_has_inputs)
 
-        # make sure the successor is feasible
-        if new_lpi.is_feasible():
-
-            predecessor = TransitionPredecessor(self.cur_state.clone(), t, t.lpi.clone())
-            successor_state = StateSet(new_lpi, t.to_mode, self.cur_state.cur_step_since_start, predecessor)
+        if t_lpi.is_feasible():
+            predecessor = TransitionPredecessor(self.cur_state.clone(), t, t_lpi.clone())
+            successor_state = StateSet(t_lpi, t.to_mode, self.cur_state.cur_step_since_start, predecessor)
             self.waiting_list.append(successor_state)
 
             self.print_verbose("Added Discrete Successor to '{}' at step {}".format( \
                 t.to_mode.name, self.cur_state.cur_step_since_start))
 
-            # if it's a time-triggered transition, we may remove the state now
+            # if it's a time-triggered transition, we may remove cur_state immediately
             if self.settings.optimize_tt_transitions and t.time_triggered:
                 if was_tt_taken(self.cur_state.lpi, t):
                     self.print_verbose("Transition was time-triggered, finished with current state analysis")
@@ -110,10 +108,12 @@ class Core(Freezable):
                 else:
                     self.print_verbose("Transition was NOT taken as time-triggered, due to runtime checks")
         else:
-            # succesor is infeasible, check if it's the reset's fault, or due to numerical precision
-            t.lpi.reset_lp()
+            # successor is infeasible, check if it's the reset's fault, or due to numerical precision
+            # if it's due to numerical precision, the current state's lpi is barely feasible. If we reset it, it
+            # becomes infeasible
+            self.cur_state.lpi.reset_lp()
 
-            if t.lpi.is_feasible():
+            if self.cur_state.lpi.is_feasible():
                 # it was due to the reset. The user probably provided bad reset parameters.
                 raise RuntimeError(("Continuous state was empty after applying reset in transition {}, " + \
                                    "was the reset correctly specified?").format(t))
@@ -123,7 +123,7 @@ class Core(Freezable):
 
                 self.cur_state = None
 
-    def error_reached(self, t):
+    def error_reached(self, t, lpi):
         'an error mode was reached after taking transition t, report and create counterexample'
 
         step_num = self.cur_state.cur_step_since_start
@@ -131,7 +131,7 @@ class Core(Freezable):
                             round(self.settings.step_size * step_num, 12)))
 
         self.result.safe = False
-        self.result.counterexample = make_counterexample(self.hybrid_automaton, t)
+        self.result.counterexample = make_counterexample(self.hybrid_automaton, t, lpi)
 
     def check_guards(self):
         '''check for discrete successors with the guards'''
@@ -140,13 +140,15 @@ class Core(Freezable):
 
         transitions = self.cur_state.mode.transitions
 
-        for transition_index, t in enumerate(transitions):
-            if t.lpi.is_feasible():
+        for t in transitions:
+            t_lpi = t.get_guard_intersection(self.cur_state.lpi)
+            
+            if t_lpi:
                 if t.to_mode.is_error():
-                    self.error_reached(t)
+                    self.error_reached(t, t_lpi)
                     break
                 else:
-                    self.take_transition(t, transition_index)
+                    self.take_transition(t, t_lpi)
 
                     # current state may have become infeasible
                     if self.cur_state is None:
@@ -286,18 +288,13 @@ class Core(Freezable):
 
             self.cur_state = None
         else:
-            # setup the lpi for each outgoing transition
             self.max_steps_remaining = self.settings.num_steps - self.cur_state.cur_step_since_start
 
-            still_feasible = self.cur_state.intersect_invariant(skip_trainsitions=True)
+            still_feasible = self.cur_state.intersect_invariant()
 
             if not still_feasible:
                 self.print_normal("Continuous state was outside of the mode's invariant; skipping.")
-                    
                 self.cur_state = None
-            else:
-                for transition in self.cur_state.mode.transitions:
-                    transition.make_lpi(self.cur_state)
 
         # pause after discrete post when using PLOT_INTERACTIVE
         if self.plotman.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
@@ -364,7 +361,7 @@ class Core(Freezable):
                     
                 continue
             
-            still_feasible = state.intersect_invariant(skip_trainsitions=True)
+            still_feasible = state.intersect_invariant()
 
             if still_feasible:
                 self.waiting_list.append(state)
@@ -420,10 +417,9 @@ class Core(Freezable):
 
         return self.result
 
-def make_counterexample(ha, transition_to_error):
+def make_counterexample(ha, transition_to_error, lpi):
     '''make and return the result counter-example from the lp solution'''
 
-    lpi = transition_to_error.lpi
     lp_solution = lpi.minimize() # resolves the LP to get the full unsafe solution
     names = lpi.get_names()
 

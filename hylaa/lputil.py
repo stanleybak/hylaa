@@ -156,7 +156,7 @@ def set_basis_matrix(lpi, basis_mat):
         
     lpi.set_constraints_csr(mat, offset=(lpi.basis_mat_pos[0], 0))
 
-def add_input_matrix(lpi, input_mat, mode):
+def add_input_effects_matrix(lpi, input_mat, mode):
     'add an input effects matrix to this lpi'
 
     assert lpi.input_effects_offsets is not None
@@ -225,7 +225,7 @@ def check_intersection(lpi, lc, tol=1e-13):
 
     return dot_res + tol <= lc.rhs
 
-def add_init_constraint(lpi, vec, rhs, basis_matrix=None):
+def add_init_constraint(lpi, vec, rhs, basis_matrix=None, input_effects_list=None):
     '''
     add a constraint to the lpi
 
@@ -239,30 +239,50 @@ def add_init_constraint(lpi, vec, rhs, basis_matrix=None):
 
     assert isinstance(basis_matrix, np.ndarray)
 
-    # we need to convert the passed-in vector using the basis matrix
+    # we need to project the basis matrix using the passed in direction vector
     preshape = vec.shape
+    
     dims = basis_matrix.shape[0]
-    vec.shape = (1, dims)
-    new_vec = np.dot(vec, basis_matrix)
-    vec.shape = preshape
+    vec.shape = (1, dims) # vec is now the projection matrix for this direction
+    bm_projection = np.dot(vec, basis_matrix)
 
     lpi.add_rows_less_equal([rhs])
 
     rows = lpi.get_num_rows()
+    cols = lpi.get_num_cols()
 
-    indptr = [0, dims]
-    inds = [i for i in range(dims)]
-    data = new_vec
-    data.shape = (dims,)
+    indptr = [0]
 
-    csr_row_mat = csr_matrix((data, inds, indptr), dtype=float, shape=(1, dims))
+    # basis matrix
+    inds = [lpi.basis_mat_pos[1] + i for i in range(dims)]
+    data = [val for val in bm_projection[0]]
+
+    # each of the input effects matrices
+    if input_effects_list:
+        num_inputs = input_effects_list[0].shape[1]
+        offset = lpi.input_effects_offsets[1] + dims
+        
+        for ie_mat in input_effects_list:
+            ie_projection = np.dot(vec, ie_mat)
+            assert len(ie_projection) == num_inputs
+
+            inds += [offset + i for i in range(num_inputs)]
+            data += [val for val in ie_projection[0]]
+            offset += num_inputs
+ 
+    indptr.append(len(data))
+
+    csr_row_mat = csr_matrix((data, inds, indptr), dtype=float, shape=(1, cols))
     csr_row_mat.check_format()
 
-    lpi.set_constraints_csr(csr_row_mat, offset=(rows-1, lpi.basis_mat_pos[1]))
+    lpi.set_constraints_csr(csr_row_mat, offset=(rows-1, 0))
+
+    # restore vector shape to what it was when passed in
+    vec.shape = preshape
 
     return rows - 1
 
-def try_replace_init_constraint(lpi, old_row_index, direction, rhs, basis_mat=None):
+def try_replace_init_constraint(lpi, old_row_index, direction, rhs, basis_mat=None, input_effects_list=None):
     '''replace the constraint in row_index by a new constraint, if the new constraint is stronger, otherwise
     create new constriant
 
@@ -280,7 +300,8 @@ def try_replace_init_constraint(lpi, old_row_index, direction, rhs, basis_mat=No
 
     lpi.flip_constraint(old_row_index)
 
-    new_row_index = add_init_constraint(lpi, direction, rhs, basis_matrix=basis_mat)
+    new_row_index = add_init_constraint(lpi, direction, rhs, basis_matrix=basis_mat, \
+                                        input_effects_list=input_effects_list)
 
     is_sat = lpi.minimize(columns=[], fail_on_unsat=False) is not None
 
@@ -445,12 +466,12 @@ def get_basis_matrix(lpi):
     return lpi.get_dense_constraints(lpi.basis_mat_pos[0], lpi.basis_mat_pos[1], lpi.dims, lpi.dims)
 
 def add_reset_variables(lpi, mode_id, transition_index, reset_csr=None, minkowski_csr=None, \
-                        minkowski_constraints_csr=None, minkowski_constraints_rhs=None):
+                        minkowski_constraints_csr=None, minkowski_constraints_rhs=None, successor_has_inputs=False):
     '''
     add variables associated with a reset
 
     general resets are of the form x' = Rx + My, Cy <= rhs, where y are fresh variables
-    the reset_minowski variables can be None if no new variables are needed. If unassigned, the identity
+    the reset_minkowski variables can be None if no new variables are needed. If unassigned, the identity
     reset is assumed
 
     x' are the new variables
@@ -489,11 +510,18 @@ def add_reset_variables(lpi, mode_id, transition_index, reset_csr=None, minkowsk
 
     names += ["m{}_i{}".format(mode_id, d) for d in range(1, new_dims)]
     names += ["m{}_c{}".format(mode_id, d) for d in range(new_dims)]
+
+    if successor_has_inputs:
+        names += ["m{}_ti{}".format(mode_id, d) for d in range(new_dims)]
+    
     lpi.add_cols(names)
 
     lpi.add_rows_equal_zero(2*new_dims)
 
     lpi.add_rows_less_equal(minkowski_constraints_rhs)
+
+    if successor_has_inputs:
+        lpi.add_rows_equal_zero(new_dims)
 
     data = []
     inds = []
@@ -534,9 +562,13 @@ def add_reset_variables(lpi, mode_id, transition_index, reset_csr=None, minkowsk
         data.append(-1)
         inds.append(cols + min_vars + new_dims + dim)
 
+        if successor_has_inputs:
+            data.append(1)
+            inds.append(cols + min_vars + 2*new_dims + dim)
+
         indptrs.append(len(data))
 
-    # encode minkowski constraints rows
+    # encode minkowski constraint rows
     for row in range(minkowski_constraints_csr.shape[0]):
         for index in range(minkowski_constraints_csr.indptr[row], minkowski_constraints_csr.indptr[row + 1]):
             col = minkowski_constraints_csr.indices[index]
@@ -547,13 +579,36 @@ def add_reset_variables(lpi, mode_id, transition_index, reset_csr=None, minkowsk
 
         indptrs.append(len(data))
 
+    # encode total input effects
+    if successor_has_inputs:
+        for dim in range(new_dims):
+            data.append(-1)
+            inds.append(cols + min_vars + 2*new_dims + dim)
+
+            indptrs.append(len(data))
+
+    height = 2*new_dims + len(minkowski_constraints_rhs)
+    width = cols + 2*new_dims + min_vars
+
+    if successor_has_inputs:
+        height += new_dims
+        width += new_dims
+
     mat = csr_matrix((data, inds, indptrs), dtype=float, \
-                     shape=(2*new_dims + len(minkowski_constraints_rhs), cols + 2*new_dims + min_vars))
+                     shape=(height, width))
     mat.check_format()
 
     lpi.set_constraints_csr(mat, offset=(rows, 0))
+
+    # input effects position
+    ie_x = cols + min_vars + 2*new_dims
+    ie_y = rows + 2*new_dims + len(minkowski_constraints_rhs)
+    ie_offsets = (ie_y, ie_x)
+
+    basis_mat_pos = (rows+new_dims, cols + minkowski_csr.shape[1])
+    cur_vars_offset = cols + minkowski_csr.shape[1] + new_dims
     
-    lpi.set_reach_vars(new_dims, (rows+new_dims, cols + minkowski_csr.shape[1]))
+    lpi.set_reach_vars(new_dims, basis_mat_pos, cur_vars_offset, ie_offsets)
 
 def add_snapshot_variables(lpi, basename):
     '''
