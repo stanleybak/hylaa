@@ -268,7 +268,10 @@ class Transition(Freezable):
     def set_guard_true(self):
         '''sets the guard to be True (always enabled)'''
 
-        self.set_guard(csr_matrix((0, 0), dtype=float), [])
+        assert self.from_mode.a_csr is not None, "A-matrix not assigned in predecessor mode {}".format(self.from_mode)
+        dims = self.from_mode.a_csr.shape[1]
+
+        self.set_guard(csr_matrix((0, dims), dtype=float), [])
 
     def set_guard(self, guard_csr, guard_rhs):
         '''set the guard'''

@@ -22,9 +22,10 @@ def assert_verts_is_box(verts, box, tol=1e-5):
     box is [[xmin, xmax], [ymin, ymax]]
     '''
 
+    is_point = abs(box[0][0] - box[0][1]) < tol and abs(box[1][0] - box[1][1]) < tol
     is_flat = abs(box[0][0] - box[0][1]) < tol or abs(box[1][0] - box[1][1]) < tol
 
-    expected_verts = 3 if is_flat else 5
+    expected_verts = 2 if is_point else 3 if is_flat else 5
 
     assert len(verts) == expected_verts and verts[0] == verts[-1]
 

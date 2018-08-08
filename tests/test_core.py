@@ -347,7 +347,7 @@ def test_aggregation():
 
     # settings, step size = 1.0
     settings = HylaaSettings(1.0, 4.0)
-    settings.stdout = HylaaSettings.STDOUT_NONE
+    settings.stdout = HylaaSettings.STDOUT_DEBUG
     settings.plot.plot_mode = PlotSettings.PLOT_NONE
     settings.plot.store_plot_result = True
 
@@ -364,7 +364,7 @@ def test_aggregation():
     assert unagg_state.mode == m2
     assert isinstance(unagg_state.predecessor, TransitionPredecessor)
     assert unagg_state.predecessor.transition == trans1
-    assert isinstance(unagg_state.predecessor.transition_lpi, LpInstance)
+    assert isinstance(unagg_state.predecessor.premode_lpi, LpInstance)
     prestate = unagg_state.predecessor.state
     assert isinstance(prestate, StateSet)
 
@@ -512,7 +512,7 @@ def test_redundant_invariants():
 
     # settings, step size = 0.1
     settings = HylaaSettings(0.1, 5.0)
-    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.stdout = HylaaSettings.STDOUT_NONE
     settings.plot.plot_mode = PlotSettings.PLOT_NONE
 
     result = Core(ha, settings).run(init_list)
@@ -544,7 +544,7 @@ def test_redundant_inv_transition():
 
     # settings, step size = 0.1
     settings = HylaaSettings(0.1, 5.0)
-    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.stdout = HylaaSettings.STDOUT_DEBUG
     settings.plot.plot_mode = PlotSettings.PLOT_NONE
 
     core = Core(ha, settings)

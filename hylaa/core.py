@@ -274,12 +274,13 @@ class Core(Freezable):
                     # add all the guard conditions to the agg_dir_mat
 
                     if pred.transition.reset_csr is None: # identity reset
-                        guard_dir_mat = pred.transition.guard_csr.transpose()
+                        guard_dir_mat = pred.transition.guard_csr
                     else:
                         # multiply each direction in the guard by the guard
                         guard_dir_mat = pred.transition.guard_csr * pred.transition.reset_csr.transpose()
 
-                    agg_dir_mat = np.concatenate((agg_dir_mat, guard_dir_mat.toarray()), axis=0)
+                    if guard_dir_mat.shape[0] > 0:
+                        agg_dir_mat = np.concatenate((agg_dir_mat, guard_dir_mat.toarray()), axis=0)
 
                 self.print_debug("agg dir mat:\n{}".format(agg_dir_mat))
                 lpi_list = [state.lpi for state in agg_list]
