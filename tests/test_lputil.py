@@ -7,8 +7,6 @@ import random
 
 import numpy as np
 
-import matplotlib.pyplot as plt
-
 from scipy.linalg import expm
 from scipy.sparse import csr_matrix
 
@@ -16,6 +14,8 @@ import swiglpk as glpk
 
 from hylaa import lputil, lpplot
 from hylaa.hybrid_automaton import HybridAutomaton, LinearConstraint
+
+from util import pair_almost_in, assert_verts_is_box
 
 def test_from_box():
     'tests from_box'
@@ -101,32 +101,6 @@ def test_check_intersection():
     # now check if y >= 4.5 is possible (should be true)
     assert lputil.check_intersection(lpi, lc)
 
-def assert_verts_is_box(verts, box, tol=1e-5):
-    '''check that a list of verts is almost equal to the passed-in box using assertions
-
-    box is [[xmin, xmax], [ymin, ymax]]
-    '''
-
-    is_flat = abs(box[0][0] - box[0][1]) < tol or abs(box[1][0] - box[1][1]) < tol
-
-    expected_verts = 3 if is_flat else 5
-
-    assert len(verts) == expected_verts and verts[0] == verts[-1]
-
-    pts = [(box[0][0], box[1][0]), (box[0][1], box[1][0]), (box[0][1], box[1][1]), (box[0][0], box[1][1])]
-
-    for pt in pts:
-        found = False
-
-        for vert in verts:
-            x, y = vert
-
-            if abs(x - pt[0]) < tol and abs(y - pt[1]) < tol:
-                found = True
-                break
-
-        assert found, "Point {} was not found in verts: {}".format(pt, verts)
-    
 def test_verts():
     'tests verts'
 
@@ -246,18 +220,6 @@ def test_box_aggregate2():
 
     verts = lpplot.get_verts(lpi)
     assert_verts_is_box(verts, [[-2, 0], [-2, 0]])
-
-def pair_almost_in(pair, pair_list, tol=1e-9):
-    'check if a pair is in a pair list (up to small tolerance)'
-
-    rv = False
-
-    for a, b in pair_list:
-        if abs(a - pair[0]) < tol and abs(b - pair[1]) < tol:
-            rv = True
-            break
-
-    return rv
 
 def test_rotated_aggregate():
     'tests rotated aggregation'
@@ -507,11 +469,14 @@ def test_reset_less_dims():
     '''
     
     lpi = lputil.from_box([[-5, -4], [0, 1]], HybridAutomaton().new_mode('mode_name'))
+    assert lpi.dims == 2
 
     reset_csr = csr_matrix(np.array([[0, 0.5]], dtype=float))
     mode_id = 1
     transition_id = 13
     lputil.add_reset_variables(lpi, mode_id, transition_id, reset_csr=reset_csr)
+
+    assert lpi.dims == 1
 
     mat = lpi.get_full_constraints()
     types = lpi.get_types()

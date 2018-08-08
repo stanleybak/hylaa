@@ -356,7 +356,9 @@ def aggregate(lpi_list, direction_matrix, mode):
 
     # for each direction, minimize and maximize it within the list
     for direction in direction_matrix:
-        assert abs(np.linalg.norm(direction) - 1) < 1e-9, "expected normalized directions, got {}".format(direction)
+        if abs(np.linalg.norm(direction)) < 1e-6:
+            continue
+        #assert abs(np.linalg.norm(direction) - 1) < 1e-9, "expected normalized directions, got {}".format(direction)
 
         dir_inds = [i for i, x in enumerate(direction) if x != 0]
         dir_data = [x for x in direction if x != 0]
@@ -366,7 +368,7 @@ def aggregate(lpi_list, direction_matrix, mode):
         min_val = np.inf
        
         for lpi in lpi_list:
-            assert direction_matrix.shape[0] == lpi.dims
+            assert direction_matrix.shape[1] == lpi.dims
 
             dir_columns = [i + lpi.cur_vars_offset for i in dir_inds]
 
@@ -583,7 +585,9 @@ def make_direction_matrix(point, a_csr):
     '''make the direction matrix for arnoldi aggregation
 
     this is a set of full rank, linearly-independent vectors, extracted from the dynamics using something
-    similar to the arnoldi iteration, with the null-space vectors filled in with random orthonormal vectors
+    similar to the arnoldi iteration
+
+    the null-space vectors first try to be filled with the orthonormal directions, and then by random vectors
 
     point is the point where to sample the dynamics
     a_csr is the dynamics matrix
@@ -594,8 +598,8 @@ def make_direction_matrix(point, a_csr):
     assert isinstance(a_csr, csr_matrix)
     cur_vec = np.array(point, dtype=float)
     
-    assert len(point) == a_csr.shape[0], "expected point dims({}) to equal A-matrix dims({})".format( \
-                len(point), a_csr.shape[0])
+    assert len(point) == a_csr.shape[1], "expected point dims({}) to equal A-matrix dims({})".format( \
+                len(point), a_csr.shape[1])
     
     dims = len(point)
     rv = []
@@ -663,7 +667,22 @@ def reorthogonalize_matrix(mat, dims):
 
     while len(rv) < dims:
         if next_index >= mat.shape[0]:
-            cur_vec = np.random.rand(dims,)
+            # first try to pick orthonormal directions if we can
+            for d in range(dims):
+                found_nonzero = False
+
+                for vec in rv:
+                    if vec[d] != 0:
+                        found_nonzero = True
+                        break
+
+                if found_nonzero is False:
+                    cur_vec = np.array([1 if n == d else 0 for n in range(dims)], dtype=float)
+                    break
+
+            # if that didn't work, just a random vector
+            if cur_vec is None:
+                cur_vec = np.random.rand(dims,)
         else:
             cur_vec = mat[next_index]
             next_index += 1

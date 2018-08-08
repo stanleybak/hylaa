@@ -15,6 +15,8 @@ from hylaa.stateset import StateSet, TransitionPredecessor, AggregationPredecess
 from hylaa import lputil, lpplot
 from hylaa.lpinstance import LpInstance
 
+from util import pair_almost_in, assert_verts_is_box
+
 def test_guard_strengthening():
     'simple 2-mode, 2-guard, 2d system with 1st guard A->B is x <= 2, 2nd guard A->B is y <= 2, and inv(B) is y <= 2'
 
@@ -126,33 +128,6 @@ def test_plot_over_time():
 
         assert abs(math.pi - y) < 1e-6, "final poly time is wrong"
         assert abs(5 - x) < 1e-6 or abs(4 - x) < 1e-6
-
-def assert_verts_is_box(verts, box, tol=1e-5):
-    '''check that a list of verts is almost equal to the passed-in box using assertions
-
-    box is [[xmin, xmax], [ymin, ymax]]
-    '''
-
-    is_point = abs(box[0][0] - box[0][1]) < tol and abs(box[1][0] - box[1][1]) < tol
-    is_flat = abs(box[0][0] - box[0][1]) < tol or abs(box[1][0] - box[1][1]) < tol
-
-    expected_verts = 2 if is_point else (3 if is_flat else 5)
-
-    assert len(verts) == expected_verts and verts[0] == verts[-1]
-
-    pts = [(box[0][0], box[1][0]), (box[0][1], box[1][0]), (box[0][1], box[1][1]), (box[0][0], box[1][1])]
-
-    for pt in pts:
-        found = False
-
-        for vert in verts:
-            x, y = vert
-
-            if abs(x - pt[0]) < tol and abs(y - pt[1]) < tol:
-                found = True
-                break
-
-        assert found, "Point {} was not found in verts: {}".format(pt, verts)
 
 def test_init_outside_invariant():
     'test when initial state is outside of the mode invariant'
@@ -406,15 +381,15 @@ def test_aggregation():
     assert_verts_is_box(polys2[2], [[1, 4], [2, 3]])
     assert_verts_is_box(polys2[3], [[1, 4], [3, 4]])
 
-def fail_agg_with_reset():
+def test_agg_with_reset():
     'test the aggregation of states with a reset'
 
-    # m1 dynamics: x' == 1, y' == 0, x0, y0: [0, 1], x0:[0, 1], step: 1.0
-    # m1 invariant: x <= 3
-    # m1 -> m2 guard: True, reset = [[0, 1, 0], [1, 0, 0]] (flip x and y and remove a)
-    # m2 dynamics: x' == x+y, y' == 2x+y
+    # m1 dynamics: x' == 1, y' == 0, x0: [-3, -2], y0: [0, 1], step: 1.0
+    # m1 invariant: x + y <= 0
+    # m1 -> m2 guard: x + y >= 0 and y <= 0.5, reset = [[0, -1, 0], [1, 0, 0]] (x' = -y, y' = x, remove a)
+    # m2 dynamics: x' == 0, y' == 0
     # time bound: 4
-    # expect aggregation to have a sinlge bloating term (tests if aggregation directions take the reset into account)
+    # expected result: last state is line (not box!) from (0, 0) to (-0.5, -0.5) 
 
     ha = HybridAutomaton()
 
@@ -422,20 +397,21 @@ def fail_agg_with_reset():
     m1 = ha.new_mode('m1')
     m1.set_dynamics([[0, 0, 1], [0, 0, 0], [0, 0, 0]])
 
-    # mode two: x' = 0, y' = 1, a' = 0 
+    # mode two: x' = 0, y' = 1 
     m2 = ha.new_mode('m2')
-    m2.set_dynamics([[1, 1], [2, 1]])
+    m2.set_dynamics([[0, 0], [0, 0]])
 
-    # invariant: x <= 3.0
-    m1.set_invariant([[1, 0, 0]], [3.0])
+    # invariant: x + y <= 0
+    m1.set_invariant([[1, 1, 0]], [0])
 
-    # guard: True
+    # guard: x + y == 0 & y <= 0.5
     trans1 = ha.new_transition(m1, m2, 'trans1')
-    trans1.set_guard_true()
-    trans1.set_reset(np.array([[0, 1, 0], [1, 0, 0]], dtype=float))
+    trans1.set_guard([[-1, -1, 0], [1, 1, 0], [0, 1, 0]], [0, 0, 0.5])
+    #trans1.set_reset(np.identity(3)[:2])
+    trans1.set_reset(np.array([[0, -1, 0], [1, 0, 0]], dtype=float))
 
-    # initial set has x0 = [0, 1], y = [0, 1], a = 1
-    init_lpi = lputil.from_box([(0, 1), (0, 1), (1, 1)], m1)
+    # initial set has x0 = [-3, -2], y = [0, 1], a = 1
+    init_lpi = lputil.from_box([(-3, -2), (0, 1), (1, 1)], m1)
     init_list = [StateSet(init_lpi, m1)]
 
     # settings, step size = 1.0
@@ -443,19 +419,25 @@ def fail_agg_with_reset():
     settings.stdout = HylaaSettings.STDOUT_NONE
     settings.plot.plot_mode = PlotSettings.PLOT_NONE
 
-    result = Core(ha, settings).run(init_list)
+    settings.aggregation = HylaaSettings.AGG_BOX
+    settings.aggregation_add_guard = True
 
-    names = result.last_cur_state.lpi.get_names()
+    core = Core(ha, settings)
+    result = core.run(init_list)
 
-    assert "agg0" in names
-    assert "agg1" not in names
- 
-    expected = ['m0_i0', 'm0_i1', 'm0_i2', 'm0_c0', 'm0_c1', 'm0_c2', # initial state variables
-                'm1_i0_t0', 'm1_i1', 'm1_c0', 'm1_c1', # post reset variables
-                'agg0', 'snap0', 'snap1'] # post aggregation variables
-    assert names == expected
+    lpi = result.last_cur_state.lpi
 
-def fail_agg_to_more_vars():
+    # 2 basis matrix rows, 4 init constraints rows, 6 rows from guard conditions (2 from each)
+    assert lpi.get_num_rows() == 2 + 4 + 6
+
+    verts = result.last_cur_state.verts(core.plotman)
+    assert len(verts) == 3
+    assert verts[0] == verts[-1]
+    
+    assert pair_almost_in((0, 0), verts)
+    assert pair_almost_in((-0.5, -0.5), verts)
+
+def test_agg_to_more_vars():
     'test the aggregation of states with a reset to a mode with new variables'
 
     ha = HybridAutomaton()
@@ -488,24 +470,13 @@ def fail_agg_to_more_vars():
 
     # settings, step size = 1.0
     settings = HylaaSettings(1.0, 4.0)
-    settings.stdout = HylaaSettings.STDOUT_NONE
+    settings.stdout = HylaaSettings.STDOUT_DEBUG
     settings.plot.plot_mode = PlotSettings.PLOT_NONE
     settings.plot.store_plot_result = True
     settings.plot.xdim_dir = 0
     settings.plot.ydim_dir = {'m1': 1, 'm2': 2}
 
     result = Core(ha, settings).run(init_list)
-
-    names = result.last_cur_state.lpi.get_names()
-
-    assert "agg0" in names
-    assert "agg1" not in names
- 
-    expected = ['m0_i0', 'm0_i1', 'm0_c0', 'm0_c1', # initial state variables
-                'reset0', # reset minkowsk variable
-                'm1_i0_t0', 'm1_i1', 'm1_i2', 'm1_c0', 'm1_c1', 'm1_c2', # post reset variables
-                'agg0', 'snap0', 'snap1', 'snap2'] # post aggregation variables
-    assert names == expected
 
     polys = result.mode_to_polys['m1']
 
@@ -522,7 +493,7 @@ def fail_agg_to_more_vars():
     assert_verts_is_box(polys[0], [[1, 4], [3, 3]])
     assert_verts_is_box(polys[1], [[1, 4], [4, 4]])
 
-def fail_redundant_invariants():
+def test_redundant_invariants():
     'test removing of redundant invariants'
 
     ha = HybridAutomaton()
@@ -549,7 +520,7 @@ def fail_redundant_invariants():
     # check last cur_state to ensure redundant constraints were not added
     assert result.last_cur_state.lpi.get_num_rows() == 3 + 2*3 + 1 # 3 for basis matrix, 2*3 for initial constraints
 
-def fail_redundant_inv_transition():
+def test_redundant_inv_transition():
     'test removing of redundant invariants with a transition'
 
     ha = HybridAutomaton()
@@ -740,7 +711,7 @@ def test_inputs_reset():
         assert len(i) == 1
         assert abs(i[0] - 2) < 1e-9
         
-def fail_agg_ha():
+def test_agg_ha():
     'test aggregation with the harmonic oscillator dynamics'
 
     ha = HybridAutomaton('Deaggregation Example')
@@ -785,22 +756,18 @@ def fail_agg_ha():
     
     core.do_step() # 2
     assert len(core.waiting_list) > 1
+
+    #for state in core.waiting_list:
+    #    xs, ys = zip(*state.verts(core.plotman))
+    #    plt.plot(xs, ys, 'k-')
+    
     core.do_step() # pop
     assert not core.waiting_list
 
     lpi = core.cur_state.lpi
 
-    xs, ys = zip(*core.cur_state.verts(core.plotman))
-    plt.plot(xs, ys, 'k-')
-
-    #plt.xlim(-6, -5)
-    #plt.ylim(-0.5, 0.5)
+    #xs, ys = zip(*core.cur_state.verts(core.plotman))
+    #plt.plot(xs, ys, 'r--')
     #plt.show()
-    
 
-    # minimize 100 * y + x, should give point (-5.5, 0)
-    offset = lpi.cur_vars_offset
-    cols = [offset, offset + 1]
-    pt = lpi.minimize([1, 100, 0], cols)
-
-    assert np.allclose(pt, [-5.5, 0]), "pt was {} (expected [-5.5, 0])".format(pt)
+    assert lputil.is_point_in_lpi((-5.5, 0, 1), lpi)

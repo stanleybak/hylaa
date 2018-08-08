@@ -87,15 +87,16 @@ class Core(Freezable):
     def take_transition(self, t, t_lpi):
         '''take the passed-in transition from the current state (may add to the waiting list)'''
 
+        predecessor = TransitionPredecessor(self.cur_state.clone(), t, t_lpi.clone())
+
         successor_has_inputs = t.to_mode.b_csr is not None
-        
+
         lputil.add_reset_variables(t_lpi, t.to_mode.mode_id, t.transition_index, \
             reset_csr=t.reset_csr, minkowski_csr=t.reset_minkowski_csr, \
             minkowski_constraints_csr=t.reset_minkowski_constraints_csr, \
             minkowski_constraints_rhs=t.reset_minkowski_constraints_rhs, successor_has_inputs=successor_has_inputs)
 
         if t_lpi.is_feasible():
-            predecessor = TransitionPredecessor(self.cur_state.clone(), t, t_lpi.clone())
             successor_state = StateSet(t_lpi, t.to_mode, self.cur_state.cur_step_since_start, predecessor)
             self.waiting_list.append(successor_state)
 
@@ -236,12 +237,13 @@ class Core(Freezable):
                 postmode = agg_list[0].mode
                 mid_index = len(agg_list) // 2
                 mid_state = agg_list[mid_index]
+                pred = mid_state.predecessor
 
                 if self.settings.aggregation == HylaaSettings.AGG_BOX:
                     agg_dir_mat = np.identity(postmode.a_csr.shape[0])
                 elif self.settings.aggregation == HylaaSettings.AGG_ARNOLDI:
 
-                    if mid_state.predecessor is None:
+                    if pred is None:
                         # aggregation with initial states, just use current mode dynamics
                         pt = lputil.get_box_center(mid_state.lpi)
                         agg_dir_mat = lputil.make_direction_matrix(pt, mid_state.mode.a_csr)
@@ -249,10 +251,9 @@ class Core(Freezable):
                         # aggregation with a predecessor, use arnoldi directions in predecessor mode in center of
                         # middle aggregagted state, then project using the reset, and reorthogonalize
                         
-                        pred = mid_state.predecessor
                         assert isinstance(pred, TransitionPredecessor)
                         premode = pred.state.mode
-                        pt = lputil.get_box_center(pred.transition_lpi)
+                        pt = lputil.get_box_center(pred.premode_lpi)
                         self.print_debug("aggregation point: {}".format(pt))
 
                         premode_dir_mat = lputil.make_direction_matrix(pt, premode.a_csr)
@@ -269,8 +270,20 @@ class Core(Freezable):
                             dims = mid_state.mode.a_csr.shape[0]
                             agg_dir_mat = lputil.reorthogonalize_matrix(projected_dir_mat, dims)
 
+                if pred and self.settings.aggregation_add_guard:
+                    # add all the guard conditions to the agg_dir_mat
+
+                    if pred.transition.reset_csr is None: # identity reset
+                        guard_dir_mat = pred.transition.guard_csr.transpose()
+                    else:
+                        # multiply each direction in the guard by the guard
+                        guard_dir_mat = pred.transition.guard_csr * pred.transition.reset_csr.transpose()
+
+                    agg_dir_mat = np.concatenate((agg_dir_mat, guard_dir_mat.toarray()), axis=0)
+
                 self.print_debug("agg dir mat:\n{}".format(agg_dir_mat))
                 lpi_list = [state.lpi for state in agg_list]
+
                 new_lpi = lputil.aggregate(lpi_list, agg_dir_mat, postmode)
 
                 predecessor = AggregationPredecessor(agg_list) # Note: these objects weren't clone()'d
@@ -358,6 +371,8 @@ class Core(Freezable):
 
         if self.settings.do_guard_strengthening:
             ha.do_guard_strengthening()
+
+        ha.check_transition_dimensions()
         
         self.plotman.create_plot()
 

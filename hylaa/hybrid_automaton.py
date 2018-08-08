@@ -413,10 +413,31 @@ class HybridAutomaton(Freezable):
 
     def new_transition(self, from_mode, to_mode, name=None):
         '''add a transition'''
+
         t = Transition(self, from_mode, to_mode, name=name)
         self.transitions.append(t)
 
         return t
+
+    def check_transition_dimensions(self):
+        '''
+        check that transitios have appropriate resets if the number of variables changes. This is done automatically
+        when set_reset is called, but sometimes this may not be called (identity resets). This will check these cases.
+        '''
+
+        for t in self.transitions:
+            assert t.from_mode.a_csr is not None, \
+                "Outgoing transition detected from error mode: {} (not allowed)".format(t)
+            
+            if t.to_mode.a_csr is None:
+                continue
+            
+            premode_dims = t.from_mode.a_csr.shape[0]
+            postmode_dims = t.to_mode.a_csr.shape[0]
+
+            assert premode_dims == postmode_dims or t.reset_csr is not None, \
+                "Transition {} premode has {} dims and postmode has {} dims, but no reset was assigned".format(
+                    t, premode_dims, postmode_dims)
 
     def do_guard_strengthening(self):
         '''

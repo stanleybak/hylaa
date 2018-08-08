@@ -19,7 +19,7 @@ from hylaa import lpplot
 
 # predecessor types
 AggregationPredecessor = namedtuple('AggregationPredecessor', ['states'])
-TransitionPredecessor = namedtuple('TransitionPredecessor', ['state', 'transition', 'transition_lpi'])
+TransitionPredecessor = namedtuple('TransitionPredecessor', ['state', 'transition', 'premode_lpi'])
 
 class StateSet(Freezable):
     '''
