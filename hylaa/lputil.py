@@ -335,138 +335,72 @@ def try_replace_init_constraint(lpi, old_row_index, direction, rhs, basis_mat=No
 
     return rv
 
-def aggregate(lpi_list, direction_matrix):
+def aggregate(lpi_list, direction_matrix, mode):
     '''
-    return a new lpi consisting of an aggregation of the passed-in list
+    return a new lpi consisting of an aggregation of the passed-in lpi list
 
-    This uses minkowski sum with template directions.
+    This creates a template polytope using the passed-in directions (passed in as rows of direction_matrix).
 
-    each row of direction matrix a vector which are mutually orthogonal, along which we should perform bloating
-
-    use lputil.make_direction_matrix() to create this
+    use lputil.make_direction_matrix() to create the direction_matrix with arnoldi directions
     '''
 
-    assert direction_matrix.shape[0] == direction_matrix.shape[1], "expected square direction matrix"
+    assert isinstance(direction_matrix, np.ndarray)
+    assert direction_matrix.dtype == float
+    assert direction_matrix.shape[0] >= direction_matrix.shape[1], "expected num directions >= dims"
     assert len(lpi_list) > 1, "expected more than one lpi to perform an aggregation"
 
-    middle_index = len(lpi_list) // 2
-    middle_lpi = lpi_list[middle_index]
-    
-    # for each direction, minimize and maximize it within the list
-    num_directions = direction_matrix.shape[0]
-     
-    mins = [np.inf] * num_directions
-    mid_mins = [np.inf] * num_directions
-    maxes = [-np.inf] * num_directions
-    mid_maxes = [-np.inf] * num_directions
-
-    for i, direction in enumerate(direction_matrix):
-        assert abs(np.linalg.norm(direction) - 1) < 1e-9, "expected normalized directions, got {}".format(direction)
-
-        for lpi in lpi_list:
-            assert direction_matrix.shape[0] == lpi.dims
-   
-            columns = np.array([lpi.cur_vars_offset + i for i in range(lpi.dims)], dtype=int)
-            
-            result = lpi.minimize(direction_vec=direction, columns=columns)
-            min_val = np.dot(result, direction)
-            mins[i] = min(mins[i], min_val)
-
-            if i == 0:
-                print(".min_val = {}".format(min_val))
-                print("result point = {}".format(result))
-
-            result = lpi.minimize(direction_vec=-direction, columns=columns)
-            max_val = np.dot(-result, -direction)
-            maxes[i] = max(maxes[i], max_val)
-
-            if lpi == middle_lpi:
-                mid_mins[i] = min_val
-                mid_maxes[i] = max_val
-
-    rows = middle_lpi.get_num_rows()
-    cols = middle_lpi.get_num_cols()
-    dims = middle_lpi.dims
-
-    rv = middle_lpi.clone()
-    create_agg_var = []
-    
-    for i in range(num_directions):
-        if abs(mid_mins[i] - mins[i]) < 1e-13 and abs(mid_maxes[i] - maxes[i]) < 1e-13:
-            create_agg_var.append(False)
-        else:
-            create_agg_var.append(True)
-            
-    num_agg_dims = sum([1 if needs_var else 0 for needs_var in create_agg_var])
-
-    # add n new columns and 2n new rows, for the minkowski sum constriants
-    names = ["agg{}".format(i) for i in range(num_agg_dims)]
-    rv.add_cols(names)
-
-    # csc matrix with constriants
-    data = []
     inds = []
+    data = []
     indptrs = [0]
     rhs = []
 
-    constraint_row_offset = 0
+    # for each direction, minimize and maximize it within the list
+    for direction in direction_matrix:
+        assert abs(np.linalg.norm(direction) - 1) < 1e-9, "expected normalized directions, got {}".format(direction)
 
-    print(".aggregate() get rid of debug")
-    #mins[0] -= 0.01
-    print("mid_min[0] = {}".format(mid_mins[0]))
-    print("mins[0] = {}".format(mins[0]))
+        dir_inds = [i for i, x in enumerate(direction) if x != 0]
+        dir_data = [x for x in direction if x != 0]
+        dir_neg_data = [-x for x in dir_data]
 
-    for dim in range(dims):
-        if not create_agg_var[dim]:
-            continue
-        
-        direction = direction_matrix[dim]
-        
-        # column is direction[dim]
-        for i, d in enumerate(direction):
-            data.append(d)
-            inds.append(i + middle_lpi.basis_mat_pos[0]) # at the row of the current basis matrix
+        max_val = -np.inf
+        min_val = np.inf
+       
+        for lpi in lpi_list:
+            assert direction_matrix.shape[0] == lpi.dims
 
-        data.append(1.0) # <= constraint
-        inds.append(rows + constraint_row_offset)
-        rhs.append(maxes[dim] - mid_maxes[dim])
+            dir_columns = [i + lpi.cur_vars_offset for i in dir_inds]
 
-        data.append(-1.0) # >= constraint
-        inds.append(rows + constraint_row_offset + 1)
-        rhs.append(-(mins[dim] - mid_mins[dim]))
+            result = lpi.minimize(direction_vec=-direction, columns=dir_columns)
+            max_val = max(max_val, np.dot(result, dir_data))
+            
+            result = lpi.minimize(direction_vec=direction, columns=dir_columns)
+            min_val = min(min_val, np.dot(result, dir_data))
 
-        constraint_row_offset += 2
-
+        inds += dir_inds
+        data += dir_data
         indptrs.append(len(data))
+        rhs.append(max_val)
 
-    rv.add_rows_less_equal(rhs)
+        inds += dir_inds
+        data += dir_neg_data
+        indptrs.append(len(data))
+        rhs.append(-min_val)
 
-    constraints = csc_matrix((data, inds, indptrs), dtype=float, shape=(rows + 2*num_agg_dims, num_agg_dims))
-    constraints.check_format()
-
-    rv.set_constraints_csc(constraints, offset=(0, cols))
-
-    add_snapshot_variables(rv, "snap")
-
-    assert rv.is_feasible(), "aggregated set was UNSAT"
-
-
-    columns = [rv.cur_vars_offset + i for i in range(rv.dims)]
-    result = rv.minimize(direction_vec=direction_matrix[0], columns=columns)
-    min_val = np.dot(result, direction_matrix[0])
-    print("dir[0] = {}".format(direction_matrix[0]))
-    print("min_val in dir[0] of rv is {}".format(min_val))
-    print("result point = {}".format(result))
-
-    return rv
+    rows = len(indptrs) - 1
+    cols = direction_matrix.shape[1]
+    csr_mat = csr_matrix((data, inds, indptrs), dtype=float, shape=(rows, cols))
+    csr_mat.check_format()
+    
+    return from_constraints(csr_mat, rhs, mode)
 
 def get_basis_matrix(lpi):
     'get the basis matrix from the lpi'
 
     return lpi.get_dense_constraints(lpi.basis_mat_pos[0], lpi.basis_mat_pos[1], lpi.dims, lpi.dims)
 
-def add_reset_variables(lpi, mode_id, transition_index, reset_csr=None, minkowski_csr=None, \
-                        minkowski_constraints_csr=None, minkowski_constraints_rhs=None, successor_has_inputs=False):
+def add_reset_variables(lpi, mode_id, transition_index, # pylint: disable=too-many-locals, too-many-statements
+                        reset_csr=None, minkowski_csr=None,
+                        minkowski_constraints_csr=None, minkowski_constraints_rhs=None, successor_has_inputs=False): 
     '''
     add variables associated with a reset
 
@@ -601,59 +535,17 @@ def add_reset_variables(lpi, mode_id, transition_index, reset_csr=None, minkowsk
     lpi.set_constraints_csr(mat, offset=(rows, 0))
 
     # input effects position
-    ie_x = cols + min_vars + 2*new_dims
-    ie_y = rows + 2*new_dims + len(minkowski_constraints_rhs)
-    ie_offsets = (ie_y, ie_x)
+    if successor_has_inputs:
+        ie_x = cols + min_vars + 2*new_dims
+        ie_y = rows + 2*new_dims + len(minkowski_constraints_rhs)
+        ie_offsets = (ie_y, ie_x)
+    else:
+        ie_offsets = None
 
     basis_mat_pos = (rows+new_dims, cols + minkowski_csr.shape[1])
     cur_vars_offset = cols + minkowski_csr.shape[1] + new_dims
     
     lpi.set_reach_vars(new_dims, basis_mat_pos, cur_vars_offset, ie_offsets)
-
-def add_snapshot_variables(lpi, basename):
-    '''
-    add snapshot variables to the existing lpi
-
-    this adds n new variables (the post-snapshot variables), which is assigned with new rows to have:
-    I in the columns of the old cur-time variables (this is also the new basis matrix position)
-    -I in the new columns
-    0 everywhere else
-    '''
-
-    dims = lpi.dims
-    cols = lpi.get_num_cols()
-    rows = lpi.get_num_rows()
-
-    names = ["{}{}".format(basename, d) for d in range(dims)]
-    lpi.add_cols(names)
-    lpi.add_rows_equal_zero(dims)
-    
-    data = []
-    inds = []
-    indptrs = [0]
-    
-    # set constraints for the first <dims> rows
-    data = []
-    inds = []
-    indptrs = [0]
-
-    # set constraints for the last <dims> rows
-    for dim in range(dims):
-        # I at the previous cur_time vars (basis matrix)
-        data.append(1)
-        inds.append(lpi.cur_vars_offset + dim)
-
-        # -I at the end
-        data.append(-1)
-        inds.append(cols + dim)
-
-        indptrs.append(len(data))
-
-    mat = csr_matrix((data, inds, indptrs), shape=(dims, cols + dims), dtype=float)
-    mat.check_format()
-
-    lpi.set_constraints_csr(mat, offset=(rows, 0))
-    lpi.set_reach_vars(lpi.dims, (rows, lpi.cur_vars_offset))
 
 def add_curtime_constraints(lpi, csr, rhs_vec):
     '''
@@ -663,7 +555,6 @@ def add_curtime_constraints(lpi, csr, rhs_vec):
     '''
 
     assert isinstance(csr, csr_matrix)
-    assert isinstance(rhs_vec, np.ndarray)
 
     prerows = lpi.get_num_rows()
     lpi.add_rows_less_equal(rhs_vec)
@@ -689,10 +580,10 @@ def get_box_center(lpi):
     return pt
 
 def make_direction_matrix(point, a_csr):
-    '''make the direction matrix for aggregation bloating
+    '''make the direction matrix for arnoldi aggregation
 
     this is a set of full rank, linearly-independent vectors, extracted from the dynamics using something
-    similar to the arnoldi iteration
+    similar to the arnoldi iteration, with the null-space vectors filled in with random orthonormal vectors
 
     point is the point where to sample the dynamics
     a_csr is the dynamics matrix
@@ -709,10 +600,24 @@ def make_direction_matrix(point, a_csr):
     dims = len(point)
     rv = []
 
-
     while len(rv) < dims:
-        if cur_vec is None:
-            cur_vec = np.random.rand(dims,)
+        if cur_vec is None: # inside the null space
+            # first try to pick orthonormal directions if we can
+            for d in range(dims):
+                found_nonzero = False
+
+                for vec in rv:
+                    if vec[d] != 0:
+                        found_nonzero = True
+                        break
+
+                if found_nonzero is False:
+                    cur_vec = np.array([1 if n == d else 0 for n in range(dims)], dtype=float)
+                    break
+
+            # if that didn't work, just a random vector
+            if cur_vec is None:
+                cur_vec = np.random.rand(dims,)
         else:
             cur_vec = a_csr * cur_vec
 
@@ -742,6 +647,9 @@ def reorthogonalize_matrix(mat, dims):
     '''given an input matrix (one 'dims'-dimensional vector per row), return a new matrix such that the vectors are in 
     the same order, but orthonormal (project out earlier vectors and scale), with the passed-in number of dimensions 
     (a smaller matrix may be returned, or new vectors may be generated to fill the nullspace if the dims > dim(mat)'''
+
+    if isinstance(mat, list):
+        mat = np.array(mat, dtype=float)
 
     assert mat.shape[1] == dims, "mat should have width equal to dims({})".format(dims)
 
@@ -796,5 +704,41 @@ def is_feasible(csr, rhs):
     lpi.add_rows_less_equal(rhs)
 
     lpi.set_constraints_csr(csr)
+
+    return lpi.is_feasible()
+
+def is_point_in_lpi(point, orig_lpi):
+    '''is the passed-in point in the lpi?
+
+    This function is strictly for unit testing as it's slow (copies the lpi). 
+    A warning is printed to stdout to reflect this and discourage usage in other places.
+    '''
+
+    print("Warning: Using testing function lputil.is_point_in_lpi (slow)")
+
+    assert len(point) == orig_lpi.dims
+
+    inds = []
+    data = []
+    indptr = [0]
+    rhs = []
+
+    for i, x in enumerate(point):
+        inds.append(i)
+        data.append(1)
+        indptr.append(len(data))
+        rhs.append(x)
+
+        inds.append(i)
+        data.append(-1)
+        indptr.append(len(data))
+        rhs.append(-x)
+
+    rows = len(indptr) - 1
+    cols = len(point)
+    csr = csr_matrix((data, inds, indptr), dtype=float, shape=(rows, cols))
+
+    lpi = orig_lpi.clone()
+    add_curtime_constraints(lpi, csr, rhs)
 
     return lpi.is_feasible()

@@ -7,6 +7,12 @@ Dynamics in mode 1 are x'= 2, y'=1
 Upon reaching x >= 9.9 (after 5 steps), a reset is taken which sets: x' := [0, 1], y' := y - 10
 
 Dynamics in mode 2 are x' = 1, y' = 1
+
+This model demonstrates:
+- Affine variable to add clock dynamics (c' == a with a(t) = 0 for all t)
+- Reset upon reaching a transition
+- Reset has a minkowski sum term, in addition to a reset matrix
+- Plot output to an image
 '''
 
 from hylaa.hybrid_automaton import HybridAutomaton

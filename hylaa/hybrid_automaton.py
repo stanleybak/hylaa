@@ -475,7 +475,7 @@ class HybridAutomaton(Freezable):
                 t.guard_csr = new_guard_csr
                 t.guard_rhs = new_guard_rhs
 
-    def detect_tt_transitions(self, print_func=print):
+    def detect_tt_transitions(self, print_func=print): # if you get a syntax error here, make sure you're using python3
         '''
         Mark all time-triggered transitions within the automaton.
 

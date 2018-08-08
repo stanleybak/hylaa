@@ -3,6 +3,8 @@ Tests for LP operations. Made for use with py.test
 '''
 
 import math
+import random
+
 import numpy as np
 
 import matplotlib.pyplot as plt
@@ -221,38 +223,29 @@ def test_replace_init_constraint():
 def test_box_aggregate2():
     'tests box aggregation'
 
-    lpi1 = lputil.from_box([[0, 1], [0, 1]], HybridAutomaton().new_mode('mode_name'))
-    lpi2 = lputil.from_box([[1, 2], [1, 2]], HybridAutomaton().new_mode('mode_name'))
+    mode = HybridAutomaton().new_mode('mode_name')
 
-    agg_dirs = np.array([[1, 0], [0, 1]], dtype=float)
+    lpi1 = lputil.from_box([[0, 1], [0, 1]], mode)
+    lpi2 = lputil.from_box([[1, 2], [1, 2]], mode)
+
+    agg_dirs = np.identity(2)
 
     # box aggregation
-    lpi = lputil.aggregate([lpi1, lpi2], agg_dirs)
+    lpi = lputil.aggregate([lpi1, lpi2], agg_dirs, mode)
 
     verts = lpplot.get_verts(lpi)
-
-    assert len(verts) == 5
-    
-    assert [0., 0.] in verts
-    assert [0, 2.] in verts
-    assert [2., 0.] in verts
-    assert [2., 2.] in verts
-    
-    assert verts[0] == verts[-1]
+    assert_verts_is_box(verts, [[0, 2], [0, 2]])
 
     # test setting basis matrix after aggregation
     lputil.set_basis_matrix(lpi, np.identity(2))
 
     verts = lpplot.get_verts(lpi)
+    assert_verts_is_box(verts, [[0, 2], [0, 2]])
 
-    assert len(verts) == 5
-    
-    assert [0., 0.] in verts
-    assert [0, 2.] in verts
-    assert [2., 0.] in verts
-    assert [2., 2.] in verts
-    
-    assert verts[0] == verts[-1]
+    lputil.set_basis_matrix(lpi, -1 * np.identity(2))
+
+    verts = lpplot.get_verts(lpi)
+    assert_verts_is_box(verts, [[-2, 0], [-2, 0]])
 
 def pair_almost_in(pair, pair_list, tol=1e-9):
     'check if a pair is in a pair list (up to small tolerance)'
@@ -269,25 +262,29 @@ def pair_almost_in(pair, pair_list, tol=1e-9):
 def test_rotated_aggregate():
     'tests rotated aggregation'
 
-    lpi1 = lputil.from_box([[0, 1], [0, 1]], HybridAutomaton().new_mode('mode_name'))
-    lpi2 = lputil.from_box([[1, 2], [1, 2]], HybridAutomaton().new_mode('mode_name'))
+    mode = HybridAutomaton().new_mode('mode_name')
+    lpi1 = lputil.from_box([[0, 1], [0, 1]], mode)
+    lpi2 = lputil.from_box([[1, 2], [1, 2]], mode)
 
     sq2 = math.sqrt(2) / 2.0
 
     agg_dirs = np.array([[sq2, sq2], [sq2, -sq2]], dtype=float)
 
-    lpi = lputil.aggregate([lpi1, lpi2], agg_dirs)
+    lpi = lputil.aggregate([lpi1, lpi2], agg_dirs, mode)
+
+    assert lputil.is_point_in_lpi([0, 0], lpi)
+    assert lputil.is_point_in_lpi([2, 2], lpi)
+    assert lputil.is_point_in_lpi([1, 2], lpi)
+    assert lputil.is_point_in_lpi([2, 1], lpi)
+    assert lputil.is_point_in_lpi([0, 1], lpi)
+    assert lputil.is_point_in_lpi([1, 0], lpi)
 
     verts = lpplot.get_verts(lpi)
 
-    assert len(verts) == 7
+    assert len(verts) == 5
 
-    assert pair_almost_in([0., 0.], verts)
-    assert pair_almost_in([1., 0.], verts)
-    assert pair_almost_in([2., 1.], verts)
-    assert pair_almost_in([2., 2.], verts)
-    assert pair_almost_in([1., 2.], verts)
-    assert pair_almost_in([0., 1.], verts)
+    for p in [(0.5, -0.5), (-0.5, 0.5), (2.5, 1.5), (1.5, 2.5)]:
+        assert pair_almost_in(p, verts)
 
     assert verts[0] == verts[-1]
 
@@ -306,7 +303,9 @@ def test_get_basis_matrix():
 def test_box_aggregate3():
     'tests box aggregation with 3 boxes'
 
-    lpi1 = lputil.from_box([[-2, -1], [-0.5, 0.5]], HybridAutomaton().new_mode('mode_name'))
+    mode = HybridAutomaton().new_mode('mode_name')
+    
+    lpi1 = lputil.from_box([[-2, -1], [-0.5, 0.5]], mode)
     lpi2 = lpi1.clone()
     lpi3 = lpi1.clone()
 
@@ -320,52 +319,23 @@ def test_box_aggregate3():
 
     # bounds for lpi1 should be [[-2, -1], [-0.5, 0.5]]
     verts = lpplot.get_verts(lpi1, plot_vecs=plot_vecs)
-
-    assert len(verts) == 5
-    assert verts[0] == verts[-1]
-
-    assert [-2, -0.5] in verts
-    assert [-2, 0.5] in verts
-    assert [-1, 0.5] in verts
-    assert [-1, -0.5] in verts
+    assert_verts_is_box(verts, [[-2, -1], [-0.5, 0.5]])
 
     # bounds for lpi2 should be [[-0.5, 0.5], [1, 2]]
     verts = lpplot.get_verts(lpi2, plot_vecs=plot_vecs)
-
-    assert len(verts) == 5
-    assert verts[0] == verts[-1]
-
-    assert [-0.5, 2] in verts
-    assert [-0.5, 1] in verts
-    assert [0.5, 1] in verts
-    assert [0.5, 2] in verts
+    assert_verts_is_box(verts, [[-0.5, 0.5], [1, 2]])
 
     # bounds for lpi3 should be [[2, 1], [-0.5, 0.5]]
     verts = lpplot.get_verts(lpi3, plot_vecs=plot_vecs)
-
-    assert len(verts) == 5
-    assert verts[0] == verts[-1]
-
-    assert [2, -0.5] in verts
-    assert [2, 0.5] in verts
-    assert [1, 0.5] in verts
-    assert [1, -0.5] in verts
-    
-    agg_dirs = np.array([[1, 0], [0, 1]], dtype=float)
-
-    # box aggregation, bounds should be [[-2, 2], [-0.5, 2]]
-    lpi = lputil.aggregate([lpi1, lpi2, lpi3], agg_dirs)
-    assert lpi.cur_vars_offset == 6, "cur_vars_offset{} should be 6 (snapshot var columns)".format(lpi.cur_vars_offset)
+    assert_verts_is_box(verts, [[2, 1], [-0.5, 0.5]])
  
+    # box aggregation, bounds should be [[-2, 2], [-0.5, 2]]
+    agg_dirs = np.identity(2)
+    lpi = lputil.aggregate([lpi1, lpi2, lpi3], agg_dirs, mode)
+
     verts = lpplot.get_verts(lpi, plot_vecs=plot_vecs)
+    assert_verts_is_box(verts, [[-2, 2], [-0.5, 2]])
 
-    assert len(verts) == 5
-    assert verts[0] == verts[-1]
-
-    assert [-2., -0.5] in verts
-    assert [-2, 2.] in verts
-    assert [2., 2.] in verts
-    assert [2., -0.5] in verts
 
 def test_add_curtime_constraints():
     'tests add_curtime_constraints'
@@ -791,8 +761,7 @@ def test_direction_matrix_empty():
 
 def test_aggregate_on_subspace():
     '''
-    test aggregation when the dynamics and sets are only on a subspace. The aggregation minkowski variables 
-    should not include directions on the subspace, since they aren't necessary. 
+    test aggregation when the dynamics and sets are only on a subspace. 
     '''
 
     # dynamics are x' == 1, y' == 0, a' == 0
@@ -810,63 +779,53 @@ def test_aggregate_on_subspace():
     agg_dirs = np.array([[1, 0, 0], [0, sqr, sqr], [0, sqr, -sqr]], dtype=float)
 
     # box aggregation
-    lpi = lputil.aggregate([lpi1, lpi2], agg_dirs)
+    lpi = lputil.aggregate([lpi1, lpi2], agg_dirs, mode)
 
-    verts = lpplot.get_verts(lpi)
+    # lpi1 corners
+    for pt in [(0, 0, 1), (0, 1, 1), (1, 0, 1), (1, 1, 1)]:
+        assert lputil.is_point_in_lpi(pt, lpi)
 
-    assert len(verts) == 5
+    # lpi2 corners
+    for pt in [(4, 0, 1), (4, 1, 1), (5, 0, 1), (5, 1, 1)]:
+        assert lputil.is_point_in_lpi(pt, lpi)
 
-    assert pair_almost_in([0., 0.], verts)
-    assert pair_almost_in([0., 1.], verts)
-    assert pair_almost_in([5., 1.], verts)
-    assert pair_almost_in([5., 0.], verts)
-
-    assert verts[0] == verts[-1]
-
-    # make sure only one aggregation variable was introduced
+    # make sure we have new variable names
     names = lpi.get_names()
 
-    expected_names = ["m0_i0", "m0_i1", "m0_i2", "m0_c0", "m0_c1", "m0_c2", "agg0", "snap0", "snap1", "snap2"]
+    expected_names = ["m0_i0", "m0_i1", "m0_i2", "m0_c0", "m0_c1", "m0_c2"]
 
     assert names == expected_names
-
-    assert lpi.basis_mat_pos == (lpi.get_num_rows() - 3, lpi.get_num_cols() - 7)
-    assert lpi.cur_vars_offset == lpi.get_num_cols() - 3
 
 def test_aggregate_self():
     '''
-    test aggregation on an identical set. This shouldn't create new variables. 
+    test aggregation on an identical set.
     '''
 
-    # aggregation shouldn't introduce any variables
     mode = HybridAutomaton().new_mode('mode_name')
-    lpi1 = lputil.from_box([[0, 1], [0, 1], [1, 1]], mode)
-    lpi2 = lputil.from_box([[0, 1], [0, 1], [1, 1]], mode)
+    lpi1 = lputil.from_box([[-2, -1], [-10, 20], [100, 200]], mode)
+    lpi2 = lputil.from_box([[-2, -1], [-10, 20], [100, 200]], mode)
 
-    #a_csr = csr_matrix(np.array([[0, 0, 1], [0, 0, 0], [0, 0, 0]], dtype=float))
-    sqr = math.sqrt(2) / 2
-    agg_dirs = np.array([[1, 0, 0], [0, sqr, sqr], [0, sqr, -sqr]], dtype=float)
+    agg_dirs = np.identity(3)
 
     # box aggregation
-    lpi = lputil.aggregate([lpi1, lpi2], agg_dirs)
+    lpi = lputil.aggregate([lpi1, lpi2], agg_dirs, mode)
+    
+    assert lpi.is_feasible()
 
-    verts = lpplot.get_verts(lpi)
+    verts = lpplot.get_verts(lpi, xdim=0, ydim=1)
+    assert_verts_is_box(verts, [[-2, -1], [-10, 20]])
 
-    assert len(verts) == 5
+    verts = lpplot.get_verts(lpi, xdim=0, ydim=2)
+    assert_verts_is_box(verts, [[-2, -1], [100, 200]])
 
-    assert pair_almost_in([0., 0.], verts)
-    assert pair_almost_in([0., 1.], verts)
-    assert pair_almost_in([1., 1.], verts)
-    assert pair_almost_in([1., 0.], verts)
-
-    assert verts[0] == verts[-1]
-
-    # make sure only one aggregation variable was introduced
+    # make sure no extra variables in lp
     names = lpi.get_names()
 
-    expected_names = ["m0_i0", "m0_i1", "m0_i2", "m0_c0", "m0_c1", "m0_c2", "snap0", "snap1", "snap2"]
+    expected_names = ["m0_i0", "m0_i1", "m0_i2", "m0_c0", "m0_c1", "m0_c2"]
 
     assert names == expected_names
+
+    assert lpi.get_num_rows() == 3 + 3*2
 
 def test_reorthogonalize_matrix():
     'tests the reorthgonalize_matrix function'
@@ -903,7 +862,7 @@ def test_reorthogonalize_matrix():
 
             assert np.dot(row_a, row_b) < 1e-6, "rows should be orthononal"
 
-def fail_aggregate3():
+def test_aggregate3():
     'tests aggregation of 3 sets, inspired by the harmonic oscillator system'
 
     mode = HybridAutomaton().new_mode('mode_name')
@@ -918,27 +877,29 @@ def fail_aggregate3():
     lpi3 = lputil.from_box([[5, 6], [5, 6]], mode)
 
     lpi_list = [lpi1, lpi2, lpi3]
+    verts = []
 
     for lpi in lpi_list:
-        xs, ys = zip(*lpplot.get_verts(lpi))
-        plt.plot(xs, ys, 'k-')
+        verts += lpplot.get_verts(lpi)
 
-    agg_dirs = np.array([[1, 0], [0, 1]], dtype=float)
+        #xs, ys = zip(*lpplot.get_verts(lpi))
+        #plt.plot(xs, ys, 'k-')
 
-    lpi = lputil.aggregate(lpi_list, agg_dirs)
+    random.seed(0)
 
-    xs, ys = zip(*lpplot.get_verts(lpi))
-    plt.plot(xs, ys, 'r--')
+    for _ in range(10):
+        random_mat = np.random.rand(2, 2)
+        agg_dirs = lputil.reorthogonalize_matrix(random_mat, 2)
+
+        lpi = lputil.aggregate(lpi_list, agg_dirs, mode)
+
+        #xs, ys = zip(*lpplot.get_verts(lpi))
+        #plt.plot(xs, ys, 'r--')
+
+        for vert in verts:
+            assert lputil.is_point_in_lpi(vert, lpi)
 
     #plt.show()
-
-
-    # check if point (0.1, 0.1) is in the lp
-    v = 0.1
-    rhs = np.array([v, -v, v, -v], dtype=float)
-    lputil.add_curtime_constraints(lpi, csr_matrix([[1, 0], [-1, 0], [0, 1], [-1, 0]], dtype=float), rhs)
-
-    assert lpi.is_feasible(), "point {}, {} was not in the aggregated set".format(v, v)
 
 def test_reject_constant_inputs():
     'tests the detection of B matrix + constraints where an input is fixed to a constant'

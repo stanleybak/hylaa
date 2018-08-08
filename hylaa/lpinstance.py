@@ -13,7 +13,7 @@ import swiglpk as glpk
 from hylaa.util import Freezable
 from hylaa.timerutil import Timers
 
-class LpInstance(Freezable):
+class LpInstance(Freezable): # pylint: disable=too-many-public-methods
     'Linear programming wrapper using glpk (through swiglpk python interface)'
 
     def __init__(self):
@@ -69,43 +69,12 @@ class LpInstance(Freezable):
             glpk.glp_delete_prob(self.lp)
             self.lp = None
 
-    def __str__(self):
-        'get the LP as string (useful for debugging)'
+    def _column_names_str(self, cur_var_print):
+        'get the line in __str__ for the column names'
 
-        lp = self.lp
+        rv = "   "
 
-        def cur_var_print(s):
-            'print function for current variables'
-
-            return colored(s, on_color="on_cyan")
-
-        def bm_print(s):
-            'print function for basis matrix'
-
-            return colored(s, on_color="on_red")
-
-        def input_print(s):
-            'print function for input offset'
-
-            return colored(s, on_color="on_green")
-
-        def zero_print(s):
-            'print function for zeros'
-
-            return colored(s, 'white', attrs=['dark'])
-
-        rows = glpk.glp_get_num_rows(lp)
-        cols = glpk.glp_get_num_cols(lp)
-
-        rv = "Lp has {} columns (variables) and {} rows (constraints)\n".format(cols, rows)
-
-        inds = glpk.intArray(cols + 1)
-        vals = glpk.doubleArray(cols + 1)
-
-        # the column names
-        rv += "   "
-
-        for col in range(cols):
+        for col, name in enumerate(self.names):
             name = self.names[col]
             name = "-" if name is None else name
             
@@ -115,14 +84,20 @@ class LpInstance(Freezable):
                 name = name[0:6]
 
             if self.cur_vars_offset <= col < self.cur_vars_offset + self.dims: 
-                rv += colored(name, on_color="on_cyan") + " "
+                rv += cur_var_print(name) + " "
             else:
                 rv += name + " "
 
         rv += "\n"
+        
+        return rv
 
-        # optimization direction
-        rv += "min"
+    def _opt_dir_str(self, zero_print):
+        'get the optimization direction line for __str__'
+
+        lp = self.lp
+        cols = glpk.glp_get_num_cols(lp)
+        rv = "min"
 
         for col in range(1, cols + 1):
             val = glpk.glp_get_obj_coef(lp, col)
@@ -138,16 +113,37 @@ class LpInstance(Freezable):
             else:
                 rv += num + " "
 
-        rv += "\nsubject to:\n"
+        rv += "\n"
+        
+        return rv
 
-        #  the column statuses
+    def _col_stat_str(self):
+        'get the column statuses line for __str__'
+
+        lp = self.lp
+        cols = glpk.glp_get_num_cols(lp)
+
         stat_labels = ["?(0)?", "BS", "NL", "NU", "NF", "NS", "?(6)?"]
-        rv += "   "
+        rv = "   "
 
         for col in range(1, cols + 1):
             rv += "{:>6} ".format(stat_labels[glpk.glp_get_col_stat(lp, col)])
 
         rv += "\n"
+
+        return rv
+
+    def _constraints_str(self, bm_print, input_print, zero_print):
+        'get the constraints matrix lines for __str__'
+
+        rv = ""
+        lp = self.lp
+        rows = glpk.glp_get_num_rows(lp)
+        cols = glpk.glp_get_num_cols(lp)
+        
+        stat_labels = ["?(0)?", "BS", "NL", "NU", "NF", "NS", "?(6)?"]
+        inds = glpk.intArray(cols + 1)
+        vals = glpk.doubleArray(cols + 1)
 
         for row in range(1, rows + 1):
             rv += "{} ".format(stat_labels[glpk.glp_get_row_stat(lp, row)])
@@ -171,13 +167,12 @@ class LpInstance(Freezable):
                 if self.basis_mat_pos[0] <= row - 1 < self.basis_mat_pos[0] + self.dims and \
                         self.basis_mat_pos[1] <= col - 1 < self.basis_mat_pos[1] + self.dims:
                     rv += bm_print(num) + " "
-                elif self.input_effects_offsets[0] <= row - 1 < self.input_effects_offsets[0] + self.dims and \
+                elif self.input_effects_offsets is not None and \
+                        self.input_effects_offsets[0] <= row - 1 < self.input_effects_offsets[0] + self.dims and \
                         self.input_effects_offsets[1] <= col - 1 < self.input_effects_offsets[1] + self.dims:
                     rv += input_print(num) + " "
-                elif val == 0:
-                    rv += zero_print(num) + " "
                 else:
-                    rv += num + " "
+                    rv += (zero_print(num) if val == 0 else num) + " "
 
             row_type = glpk.glp_get_row_type(lp, row)
 
@@ -192,22 +187,57 @@ class LpInstance(Freezable):
                 rv += " >= "
             else:
                 rv += " <?> (unknown bounds)"
-                val = None
+                val = '?'
 
-            if val is not None:
-                num = str(val)
-                if len(num) < 6:
-                    num = (" " * (6 - len(num))) + num
-                else:
-                    num = num[0:6]
+            num = str(val)
+            if len(num) < 6:
+                num = (" " * (6 - len(num))) + num
+            else:
+                num = num[0:6]
 
-                if val == 0:
-                    rv += zero_print(num) + " "
-                else:
-                    rv += num + " "
+            rv += (zero_print(num) if val == 0 else num) + " "
 
             rv += "\n"
 
+        return rv
+
+    def __str__(self):
+        'get the LP as string (useful for debugging)'
+
+        def cur_var_print(s):
+            'print function for current variables'
+
+            return colored(s, on_color="on_cyan")
+
+        def bm_print(s):
+            'print function for basis matrix'
+
+            return colored(s, on_color="on_red")
+
+        def input_print(s):
+            'print function for input offset'
+
+            return colored(s, on_color="on_green")
+
+        def zero_print(s):
+            'print function for zeros'
+
+            return colored(s, 'white', attrs=['dark'])
+
+        rows = glpk.glp_get_num_rows(self.lp)
+        cols = glpk.glp_get_num_cols(self.lp)
+        rv = "Lp has {} columns (variables) and {} rows (constraints)\n".format(cols, rows)
+
+        rv += self._column_names_str(cur_var_print)
+
+        rv += self._opt_dir_str(zero_print)
+
+        rv += "subject to:\n"
+
+        rv += self._col_stat_str()
+
+        rv += self._constraints_str(bm_print, input_print, zero_print)
+        
         rv += "Key: " + bm_print("Basis Matrix") + " " + cur_var_print("Cur Vars") + " " + \
           input_print("Input Effects Offset") + "\n"
 
@@ -450,7 +480,7 @@ class LpInstance(Freezable):
             simplex_res = glpk.glp_simplex(self.lp, params)
 
         # process simplex result
-        rv = self.process_simplex_result(simplex_res, columns)
+        rv = self._process_simplex_result(simplex_res, columns)
 
         Timers.toc('minimize')
 
@@ -459,7 +489,7 @@ class LpInstance(Freezable):
 
         return rv
 
-    def process_simplex_result(self, simplex_res, columns):
+    def _process_simplex_result(self, simplex_res, columns):
         '''process the result of a glp_simplex call
 
         returns None on UNSAT, otherwise the optimization result with the requested columns

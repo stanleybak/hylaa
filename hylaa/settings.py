@@ -4,20 +4,22 @@ Stanley Bak, 2018
 '''
 
 import math
-
 from hylaa.util import Freezable
 
 # Force matplotlib to not use any Xwindows backend.
 #import matplotlib
 #matplotlib.use('Agg')
 
+# Suppress floating point printing overflow/underflow printing in numpy
 #import numpy as np
-#np.set_printoptions(suppress=True) # suppress floating point printing
+#np.set_printoptions(suppress=True)
 
-class HylaaSettings(Freezable):
+class HylaaSettings(Freezable):  # pylint: disable=too-few-public-methods
     'Settings for the computation'
 
     STDOUT_NONE, STDOUT_NORMAL, STDOUT_VERBOSE, STDOUT_DEBUG = range(4)
+
+    AGG_NONE, AGG_BOX, AGG_ARNOLDI = range(3)
 
     def __init__(self, step_size, max_time):
         plot_settings = PlotSettings()
@@ -29,15 +31,17 @@ class HylaaSettings(Freezable):
         self.stdout = HylaaSettings.STDOUT_NORMAL
         self.stdout_colors = [None, "white", "blue", "yellow"] # colors for each level of printing
 
-        ### SIMULATION-EQUIVALENT SEMANTICS / COMPUTATION OPTIMIZATIONS ###
+        ### SIMULATION-EQUIVALENT SEMANTICS / COMPUTATION PARAMETERS ###
         self.process_urgent_guards = False # allow zero continuous-post steps between transitions?
         self.do_guard_strengthening = True # add invariants of target modes to each guard?
         self.optimize_tt_transitions = True # auto-detect time-triggered transitions and use single-step semantics?
-        self.aggregation = True # do set aggregation across discrete transitions?
+        
+        self.aggregation = HylaaSettings.AGG_ARNOLDI # transition aggregation method
+        self.aggregation_add_guard = True # when performing aggregation, also add the guard direction?
 
         self.freeze_attrs()
 
-class PlotSettings(Freezable):
+class PlotSettings(Freezable): # pylint: disable=too-few-public-methods
     'plot settings container'
 
     PLOT_NONE = 0 # don't plot (safety checking only; for performance measurement)

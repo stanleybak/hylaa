@@ -3,9 +3,10 @@ Main Hylaa Reachability Implementation
 Stanley Bak, 2018
 '''
 
+from collections import deque
+
 import numpy as np
 from termcolor import cprint
-from collections import deque
 
 from hylaa.settings import HylaaSettings, PlotSettings
 
@@ -201,7 +202,7 @@ class Core(Freezable):
     def pop_waiting_list(self):
         'pop a state off the waiting list, possibly doing state-set aggreation'
 
-        if not self.settings.aggregation:
+        if self.settings.aggregation == HylaaSettings.AGG_NONE:
             rv = self.waiting_list.pop(0)
         else:
             # aggregation is on, first find the state with the minimum time on the waiting list
@@ -232,36 +233,45 @@ class Core(Freezable):
             else:
                 self.print_verbose("Removed {} states for aggregation".format(len(agg_list)))
                 # create a new state from the aggregation
+                postmode = agg_list[0].mode
                 mid_index = len(agg_list) // 2
                 mid_state = agg_list[mid_index]
-                
-                if mid_state.predecessor is None: # aggregation with initial states, just use current mode dynamics
-                    pt = lputil.get_box_center(mid_state.lpi)
-                    agg_dir_mat = lputil.make_direction_matrix(pt, mid_state.mode.a_csr)
-                else: # aggregation with a predecessor
-                    pred = mid_state.predecessor
-                    assert isinstance(pred, TransitionPredecessor)
-                    premode = pred.state.mode
-                    pt = lputil.get_box_center(pred.transition_lpi)
-                    self.print_debug("aggreagtion point: {}".format(pt))
-                    
-                    premode_dir_mat = lputil.make_direction_matrix(pt, premode.a_csr)
-                    self.print_debug("premode dir mat:\n{}".format(premode_dir_mat))
 
-                    if pred.transition.reset_csr is None:
-                        agg_dir_mat = premode_dir_mat
+                if self.settings.aggregation == HylaaSettings.AGG_BOX:
+                    agg_dir_mat = np.identity(postmode.a_csr.shape[0])
+                elif self.settings.aggregation == HylaaSettings.AGG_ARNOLDI:
+
+                    if mid_state.predecessor is None:
+                        # aggregation with initial states, just use current mode dynamics
+                        pt = lputil.get_box_center(mid_state.lpi)
+                        agg_dir_mat = lputil.make_direction_matrix(pt, mid_state.mode.a_csr)
                     else:
-                        projected_dir_mat = premode_dir_mat * pred.transition.reset_csr.transpose()
+                        # aggregation with a predecessor, use arnoldi directions in predecessor mode in center of
+                        # middle aggregagted state, then project using the reset, and reorthogonalize
+                        
+                        pred = mid_state.predecessor
+                        assert isinstance(pred, TransitionPredecessor)
+                        premode = pred.state.mode
+                        pt = lputil.get_box_center(pred.transition_lpi)
+                        self.print_debug("aggregation point: {}".format(pt))
 
-                        self.print_debug("projected dir mat:\n{}".format(projected_dir_mat))
+                        premode_dir_mat = lputil.make_direction_matrix(pt, premode.a_csr)
+                        self.print_debug("premode dir mat:\n{}".format(premode_dir_mat))
 
-                        # re-orthgohonalize (and create new vectors if necessary)
-                        dims = mid_state.mode.a_csr.shape[0]
-                        agg_dir_mat = lputil.reorthogonalize_matrix(projected_dir_mat, dims)
+                        if pred.transition.reset_csr is None:
+                            agg_dir_mat = premode_dir_mat
+                        else:
+                            projected_dir_mat = premode_dir_mat * pred.transition.reset_csr.transpose()
+
+                            self.print_debug("projected dir mat:\n{}".format(projected_dir_mat))
+
+                            # re-orthgohonalize (and create new vectors if necessary)
+                            dims = mid_state.mode.a_csr.shape[0]
+                            agg_dir_mat = lputil.reorthogonalize_matrix(projected_dir_mat, dims)
 
                 self.print_debug("agg dir mat:\n{}".format(agg_dir_mat))
                 lpi_list = [state.lpi for state in agg_list]
-                new_lpi = lputil.aggregate(lpi_list, agg_dir_mat)
+                new_lpi = lputil.aggregate(lpi_list, agg_dir_mat, postmode)
 
                 predecessor = AggregationPredecessor(agg_list) # Note: these objects weren't clone()'d
                 rv = StateSet(new_lpi, first.mode, first.cur_step_since_start, predecessor)
@@ -495,7 +505,7 @@ class CounterExampleSegment(Freezable):
     def __repr__(self):
         return str(self)
 
-class HylaaResult(Freezable):
+class HylaaResult(Freezable): # pylint: disable=too-few-public-methods
     'result object returned by core.run()'
 
     def __init__(self):
