@@ -316,19 +316,22 @@ class PlotManager(Freezable):
             title = self.settings.label.title
             title = title if title is not None else ha.name
 
-            x_label = self.settings.label.x_label
-            x_label = x_label if x_label is not None else '$x_{{ {} }}$'.format(self.settings.xdim_dir)
-            y_label = self.settings.label.y_label
-            y_label = y_label if y_label is not None else '$x_{{ {} }}$'.format(self.settings.ydim_dir)
+            labels = []
+            label_settings = [self.settings.xdim_dir, self.settings.ydim_dir]
+            label_strings = [self.settings.label.x_label, self.settings.label.y_label]
 
-            if self.settings.label.x_label is None and self.settings.xdim_dir is None:
-                x_label = 'Time'
+            for label_setting, text in zip(label_settings, label_strings):
+                if text is not None:
+                    labels.append(text)
+                elif label_setting is None:
+                    labels.append('Time')
+                elif isinstance(label_setting, int):
+                    labels.append('$x_{{ {} }}$'.format(label_setting))
+                else:
+                    labels.append('')
 
-            if self.settings.label.y_label is None and self.settings.ydim_dir is None:
-                y_label = 'Time'
-
-            self.axes.set_xlabel(x_label, fontsize=self.settings.label.label_size)
-            self.axes.set_ylabel(y_label, fontsize=self.settings.label.label_size)
+            self.axes.set_xlabel(labels[0], fontsize=self.settings.label.label_size)
+            self.axes.set_ylabel(labels[1], fontsize=self.settings.label.label_size)
             self.axes.set_title(title, fontsize=self.settings.label.title_size)
 
             if self.settings.label.axes_limits is not None:

@@ -11,7 +11,7 @@ from hylaa.settings import HylaaSettings, PlotSettings
 from hylaa.core import Core
 from hylaa import lputil, lpplot
 
-from util import pair_almost_in, assert_verts_is_box
+from util import assert_verts_is_box
 
 def test_guard_strengthening():
     'simple 2-mode, 2-guard, 2d system with 1st guard A->B is x <= 2, 2nd guard A->B is y <= 2, and inv(B) is y <= 2'
