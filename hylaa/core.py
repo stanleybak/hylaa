@@ -381,19 +381,16 @@ class Core(Freezable):
         self.waiting_list = []
 
         for state in init_state_list:
-            print('.core, checking for init state feasiblitiy...')
             if not state.lpi.is_feasible():
-                self.print_normal("Removed infeasible initial set in mode {}".format(state.mode.name))
+                self.print_normal("Removed an infeasible initial set in mode {}".format(state.mode.name))
                 continue
-
-            print('ok, init state was feasible, checking if the invariant intersection is feasible')
             
             still_feasible = state.intersect_invariant()
 
             if still_feasible:
                 self.waiting_list.append(state)
             else:
-                self.print_normal("Removed infeasible initial set after invariant intersection in mode {}".format( \
+                self.print_normal("Removed an infeasible initial set after invariant intersection in mode {}".format( \
                         state.mode.name))
 
         if not self.waiting_list:

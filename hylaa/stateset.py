@@ -157,15 +157,12 @@ class StateSet(Freezable):
             self.invariant_constraint_rows = [None] * len(self.mode.inv_list)
 
         for invariant_index, lc in enumerate(self.mode.inv_list):
-            print(".invariant_index {}, stateset lpi:\n{}".format(invariant_index, self.lpi))
             if lputil.check_intersection(self.lpi, lc.negate()):
                 has_intersection = True
                 old_row = self.invariant_constraint_rows[invariant_index]
                 vec = lc.csr.toarray()[0]
                 rhs = lc.rhs
 
-                print(". has intersection, adding constraint {}".format(lc))
-                
                 if old_row is None:
                     # new constriant
                     row = lputil.add_init_constraint(self.lpi, vec, rhs, self.basis_matrix, self.input_effects_list)
@@ -175,6 +172,10 @@ class StateSet(Freezable):
                     row = lputil.try_replace_init_constraint(self.lpi, old_row, vec, rhs, self.basis_matrix, \
                                                              self.input_effects_list)
                     self.invariant_constraint_rows[invariant_index] = row
+
+                # adding the invariant condition may make the lp infeasible
+                if not self.lpi.is_feasible():
+                    break
 
         is_feasible = True if not has_intersection else self.lpi.is_feasible()
 

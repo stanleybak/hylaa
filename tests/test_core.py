@@ -538,7 +538,6 @@ def test_init_unsat():
     lpi1 = lputil.from_box([(10, 11), (0, 1)], mode)
     lpi2 = lputil.from_box([(0, 1), (0, 1)], mode)
 
-
     init_list = [StateSet(lpi1, mode), StateSet(lpi2, mode)]
 
     # settings
@@ -547,6 +546,4 @@ def test_init_unsat():
     settings.plot.plot_mode = PlotSettings.PLOT_NONE
     
     core = Core(ha, settings)
-    core.run(init_list)
-
-    # expect no exception during running
+    core.run(init_list)    # expect no exception during running
