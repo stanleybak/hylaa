@@ -16,6 +16,8 @@ from hylaa.timerutil import Timers
 class LpInstance(Freezable): # pylint: disable=too-many-public-methods
     'Linear programming wrapper using glpk (through swiglpk python interface)'
 
+    print_verbose = print # function for printing verbose information (reassigned in core)
+
     def __init__(self):
         'initialize the lp instance'
 
@@ -201,28 +203,31 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
 
         return rv
 
-    def __str__(self):
+    def __str__(self, plain_text=False):
         'get the LP as string (useful for debugging)'
 
-        def cur_var_print(s):
-            'print function for current variables'
+        if plain_text:
+            cur_var_print = bm_print = input_print = zero_print = lambda x: x
+        else:
+            def cur_var_print(s):
+                'print function for current variables'
 
-            return colored(s, on_color="on_cyan")
+                return colored(s, on_color="on_cyan")
 
-        def bm_print(s):
-            'print function for basis matrix'
+            def bm_print(s):
+                'print function for basis matrix'
 
-            return colored(s, on_color="on_red")
+                return colored(s, on_color="on_red")
 
-        def input_print(s):
-            'print function for input offset'
+            def input_print(s):
+                'print function for input offset'
 
-            return colored(s, on_color="on_green")
+                return colored(s, on_color="on_green")
 
-        def zero_print(s):
-            'print function for zeros'
+            def zero_print(s):
+                'print function for zeros'
 
-            return colored(s, 'white', attrs=['dark'])
+                return colored(s, 'white', attrs=['dark'])
 
         rows = glpk.glp_get_num_rows(self.lp)
         cols = glpk.glp_get_num_cols(self.lp)
@@ -442,10 +447,23 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         for c in range(cols):
             glpk.glp_set_col_stat(self.lp, c + 1, glpk.GLP_NF)
 
-    def is_feasible(self):
-        'check if the lp is feasible'
+    def is_feasible(self, retry_on_unsat=False):
+        '''check if the lp is feasible
 
-        return self.minimize(columns=[], fail_on_unsat=False) is not None
+        if retry_on_unsat is True, this will try resetting statuses and solving a second time if the first LP is
+        unsat (sometimes happens in GLPK due to likely bug)
+        '''
+
+        rv = self.minimize(columns=[], fail_on_unsat=False) is not None
+
+        if not rv and retry_on_unsat:
+            self.reset_lp()
+            rv = self.minimize(columns=[], fail_on_unsat=False) is not None
+
+            if rv:
+                LpInstance.print_verbose("Note: LP was infeasible, but then feasible after reseting statuses")
+
+        return rv
 
     def minimize(self, direction_vec=None, columns=None, fail_on_unsat=True):
         '''minimize the lp

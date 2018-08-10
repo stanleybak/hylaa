@@ -15,6 +15,7 @@ from hylaa.stateset import StateSet, TransitionPredecessor, AggregationPredecess
 from hylaa.hybrid_automaton import HybridAutomaton, was_tt_taken
 from hylaa.timerutil import Timers
 from hylaa.util import Freezable
+from hylaa.lpinstance import LpInstance
 from hylaa import lputil
 
 class Core(Freezable):
@@ -42,6 +43,8 @@ class Core(Freezable):
 
         # make random number generation (for example, to find orthogonal directions) deterministic
         np.random.seed(seed=0)
+
+        LpInstance.print_verbose = self.print_verbose
 
         self.freeze_attrs()
 
@@ -189,8 +192,9 @@ class Core(Freezable):
                     self.cur_state = None
                 else:
                     self.cur_state.step()
+                    is_feasible = self.cur_state.lpi.is_feasible(retry_on_unsat=True)
 
-                    if not self.cur_state.lpi.is_feasible():
+                    if not is_feasible:
                         self.print_normal("State became infeasible after updating basis matrix. " + \
                                           "Likely was barely feasible + numerical issues); removing state")
 
@@ -381,11 +385,8 @@ class Core(Freezable):
         self.waiting_list = []
 
         for state in init_state_list:
-            is_feasible = state.lpi.minimize(columns=[], fail_on_unsat=False) is not None
-
-            if not is_feasible:
+            if not state.lpi.is_feasible():
                 self.print_normal("Removed infeasible initial set in mode {}".format(state.mode.name))
-                    
                 continue
             
             still_feasible = state.intersect_invariant()

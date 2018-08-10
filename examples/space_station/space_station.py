@@ -65,7 +65,8 @@ def make_init(ha):
     mode = ha.modes['mode']
 
     dims = mode.a_csr.shape[0]
-    init_box = dims * [[-0.0001, 0.0001]]
+    print("todo: fix init_box")
+    init_box = dims * [[0, 0]] #[[-0.0001, 0.0001]]
     init_lpi = lputil.from_box(init_box, mode)
     
     init_list = [StateSet(init_lpi, mode)]
