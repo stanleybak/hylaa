@@ -71,6 +71,23 @@ class StateSet(Freezable):
 
         return "[StateSet in '{}']".format(self.mode.name)
 
+    def has_aggregation_precessor(self):
+        'does this state have an aggregation predecessor'
+
+        rv = False
+        state = self
+
+        while state.predecessor is not None:
+            if isinstance(state.predecessor, AggregationPredecessor):
+                rv = True
+                break
+            elif isinstance(state.predecessor, TransitionPredecessor):
+                state = state.predecessor.state
+            else:
+                raise RuntimeError("Unknown predecessor type: {}".format(type(state.predecessor)))
+
+        return rv
+            
     def step(self):
         'update the star based on values from a new simulation time instant'
 

@@ -137,7 +137,11 @@ class Core(Freezable):
                             round(self.settings.step_size * step_num, 12)))
 
         self.result.safe = False
-        self.result.counterexample = make_counterexample(self.hybrid_automaton, t, lpi)
+
+        if self.cur_state.has_aggregation_precessor():
+            self.result.counterexample = None
+        else:
+            self.result.counterexample = make_counterexample(self.hybrid_automaton, t, lpi)
 
     def check_guards(self):
         '''check for discrete successors with the guards'''
