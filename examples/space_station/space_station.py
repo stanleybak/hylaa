@@ -77,7 +77,7 @@ def make_settings():
     'make the reachability settings object'
 
     # see hylaa.settings for a list of reachability settings
-    settings = HylaaSettings(0.1, 20.0) # step size = 0.1, time bound 20.0
+    settings = HylaaSettings(0.1, 2.0) # step size = 0.1, time bound 20.0
     settings.plot.plot_mode = PlotSettings.PLOT_NONE
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
     settings.plot.filename = "space_station.png"
