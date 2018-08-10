@@ -11,7 +11,6 @@ This model demonstrates:
 '''
 
 from scipy.io import loadmat
-import scipy
 
 from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa.settings import HylaaSettings, PlotSettings
@@ -44,8 +43,6 @@ def make_automaton():
     # the third output defines the unsafe condition
     y3 = dynamics['C'][2]
 
-    print("y3 shape = {}".format(y3.shape))
-
     limit = 0.0005
     #limit = 0.0007
 
@@ -65,8 +62,7 @@ def make_init(ha):
     mode = ha.modes['mode']
 
     dims = mode.a_csr.shape[0]
-    print("todo: fix init_box")
-    init_box = dims * [[0, 0]] #[[-0.0001, 0.0001]]
+    init_box = dims * [[-0.0001, 0.0001]]
     init_lpi = lputil.from_box(init_box, mode)
     
     init_list = [StateSet(init_lpi, mode)]
@@ -77,8 +73,8 @@ def make_settings():
     'make the reachability settings object'
 
     # see hylaa.settings for a list of reachability settings
-    settings = HylaaSettings(0.1, 2.0) # step size = 0.1, time bound 20.0
-    settings.plot.plot_mode = PlotSettings.PLOT_NONE
+    settings = HylaaSettings(0.1, 20.0) # step size = 0.1, time bound 20.0
+    settings.plot.plot_mode = PlotSettings.PLOT_IMAGE
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
     settings.plot.filename = "space_station.png"
 

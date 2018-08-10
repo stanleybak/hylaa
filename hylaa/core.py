@@ -15,7 +15,7 @@ from hylaa.stateset import StateSet, TransitionPredecessor, AggregationPredecess
 from hylaa.hybrid_automaton import HybridAutomaton, was_tt_taken
 from hylaa.timerutil import Timers
 from hylaa.util import Freezable
-from hylaa.lpinstance import LpInstance
+from hylaa.lpinstance import LpInstance, UnsatError
 from hylaa import lputil
 
 class Core(Freezable):
@@ -192,15 +192,13 @@ class Core(Freezable):
                     self.cur_state = None
                 else:
                     self.cur_state.step()
-                    is_feasible = self.cur_state.lpi.is_feasible(retry_on_unsat=True)
 
-                    if not is_feasible:
+                    try:
+                        self.check_guards()
+                    except UnsatError:
                         self.print_normal("State became infeasible after updating basis matrix. " + \
                                           "Likely was barely feasible + numerical issues); removing state")
-
                         self.cur_state = None
-                    else:
-                        self.check_guards()
 
         Timers.toc('do_step_continuous_post')
 
@@ -345,12 +343,6 @@ class Core(Freezable):
             else:
                 self.do_step_continuous_post()
 
-            if self.is_finished():
-                if not self.result.safe:
-                    self.print_normal("Result: Error modes are reachable.\n")
-                else:
-                    self.print_normal("Result: System is safe. Error modes are NOT reachable.\n")
-
         Timers.toc('do_step')
 
     def setup(self, init_state_list):
@@ -430,14 +422,14 @@ class Core(Freezable):
         Timers.toc("total")
 
         if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
-            def print_func(msg):
-                'print function for print_stats()'
-                cprint(msg, self.settings.stdout_colors[HylaaSettings.STDOUT_VERBOSE])
-                
-            Timers.print_stats(print_func)
+            Timers.print_stats()
 
-        if self.settings.stdout >= HylaaSettings.STDOUT_NORMAL:
-            self.print_normal("Total Runtime: {:.2f} sec".format(Timers.top_level_timer.total_secs))
+        if not self.result.safe:
+            self.print_normal("Result: Error modes are reachable.\n")
+        else:
+            self.print_normal("Result: System is safe. Error modes are NOT reachable.\n")
+
+        self.print_normal("Total Runtime: {:.2f} sec".format(Timers.top_level_timer.total_secs))
 
         # assign results
         self.result.top_level_timer = Timers.top_level_timer

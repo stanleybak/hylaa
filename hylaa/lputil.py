@@ -12,6 +12,8 @@ import numpy as np
 import scipy as sp
 from scipy.sparse import csr_matrix, csc_matrix
 
+import swiglpk as glpk
+
 from hylaa.lpinstance import LpInstance
 from hylaa.timerutil import Timers
 
@@ -128,33 +130,27 @@ def set_basis_matrix(lpi, basis_mat):
     assert basis_mat.shape[0] == basis_mat.shape[1], "expected square matrix"
     assert basis_mat.shape[0] == lpi.dims, "basis matrix wrong shape"
 
-    # do it row by row, assume -I is first part, and last N is basis matrix
+    # this is done using the optimized swigvec interface in lpinstance
 
-    # make constraints as csr_matrix
-    data = []
-    inds = []
-    indptr = [0]
+    data_vec_list = [] # list of swig doubleArray objects for each row
 
     # 0 BM 0 -I 0 (I? <- if inputs exist)
     for row in range(lpi.dims):
-        for col in range(lpi.dims):
-            data.append(basis_mat[row, col])
-            inds.append(col + lpi.basis_mat_pos[1])
-            
-        data.append(-1)
-        inds.append(lpi.cur_vars_offset + row)
+        data = []
+
+        data += basis_mat[row].tolist()
+        
+        data.append(-1.0)
 
         if lpi.input_effects_offsets is not None:
-            data.append(1)
-            inds.append(row + lpi.input_effects_offsets[1])
+            data.append(1.0)
 
-        indptr.append(len(data))
+        data_vec_list.append(glpk.as_doubleArray(data))
 
-    mat = csr_matrix((data, inds, indptr), shape=(lpi.dims, lpi.get_num_cols()), dtype=float)
-
-    mat.check_format()
+    entries_per_row = basis_mat.shape[0] + 1 + (1 if lpi.input_effects_offsets else 0)
+    count_list = [entries_per_row] * basis_mat.shape[0]
         
-    lpi.set_constraints_csr(mat, offset=(lpi.basis_mat_pos[0], 0))
+    lpi.set_constraints_swigvec_rows(data_vec_list, lpi.bm_indices, count_list, lpi.basis_mat_pos[0])
 
 def add_input_effects_matrix(lpi, input_mat, mode):
     'add an input effects matrix to this lpi'

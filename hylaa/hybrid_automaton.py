@@ -372,7 +372,7 @@ class Transition(Freezable):
             # row is csr_matrix of a single row
             lpi.set_minimize_direction(row, is_csr=True)
             columns = [lpi.cur_vars_offset + i for i in row.indices]
-            result = lpi.minimize(columns=columns)
+            result = lpi.minimize(columns=columns, retry_on_unsat=True)
 
             dot_res = np.dot(result, row.data)
 

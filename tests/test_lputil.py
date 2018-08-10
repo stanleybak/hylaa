@@ -3,7 +3,6 @@ Tests for LP operations. Made for use with py.test
 '''
 
 import math
-import random
 
 import numpy as np
 
@@ -15,7 +14,7 @@ import swiglpk as glpk
 from hylaa import lputil, lpplot
 from hylaa.hybrid_automaton import HybridAutomaton, LinearConstraint
 
-from util import pair_almost_in, assert_verts_is_box
+from util import assert_verts_is_box
 
 def test_from_box():
     'tests from_box'

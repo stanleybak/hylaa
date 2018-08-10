@@ -32,8 +32,14 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         # internal bookkeeping
         self.obj_cols = [] # columns in the LP with an assigned objective coefficient
         self.names = [] # column names
+        self.bm_indices = None # a list of intArray for each row, assigned on set_reach_vars
 
         self.freeze_attrs()
+
+    def __del__(self):
+        if hasattr(self, 'lp') and self.lp is not None:
+            glpk.glp_delete_prob(self.lp)
+            self.lp = None
 
     def clone(self):
         'create a copy of this lp instance'
@@ -66,10 +72,31 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         self.cur_vars_offset = cur_vars_offset #num_cols - dims # right-most variables
         self.input_effects_offsets = input_effects_offsets
 
-    def __del__(self):
-        if hasattr(self, 'lp') and self.lp is not None:
-            glpk.glp_delete_prob(self.lp)
-            self.lp = None
+        self._create_bm_indices()
+
+    def _create_bm_indices(self):
+        '''create a cached version the basis matrix indices
+
+        This is done for efficiency instead of creating them each time the basis matrix is changed.
+        '''
+
+        # basis matrix rows are as follows:
+        # 0 BM 0 -I 0 (I? <- if inputs exist)
+
+        self.bm_indices = []
+
+        for row in range(self.dims):
+            cur_row = []
+            
+            for col in range(self.dims):
+                cur_row.append(1 + col + self.basis_mat_pos[1])
+
+            cur_row.append(1 + self.cur_vars_offset + row)
+
+            if self.input_effects_offsets is not None:
+                cur_row.append(1 + row + self.input_effects_offsets[1])
+
+            self.bm_indices.append(glpk.as_intArray(cur_row))
 
     def _column_names_str(self, cur_var_print):
         'get the line in __str__ for the column names'
@@ -329,19 +356,30 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         for row in range(csr_mat.shape[0]):
             # we must copy the indices since glpk is offset by 1 :(
             count = int(indptr[row + 1] - indptr[row])
-            indices_vec = glpk.intArray(count + 1)
-            v_index = 1
 
-            for index in range(indptr[row], indptr[row + 1]):
-                indices_vec[v_index] = 1 + offset[1] + int(indices[index])
-                v_index += 1
+            indices_list = [1 + offset[1] + int(indices[index]) for index in range(indptr[row], indptr[row+1])]
+            indices_vec = glpk.as_intArray(indices_list)
 
             data_row_list = data_list[indptr[row]:indptr[row+1]]
-            data_ptr = glpk.as_doubleArray(data_row_list)
+            data_vec = glpk.as_doubleArray(data_row_list)
 
-            glpk.glp_set_mat_row(self.lp, offset[0] + row + 1, count, indices_vec, data_ptr)
+            glpk.glp_set_mat_row(self.lp, offset[0] + row + 1, count, indices_vec, data_vec)
 
         Timers.toc('set_constraints_csr')
+
+    def set_constraints_swigvec_rows(self, data_vec_list, indices_vec_list, count_list, row_offset):
+        '''An optimized / lower level way to set row constraints compared with set_constraints_csr
+
+        The passed in fields are a list of swig data vector and indices vectors (one for each row), as
+        well as a row offset.
+        '''
+
+        Timers.tic('set_constraints_swigvec_rows')
+
+        for row, (data, indices, count) in enumerate(zip(data_vec_list, indices_vec_list, count_list)):
+            glpk.glp_set_mat_row(self.lp, 1 + row_offset + row, count, indices, data)
+
+        Timers.toc('set_constraints_swigvec_rows')
 
     def set_constraints_csc(self, csc_mat, offset=None):
         '''set the constrains column by column to be equal to the passed-in csc matrix
@@ -378,19 +416,13 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
             # we must copy the indices since glpk is offset by 1 :(
             count = int(indptr[col + 1] - indptr[col])
 
-            indices_vec = glpk.intArray(count + 1)
-            indices_vec_copy = [0] * (count + 1)
-            v_index = 1
-
-            for index in range(indptr[col], indptr[col + 1]):
-                indices_vec[v_index] = 1 + offset[0] + int(indices[index])
-                indices_vec_copy[v_index] = 1 + offset[0] + int(indices[index])
-                v_index += 1
+            indices_list = [1 + offset[0] + int(indices[index]) for index in range(indptr[col], indptr[col+1])]
+            indices_vec = glpk.as_intArray(indices_list)
 
             data_row_list = data_list[indptr[col]:indptr[col+1]]
-            data_ptr = glpk.as_doubleArray(data_row_list)
+            data_vec = glpk.as_doubleArray(data_row_list)
 
-            glpk.glp_set_mat_col(self.lp, offset[1] + col + 1, count, indices_vec, data_ptr)
+            glpk.glp_set_mat_col(self.lp, offset[1] + col + 1, count, indices_vec, data_vec)
 
         Timers.toc('set_constraints_csc')
 
@@ -447,30 +479,20 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         for c in range(cols):
             glpk.glp_set_col_stat(self.lp, c + 1, glpk.GLP_NF)
 
-    def is_feasible(self, retry_on_unsat=False):
+    def is_feasible(self):
         '''check if the lp is feasible
-
-        if retry_on_unsat is True, this will try resetting statuses and solving a second time if the first LP is
-        unsat (sometimes happens in GLPK due to likely bug)
         '''
 
-        rv = self.minimize(columns=[], fail_on_unsat=False) is not None
+        return self.minimize(columns=[], fail_on_unsat=False) is not None
 
-        if not rv and retry_on_unsat:
-            self.reset_lp()
-            rv = self.minimize(columns=[], fail_on_unsat=False) is not None
-
-            if rv:
-                LpInstance.print_verbose("Note: LP was infeasible, but then feasible after reseting statuses")
-
-        return rv
-
-    def minimize(self, direction_vec=None, columns=None, fail_on_unsat=True):
+    def minimize(self, direction_vec=None, columns=None, fail_on_unsat=True, retry_on_unsat=False):
         '''minimize the lp
 
         if direction_vec is not None, this will first assign the optimization direction
         if columns is not None, will only return the requested columns (default= all columns)
         if fail_on_unsat is True and the LP is infeasible, a UnsatError is raised
+        if retry_on_unsat is True, this will try resetting statuses and solving a second time if the first LP is
+        unsat (sometimes happens in GLPK due to likely bug, see space station model)
 
         returns None if UNSAT, otherwise the optimization result. Use columns=[] if you're not interested in the result
         '''
@@ -501,6 +523,13 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         rv = self._process_simplex_result(simplex_res, columns)
 
         Timers.toc('minimize')
+
+        if rv is None and retry_on_unsat:
+            #self.reset_lp()
+            rv = self.minimize(direction_vec, columns, fail_on_unsat, False)
+
+            if rv is not None:
+                LpInstance.print_verbose("Note: LP was infeasible, but then feasible after retrying")
 
         if rv is None and fail_on_unsat:
             raise UnsatError("minimize returned UNSAT and fail_on_unsafe was True")

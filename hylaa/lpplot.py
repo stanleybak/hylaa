@@ -27,9 +27,46 @@ def get_verts(lpi, xdim=0, ydim=1, plot_vecs=None, cur_time=0.0):
         plot_vecs = make_plot_vecs()
 
     try:
-        pts = _find_boundary_pts(lpi, xdim, ydim, plot_vecs)
+        if xdim is None and ydim is None:
+            pts = [[cur_time, cur_time]]
+        elif xdim is None:
+            # plot over time
+            if isinstance(ydim, int):
+                ydim = np.array([1.0 if dim == ydim else 0.0 for dim in range(lpi.dims)], dtype=float)
 
-        verts = [[pt[0], pt[1]] for pt in pts]
+            lpi.set_minimize_direction(ydim)
+            res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)])
+            ymin = np.dot(ydim, res)
+
+            lpi.set_minimize_direction(-1 * ydim)
+            res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)])
+            ymax = np.dot(ydim, res)
+
+            verts = [[cur_time, ymin]]
+
+            if abs(ymin - ymax) > 1e-9:
+                verts.append([cur_time, ymax])
+        elif ydim is None:
+            # plot over time
+            if isinstance(xdim, int):
+                xdim = np.array([1.0 if dim == xdim else 0.0 for dim in range(lpi.dims)], dtype=float)
+
+            lpi.set_minimize_direction(xdim)
+            res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)])
+            xmin = np.dot(xdim, res)
+
+            lpi.set_minimize_direction(-1 * xdim)
+            res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)])
+            xmax = np.dot(xdim, res)
+
+            verts = [[xmin, cur_time]]
+
+            if abs(xmin - xmax) > 1e-9:
+                verts.append([xmax, cur_time])
+        else:
+            # 2-d plot
+            pts = _find_boundary_pts(lpi, xdim, ydim, plot_vecs)
+            verts = [[pt[0], pt[1]] for pt in pts]
 
         # wrap polygon back to first point
         verts.append(verts[0])
