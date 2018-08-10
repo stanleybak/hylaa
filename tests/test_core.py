@@ -524,4 +524,29 @@ def test_inputs_reset():
     for i in c2.inputs:
         assert len(i) == 1
         assert abs(i[0] - 2) < 1e-9
-        
+
+def test_init_unsat():
+    'initial region unsat with multiple invariant conditions'
+
+    ha = HybridAutomaton()
+
+    mode = ha.new_mode('A')
+    mode.set_dynamics(np.identity(2))
+    mode.set_invariant([[1, 0], [1, 0]], [2, 3]) # x <= 2 and x <= 3
+    
+    # initial set
+    lpi1 = lputil.from_box([(10, 11), (0, 1)], mode)
+    lpi2 = lputil.from_box([(0, 1), (0, 1)], mode)
+
+
+    init_list = [StateSet(lpi1, mode), StateSet(lpi2, mode)]
+
+    # settings
+    settings = HylaaSettings(1, 5)
+    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
+    
+    core = Core(ha, settings)
+    core.run(init_list)
+
+    # expect no exception during running

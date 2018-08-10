@@ -505,7 +505,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         # setup lp params
         params = glpk.glp_smcp()
         glpk.glp_init_smcp(params)
-        #params.msg_lev = glpk.GLP_MSG_OFF
+        params.msg_lev = glpk.GLP_MSG_OFF
         params.tm_lim = 1000 # 1 second time limit
 
         Timers.tic('glp_simplex')
@@ -529,6 +529,8 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
 
         if rv is None and retry_on_unsat:
             self.reset_lp()
+
+            LpInstance.print_verbose("Note: retry_on_unsat was true, trying minimize() again...")
             rv = self.minimize(direction_vec, columns, fail_on_unsat, False)
 
             if rv is not None:

@@ -219,6 +219,8 @@ def check_intersection(lpi, lc, tol=1e-13):
 
     Timers.toc("check_intersection")
 
+    print(".lputil check_intersection returning {} <= {} ({})".format(dot_res + tol, lc.rhs, dot_res + tol <= lc.rhs))
+
     return dot_res + tol <= lc.rhs
 
 def add_init_constraint(lpi, vec, rhs, basis_matrix=None, input_effects_list=None):
