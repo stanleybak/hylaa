@@ -505,18 +505,21 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         # setup lp params
         params = glpk.glp_smcp()
         glpk.glp_init_smcp(params)
-        params.msg_lev = glpk.GLP_MSG_OFF
+        #params.msg_lev = glpk.GLP_MSG_OFF
+        params.tm_lim = 1000 # 1 second time limit
 
         Timers.tic('glp_simplex')
         simplex_res = glpk.glp_simplex(self.lp, params)
         Timers.toc('glp_simplex')
 
         if simplex_res != 0:
+            LpInstance.print_verbose('Note: simplex() returned nonzero, trying to reset statuses and solving again')
             # sometimes the previous solution is singular wrt. current constraints.
             # for example, if the previous solution is on an orthogonal subspace to the current solution after
             # changing the basis matrix. Try resetting the solution and resolving.
             self.reset_lp()
 
+            params.tm_lim = 30 * 1000 # second try: 30 second time limit
             simplex_res = glpk.glp_simplex(self.lp, params)
 
         # process simplex result
@@ -525,11 +528,11 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         Timers.toc('minimize')
 
         if rv is None and retry_on_unsat:
-            #self.reset_lp()
+            self.reset_lp()
             rv = self.minimize(direction_vec, columns, fail_on_unsat, False)
 
             if rv is not None:
-                LpInstance.print_verbose("Note: LP was infeasible, but then feasible after retrying")
+                LpInstance.print_verbose("Note: LP was infeasible, but then feasible after resetting statuses")
 
         if rv is None and fail_on_unsat:
             raise UnsatError("minimize returned UNSAT and fail_on_unsafe was True")
