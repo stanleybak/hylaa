@@ -18,7 +18,7 @@ from matplotlib.lines import Line2D
 
 from hylaa import lpplot
 from hylaa.timerutil import Timers
-from hylaa.settings import HylaaSettings, PlotSettings
+from hylaa.settings import PlotSettings
 from hylaa.util import Freezable
 
 def lighter(rgb_col):
@@ -57,14 +57,20 @@ class ModeColors(Freezable):
         # remove any colors with 'white' or 'yellow in the name
         skip_colors_substrings = ['white', 'yellow']
         skip_colors_exact = ['black', 'red', 'blue']
+        skip_colors_threshold = 0.75 # skip colors lighter than this threshold (avg rgb value)
 
         for col in colors.cnames:
             skip = False
 
-            for col_substring in skip_colors_substrings:
-                if col_substring in col:
-                    skip = True
-                    break
+            r, g, b, _ = colors.to_rgba(col)
+            avg = (r + g + b) / 3.0
+            if avg > skip_colors_threshold:
+                skip = True
+            else:
+                for col_substring in skip_colors_substrings:
+                    if col_substring in col:
+                        skip = True
+                        break
 
             if not skip and not col in skip_colors_exact:
                 self.all_colors.append(col)
@@ -447,11 +453,17 @@ class PlotManager(Freezable):
             'event function for next button press'
             self.interactive.paused = False
 
+            if self.core.is_finished():
+                self.core.print_normal("Computation is finished")
+
         def step_pressed(_):
             'event function for step button press'
             
             self.interactive.paused = False
             self.interactive.step = True
+
+            if self.core.is_finished():
+                self.core.print_normal("Computation is finished")
 
         iterator = anim_iterator
 
