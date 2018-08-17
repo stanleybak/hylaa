@@ -148,21 +148,29 @@ class Core(Freezable):
 
         Timers.tic("check_guards")
 
-        transitions = self.cur_state.mode.transitions
+        try:
+            transitions = self.cur_state.mode.transitions
 
-        for t in transitions:
-            t_lpi = t.get_guard_intersection(self.cur_state.lpi)
-            
-            if t_lpi:
-                if t.to_mode.is_error():
-                    self.error_reached(t, t_lpi)
-                    break
-                else:
-                    self.take_transition(t, t_lpi)
+            for t in transitions:
+                t_lpi = t.get_guard_intersection(self.cur_state.lpi)
+
+                if t_lpi:
+                    if t.to_mode.is_error():
+                        self.error_reached(t, t_lpi)
+                        break
+                    else:
+                        self.take_transition(t, t_lpi)
 
                     # current state may have become infeasible
                     if self.cur_state is None:
                         break
+
+        except UnsatError:
+            self.print_normal("State became infeasible after checking guards. " + \
+                                      "Likely was barely feasible + numerical issues); removing state.")
+            self.cur_state = None
+
+            raise RuntimeError("debug")
 
         Timers.toc("check_guards")
 
@@ -196,13 +204,7 @@ class Core(Freezable):
                     self.cur_state = None
                 else:
                     self.cur_state.step()
-
-                    try:
-                        self.check_guards()
-                    except UnsatError:
-                        self.print_normal("State became infeasible after updating basis matrix. " + \
-                                          "Likely was barely feasible + numerical issues); removing state")
-                        self.cur_state = None
+                    self.check_guards()
 
         Timers.toc('do_step_continuous_post')
 

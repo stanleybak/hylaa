@@ -111,6 +111,7 @@ class StateSet(Freezable):
             lputil.add_input_effects_matrix(self.lpi, input_effects_matrix, self.mode)
             Timers.toc('add_input_effects')
 
+        #print("after adding basis matrices... feasilble = {}".format(self.lpi.is_feasible()))
         self._verts = None # cached vertices no longer valid
 
         Timers.toc("step")

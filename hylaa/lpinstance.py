@@ -13,6 +13,34 @@ import swiglpk as glpk
 from hylaa.util import Freezable
 from hylaa.timerutil import Timers
 
+def debug_set_basis_matrix(lpi, basis_mat):
+    'modify the lpi in place to set the basis matrix'
+
+    assert basis_mat.shape[0] == basis_mat.shape[1], "expected square matrix"
+    assert basis_mat.shape[0] == lpi.dims, "basis matrix wrong shape"
+
+    # this is done using the optimized swigvec interface in lpinstance
+
+    data_vec_list = [] # list of swig doubleArray objects for each row
+
+    # 0 BM 0 -I 0 (I? <- if inputs exist)
+    for row in range(lpi.dims):
+        data = []
+
+        data += basis_mat[row].tolist()
+        
+        data.append(-1.0)
+
+        if lpi.input_effects_offsets is not None:
+            data.append(1.0)
+
+        data_vec_list.append(glpk.as_doubleArray(data))
+
+    entries_per_row = basis_mat.shape[0] + 1 + (1 if lpi.input_effects_offsets else 0)
+    count_list = [entries_per_row] * basis_mat.shape[0]
+        
+    lpi.set_constraints_swigvec_rows(data_vec_list, lpi.bm_indices, count_list, lpi.basis_mat_pos[0])
+
 class LpInstance(Freezable): # pylint: disable=too-many-public-methods
     'Linear programming wrapper using glpk (through swiglpk python interface)'
 
@@ -469,15 +497,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
     def reset_lp(self):
         'reset all the column and row statuses of the LP'
 
-        # set the status of all columns to GLP_NF and all rows are GLP_BS
-        rows = glpk.glp_get_num_rows(self.lp)
-        cols = glpk.glp_get_num_cols(self.lp)
-
-        for r in range(rows):
-            glpk.glp_set_row_stat(self.lp, r + 1, glpk.GLP_BS)
-
-        for c in range(cols):
-            glpk.glp_set_col_stat(self.lp, c + 1, glpk.GLP_NF)
+        glpk.glp_std_basis(self.lp)
 
     def is_feasible(self):
         '''check if the lp is feasible
@@ -505,6 +525,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         # setup lp params
         params = glpk.glp_smcp()
         glpk.glp_init_smcp(params)
+        params.meth = glpk.GLP_DUALP # use dual simplex since we're reoptimizing often
         params.msg_lev = glpk.GLP_MSG_OFF
         params.tm_lim = 1000 # 1 second time limit
 
@@ -513,12 +534,9 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         Timers.toc('glp_simplex')
 
         if simplex_res != 0:
-            LpInstance.print_verbose('Note: simplex() returned nonzero, trying to reset statuses and solving again')
-            # sometimes the previous solution is singular wrt. current constraints.
-            # for example, if the previous solution is on an orthogonal subspace to the current solution after
-            # changing the basis matrix. Try resetting the solution and resolving.
-            self.reset_lp()
-
+            LpInstance.print_verbose('Note: simplex() returned nonzero, resetting initial basis and solving again')
+            glpk.glp_cpx_basis(self.lp) # resets the initial basis
+            params.msg_lev = glpk.GLP_MSG_ON # turn printing on
             params.tm_lim = 30 * 1000 # second try: 30 second time limit
             simplex_res = glpk.glp_simplex(self.lp, params)
 
@@ -528,9 +546,10 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         Timers.toc('minimize')
 
         if rv is None and retry_on_unsat:
-            self.reset_lp()
+            LpInstance.print_verbose("Note: minimize failed with retry_on_unsat was true, resetting and retrying...")
+                        
+            glpk.glp_cpx_basis(self.lp) # resets the initial basis
 
-            LpInstance.print_verbose("Note: retry_on_unsat was true, trying minimize() again...")
             rv = self.minimize(direction_vec, columns, fail_on_unsat, False)
 
             if rv is not None:

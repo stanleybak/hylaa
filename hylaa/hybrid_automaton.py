@@ -370,8 +370,14 @@ class Transition(Freezable):
 
         for i, row in enumerate(self.guard_csr):
             # row is csr_matrix of a single row
+            
             lpi.set_minimize_direction(row, is_csr=True)
+
+            #print('.1 hybrid_automaton t={}, is_feasible before = {}'.format(i, lpi.is_feasible()))
+            #print('.2 hybrid_automaton t={}, is_feasible before = {}'.format(i, lpi.is_feasible()))
+            
             columns = [lpi.cur_vars_offset + i for i in row.indices]
+
             result = lpi.minimize(columns=columns, retry_on_unsat=True)
 
             dot_res = np.dot(result, row.data)
