@@ -45,6 +45,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
     'Linear programming wrapper using glpk (through swiglpk python interface)'
 
     print_verbose = print # function for printing verbose information (reassigned in core)
+    print_debug = print # function for printing debug information
 
     def __init__(self):
         'initialize the lp instance'
@@ -203,7 +204,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         vals = glpk.doubleArray(cols + 1)
 
         for row in range(1, rows + 1):
-            rv += "{} ".format(stat_labels[glpk.glp_get_row_stat(lp, row)])
+            rv += "{:2}: {} ".format(row-1, stat_labels[glpk.glp_get_row_stat(lp, row)])
 
             num_inds = glpk.glp_get_mat_row(lp, row, inds, vals)
 
@@ -534,7 +535,9 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         Timers.toc('glp_simplex')
 
         if simplex_res != 0:
-            LpInstance.print_verbose('Note: simplex() returned nonzero, resetting initial basis and solving again')
+            LpInstance.print_verbose('Note: simplex() failed ({}), resetting and retrying'.format(simplex_res))
+            print(self)
+            raise RuntimeError("debug todo remove")
             glpk.glp_cpx_basis(self.lp) # resets the initial basis
             params.msg_lev = glpk.GLP_MSG_ON # turn printing on
             params.tm_lim = 30 * 1000 # second try: 30 second time limit
@@ -695,11 +698,54 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         assert 0 <= row_index < rows, "Invalid row ({}) passed to del_constraint() (lp has {})".format(
             row_index, rows)
 
+        # If you need to delete an active row, make it free first
+        # If the current basis is valid (whether optimal or not) and if you
+        # delete active rows (i.e. the rows for which glp_get_row_stat returns
+        # GLP_NL, GLP_NU, GLP_NF, or GLP_NS) and/or basic columns (i.e. the
+        # columns for which glp_get_col_stat returns GLP_BS), the basis becomes
+        # invalid. To keep it valid you either have not to delete such rows or
+        # columns or have to change the statuses of remaining rows and columns
+        # appropriately.
+
+        active_stats = [glpk.GLP_NL, glpk.GLP_NU, glpk.GLP_NF, glpk.GLP_NS]
+        del_row_stat = glpk.glp_get_row_stat(self.lp, row_index + 1)
+        
+        # find another row to make active
+        if del_row_stat in active_stats:
+            LpInstance.print_debug("deleting active row #{} from LP, attempting to first activate another row".format(
+                row_index))
+            found = False
+            
+            for other_row in range(rows-1, -1, -1):
+                stat = glpk.glp_get_row_stat(self.lp, other_row + 1)
+
+                if stat not in active_stats:
+                    LpInstance.print_debug("Found an inactivate row to activate: {}".format(other_row))
+                    found = True
+                
+                    row_type = glpk.glp_get_row_type(self.lp, other_row + 1)
+
+                    if row_type == glpk.GLP_FX: # change to NF
+                        glpk.glp_set_row_stat(self.lp, other_row + 1, glpk.GLP_NF)
+                    elif row_type == glpk.GLP_UP: # change to NU
+                        glpk.glp_set_row_stat(self.lp, other_row + 1, glpk.GLP_NU)
+                    elif row_type == glpk.GLP_LO: # change to NL
+                        glpk.glp_set_row_stat(self.lp, other_row + 1, glpk.GLP_NL)
+                    else: # change to NS
+                        glpk.glp_set_row_stat(self.lp, other_row + 1, glpk.GLP_NS)
+
+                    break
+
         nrs = 1
         rows = glpk.intArray(2)
         rows[1] = row_index + 1
 
         glpk.glp_del_rows(self.lp, nrs, rows)
+
+        if not found: # didn't find another row to make active
+            LpInstance.print_verbose("Didn't find an inactivate row to activate... resetting lp basis")
+            # last resort: reset the lp basis (this kills warm-start)
+            glpk.glp_std_basis(self.lp)
 
     def set_constraint_rhs(self, row_index, rhs):
         '''change an existing constraint's right hand side'''

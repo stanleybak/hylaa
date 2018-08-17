@@ -290,6 +290,8 @@ def try_replace_init_constraint(lpi, old_row_index, direction, rhs, basis_mat=No
     if basis_mat is None:
         basis_mat = get_basis_matrix(lpi)
 
+    print " NEW ALGORITHM TO DO THIS: REPLACE THE CONSTRAINT, THEN OPTIMIZE IN THE DIRECTION OF THE OLD CONSTRAINT TO CHECK IF FEASIBLE! AVOID DELETING ROWS"
+
     # how can we check if the passed in constraint is stronger than the existing one?
     # if negating the existing constraint, and adding the new one is UNSAT
     rv = None
@@ -308,10 +310,12 @@ def try_replace_init_constraint(lpi, old_row_index, direction, rhs, basis_mat=No
         rv = new_row_index
     else:
         # keep only the new constraint
+        print("keeping only the new constraint")
+        print(lpi)
         
         # delete new constraint row
         lpi.del_constraint(new_row_index)
-
+    
         # replace the old constraint row with the new constraint condition
         dims = basis_mat.shape[0]
 
@@ -328,6 +332,8 @@ def try_replace_init_constraint(lpi, old_row_index, direction, rhs, basis_mat=No
         lpi.set_constraint_rhs(old_row_index, rhs)
 
         rv = old_row_index
+
+        print(lpi)
 
     return rv
 

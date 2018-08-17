@@ -45,6 +45,7 @@ class Core(Freezable):
         np.random.seed(seed=0)
 
         LpInstance.print_verbose = self.print_verbose
+        LpInstance.print_debug = self.print_debug
 
         self.freeze_attrs()
 
@@ -243,13 +244,14 @@ class Core(Freezable):
                 self.print_verbose("Removed {} states for aggregation".format(len(agg_list)))
                 # create a new state from the aggregation
                 postmode = agg_list[0].mode
+                postmode_dims = postmode.a_csr.shape[0]
                 mid_index = len(agg_list) // 2
                 mid_state = agg_list[mid_index]
                 pred = mid_state.predecessor
 
                 if self.settings.aggregation == HylaaSettings.AGG_BOX:
-                    agg_dir_mat = np.identity(postmode.a_csr.shape[0])
-                elif self.settings.aggregation == HylaaSettings.AGG_ARNOLDI:
+                    agg_dir_mat = np.identity(postmode_dims)
+                elif self.settings.aggregation == HylaaSettings.AGG_ARNOLDI_BOX:
 
                     if pred is None:
                         # aggregation with initial states, just use current mode dynamics
@@ -275,8 +277,24 @@ class Core(Freezable):
                             self.print_debug("projected dir mat:\n{}".format(projected_dir_mat))
 
                             # re-orthgohonalize (and create new vectors if necessary)
-                            dims = mid_state.mode.a_csr.shape[0]
-                            agg_dir_mat = lputil.reorthogonalize_matrix(projected_dir_mat, dims)
+                            agg_dir_mat = lputil.reorthogonalize_matrix(projected_dir_mat, postmode_dims)
+
+                        # also add box directions in target mode (if they don't already exist)
+                        box_dirs = []
+                        for dim in range(postmode_dims):
+                            direction = [0 if d != dim else 1 for d in range(postmode_dims)]
+                            exists = False
+
+                            for row in agg_dir_mat:
+                                if np.allclose(direction, row):
+                                    exists = True
+                                    break
+
+                            if not exists:
+                                box_dirs.append(direction)
+
+                        if box_dirs:
+                            agg_dir_mat = np.concatenate((agg_dir_mat, box_dirs), axis=0)
 
                 if pred and self.settings.aggregation_add_guard:
                     # add all the guard conditions to the agg_dir_mat

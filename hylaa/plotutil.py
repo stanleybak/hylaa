@@ -76,7 +76,7 @@ class ModeColors(Freezable):
                 self.all_colors.append(col)
 
         # we'll re-add these later; remove them before shuffling
-        first_colors = ['lime', 'cyan', 'orange', 'magenta', 'green']
+        first_colors = ['lime', 'orange', 'cyan', 'magenta', 'green']
 
         for col in first_colors:
             self.all_colors.remove(col)

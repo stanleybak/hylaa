@@ -489,11 +489,17 @@ def test_agg_ha():
 
     lpi = core.cur_state.lpi
 
+    # 3 constraints from basis matrix
+    # 2 aggregation directions from premode arnoldi, +1 from null space
+    # + 2 more aggregation directions from box (3rd is omited since it's exactly the same as null space direction)
+
+    #print(lpi)
     #xs, ys = zip(*core.cur_state.verts(core.plotman))
     #plt.plot(xs, ys, 'r--')
     #plt.show()
 
-    assert lputil.is_point_in_lpi((-5.5, 0, 1), lpi)
+    assert lpi.get_num_rows() == 3 + 2 * (5)
+    assert lputil.is_point_in_lpi((-5, 2, 1), lpi)
 
 def test_agg_no_counterexample():
     'test that aggregation to error does not create a counterexample'

@@ -19,7 +19,7 @@ class HylaaSettings(Freezable):  # pylint: disable=too-few-public-methods
 
     STDOUT_NONE, STDOUT_NORMAL, STDOUT_VERBOSE, STDOUT_DEBUG = range(4)
 
-    AGG_NONE, AGG_BOX, AGG_ARNOLDI = range(3)
+    AGG_NONE, AGG_BOX, AGG_ARNOLDI_BOX = range(3)
 
     def __init__(self, step_size, max_time):
         plot_settings = PlotSettings()
@@ -36,7 +36,7 @@ class HylaaSettings(Freezable):  # pylint: disable=too-few-public-methods
         self.do_guard_strengthening = True # add invariants of target modes to each guard?
         self.optimize_tt_transitions = True # auto-detect time-triggered transitions and use single-step semantics?
         
-        self.aggregation = HylaaSettings.AGG_ARNOLDI # transition aggregation method
+        self.aggregation = HylaaSettings.AGG_ARNOLDI_BOX # transition aggregation method
         self.aggregation_add_guard = True # when performing aggregation, also add the guard direction?
 
         self.freeze_attrs()
