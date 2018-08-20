@@ -16,8 +16,9 @@ from hylaa.timerutil import Timers
 class LpInstance(Freezable): # pylint: disable=too-many-public-methods
     'Linear programming wrapper using glpk (through swiglpk python interface)'
 
+    print_normal = print # function for printing normal information (reassigned in core)
     print_verbose = print # function for printing verbose information (reassigned in core)
-    print_debug = print # function for printing debug information
+    print_debug = print # function for printing debug information (reassigned in core)
 
     def __init__(self):
         'initialize the lp instance'
@@ -516,7 +517,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
 
         if simplex_res != 0:
             # this can happen when you replace constraints after already solving once
-            LpInstance.print_verbose('Note: simplex() failed ({}), resetting and retrying'.format(simplex_res))
+            LpInstance.print_normal('Note: simplex() failed ({}), resetting and retrying'.format(simplex_res))
 
             if simplex_res == glpk.GLP_ESING: # singular matrix, can happen after replacing constraints
                 glpk.glp_std_basis(self.lp)
@@ -534,7 +535,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         Timers.toc('minimize')
 
         if rv is None and retry_on_unsat:
-            LpInstance.print_verbose("Note: minimize failed with retry_on_unsat was true, resetting and retrying...")
+            LpInstance.print_normal("Note: minimize failed with retry_on_unsat was true, resetting and retrying...")
                         
             glpk.glp_cpx_basis(self.lp) # resets the initial basis
 
@@ -648,8 +649,6 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
                 raise RuntimeError("LP status after solving in minimize() was <Unknown>: {}".format(status))
 
         return rv
-
-
 
     def set_constraint_rhs(self, row_index, rhs):
         '''change an existing constraint's right hand side'''

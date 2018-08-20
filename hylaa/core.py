@@ -44,6 +44,7 @@ class Core(Freezable):
         # make random number generation (for example, to find orthogonal directions) deterministic
         np.random.seed(seed=0)
 
+        LpInstance.print_normal = self.print_normal
         LpInstance.print_verbose = self.print_verbose
         LpInstance.print_debug = self.print_debug
 

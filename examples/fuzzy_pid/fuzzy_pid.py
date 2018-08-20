@@ -312,9 +312,10 @@ def define_settings():
     # step_size = 0.01, max_time = 0.75
     settings = HylaaSettings(0.002, 0.75)
     settings.plot.plot_mode = PlotSettings.PLOT_IMAGE
-    settings.plot.xdim_dir = 2
+    settings.plot.xdim_dir = None
     settings.plot.ydim_dir = 0
-    settings.stdout = HylaaSettings.STDOUT_DEBUG
+    settings.plot.label.axes_limits = (-0.1, 0.9, -1.1, 1.1)
+    #settings.stdout = HylaaSettings.STDOUT_DEBUG
  
     print("Things to fix: ploting over time should have time-ranges")
     print("Things to fix: step 0.001 enters transition loop?!?")

@@ -547,3 +547,44 @@ def test_init_unsat():
     
     core = Core(ha, settings)
     core.run(init_list)    # expect no exception during running
+
+def test_over_time_range():
+    'test plotting over time with aggergation (time range)'
+
+    ha = HybridAutomaton()
+
+    mode_a = ha.new_mode('A')
+    mode_b = ha.new_mode('B')
+ 
+    # dynamics: x' = a, a' = 0
+    mode_a.set_dynamics([[0, 1], [0, 0]])
+    mode_b.set_dynamics([[0, 1], [0, 0]])
+
+    # invariant: x <= 2.5
+    mode_a.set_invariant([[1, 0]], [2.5])
+
+    trans1 = ha.new_transition(mode_a, mode_b, 'first')
+    trans1.set_guard([[1, 0]], [2.5])
+
+    # initial set has x0 = [0, 0]
+    init_lpi = lputil.from_box([(0, 0), (1, 1)], mode_a)
+    init_list = [StateSet(init_lpi, mode_a)]
+
+    # settings, step size = 1.0
+    settings = HylaaSettings(1.0, 4.0)
+    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
+    settings.plot.store_plot_result = True
+    settings.plot.xdim_dir = None
+    settings.plot.ydim_dir = 0
+
+    result = Core(ha, settings).run(init_list)
+
+    polys = result.mode_to_polys[mode_b.name]
+    # expected with aggegregation: [0, 2.5] -> [1, 3.5] -> [2, 4.5] -> [3, 5.5] -> [4, 6.5]
+
+    # 4 steps because invariant is allowed to be false for the final step
+    assert len(polys) == 5, "expected invariant to become false after 5 steps"
+
+    for i in range(5):
+        assert_verts_is_box(polys[i], [[i, i + 2.5], [i, i + 2.5]])
