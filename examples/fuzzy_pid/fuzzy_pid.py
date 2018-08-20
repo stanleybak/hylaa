@@ -311,15 +311,16 @@ def define_settings():
 
     # step_size = 0.01, max_time = 0.75
     settings = HylaaSettings(0.002, 0.75)
-    #settings.plot.plot_mode = PlotSettings.PLOT_IMAGE
+    settings.plot.plot_mode = PlotSettings.PLOT_IMAGE
     settings.plot.xdim_dir = 2
     settings.plot.ydim_dir = 0
     settings.stdout = HylaaSettings.STDOUT_DEBUG
  
     print("Things to fix: ploting over time should have time-ranges")
     print("Things to fix: step 0.001 enters transition loop?!?")
-    print("Things to fix: plotting with xdim=2 (time) has negative time?")
     print("add plot_video option")
+    print("remove / monkey-hack memory leak from doubleArray")
+    print("add option to stop continuous post after some exponential number of steps")
 
     return settings
 

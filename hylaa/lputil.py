@@ -221,11 +221,12 @@ def check_intersection(lpi, lc, tol=1e-13):
 
     return dot_res + tol <= lc.rhs
 
-def add_init_constraint(lpi, vec, rhs, basis_matrix=None, input_effects_list=None):
+def add_init_constraint(lpi, vec, rhs, basis_matrix=None, input_effects_list=None, row_index=None):
     '''
     add a constraint to the lpi
 
-    this adds a new row, with constraints assigned to the right-most variables (where the basis matrix is)
+    this replaces an existing row or adds a new one (if row_index is None), with constraints assigned to the 
+    initial-time variables
 
     this returns the row of the newly-created constraint
     '''
@@ -237,15 +238,20 @@ def add_init_constraint(lpi, vec, rhs, basis_matrix=None, input_effects_list=Non
 
     # we need to project the basis matrix using the passed in direction vector
     preshape = vec.shape
-    
+
     dims = basis_matrix.shape[0]
     vec.shape = (1, dims) # vec is now the projection matrix for this direction
     bm_projection = np.dot(vec, basis_matrix)
 
-    lpi.add_rows_less_equal([rhs])
-
     rows = lpi.get_num_rows()
     cols = lpi.get_num_cols()
+
+    if row_index is None:
+        row_index = rows
+        lpi.add_rows_less_equal([rhs])
+    else:
+        # overwrite the old rhs
+        lpi.set_constraint_rhs(row_index, rhs)
 
     indptr = [0]
 
@@ -257,7 +263,7 @@ def add_init_constraint(lpi, vec, rhs, basis_matrix=None, input_effects_list=Non
     if input_effects_list:
         num_inputs = input_effects_list[0].shape[1]
         offset = lpi.input_effects_offsets[1] + dims
-        
+
         for ie_mat in input_effects_list:
             ie_projection = np.dot(vec, ie_mat)
             assert len(ie_projection) == num_inputs
@@ -265,18 +271,18 @@ def add_init_constraint(lpi, vec, rhs, basis_matrix=None, input_effects_list=Non
             inds += [offset + i for i in range(num_inputs)]
             data += [val for val in ie_projection[0]]
             offset += num_inputs
- 
+
     indptr.append(len(data))
-
-    csr_row_mat = csr_matrix((data, inds, indptr), dtype=float, shape=(1, cols))
-    csr_row_mat.check_format()
-
-    lpi.set_constraints_csr(csr_row_mat, offset=(rows-1, 0))
 
     # restore vector shape to what it was when passed in
     vec.shape = preshape
 
-    return rows - 1
+    csr_row_mat = csr_matrix((data, inds, indptr), dtype=float, shape=(1, cols))
+    csr_row_mat.check_format()
+
+    lpi.set_constraints_csr(csr_row_mat, offset=(row_index, 0))
+
+    return row_index
 
 def try_replace_init_constraint(lpi, old_row_index, direction, rhs, basis_mat=None, input_effects_list=None):
     '''replace the constraint in row_index by a new constraint, if the new constraint is stronger, otherwise
@@ -290,52 +296,37 @@ def try_replace_init_constraint(lpi, old_row_index, direction, rhs, basis_mat=No
     if basis_mat is None:
         basis_mat = get_basis_matrix(lpi)
 
-    print " NEW ALGORITHM TO DO THIS: REPLACE THE CONSTRAINT, THEN OPTIMIZE IN THE DIRECTION OF THE OLD CONSTRAINT TO CHECK IF FEASIBLE! AVOID DELETING ROWS"
+    # Improved algorithm to do this: Replace the constraint, then optimize in the direction of the old constraint to
+    # check if the old constraint is still feasible.
+    # this avoids deleting rows and therefore possibly ruining warm start if the constraint was non-basic
 
-    # how can we check if the passed in constraint is stronger than the existing one?
-    # if negating the existing constraint, and adding the new one is UNSAT
-    rv = None
-
-    lpi.flip_constraint(old_row_index)
-
-    new_row_index = add_init_constraint(lpi, direction, rhs, basis_matrix=basis_mat, \
-                                        input_effects_list=input_effects_list)
-
-    is_sat = lpi.minimize(columns=[], fail_on_unsat=False) is not None
-
-    lpi.flip_constraint(old_row_index) # flip it back
-
-    if is_sat:
-        # keep both constraints
-        rv = new_row_index
-    else:
-        # keep only the new constraint
-        print("keeping only the new constraint")
-        print(lpi)
+    # first extract the old constraint
+    old_constraint = lpi.get_row(old_row_index)
+    old_rhs = lpi.get_rhs([old_row_index])[0]
         
-        # delete new constraint row
-        lpi.del_constraint(new_row_index)
-    
-        # replace the old constraint row with the new constraint condition
-        dims = basis_mat.shape[0]
+    # replace the old constraint with the new one
+    new_row_index = add_init_constraint(lpi, direction, rhs, basis_matrix=basis_mat, \
+                                        input_effects_list=input_effects_list, row_index=old_row_index)
 
-        indptr = [0, dims]
-        inds = [i for i in range(dims)]
-        new_vec = np.dot(direction, basis_mat) # convert the constraint using the basis matrix
-        data = new_vec
-        data.shape = (dims,)
+    # optimize in the direction of the old constraint, to see if the old constraint is still feasible
+    lpi.set_minimize_direction(-1 * old_constraint, is_csr=True, offset=lpi.basis_mat_pos[1])
 
-        csr_row_mat = csr_matrix((data, inds, indptr), dtype=float, shape=(1, dims))
-        csr_row_mat.check_format()
+    res = lpi.minimize(fail_on_unsat=False)
 
-        lpi.set_constraints_csr(csr_row_mat, offset=(old_row_index, lpi.basis_mat_pos[1]))
-        lpi.set_constraint_rhs(old_row_index, rhs)
+    # if the lp was unsat, this means adding the new constraint makes it infeasible, so it's safe to replace
+    if res is not None:
+        res_dot = (old_constraint * np.array(res, dtype=float))
 
-        rv = old_row_index
+        res_dot = res_dot[0]
 
-        print(lpi)
+        # if res_dot < old_rhs, then the old constraint is no longer needed, otherwise, re-add it
+        if res_dot >= old_rhs:
+            lpi.add_rows_less_equal([old_rhs])
+            rows = lpi.get_num_rows()
 
-    return rv
+            lpi.set_constraints_csr(old_constraint, offset=(rows - 1, 0))
+
+    return new_row_index
 
 def aggregate(lpi_list, direction_matrix, mode):
     '''

@@ -128,6 +128,8 @@ def test_add_init_constraint():
 
     new_row = lputil.add_init_constraint(lpi, direction, -4.5)
 
+    print(lpi)
+
     assert new_row == 6, "new constraint should have been added in row index 6"
 
     # minimize y should give 4.5
@@ -162,6 +164,7 @@ def test_replace_init_constraint():
     direction = np.array([0, -1], dtype=float)
 
     row_index = lputil.add_init_constraint(lpi, direction, -4.5)
+    assert lpi.get_rhs()[-1] == -4.5
 
     # minimize y should give 4.5
     miny = lpi.minimize([0, 1], columns=[lpi.cur_vars_offset + 1])[0]
@@ -171,16 +174,17 @@ def test_replace_init_constraint():
 
     # try to replace constraint y >= 4.6 (should be stronger than 4.5)
     row_index = lputil.try_replace_init_constraint(lpi, row_index, direction, -4.6)
-
+        
     assert row_index == 6
     assert lpi.get_num_rows() == 7
+    assert lpi.get_rhs()[row_index] == -4.6
 
     # try to replace constraint x <= 0.9 (should be incomparable)
     xdir = np.array([1, 0], dtype=float)
     row_index = lputil.try_replace_init_constraint(lpi, row_index, xdir, 0.9)
 
-    assert row_index == 7
     assert lpi.get_num_rows() == 8
+    assert lpi.get_rhs()[row_index] == 0.9
 
     # check verts()
     verts = lpplot.get_verts(lpi)

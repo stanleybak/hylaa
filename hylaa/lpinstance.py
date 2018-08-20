@@ -13,34 +13,6 @@ import swiglpk as glpk
 from hylaa.util import Freezable
 from hylaa.timerutil import Timers
 
-def debug_set_basis_matrix(lpi, basis_mat):
-    'modify the lpi in place to set the basis matrix'
-
-    assert basis_mat.shape[0] == basis_mat.shape[1], "expected square matrix"
-    assert basis_mat.shape[0] == lpi.dims, "basis matrix wrong shape"
-
-    # this is done using the optimized swigvec interface in lpinstance
-
-    data_vec_list = [] # list of swig doubleArray objects for each row
-
-    # 0 BM 0 -I 0 (I? <- if inputs exist)
-    for row in range(lpi.dims):
-        data = []
-
-        data += basis_mat[row].tolist()
-        
-        data.append(-1.0)
-
-        if lpi.input_effects_offsets is not None:
-            data.append(1.0)
-
-        data_vec_list.append(glpk.as_doubleArray(data))
-
-    entries_per_row = basis_mat.shape[0] + 1 + (1 if lpi.input_effects_offsets else 0)
-    count_list = [entries_per_row] * basis_mat.shape[0]
-        
-    lpi.set_constraints_swigvec_rows(data_vec_list, lpi.bm_indices, count_list, lpi.basis_mat_pos[0])
-
 class LpInstance(Freezable): # pylint: disable=too-many-public-methods
     'Linear programming wrapper using glpk (through swiglpk python interface)'
 
@@ -455,11 +427,32 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
 
         Timers.toc('set_constraints_csc')
 
-    def set_minimize_direction(self, direction_vec, is_csr=False):
-        '''set the direction for the optimization in terms of the current-time variables
+    def reset_lp(self):
+        'reset all the column and row statuses of the LP'
+
+        glpk.glp_std_basis(self.lp)
+
+    def is_feasible(self):
+        '''check if the lp is feasible
+        '''
+
+        return self.minimize(columns=[], fail_on_unsat=False) is not None
+
+    def set_minimize_direction(self, direction_vec, is_csr=False, offset=None):
+        '''set the direction for the optimization
+
+        if offset is None, will use cur_vars_offset (direction is in terms of current-time variables)
         '''
 
         Timers.tic("set_minimize_direction")
+
+        if offset is None:
+            offset = self.cur_vars_offset
+
+            size = direction_vec.shape[1] if is_csr else len(direction_vec)
+
+            assert size <= self.dims, "len(direction_vec) ({}) > number of cur_vars({})".format(
+                size, self.dims)
 
         # set the previous objective columns to zero
         for i in self.obj_cols:
@@ -470,13 +463,11 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         if is_csr:
             assert isinstance(direction_vec, csr_matrix)
             assert direction_vec.shape[0] == 1
-            assert direction_vec.shape[1] <= self.dims, "dirLen({}) > dims({})".format(
-                direction_vec.shape[1], self.dims)
 
             data, inds, indptr = direction_vec.data, direction_vec.indices, direction_vec.indptr
             
             for n in range(indptr[1]):
-                col = int(1 + self.cur_vars_offset + inds[n])
+                col = int(1 + offset + inds[n])
                 self.obj_cols.append(col)
 
                 glpk.glp_set_obj_coef(self.lp, col, data[n])
@@ -489,22 +480,11 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
             assert len(direction_vec) <= self.dims, "dirLen({}) > dims({})".format(len(direction_vec), self.dims)
 
             for i, direction in enumerate(direction_vec):
-                col = int(1 + self.cur_vars_offset + i)
+                col = int(1 + offset + i)
                 self.obj_cols.append(col)
                 glpk.glp_set_obj_coef(self.lp, col, direction)
 
         Timers.toc("set_minimize_direction")
-
-    def reset_lp(self):
-        'reset all the column and row statuses of the LP'
-
-        glpk.glp_std_basis(self.lp)
-
-    def is_feasible(self):
-        '''check if the lp is feasible
-        '''
-
-        return self.minimize(columns=[], fail_on_unsat=False) is not None
 
     def minimize(self, direction_vec=None, columns=None, fail_on_unsat=True, retry_on_unsat=False):
         '''minimize the lp
@@ -535,13 +515,18 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         Timers.toc('glp_simplex')
 
         if simplex_res != 0:
+            # this can happen when you replace constraints after already solving once
             LpInstance.print_verbose('Note: simplex() failed ({}), resetting and retrying'.format(simplex_res))
-            print(self)
-            raise RuntimeError("debug todo remove")
-            glpk.glp_cpx_basis(self.lp) # resets the initial basis
-            params.msg_lev = glpk.GLP_MSG_ON # turn printing on
-            params.tm_lim = 30 * 1000 # second try: 30 second time limit
-            simplex_res = glpk.glp_simplex(self.lp, params)
+
+            if simplex_res == glpk.GLP_ESING: # singular matrix, can happen after replacing constraints
+                glpk.glp_std_basis(self.lp)
+                simplex_res = glpk.glp_simplex(self.lp, params)
+
+            if simplex_res != 0:
+                glpk.glp_cpx_basis(self.lp) # resets the initial basis
+                params.msg_lev = glpk.GLP_MSG_ON # turn printing on
+                params.tm_lim = 30 * 1000 # second try: 30 second time limit
+                simplex_res = glpk.glp_simplex(self.lp, params)
 
         # process simplex result
         rv = self._process_simplex_result(simplex_res, columns)
@@ -664,88 +649,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
 
         return rv
 
-    def flip_constraint(self, row_index):
-        '''flip a constraint from >= to <= or vis-versa
 
-        returns True if the constraint is now a '<=' constraint
-        '''
-
-        rows = glpk.glp_get_num_rows(self.lp)
-
-        assert 0 <= row_index < rows, "Invalid row ({}) passed to flip_constraint() (lp has {})".format(
-            row_index, rows)
-
-        row_type = glpk.glp_get_row_type(self.lp, row_index + 1)
-
-        if row_type == glpk.GLP_UP:
-            val = glpk.glp_get_row_ub(self.lp, row_index + 1)
-            glpk.glp_set_row_bnds(self.lp, row_index + 1, glpk.GLP_LO, val, 0)
-            rv = False
-        elif row_type == glpk.GLP_LO:
-            val = glpk.glp_get_row_lb(self.lp, row_index + 1)
-            glpk.glp_set_row_bnds(self.lp, row_index + 1, glpk.GLP_UP, 0, val)
-            rv = True
-        else:
-            raise RuntimeError("Invalid constraint type {} in row {} in flipConstraint()\n".format(row_type, row_index))
-
-        return rv
-
-    def del_constraint(self, row_index):
-        '''delete a constraint from the lp'''
-
-        rows = glpk.glp_get_num_rows(self.lp)
-
-        assert 0 <= row_index < rows, "Invalid row ({}) passed to del_constraint() (lp has {})".format(
-            row_index, rows)
-
-        # If you need to delete an active row, make it free first
-        # If the current basis is valid (whether optimal or not) and if you
-        # delete active rows (i.e. the rows for which glp_get_row_stat returns
-        # GLP_NL, GLP_NU, GLP_NF, or GLP_NS) and/or basic columns (i.e. the
-        # columns for which glp_get_col_stat returns GLP_BS), the basis becomes
-        # invalid. To keep it valid you either have not to delete such rows or
-        # columns or have to change the statuses of remaining rows and columns
-        # appropriately.
-
-        active_stats = [glpk.GLP_NL, glpk.GLP_NU, glpk.GLP_NF, glpk.GLP_NS]
-        del_row_stat = glpk.glp_get_row_stat(self.lp, row_index + 1)
-        
-        # find another row to make active
-        if del_row_stat in active_stats:
-            LpInstance.print_debug("deleting active row #{} from LP, attempting to first activate another row".format(
-                row_index))
-            found = False
-            
-            for other_row in range(rows-1, -1, -1):
-                stat = glpk.glp_get_row_stat(self.lp, other_row + 1)
-
-                if stat not in active_stats:
-                    LpInstance.print_debug("Found an inactivate row to activate: {}".format(other_row))
-                    found = True
-                
-                    row_type = glpk.glp_get_row_type(self.lp, other_row + 1)
-
-                    if row_type == glpk.GLP_FX: # change to NF
-                        glpk.glp_set_row_stat(self.lp, other_row + 1, glpk.GLP_NF)
-                    elif row_type == glpk.GLP_UP: # change to NU
-                        glpk.glp_set_row_stat(self.lp, other_row + 1, glpk.GLP_NU)
-                    elif row_type == glpk.GLP_LO: # change to NL
-                        glpk.glp_set_row_stat(self.lp, other_row + 1, glpk.GLP_NL)
-                    else: # change to NS
-                        glpk.glp_set_row_stat(self.lp, other_row + 1, glpk.GLP_NS)
-
-                    break
-
-        nrs = 1
-        rows = glpk.intArray(2)
-        rows[1] = row_index + 1
-
-        glpk.glp_del_rows(self.lp, nrs, rows)
-
-        if not found: # didn't find another row to make active
-            LpInstance.print_verbose("Didn't find an inactivate row to activate... resetting lp basis")
-            # last resort: reset the lp basis (this kills warm-start)
-            glpk.glp_std_basis(self.lp)
 
     def set_constraint_rhs(self, row_index, rhs):
         '''change an existing constraint's right hand side'''
@@ -820,23 +724,33 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
 
         return self.names
 
-    def get_rhs(self):
-        '''get the rhs vector of the constraints'''
+    def get_rhs(self, row_indices=None):
+        '''get the rhs vector of the constraints
 
-        lp_rows = glpk.glp_get_num_rows(self.lp)
-        rv = np.zeros(lp_rows, dtype=float)
+        row_indices - a list of requested indices (None=all)
 
-        for row in range(lp_rows):
+        this returns an np.array of rhs values for the requested indices
+        '''
+
+        rv = []
+
+        if row_indices is None:
+            lp_rows = glpk.glp_get_num_rows(self.lp)
+            row_indices = range(lp_rows)
+
+        for row in row_indices:
             row_type = glpk.glp_get_row_type(self.lp, row + 1)
 
             if row_type in [glpk.GLP_FX, glpk.GLP_UP]:
-                rv[row] = glpk.glp_get_row_ub(self.lp, row + 1)
+                limit = glpk.glp_get_row_ub(self.lp, row + 1)
             elif row_type == glpk.GLP_LO:
-                rv[row] = glpk.glp_get_row_ub(self.lp, row + 1)
+                limit = glpk.glp_get_row_ub(self.lp, row + 1)
             else:
                 raise RuntimeError("Error: Unsupported type ({}) in getRhs() in row {}".format(row_type, row))
 
-        return rv
+            rv.append(limit)
+
+        return np.array(rv, dtype=float)
 
     def get_full_constraints(self):
         '''get the LP matrix as a csr_matrix
