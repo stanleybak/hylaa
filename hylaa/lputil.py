@@ -386,7 +386,9 @@ def aggregate(lpi_list, direction_matrix, mode):
     csr_mat = csr_matrix((data, inds, indptrs), dtype=float, shape=(rows, cols))
     csr_mat.check_format()
     
-    return from_constraints(csr_mat, rhs, mode)
+    rv = from_constraints(csr_mat, rhs, mode)
+
+    return rv
 
 def get_basis_matrix(lpi):
     'get the basis matrix from the lpi'

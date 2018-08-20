@@ -19,16 +19,32 @@ def get_verts(lpi, xdim=0, ydim=1, plot_vecs=None, cur_time=0.0):
 
     xdim and ydim can be either an integer (dimension number), an np.array (direction), or None (time will be used)
 
+    cur_time can be an integer or a list of length 2 (min/max time)
+
     plot_vecs is an ordered list of vectors defining all the 2-d directions to optimize in... if None will 
     construct and use 256 equally spaced vectors 
     '''
+
+    tol = 1e-9
     
     if plot_vecs is None:
         plot_vecs = make_plot_vecs()
 
+    # make cur_time a 2-tuple: (min_time, max time)
+    if isinstance(cur_time, (float, int)):
+        cur_time = [float(cur_time), float(cur_time)]
+
     try:
         if xdim is None and ydim is None:
-            pts = [[cur_time, cur_time]]
+            if abs(cur_time[0] - cur_time[1]) < tol:
+                pts = [[cur_time, cur_time]]
+            else:
+                pts = []
+                pts.append([cur_time.min, cur_time.min])
+                pts.append([cur_time.min, cur_time.max])
+                pts.append([cur_time.max, cur_time.max])
+                pts.append([cur_time.max, cur_time.min])
+                
         elif xdim is None:
             # plot over time
             if isinstance(ydim, int):
@@ -42,10 +58,17 @@ def get_verts(lpi, xdim=0, ydim=1, plot_vecs=None, cur_time=0.0):
             res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)])
             ymax = np.dot(ydim, res)
 
-            verts = [[cur_time, ymin]]
+            verts = [[cur_time[0], ymin]]
 
-            if abs(ymin - ymax) > 1e-9:
-                verts.append([cur_time, ymax])
+            if abs(ymin - ymax) > tol:
+                verts.append([cur_time[0], ymax])
+
+                if abs(cur_time[0] - cur_time[1]) > tol:
+                    verts.append([cur_time[1], ymax])
+
+            if abs(cur_time[0] - cur_time[1]) > tol:
+                verts.append([cur_time[1], ymin])
+                
         elif ydim is None:
             # plot over time
             if isinstance(xdim, int):
@@ -59,10 +82,16 @@ def get_verts(lpi, xdim=0, ydim=1, plot_vecs=None, cur_time=0.0):
             res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)])
             xmax = np.dot(xdim, res)
 
-            verts = [[xmin, cur_time]]
+            verts = [[xmin, cur_time[0]]]
 
-            if abs(xmin - xmax) > 1e-9:
-                verts.append([xmax, cur_time])
+            if abs(xmin - xmax) > tol:
+                verts.append([xmax, cur_time[0]])
+
+                if abs(cur_time[0] - cur_time[1]) > tol:
+                    verts.append([xmax, cur_time[1]])
+
+            if abs(cur_time[0] - cur_time[1]) > tol:
+                verts.append([xmin, cur_time[1]])
         else:
             # 2-d plot
             pts = _find_boundary_pts(lpi, xdim, ydim, plot_vecs)
@@ -70,14 +99,6 @@ def get_verts(lpi, xdim=0, ydim=1, plot_vecs=None, cur_time=0.0):
 
         # wrap polygon back to first point
         verts.append(verts[0])
-
-        if xdim is None:
-            for vert in verts:
-                vert[0] = cur_time
-
-        if ydim is None:
-            for vert in verts:
-                vert[1] = cur_time
     except UnsatError:
         verts = None
 

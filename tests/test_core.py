@@ -244,7 +244,7 @@ def test_transition():
     assert len(result.mode_to_polys['m1']) == 4
     assert len(result.mode_to_polys['m2']) == 3
 
-    assert result.last_cur_state.cur_step_since_start == 5
+    assert result.last_cur_state.cur_steps_since_start[0] == 5
 
 def test_time_triggered():
     'test to make sure exact time-triggered guards only have a single sucessor state'
@@ -564,7 +564,7 @@ def test_over_time_range():
     mode_a.set_invariant([[1, 0]], [2.5])
 
     trans1 = ha.new_transition(mode_a, mode_b, 'first')
-    trans1.set_guard([[1, 0]], [2.5])
+    trans1.set_guard_true()
 
     # initial set has x0 = [0, 0]
     init_lpi = lputil.from_box([(0, 0), (1, 1)], mode_a)
@@ -572,7 +572,8 @@ def test_over_time_range():
 
     # settings, step size = 1.0
     settings = HylaaSettings(1.0, 4.0)
-    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.stdout = HylaaSettings.STDOUT_DEBUG
+    settings.process_urgent_guards = True
     settings.plot.plot_mode = PlotSettings.PLOT_NONE
     settings.plot.store_plot_result = True
     settings.plot.xdim_dir = None
@@ -587,4 +588,4 @@ def test_over_time_range():
     assert len(polys) == 5, "expected invariant to become false after 5 steps"
 
     for i in range(5):
-        assert_verts_is_box(polys[i], [[i, i + 2.5], [i, i + 2.5]])
+        assert_verts_is_box(polys[i], [[i, i + 3.0], [i, i + 3.0]])

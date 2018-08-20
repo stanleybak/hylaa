@@ -26,7 +26,7 @@ class StateSet(Freezable):
     A set of states with a common mode.
     '''
 
-    def __init__(self, lpi, mode, cur_step_since_start=0, predecessor=None):
+    def __init__(self, lpi, mode, cur_steps_since_start=None, predecessor=None):
         assert isinstance(lpi, LpInstance)
         assert isinstance(mode, Mode)
 
@@ -34,7 +34,12 @@ class StateSet(Freezable):
         self.lpi = lpi
 
         self.cur_step_in_mode = 0
-        self.cur_step_since_start = cur_step_since_start
+
+        if cur_steps_since_start is not None:
+            assert len(cur_steps_since_start) == 2 # needs to be an interval in case this stateset is an aggregation
+            self.cur_steps_since_start = cur_steps_since_start.copy()
+        else:
+            self.cur_steps_since_start = [0, 0]
 
         # the predecessor to this StateSet
         assert isinstance(predecessor, (type(None), AggregationPredecessor, TransitionPredecessor))
@@ -58,7 +63,7 @@ class StateSet(Freezable):
     def clone(self):
         'deep copy this StateSet'
 
-        rv = StateSet(self.lpi.clone(), self.mode, self.cur_step_since_start, self.predecessor)
+        rv = StateSet(self.lpi.clone(), self.mode, self.cur_steps_since_start, self.predecessor)
 
         rv.cur_step_in_mode = self.cur_step_in_mode
         rv.invariant_constraint_rows = self.invariant_constraint_rows.copy()
@@ -94,7 +99,8 @@ class StateSet(Freezable):
         Timers.tic("step")
 
         self.cur_step_in_mode += 1
-        self.cur_step_since_start += 1
+        self.cur_steps_since_start[0] += 1
+        self.cur_steps_since_start[1] += 1
 
         Timers.tic('get_bm')
         self.basis_matrix, input_effects_matrix = self.mode.time_elapse.get_basis_matrix(self.cur_step_in_mode)
@@ -121,7 +127,9 @@ class StateSet(Freezable):
         Timers.tic('verts')
 
         if self._verts is None:
-            cur_time = self.cur_step_since_start * plotman.core.settings.step_size
+            min_time = self.cur_steps_since_start[0] * plotman.core.settings.step_size
+            max_time = self.cur_steps_since_start[1] * plotman.core.settings.step_size
+            time_interval = (min_time, max_time)
 
             if not self.assigned_plot_dim:
                 self.assigned_plot_dim = True
@@ -137,7 +145,7 @@ class StateSet(Freezable):
                     self.ydim = self.ydim[self.mode.name]
 
             self._verts = lpplot.get_verts(self.lpi, xdim=self.xdim, ydim=self.ydim, plot_vecs=plotman.plot_vecs, \
-                                           cur_time=cur_time)
+                                           cur_time=time_interval)
             assert self._verts is not None, "verts() was unsat"
             
         Timers.toc('verts')

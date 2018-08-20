@@ -102,11 +102,11 @@ class Core(Freezable):
             minkowski_constraints_rhs=t.reset_minkowski_constraints_rhs, successor_has_inputs=successor_has_inputs)
 
         if t_lpi.is_feasible():
-            successor_state = StateSet(t_lpi, t.to_mode, self.cur_state.cur_step_since_start, predecessor)
+            successor_state = StateSet(t_lpi, t.to_mode, self.cur_state.cur_steps_since_start, predecessor)
             self.waiting_list.append(successor_state)
 
             self.print_verbose("Added Discrete Successor to '{}' at step {}".format( \
-                t.to_mode.name, self.cur_state.cur_step_since_start))
+                t.to_mode.name, self.cur_state.cur_steps_since_start))
 
             # if it's a time-triggered transition, we may remove cur_state immediately
             if self.settings.optimize_tt_transitions and t.time_triggered:
@@ -134,9 +134,14 @@ class Core(Freezable):
     def error_reached(self, t, lpi):
         'an error mode was reached after taking transition t, report and create counterexample'
 
-        step_num = self.cur_state.cur_step_since_start
-        self.print_normal("Unsafe at Step: {} / {} ({})".format(step_num, self.settings.num_steps, \
-                            round(self.settings.step_size * step_num, 12)))
+        step_num = self.cur_state.cur_steps_since_start
+        times = [round(self.settings.step_size * step_num[0], 12), round(self.settings.step_size * step_num[1], 12)]
+
+        if step_num[0] == step_num[1]:
+            step_num = step_num[0]
+            times = times[0]
+        
+        self.print_normal("Unsafe at Step: {} / {}, time {}".format(step_num, self.settings.num_steps, times))
 
         self.result.safe = False
 
@@ -179,9 +184,14 @@ class Core(Freezable):
     def print_current_step_time(self):
         'print the current step and time'
 
-        step_num = self.cur_state.cur_step_since_start
-        total_time = round(self.settings.step_size * step_num, 12)
-        self.print_verbose("Step: {} / {} ({})".format(step_num, self.settings.num_steps, total_time))
+        step_num = self.cur_state.cur_steps_since_start
+        times = [round(self.settings.step_size * step_num[0], 12), round(self.settings.step_size * step_num[1], 12)]
+
+        if step_num[0] == step_num[1]:
+            step_num = step_num[0]
+            times = times[0]
+
+        self.print_verbose("Step: {} / {} ({})".format(step_num, self.settings.num_steps, times))
 
     def do_step_continuous_post(self):
         '''do a step where it's part of a continuous post'''
@@ -192,7 +202,8 @@ class Core(Freezable):
 
         if not self.is_finished():
             # next advance time by one step
-            if self.cur_state.cur_step_since_start >= self.settings.num_steps:
+            if self.cur_state.cur_steps_since_start[0] >= self.settings.num_steps:
+                self.print_verbose("cur_state reached time bound, removing")
                 self.cur_state = None
             elif self.took_tt_transition:
                 self.took_tt_transition = False
@@ -220,29 +231,37 @@ class Core(Freezable):
             first = None
 
             for state in self.waiting_list:
-                if first is None or state.cur_step_since_start < first.cur_step_since_start:
+                if first is None or state.cur_steps_since_start[0] < first.cur_steps_since_start[0]:
                     first = state
 
             self.print_verbose("Minimum time state on waiting list: {} at step {}".format( \
-                    first, first.cur_step_since_start))
+                    first, first.cur_steps_since_start[0]))
 
             # remove all states with the same mode as 'first' for aggregation
             new_waiting_list = []
             agg_list = []
+            min_steps = first.cur_steps_since_start[0]
+            max_steps = min_steps
 
             for state in self.waiting_list:
                 if state.mode == first.mode:
                     agg_list.append(state)
+
+                    max_steps = max(max_steps, state.cur_steps_since_start[1])
                 else:
                     new_waiting_list.append(state)
+
+            step_interval = [min_steps, max_steps]
 
             self.waiting_list = new_waiting_list # assign new waiting list
 
             if len(agg_list) == 1:
                 rv = agg_list[0]
-                self.print_verbose("Removed single state: {}".format(rv))
+                self.print_verbose("Removed single state: {} at step {}".format(rv, step_interval))
             else:
-                self.print_verbose("Removed {} states for aggregation".format(len(agg_list)))
+                self.print_verbose("Removed {} states for aggregation at steps {}".format(
+                    len(agg_list), step_interval))
+                
                 # create a new state from the aggregation
                 postmode = agg_list[0].mode
                 postmode_dims = postmode.a_csr.shape[0]
@@ -315,7 +334,7 @@ class Core(Freezable):
                 new_lpi = lputil.aggregate(lpi_list, agg_dir_mat, postmode)
 
                 predecessor = AggregationPredecessor(agg_list) # Note: these objects weren't clone()'d
-                rv = StateSet(new_lpi, first.mode, first.cur_step_since_start, predecessor)
+                rv = StateSet(new_lpi, first.mode, step_interval, predecessor)
                 
         return rv
 
@@ -330,8 +349,8 @@ class Core(Freezable):
         self.result.last_cur_state = self.cur_state = self.pop_waiting_list()
         self.cur_state.cur_step_in_mode = 0
 
-        self.print_normal("Removed state in mode '{}' at time {:.2f} (Waiting list has {} left)".format( \
-                self.cur_state.mode.name, self.cur_state.cur_step_since_start * self.settings.step_size, \
+        self.print_normal("Removed state in mode '{}' at step {} (Waiting list has {} left)".format( \
+                self.cur_state.mode.name, self.cur_state.cur_steps_since_start, \
                 len(self.waiting_list)))
 
         # if a_matrix is None, it's an error mode
@@ -340,7 +359,7 @@ class Core(Freezable):
 
             self.cur_state = None
         else:
-            self.max_steps_remaining = self.settings.num_steps - self.cur_state.cur_step_since_start
+            self.max_steps_remaining = self.settings.num_steps - self.cur_state.cur_steps_since_start[0]
 
             still_feasible = self.cur_state.intersect_invariant()
 
