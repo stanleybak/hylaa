@@ -6,6 +6,8 @@ Stanley Bak, 2018
 import math
 from hylaa.util import Freezable
 
+from matplotlib import animation
+
 # Force matplotlib to not use any Xwindows backend.
 #import matplotlib
 #matplotlib.use('Agg')
@@ -38,6 +40,8 @@ class HylaaSettings(Freezable):  # pylint: disable=too-few-public-methods
         
         self.aggregation = HylaaSettings.AGG_ARNOLDI_BOX # transition aggregation method
         self.aggregation_add_guard = True # when performing aggregation, also add the guard direction?
+
+        self.periodic_repush_waiting_list = True # periodically add the current state back to the waiting list
 
         self.freeze_attrs()
 
@@ -75,6 +79,15 @@ class PlotSettings(Freezable): # pylint: disable=too-few-public-methods
         self.grid_ytics = None # override default ytics value, for example np.linspace(0.0, 5.0, 1.0)
 
         self.use_markers_for_small = True # draw markers when the reachable set is tiny instead of invisible polygons
+
+        # function which returns the Writer with the desired settings used to create a video, used for video export
+        def make_video_writer():
+            'returns the Writer to create a video for export'
+
+            writer_class = animation.writers['ffmpeg']
+            return writer_class(fps=50, metadata=dict(artist='Me'), bitrate=1800)
+
+        self.make_video_writer_func = make_video_writer
 
         self.freeze_attrs()
 

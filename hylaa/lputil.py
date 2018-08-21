@@ -12,9 +12,7 @@ import numpy as np
 import scipy as sp
 from scipy.sparse import csr_matrix, csc_matrix
 
-import swiglpk as glpk
-
-from hylaa.lpinstance import LpInstance
+from hylaa.lpinstance import LpInstance, SwigArray
 from hylaa.timerutil import Timers
 
 def from_box(box_list, mode):
@@ -145,7 +143,7 @@ def set_basis_matrix(lpi, basis_mat):
         if lpi.input_effects_offsets is not None:
             data.append(1.0)
 
-        data_vec_list.append(glpk.as_doubleArray(data))
+        data_vec_list.append(SwigArray.as_double_array(data))
 
     entries_per_row = basis_mat.shape[0] + 1 + (1 if lpi.input_effects_offsets else 0)
     count_list = [entries_per_row] * basis_mat.shape[0]
@@ -309,7 +307,7 @@ def try_replace_init_constraint(lpi, old_row_index, direction, rhs, basis_mat=No
                                         input_effects_list=input_effects_list, row_index=old_row_index)
 
     # optimize in the direction of the old constraint, to see if the old constraint is still feasible
-    lpi.set_minimize_direction(-1 * old_constraint, is_csr=True, offset=lpi.basis_mat_pos[1])
+    lpi.set_minimize_direction(-1 * old_constraint, is_csr=True, offset=0)
 
     res = lpi.minimize(fail_on_unsat=False)
 

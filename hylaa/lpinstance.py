@@ -98,7 +98,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
             if self.input_effects_offsets is not None:
                 cur_row.append(1 + row + self.input_effects_offsets[1])
 
-            self.bm_indices.append(glpk.as_intArray(cur_row))
+            self.bm_indices.append(SwigArray.as_int_array(cur_row))
 
     def _column_names_str(self, cur_var_print):
         'get the line in __str__ for the column names'
@@ -127,7 +127,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         'get the optimization direction line for __str__'
 
         lp = self.lp
-        cols = glpk.glp_get_num_cols(lp)
+        cols = self.get_num_cols()
         rv = "min"
 
         for col in range(1, cols + 1):
@@ -152,7 +152,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         'get the column statuses line for __str__'
 
         lp = self.lp
-        cols = glpk.glp_get_num_cols(lp)
+        cols = self.get_num_cols()
 
         stat_labels = ["?(0)?", "BS", "NL", "NU", "NF", "NS", "?(6)?"]
         rv = "   "
@@ -169,8 +169,8 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
 
         rv = ""
         lp = self.lp
-        rows = glpk.glp_get_num_rows(lp)
-        cols = glpk.glp_get_num_cols(lp)
+        rows = self.get_num_rows()
+        cols = self.get_num_cols()
         
         stat_labels = ["?(0)?", "BS", "NL", "NU", "NF", "NS", "?(6)?"]
         inds = glpk.intArray(cols + 1)
@@ -258,8 +258,8 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
 
                 return colored(s, 'white', attrs=['dark'])
 
-        rows = glpk.glp_get_num_rows(self.lp)
-        cols = glpk.glp_get_num_cols(self.lp)
+        rows = self.get_num_rows()
+        cols = self.get_num_cols()
         rv = "Lp has {} columns (variables) and {} rows (constraints)\n".format(cols, rows)
 
         rv += self._column_names_str(cur_var_print)
@@ -284,7 +284,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         num_vars = len(names)
 
         if num_vars > 0:
-            num_cols = glpk.glp_get_num_cols(self.lp)
+            num_cols = self.get_num_cols()
 
             self.names += names
             glpk.glp_add_cols(self.lp, num_vars)
@@ -341,8 +341,8 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         assert len(offset) == 2, "offset should be a 2-tuple (num_rows, num_cols)"
 
         # check that the matrix is in bounds
-        lp_rows = glpk.glp_get_num_rows(self.lp)
-        lp_cols = glpk.glp_get_num_cols(self.lp)
+        lp_rows = self.get_num_rows()
+        lp_cols = self.get_num_cols()
 
         if offset[0] < 0 or offset[1] < 0 or \
                             offset[0] + csr_mat.shape[0] > lp_rows or offset[1] + csr_mat.shape[1] > lp_cols:
@@ -360,10 +360,10 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
             count = int(indptr[row + 1] - indptr[row])
 
             indices_list = [1 + offset[1] + int(indices[index]) for index in range(indptr[row], indptr[row+1])]
-            indices_vec = glpk.as_intArray(indices_list)
+            indices_vec = SwigArray.as_int_array(indices_list)
 
             data_row_list = data_list[indptr[row]:indptr[row+1]]
-            data_vec = glpk.as_doubleArray(data_row_list)
+            data_vec = SwigArray.as_double_array(data_row_list)
 
             glpk.glp_set_mat_row(self.lp, offset[0] + row + 1, count, indices_vec, data_vec)
 
@@ -400,8 +400,8 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         assert len(offset) == 2, "offset should be a 2-tuple (num_rows, num_cols)"
 
         # check that the matrix is in bounds
-        lp_rows = glpk.glp_get_num_rows(self.lp)
-        lp_cols = glpk.glp_get_num_cols(self.lp)
+        lp_rows = self.get_num_rows()
+        lp_cols = self.get_num_cols()
 
         if offset[0] < 0 or offset[1] < 0 or \
                             offset[0] + csc_mat.shape[0] > lp_rows or offset[1] + csc_mat.shape[1] > lp_cols:
@@ -419,10 +419,10 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
             count = int(indptr[col + 1] - indptr[col])
 
             indices_list = [1 + offset[0] + int(indices[index]) for index in range(indptr[col], indptr[col+1])]
-            indices_vec = glpk.as_intArray(indices_list)
+            indices_vec = SwigArray.as_int_array(indices_list)
 
             data_row_list = data_list[indptr[col]:indptr[col+1]]
-            data_vec = glpk.as_doubleArray(data_row_list)
+            data_vec = SwigArray.as_double_array(data_row_list)
 
             glpk.glp_set_mat_col(self.lp, offset[1] + col + 1, count, indices_vec, data_vec)
 
@@ -454,6 +454,8 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
 
             assert size <= self.dims, "len(direction_vec) ({}) > number of cur_vars({})".format(
                 size, self.dims)
+        else:
+            assert direction_vec.shape[1] + offset <= self.get_num_cols()
 
         # set the previous objective columns to zero
         for i in self.obj_cols:
@@ -471,6 +473,10 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
                 col = int(1 + offset + inds[n])
                 self.obj_cols.append(col)
 
+                if col > len(self.names):
+                    print(self)
+                    
+                assert col <= len(self.names) 
                 glpk.glp_set_obj_coef(self.lp, col, data[n])
 
         else: # non-csr
@@ -616,7 +622,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
             if status == glpk.GLP_NOFEAS: # infeasible
                 rv = None
             elif status == glpk.GLP_OPT: # optimal
-                lp_cols = glpk.glp_get_num_cols(self.lp)
+                lp_cols = self.get_num_cols()
                 
                 if columns is None:
                     rv = np.zeros(lp_cols)
@@ -698,8 +704,8 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
 
         rv = np.zeros((h, w))
 
-        lp_rows = glpk.glp_get_num_rows(self.lp)
-        lp_cols = glpk.glp_get_num_cols(self.lp)
+        lp_rows = self.get_num_rows()
+        lp_cols = self.get_num_cols()
 
         assert x >= 0 and w >= 0 and x + w <= lp_cols, "invalid x range requested"
         assert y >= 0 and h >= 0 and y + h <= lp_rows, "invalid y range requested"
@@ -755,8 +761,8 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         '''get the LP matrix as a csr_matrix
         '''
 
-        lp_rows = glpk.glp_get_num_rows(self.lp)
-        lp_cols = glpk.glp_get_num_cols(self.lp)
+        lp_rows = self.get_num_rows()
+        lp_cols = self.get_num_cols()
         nnz = glpk.glp_get_num_nz(self.lp)
 
         data = np.zeros((nnz,), dtype=float)
@@ -787,8 +793,8 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         '''get a row of the LP matrix as a csr_matrix
         '''
 
-        lp_rows = glpk.glp_get_num_rows(self.lp)
-        lp_cols = glpk.glp_get_num_cols(self.lp)
+        lp_rows = self.get_num_rows()
+        lp_cols = self.get_num_cols()
 
         assert 0 <= row < lp_rows
 
@@ -820,7 +826,8 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
     def get_num_cols(self):
         'get the number of columns in the lp'
 
-        return glpk.glp_get_num_cols(self.lp)
+        #return glpk.glp_get_num_cols(self.lp)
+        return len(self.names) # probably faster than making a call to glpk
 
     def get_iterations(self):
         'get the number of LP iterations performed so far'
@@ -829,3 +836,40 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
 
 class UnsatError(RuntimeError):
     'raised if an LP is infeasible'
+
+class SwigArray():
+    '''Tracker for how much memoey swig arrays allocate (And leak, since there is a memory leak for these:
+    see: https://github.com/biosustain/swiglpk/issues/31 )
+    '''
+
+    bytes_allocated = 0
+
+    @classmethod
+    def as_double_array(cls, list_data):
+        'wrapper for swig as_doubleArray'
+
+        cls._allocated(8 * len(list_data))
+
+        return glpk.as_doubleArray(list_data)
+
+    @classmethod
+    def as_int_array(cls, list_data):
+        'wrapper for swig as_intArray'
+
+        cls._allocated(8 * len(list_data))
+
+        return glpk.as_intArray(list_data)
+
+    @classmethod
+    def _allocated(cls, num_bytes):
+        'track how many bytes were allocated and print warning if threshold is exceeded'
+
+        mb = 1024 * 1024
+        threshold = 1024 * mb # 1 gb
+
+        pre = cls.bytes_allocated
+        cls.bytes_allocated += num_bytes
+
+        if (pre // threshold) != (cls.bytes_allocated // threshold):
+            print(("Warning: Swig array allocation leaked more than {} GB memory. See: " + \
+                  "https://github.com/biosustain/swiglpk/issues/31").format(pre // threshold))

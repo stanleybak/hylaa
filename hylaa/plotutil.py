@@ -4,9 +4,10 @@ Stanley Bak
 Sept 2016
 '''
 
+import sys
 import time
 import random
-from collections import OrderedDict
+from collections import OrderedDict, namedtuple
 
 import numpy as np
 
@@ -21,24 +22,16 @@ from hylaa.timerutil import Timers
 from hylaa.settings import PlotSettings
 from hylaa.util import Freezable
 
-def lighter(rgb_col):
-    'return a lighter variant of an rgb color'
+AxisLimits = namedtuple('AxisLimits', ['xmin', 'xmax', 'ymin', 'ymax'])
 
-    return [(2.0 + val) / 3.0 for val in rgb_col]
-
-def darker(rgb_col):
-    'return a darker variant of an rgb color'
-
-    return [val / 1.2 for val in rgb_col]
-
-class AxisLimits(object):
-    'container object for the plot axis limits'
+class InteractiveState(Freezable):
+    '''the state during PLOT_INTERACTIVE'''
 
     def __init__(self):
-        self.xmin = None
-        self.xmax = None
-        self.ymin = None
-        self.ymax = None
+        self.paused = False
+        self.step = False
+
+        self.freeze_attrs()
 
 class ModeColors(Freezable):
     'maps mode names -> colors'
@@ -48,6 +41,18 @@ class ModeColors(Freezable):
 
         self.mode_to_color = {} # map mode name -> color string
         self.freeze_attrs()
+
+    @staticmethod
+    def lighter(rgb_col):
+        'return a lighter variant of an rgb color'
+
+        return [(2.0 + val) / 3.0 for val in rgb_col]
+
+    @staticmethod
+    def darker(rgb_col):
+        'return a darker variant of an rgb color'
+
+        return [val / 1.2 for val in rgb_col]
 
     def init_colors(self):
         'initialize all_colors'
@@ -105,7 +110,7 @@ class ModeColors(Freezable):
         edge_col = colors.colorConverter.to_rgb(col_name)
 
         # make the faces a little lighter
-        face_col = lighter(edge_col)
+        face_col = ModeColors.lighter(edge_col)
 
         return (face_col, edge_col)
 
@@ -158,7 +163,7 @@ class DrawnShapes(Freezable):
 
         paths = polys.get_paths()
 
-        if polys is not None and len(paths) > 0:
+        if polys is not None and paths:
             paths.pop() # remove the old polygon
 
         if verts is not None:
@@ -202,13 +207,6 @@ class DrawnShapes(Freezable):
             codes = [Path.MOVETO] + [Path.LINETO] * (len(poly_verts) - 2) + [Path.CLOSEPOLY]
             paths.append(Path(poly_verts, codes))
 
-class InteractiveState(object):
-    'container object for interactive plot state'
-
-    def __init__(self):
-        self.paused = False
-        self.step = False
-
 class PlotManager(Freezable):
     'manager object for plotting during or after computation'
 
@@ -230,6 +228,7 @@ class PlotManager(Freezable):
 
         self.drew_first_frame = False # one-time flag
         self._anim = None # animation object
+        self.frame_counter = 0
 
         self.plot_vecs = []
         self.init_plot_vecs()
@@ -397,57 +396,61 @@ class PlotManager(Freezable):
 
         return rv
 
-    def compute_and_animate(self, step_func, is_finished_func):
+    def anim_func(self, force_single_frame):
+        'animation draw function'
+
+        if not force_single_frame and self.interactive.paused:
+            Timers.tic("paused")
+            time.sleep(0.1)
+            Timers.toc("paused")
+        else:
+            Timers.tic("frame")
+
+            self.shapes.set_cur_state(None)
+            self.core.do_step()
+
+            if self.core.cur_state is not None:
+                if not self.plot_current_state(self.core.cur_state):
+                    self.core.print_verbose("Continuous state discovered to be UNSAT during plot, removing state")
+                    self.core.cur_state = None
+
+            # if we just wanted a single step
+            if self.interactive.step:
+                self.interactive.step = False
+                self.interactive.paused = True
+
+            Timers.toc("frame")
+
+            if self.interactive.paused and not force_single_frame:
+                frame_timer = Timers.top_level_timer.get_children_recursive('frame')[0]
+                self.core.print_normal("Paused After Frame #{}".format(frame_timer.num_calls))
+
+        return [self.axes.xaxis, self.axes.yaxis] + self.shapes.get_artists()
+
+    def anim_init_func(self):
+        'animation init function'
+
+        return [self.axes.xaxis, self.axes.yaxis] + self.shapes.get_artists()
+
+    def anim_iterator(self):
+        'generator for the computation iterator'
+        Timers.tic("anim_iterator")
+
+        # do the computation until its done
+        while not self.core.is_finished():
+            if self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
+                self.frame_counter += 1
+                self.core.print_verbose("Saving Video Frame #{}".format(self.frame_counter))
+                
+            yield False
+
+        # redraw one more (will clear cur_state)
+        #yield False
+
+        Timers.toc("anim_iterator")
+
+    def compute_and_animate(self):
         'do the computation, plotting during the process'
-
-        def anim_func(force_single_frame):
-            'performs several steps of the computation and draws an animation frame'
-
-            if not force_single_frame and self.interactive.paused:
-                Timers.tic("paused")
-                time.sleep(0.1)
-                Timers.toc("paused")
-            else:
-                Timers.tic("frame")
-
-                self.shapes.set_cur_state(None)
-                step_func()
-
-                if self.core.cur_state is not None:
-                    if not self.plot_current_state(self.core.cur_state):
-                        self.core.print_verbose("Continuous state discovered to be UNSAT during plot, removing state")
-                        self.core.cur_state = None
-
-                # if we just wanted a single step
-                if self.interactive.step:
-                    self.interactive.step = False
-                    self.interactive.paused = True
-
-                Timers.toc("frame")
-
-                if self.interactive.paused and not force_single_frame:
-                    frame_timer = Timers.top_level_timer.get_children_recursive('frame')[0]
-                    self.core.print_normal("Paused After Frame #{}".format(frame_timer.num_calls))
-
-            return [self.axes.xaxis, self.axes.yaxis] + self.shapes.get_artists()
-
-        def init_func():
-            'animation init function'
-
-            return [self.axes.xaxis, self.axes.yaxis] + self.shapes.get_artists()
-
-        def anim_iterator():
-            'generator for the computation iterator'
-            Timers.tic("anim_iterator")
-
-            # do the computation until its done
-            while not is_finished_func():
-                yield False
-
-            # redraw one more (will clear cur_state)
-            #yield False
-
-            Timers.toc("anim_iterator")
 
         def next_pressed(_):
             'event function for next button press'
@@ -464,8 +467,6 @@ class PlotManager(Freezable):
 
             if self.core.is_finished():
                 self.core.print_normal("Computation is finished")
-
-        iterator = anim_iterator
 
         if self.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
             # do one frame
@@ -484,24 +485,29 @@ class PlotManager(Freezable):
             bstep.on_clicked(step_pressed)
 
         if self.settings.plot_mode == PlotSettings.PLOT_IMAGE:
-            self.run_to_completion(step_func, is_finished_func)
+            self.run_to_completion()
             self.save_image()
         else:
-            self._anim = animation.FuncAnimation(self.fig, anim_func, iterator, init_func=init_func,
-                                                 interval=0, blit=True, repeat=False)
+            interval = 1 if self.settings.plot_mode == PlotSettings.PLOT_VIDEO else 0
+            
+            self._anim = animation.FuncAnimation(self.fig, self.anim_func, self.anim_iterator, \
+                init_func=self.anim_init_func, interval=interval, blit=True, repeat=False, save_count=sys.maxsize)
 
-            plt.show()
+            if self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
+                self.save_video()
+            else:
+                plt.show()
 
-    def run_to_completion(self, step_func, is_finished_func, compute_plot=True):
+    def run_to_completion(self, compute_plot=True):
         'run to completion, creating the plot at each step'
 
         Timers.tic("run_to_completion")
 
-        while not is_finished_func():
+        while not self.core.is_finished():
             if compute_plot and self.shapes is not None:
                 self.shapes.set_cur_state(None)
 
-            step_func()
+            self.core.do_step()
 
             if compute_plot and self.core.cur_state is not None:
                 if not self.plot_current_state(self.core.cur_state):
@@ -509,6 +515,18 @@ class PlotManager(Freezable):
                     self.core.cur_state = None
 
         Timers.toc("run_to_completion")
+
+    def save_video(self):
+        'save a video file'
+
+        writer = self.settings.make_video_writer_func()
+
+        filename = self.settings.filename if self.settings.filename is not None else "anim.mp4"
+
+        self._anim.save(filename, writer=writer)
+
+        if not self.core.is_finished():
+            raise RuntimeError("saving video exited before computation completed (is_finished() returned false)")
 
     def save_image(self):
         'save an image file'
@@ -544,4 +562,4 @@ def _blit_draw(_self, artists, bg_cache):
         # ax.figure.canvas.blit(ax.bbox)
         ax.figure.canvas.blit(ax.figure.bbox)
 
-animation.Animation._blit_draw = _blit_draw # pylint: ignore=protected-access
+animation.Animation._blit_draw = _blit_draw # pylint: disable=protected-access

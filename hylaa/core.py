@@ -3,6 +3,7 @@ Main Hylaa Reachability Implementation
 Stanley Bak, 2018
 '''
 
+import math
 from collections import deque
 
 import numpy as np
@@ -177,8 +178,6 @@ class Core(Freezable):
                                       "Likely was barely feasible + numerical issues); removing state.")
             self.cur_state = None
 
-            raise RuntimeError("debug")
-
         Timers.toc("check_guards")
 
     def print_current_step_time(self):
@@ -219,6 +218,16 @@ class Core(Freezable):
                     self.cur_state.step()
                     self.check_guards()
 
+            if self.cur_state is not None and self.settings.periodic_repush_waiting_list:
+                # re-push to waiting list if cur_step_in_mode is a multiple of 2^n
+                step_num = self.cur_state.cur_step_in_mode
+                exponent = int(math.log(step_num, 2))
+
+                if 2**exponent == step_num and step_num > 8:
+                    print("step_num = {}, re-pushing to waiting_list".format(step_num))
+                    self.waiting_list.append(self.cur_state)
+                    self.cur_state = None
+
         Timers.toc('do_step_continuous_post')
 
     def pop_waiting_list(self):
@@ -227,29 +236,54 @@ class Core(Freezable):
         if self.settings.aggregation == HylaaSettings.AGG_NONE:
             rv = self.waiting_list.pop(0)
         else:
-            # aggregation is on, first find the state with the minimum time on the waiting list
-            first = None
+            # aggregation is on, first find the state with the minimum average time on the waiting list
+            totals = {} # total average in waiting list for each mode
+            counts = {} # number of states in waiting list for each mode
 
             for state in self.waiting_list:
-                if first is None or state.cur_steps_since_start[0] < first.cur_steps_since_start[0]:
-                    first = state
+                avg = (state.cur_steps_since_start[0] + state.cur_steps_since_start[1]) / 2
+                mode = state.mode.name
 
-            self.print_verbose("Minimum time state on waiting list: {} at step {}".format( \
-                    first, first.cur_steps_since_start[0]))
+                if not mode in totals:
+                    totals[mode] = 0
+                    counts[mode] = 0
 
-            # remove all states with the same mode as 'first' for aggregation
+                totals[mode] += avg
+                counts[mode] += 1
+
+            smallest_avg = float('inf')
+            smallest_mode = None
+            
+            # find smallest average
+            for mode, total in totals.items():
+                count = counts[mode]
+                avg = total / count
+
+                if avg < smallest_avg:
+                    smallest_avg = avg
+                    smallest_mode = mode
+
+            # find one of the modes
+
+            self.print_verbose("Minimum average time state on waiting list: {} in mode {}".format( \
+                    smallest_avg, smallest_mode))
+
+            # remove all states for aggregation
             new_waiting_list = []
             agg_list = []
-            min_steps = first.cur_steps_since_start[0]
-            max_steps = min_steps
+            min_steps = float('inf')
+            max_steps = -float('inf')
 
             for state in self.waiting_list:
-                if state.mode == first.mode:
+                if state.mode.name == smallest_mode:
                     agg_list.append(state)
 
+                    min_steps = min(min_steps, state.cur_steps_since_start[0])
                     max_steps = max(max_steps, state.cur_steps_since_start[1])
                 else:
                     new_waiting_list.append(state)
+
+            assert agg_list, "agg_list was empty?"
 
             step_interval = [min_steps, max_steps]
 
@@ -334,7 +368,7 @@ class Core(Freezable):
                 new_lpi = lputil.aggregate(lpi_list, agg_dir_mat, postmode)
 
                 predecessor = AggregationPredecessor(agg_list) # Note: these objects weren't clone()'d
-                rv = StateSet(new_lpi, first.mode, step_interval, predecessor)
+                rv = StateSet(new_lpi, agg_list[0].mode, step_interval, predecessor)
                 
         return rv
 
@@ -347,10 +381,9 @@ class Core(Freezable):
         self.print_waiting_list()
 
         self.result.last_cur_state = self.cur_state = self.pop_waiting_list()
-        self.cur_state.cur_step_in_mode = 0
 
-        self.print_normal("Removed state in mode '{}' at step {} (Waiting list has {} left)".format( \
-                self.cur_state.mode.name, self.cur_state.cur_steps_since_start, \
+        self.print_normal("Removed state in mode '{}' at step {} ({} in mode) (Waiting list has {} left)".format( \
+                self.cur_state.mode.name, self.cur_state.cur_steps_since_start, self.cur_state.cur_step_in_mode, \
                 len(self.waiting_list)))
 
         # if a_matrix is None, it's an error mode
@@ -441,8 +474,7 @@ class Core(Freezable):
     def run_to_completion(self):
         'run the model to completion (called by run() if not plot is desired)'
 
-        self.plotman.run_to_completion(self.do_step, self.is_finished, \
-                               compute_plot=self.settings.plot.store_plot_result)
+        self.plotman.run_to_completion(compute_plot=self.settings.plot.store_plot_result)
 
     def run(self, init_state_list):
         '''
@@ -461,7 +493,7 @@ class Core(Freezable):
         if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE:
             self.run_to_completion()
         else:
-            self.plotman.compute_and_animate(self.do_step, self.is_finished)
+            self.plotman.compute_and_animate()
 
         Timers.toc("total")
 

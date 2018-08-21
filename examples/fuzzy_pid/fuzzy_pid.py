@@ -2,6 +2,8 @@
 Fuzzy PID controller
 '''
 
+from matplotlib import animation
+
 from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa.settings import HylaaSettings, PlotSettings
 from hylaa.core import Core
@@ -309,18 +311,25 @@ def define_settings():
     '''get the hylaa settings object
     see hylaa/settings.py for a complete list of reachability settings'''
 
-    # step_size = 0.01, max_time = 0.75
+    # step_size = 0.002, max_time = 0.75
     settings = HylaaSettings(0.002, 0.75)
-    settings.plot.plot_mode = PlotSettings.PLOT_IMAGE
-    settings.plot.xdim_dir = None
+    settings.plot.plot_mode = PlotSettings.PLOT_LIVE
+    settings.plot.xdim_dir = 2
     settings.plot.ydim_dir = 0
-    settings.plot.label.axes_limits = (-0.1, 0.9, -1.1, 1.1)
-    #settings.stdout = HylaaSettings.STDOUT_DEBUG
- 
-    print("Things to fix: ploting over time should have time-ranges")
-    print("Things to fix: step 0.001 enters transition loop?!?")
-    print("add plot_video option")
-    print("remove / monkey-hack memory leak from doubleArray")
+    #settings.aggregation = HylaaSettings.AGG_BOX
+    settings.plot.label.axes_limits = (-0.01, 0.9, -1.1, 1.1) 
+    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+
+    # custom settings for video export
+    def make_video_writer():
+        'returns the Writer to create a video for export'
+
+        writer_class = animation.writers['ffmpeg']
+        return writer_class(fps=20, metadata=dict(artist='Me'), bitrate=1800)
+
+    settings.plot.make_video_writer_func = make_video_writer
+    
+    #print("step 0.001 enters transition loop?!?") -> looks like due to aggregation, re-test with deaggregation
     print("add option to stop continuous post after some exponential number of steps")
 
     return settings
