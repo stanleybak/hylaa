@@ -7,7 +7,7 @@ Sept 2016
 import sys
 import time
 import random
-from collections import OrderedDict, namedtuple
+from collections import OrderedDict
 
 import numpy as np
 
@@ -22,7 +22,16 @@ from hylaa.timerutil import Timers
 from hylaa.settings import PlotSettings
 from hylaa.util import Freezable
 
-AxisLimits = namedtuple('AxisLimits', ['xmin', 'xmax', 'ymin', 'ymax'])
+class AxisLimits(Freezable):
+    '''the axis limits'''
+
+    def __init__(self):
+        self.xmin = None
+        self.xmax = None
+        self.ymin = None
+        self.ymax = None
+
+        self.freeze_attrs()
 
 class InteractiveState(Freezable):
     '''the state during PLOT_INTERACTIVE'''
