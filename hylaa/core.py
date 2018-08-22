@@ -79,8 +79,9 @@ class Core(Freezable):
             
             cprint("Waiting list has {} states".format(len(self.waiting_list)), col)
 
-            for state in self.waiting_list:
-                cprint(" {}".format(state), col)
+            if len(self.waiting_list) < 10:
+                for state in self.waiting_list:
+                    cprint(" {}".format(state), col)
 
     def is_finished(self):
         'is the computation finished'
@@ -279,6 +280,7 @@ class Core(Freezable):
                     # look at the parents
                     if (isinstance(to_remove.predecessor, TransitionPredecessor) and \
                         isinstance(state.predecessor, TransitionPredecessor) and \
+                        to_remove.predecessor.transition is state.predecessor.transition and \
                         to_remove.predecessor.state.computation_path_id == state.predecessor.state.computation_path_id):
                         
                         should_add = True
