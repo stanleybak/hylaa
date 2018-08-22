@@ -26,12 +26,21 @@ class StateSet(Freezable):
     A set of states with a common mode.
     '''
 
-    def __init__(self, lpi, mode, cur_steps_since_start=None, predecessor=None):
+    next_computation_path_id = 0 # a unique counter for computation path nodes
+
+    def __init__(self, lpi, mode, cur_steps_since_start=None, predecessor=None, computation_path_id=None):
         assert isinstance(lpi, LpInstance)
         assert isinstance(mode, Mode)
 
         self.mode = mode
         self.lpi = lpi
+
+        # computation_path_id can check if states are clone()'s at different steps in the same continuous post sequence
+        if computation_path_id is None:
+            self.computation_path_id = self.__class__.next_computation_path_id
+            self.__class__.next_computation_path_id += 1
+        else:
+            self.computation_path_id = computation_path_id
 
         self.cur_step_in_mode = 0
 
@@ -60,10 +69,12 @@ class StateSet(Freezable):
 
         self.freeze_attrs()
 
-    def clone(self):
+    def clone(self, keep_computation_path_id=False):
         'deep copy this StateSet'
 
-        rv = StateSet(self.lpi.clone(), self.mode, self.cur_steps_since_start, self.predecessor)
+        i = None if not keep_computation_path_id else self.computation_path_id
+
+        rv = StateSet(self.lpi.clone(), self.mode, self.cur_steps_since_start, self.predecessor, i)
 
         rv.cur_step_in_mode = self.cur_step_in_mode
         rv.invariant_constraint_rows = self.invariant_constraint_rows.copy()

@@ -9,7 +9,7 @@ from collections import deque
 import numpy as np
 from termcolor import cprint
 
-from hylaa.settings import HylaaSettings, PlotSettings
+from hylaa.settings import HylaaSettings, PlotSettings, AggregationSettings
 
 from hylaa.plotutil import PlotManager
 from hylaa.stateset import StateSet, TransitionPredecessor, AggregationPredecessor
@@ -41,6 +41,8 @@ class Core(Freezable):
         self.took_tt_transition = False # flag for if a tt was taken and the cur_state should be removed
 
         self.result = None # a HylaaResult... assigned on run() to store verification result
+
+        self.num_steps = 0
 
         # make random number generation (for example, to find orthogonal directions) deterministic
         np.random.seed(seed=0)
@@ -93,7 +95,7 @@ class Core(Freezable):
     def take_transition(self, t, t_lpi):
         '''take the passed-in transition from the current state (may add to the waiting list)'''
 
-        predecessor = TransitionPredecessor(self.cur_state.clone(), t, t_lpi.clone())
+        predecessor = TransitionPredecessor(self.cur_state.clone(keep_computation_path_id=True), t, t_lpi.clone())
 
         successor_has_inputs = t.to_mode.b_csr is not None
 
@@ -204,6 +206,9 @@ class Core(Freezable):
             if self.cur_state.cur_steps_since_start[0] >= self.settings.num_steps:
                 self.print_verbose("cur_state reached time bound, removing")
                 self.cur_state = None
+
+                if self.is_finished():
+                    self.print_normal("Computation finished after {} steps.".format(self.num_steps))
             elif self.took_tt_transition:
                 self.took_tt_transition = False
                 self.cur_state = None
@@ -218,157 +223,172 @@ class Core(Freezable):
                     self.cur_state.step()
                     self.check_guards()
 
-            if self.cur_state is not None and self.settings.periodic_repush_waiting_list:
-                # re-push to waiting list if cur_step_in_mode is a multiple of 2^n
-                step_num = self.cur_state.cur_step_in_mode
-                exponent = int(math.log(step_num, 2))
-
-                if 2**exponent == step_num and step_num > 8:
-                    print("step_num = {}, re-pushing to waiting_list".format(step_num))
-                    self.waiting_list.append(self.cur_state)
-                    self.cur_state = None
-
         Timers.toc('do_step_continuous_post')
+
+    def compute_pop_score(self, state):
+        '''
+        returns a score used to decide which state to pop off the waiting list. The state with the highest score
+        will be removed first.
+        '''
+
+        if self.settings.aggregation.pop_strategy == AggregationSettings.POP_LOWEST_MINTIME:
+            score = -(state.cur_steps_since_start[0])
+        elif self.settings.aggregation.pop_strategy == AggregationSettings.POP_LOWEST_AVGTIME:
+            score = -(state.cur_steps_since_start[0] + state.cur_steps_since_start[1])
+        elif self.settings.aggregation.pop_strategy == AggregationSettings.POP_LARGEST_MAXTIME:
+            score = state.cur_steps_since_start[1]
+        else:
+            raise RuntimeError("Unknown waiting list pop strategy: {}".format(self.settings.aggregation.pop_strategy))
+
+        return score
+
+    def get_agggreation_states(self):
+        '''get the states from the waiting list we are going to aggregate
+
+        This also updates the waiting list.
+
+        returns agg_list, step_range (of states in agg_list)
+        '''
+
+        to_remove = self.waiting_list[0]
+        to_remove_score = self.compute_pop_score(to_remove)
+
+        for state in self.waiting_list:
+            score = self.compute_pop_score(state)
+
+            if score > to_remove_score or score == to_remove_score and state.mode.name < to_remove.mode.name:
+                to_remove_score = score
+                to_remove = state
+
+        self.print_verbose("Aggregating with state at time {} in mode {}".format(to_remove.cur_steps_since_start,
+                                                                                 to_remove.mode.name))
+
+        # remove all states for aggregation
+        new_waiting_list = []
+        agg_list = []
+        min_steps = float('inf')
+        max_steps = -float('inf')
+
+        for state in self.waiting_list:
+            should_add = False
+
+            if state is to_remove:
+                should_add = True
+            elif state.mode is to_remove.mode:
+                if self.settings.aggregation.require_same_path:
+                    # look at the parents
+                    if (isinstance(to_remove.predecessor, TransitionPredecessor) and \
+                        isinstance(state.predecessor, TransitionPredecessor) and \
+                        to_remove.predecessor.state.computation_path_id == state.predecessor.state.computation_path_id):
+                        
+                        should_add = True
+                else: # require_same_path is False
+                    should_add = True
+
+            if should_add:
+                agg_list.append(state)
+                
+                min_steps = min(min_steps, state.cur_steps_since_start[0])
+                max_steps = max(max_steps, state.cur_steps_since_start[1])
+            else:
+                new_waiting_list.append(state)
+
+        self.waiting_list = new_waiting_list
+
+        assert agg_list, "returning empty agg_list?"
+
+        return agg_list, [min_steps, max_steps]
+
+    def perform_aggregation(self, agg_list, step_interval):
+        '''
+        perform aggregation on the passed-in list of states
+        '''
+
+        # create a new state from the aggregation
+        postmode = agg_list[0].mode
+        postmode_dims = postmode.a_csr.shape[0]
+        mid_index = len(agg_list) // 2
+        mid_state = agg_list[mid_index]
+        pred = mid_state.predecessor
+
+        if self.settings.aggregation.agg_mode == AggregationSettings.AGG_BOX or pred is None:
+            agg_dir_mat = np.identity(postmode_dims)
+        elif self.settings.aggregation.agg_mode == AggregationSettings.AGG_ARNOLDI_BOX:
+            # aggregation with a predecessor, use arnoldi directions in predecessor mode in center of
+            # middle aggregagted state, then project using the reset, and reorthogonalize
+
+            assert isinstance(pred, TransitionPredecessor)
+            premode = pred.state.mode
+            pt = lputil.get_box_center(pred.premode_lpi)
+            self.print_debug("aggregation point: {}".format(pt))
+
+            premode_dir_mat = lputil.make_direction_matrix(pt, premode.a_csr)
+            self.print_debug("premode dir mat:\n{}".format(premode_dir_mat))
+
+            if pred.transition.reset_csr is None:
+                agg_dir_mat = premode_dir_mat
+            else:
+                projected_dir_mat = premode_dir_mat * pred.transition.reset_csr.transpose()
+
+                self.print_debug("projected dir mat:\n{}".format(projected_dir_mat))
+
+                # re-orthgohonalize (and create new vectors if necessary)
+                agg_dir_mat = lputil.reorthogonalize_matrix(projected_dir_mat, postmode_dims)
+
+            # also add box directions in target mode (if they don't already exist)
+            box_dirs = []
+            for dim in range(postmode_dims):
+                direction = [0 if d != dim else 1 for d in range(postmode_dims)]
+                exists = False
+
+                for row in agg_dir_mat:
+                    if np.allclose(direction, row):
+                        exists = True
+                        break
+
+                if not exists:
+                    box_dirs.append(direction)
+
+            if box_dirs:
+                agg_dir_mat = np.concatenate((agg_dir_mat, box_dirs), axis=0)
+
+        if pred and self.settings.aggregation.add_guard:
+            # add all the guard conditions to the agg_dir_mat
+
+            if pred.transition.reset_csr is None: # identity reset
+                guard_dir_mat = pred.transition.guard_csr
+            else:
+                # multiply each direction in the guard by the guard
+                guard_dir_mat = pred.transition.guard_csr * pred.transition.reset_csr.transpose()
+
+            if guard_dir_mat.shape[0] > 0:
+                agg_dir_mat = np.concatenate((agg_dir_mat, guard_dir_mat.toarray()), axis=0)
+        else:
+            raise RuntimeError("Unknown aggregatinon mode: {}".format(self.settings.aggregation.agg_mode))
+
+        self.print_debug("agg dir mat:\n{}".format(agg_dir_mat))
+        lpi_list = [state.lpi for state in agg_list]
+
+        new_lpi = lputil.aggregate(lpi_list, agg_dir_mat, postmode)
+
+        predecessor = AggregationPredecessor(agg_list) # Note: these objects weren't clone()'d
+        return StateSet(new_lpi, agg_list[0].mode, step_interval, predecessor)
 
     def pop_waiting_list(self):
         'pop a state off the waiting list, possibly doing state-set aggreation'
 
-        if self.settings.aggregation == HylaaSettings.AGG_NONE:
+        if self.settings.aggregation.agg_mode == AggregationSettings.AGG_NONE:
             rv = self.waiting_list.pop(0)
         else:
-            # aggregation is on, first find the state with the minimum average time on the waiting list
-            totals = {} # total average in waiting list for each mode
-            counts = {} # number of states in waiting list for each mode
+            agg_list, step_interval = self.get_agggreation_states()
 
-            for state in self.waiting_list:
-                avg = (state.cur_steps_since_start[0] + state.cur_steps_since_start[1]) / 2
-                mode = state.mode.name
-
-                if not mode in totals:
-                    totals[mode] = 0
-                    counts[mode] = 0
-
-                totals[mode] += avg
-                counts[mode] += 1
-
-            smallest_avg = float('inf')
-            smallest_mode = None
-            
-            # find smallest average
-            for mode, total in totals.items():
-                count = counts[mode]
-                avg = total / count
-
-                if avg < smallest_avg:
-                    smallest_avg = avg
-                    smallest_mode = mode
-
-            # find one of the modes
-
-            self.print_verbose("Minimum average time state on waiting list: {} in mode {}".format( \
-                    smallest_avg, smallest_mode))
-
-            # remove all states for aggregation
-            new_waiting_list = []
-            agg_list = []
-            min_steps = float('inf')
-            max_steps = -float('inf')
-
-            for state in self.waiting_list:
-                if state.mode.name == smallest_mode:
-                    agg_list.append(state)
-
-                    min_steps = min(min_steps, state.cur_steps_since_start[0])
-                    max_steps = max(max_steps, state.cur_steps_since_start[1])
-                else:
-                    new_waiting_list.append(state)
-
-            assert agg_list, "agg_list was empty?"
-
-            step_interval = [min_steps, max_steps]
-
-            self.waiting_list = new_waiting_list # assign new waiting list
+            self.print_verbose("Removed {} state{} for aggregation at steps {}".format(
+                len(agg_list), "s" if len(agg_list) > 1 else "", step_interval))
 
             if len(agg_list) == 1:
                 rv = agg_list[0]
-                self.print_verbose("Removed single state: {} at step {}".format(rv, step_interval))
             else:
-                self.print_verbose("Removed {} states for aggregation at steps {}".format(
-                    len(agg_list), step_interval))
-                
-                # create a new state from the aggregation
-                postmode = agg_list[0].mode
-                postmode_dims = postmode.a_csr.shape[0]
-                mid_index = len(agg_list) // 2
-                mid_state = agg_list[mid_index]
-                pred = mid_state.predecessor
-
-                if self.settings.aggregation == HylaaSettings.AGG_BOX:
-                    agg_dir_mat = np.identity(postmode_dims)
-                elif self.settings.aggregation == HylaaSettings.AGG_ARNOLDI_BOX:
-
-                    if pred is None:
-                        # aggregation with initial states, just use current mode dynamics
-                        pt = lputil.get_box_center(mid_state.lpi)
-                        agg_dir_mat = lputil.make_direction_matrix(pt, mid_state.mode.a_csr)
-                    else:
-                        # aggregation with a predecessor, use arnoldi directions in predecessor mode in center of
-                        # middle aggregagted state, then project using the reset, and reorthogonalize
-                        
-                        assert isinstance(pred, TransitionPredecessor)
-                        premode = pred.state.mode
-                        pt = lputil.get_box_center(pred.premode_lpi)
-                        self.print_debug("aggregation point: {}".format(pt))
-
-                        premode_dir_mat = lputil.make_direction_matrix(pt, premode.a_csr)
-                        self.print_debug("premode dir mat:\n{}".format(premode_dir_mat))
-
-                        if pred.transition.reset_csr is None:
-                            agg_dir_mat = premode_dir_mat
-                        else:
-                            projected_dir_mat = premode_dir_mat * pred.transition.reset_csr.transpose()
-
-                            self.print_debug("projected dir mat:\n{}".format(projected_dir_mat))
-
-                            # re-orthgohonalize (and create new vectors if necessary)
-                            agg_dir_mat = lputil.reorthogonalize_matrix(projected_dir_mat, postmode_dims)
-
-                        # also add box directions in target mode (if they don't already exist)
-                        box_dirs = []
-                        for dim in range(postmode_dims):
-                            direction = [0 if d != dim else 1 for d in range(postmode_dims)]
-                            exists = False
-
-                            for row in agg_dir_mat:
-                                if np.allclose(direction, row):
-                                    exists = True
-                                    break
-
-                            if not exists:
-                                box_dirs.append(direction)
-
-                        if box_dirs:
-                            agg_dir_mat = np.concatenate((agg_dir_mat, box_dirs), axis=0)
-
-                if pred and self.settings.aggregation_add_guard:
-                    # add all the guard conditions to the agg_dir_mat
-
-                    if pred.transition.reset_csr is None: # identity reset
-                        guard_dir_mat = pred.transition.guard_csr
-                    else:
-                        # multiply each direction in the guard by the guard
-                        guard_dir_mat = pred.transition.guard_csr * pred.transition.reset_csr.transpose()
-
-                    if guard_dir_mat.shape[0] > 0:
-                        agg_dir_mat = np.concatenate((agg_dir_mat, guard_dir_mat.toarray()), axis=0)
-
-                self.print_debug("agg dir mat:\n{}".format(agg_dir_mat))
-                lpi_list = [state.lpi for state in agg_list]
-
-                new_lpi = lputil.aggregate(lpi_list, agg_dir_mat, postmode)
-
-                predecessor = AggregationPredecessor(agg_list) # Note: these objects weren't clone()'d
-                rv = StateSet(new_lpi, agg_list[0].mode, step_interval, predecessor)
+                rv = self.perform_aggregation(agg_list, step_interval)
                 
         return rv
 
@@ -410,6 +430,7 @@ class Core(Freezable):
         'do a single step of the computation'
 
         Timers.tic('do_step')
+        self.num_steps += 1
 
         if not self.is_finished():
             if self.cur_state is None:

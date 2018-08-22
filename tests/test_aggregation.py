@@ -11,7 +11,7 @@ import numpy as np
 from scipy.sparse import csr_matrix
 
 from hylaa.hybrid_automaton import HybridAutomaton
-from hylaa.settings import HylaaSettings, PlotSettings
+from hylaa.settings import HylaaSettings, PlotSettings, AggregationSettings
 from hylaa.core import Core
 from hylaa.stateset import StateSet, TransitionPredecessor, AggregationPredecessor
 from hylaa import lputil, lpplot
@@ -361,8 +361,8 @@ def test_agg_with_reset():
     settings.stdout = HylaaSettings.STDOUT_NONE
     settings.plot.plot_mode = PlotSettings.PLOT_NONE
 
-    settings.aggregation = HylaaSettings.AGG_BOX
-    settings.aggregation_add_guard = True
+    settings.aggregation.agg_mode = AggregationSettings.AGG_BOX
+    settings.aggregation.add_guard = True
 
     core = Core(ha, settings)
     result = core.run(init_list)

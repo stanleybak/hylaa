@@ -371,7 +371,7 @@ def test_redundant_inv_transition():
 
     assert len(core.waiting_list) > 2
 
-    core.plotman.run_to_completion(core.do_step, core.is_finished)
+    core.plotman.run_to_completion()
 
 def test_tt_with_invstr():
     'test time-triggered transitions combined with invariant strengthening'

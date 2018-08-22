@@ -5,7 +5,7 @@ Fuzzy PID controller
 from matplotlib import animation
 
 from hylaa.hybrid_automaton import HybridAutomaton
-from hylaa.settings import HylaaSettings, PlotSettings
+from hylaa.settings import HylaaSettings, PlotSettings, AggregationSettings
 from hylaa.core import Core
 from hylaa.stateset import StateSet
 from hylaa import lputil
@@ -186,7 +186,7 @@ def define_init_states(ha):
     '''returns a list of StateSet objects'''
     # Variable ordering: [x1, x2, t, affine]
     rv = []
-    
+
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
     mode = ha.modes['loc2']
     mat = [[-1, 0, 0, 0], \
@@ -198,6 +198,7 @@ def define_init_states(ha):
         [0, 0, 0, 1], \
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
+    
     rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
@@ -211,6 +212,7 @@ def define_init_states(ha):
         [0, 0, 0, 1], \
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
+
     rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
@@ -224,6 +226,7 @@ def define_init_states(ha):
         [0, 0, 0, 1], \
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
+
     rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
@@ -250,6 +253,7 @@ def define_init_states(ha):
         [0, 0, 0, 1], \
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
+
     rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
@@ -263,6 +267,7 @@ def define_init_states(ha):
         [0, 0, 0, 1], \
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
+
     rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
@@ -276,6 +281,7 @@ def define_init_states(ha):
         [0, 0, 0, 1], \
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
+
     rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
@@ -289,6 +295,7 @@ def define_init_states(ha):
         [0, 0, 0, 1], \
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
+
     rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
@@ -302,6 +309,7 @@ def define_init_states(ha):
         [0, 0, 0, 1], \
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
+    
     rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     return rv
@@ -312,12 +320,11 @@ def define_settings():
     see hylaa/settings.py for a complete list of reachability settings'''
 
     # step_size = 0.002, max_time = 0.75
-    settings = HylaaSettings(0.002, 0.75)
-    settings.plot.plot_mode = PlotSettings.PLOT_LIVE
+    settings = HylaaSettings(0.001, 0.15)
+    settings.plot.plot_mode = PlotSettings.PLOT_VIDEO
     settings.plot.xdim_dir = 2
     settings.plot.ydim_dir = 0
-    #settings.aggregation = HylaaSettings.AGG_BOX
-    settings.plot.label.axes_limits = (-0.01, 0.9, -1.1, 1.1) 
+    settings.plot.label.axes_limits = (-0.01, 0.3, -1.1, 1.1) 
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
 
     # custom settings for video export
@@ -325,13 +332,10 @@ def define_settings():
         'returns the Writer to create a video for export'
 
         writer_class = animation.writers['ffmpeg']
-        return writer_class(fps=20, metadata=dict(artist='Me'), bitrate=1800)
+        return writer_class(fps=50, metadata=dict(artist='Me'), bitrate=1800)
 
     settings.plot.make_video_writer_func = make_video_writer
     
-    #print("step 0.001 enters transition loop?!?") -> looks like due to aggregation, re-test with deaggregation
-    print("add option to stop continuous post after some exponential number of steps")
-
     return settings
 
 def run_hylaa():

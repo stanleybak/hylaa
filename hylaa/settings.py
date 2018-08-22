@@ -21,8 +21,6 @@ class HylaaSettings(Freezable):  # pylint: disable=too-few-public-methods
 
     STDOUT_NONE, STDOUT_NORMAL, STDOUT_VERBOSE, STDOUT_DEBUG = range(4)
 
-    AGG_NONE, AGG_BOX, AGG_ARNOLDI_BOX = range(3)
-
     def __init__(self, step_size, max_time):
         plot_settings = PlotSettings()
 
@@ -38,14 +36,26 @@ class HylaaSettings(Freezable):  # pylint: disable=too-few-public-methods
         self.do_guard_strengthening = True # add invariants of target modes to each guard?
         self.optimize_tt_transitions = True # auto-detect time-triggered transitions and use single-step semantics?
         
-        self.aggregation = HylaaSettings.AGG_ARNOLDI_BOX # transition aggregation method
-        self.aggregation_add_guard = True # when performing aggregation, also add the guard direction?
-
-        self.periodic_repush_waiting_list = True # periodically add the current state back to the waiting list
+        self.aggregation = AggregationSettings()
 
         self.freeze_attrs()
 
-class PlotSettings(Freezable): # pylint: disable=too-few-public-methods
+class AggregationSettings(Freezable): # pylint: disable=too-few-public-methods
+    'aggregation settings container'
+
+    AGG_NONE, AGG_BOX, AGG_ARNOLDI_BOX = range(3)
+
+    POP_LOWEST_MINTIME, POP_LOWEST_AVGTIME, POP_LARGEST_MAXTIME = range(3)
+
+    def __init__(self):
+        
+        self.agg_mode = AggregationSettings.AGG_ARNOLDI_BOX # transition aggregation method
+        self.add_guard = True # when performing aggregation, also add the guard direction?
+
+        self.require_same_path = True # only aggregate states with same discrete-transition path? (False=all)
+        self.pop_strategy = AggregationSettings.POP_LOWEST_AVGTIME
+
+class PlotSettings(Freezable): # pylint: disable=too-few-public-methods,too-many-instance-attributes
     'plot settings container'
 
     PLOT_NONE = 0 # don't plot (safety checking only; for performance measurement)
@@ -88,6 +98,7 @@ class PlotSettings(Freezable): # pylint: disable=too-few-public-methods
             return writer_class(fps=50, metadata=dict(artist='Me'), bitrate=1800)
 
         self.make_video_writer_func = make_video_writer
+        self.video_extra_frames = 20 # extra frames at the end of a video so it doesn't end so abruptly
 
         self.freeze_attrs()
 

@@ -228,7 +228,6 @@ class PlotManager(Freezable):
 
         self.drew_first_frame = False # one-time flag
         self._anim = None # animation object
-        self.frame_counter = 0
 
         self.plot_vecs = []
         self.init_plot_vecs()
@@ -436,16 +435,20 @@ class PlotManager(Freezable):
         'generator for the computation iterator'
         Timers.tic("anim_iterator")
 
+        frame_counter = 0
+
         # do the computation until its done
         while not self.core.is_finished():
             if self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
-                self.frame_counter += 1
-                self.core.print_verbose("Saving Video Frame #{}".format(self.frame_counter))
+                self.core.print_verbose("Saving Video Frame #{}".format(frame_counter))
                 
-            yield False
+            yield frame_counter
+            frame_counter += 1
 
-        # redraw one more (will clear cur_state)
-        #yield False
+        if self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
+            for _ in range(self.settings.video_extra_frames):
+                frame_counter += 1
+                yield frame_counter
 
         Timers.toc("anim_iterator")
 
