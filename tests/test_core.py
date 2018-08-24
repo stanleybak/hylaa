@@ -589,3 +589,63 @@ def test_over_time_range():
 
     for i in range(5):
         assert_verts_is_box(polys[i], [[i, i + 3.0], [i, i + 3.0]])
+
+def test_tt_split():
+    'tests time-triggered dynamics where the state is split (based on state) after some amount of time elapses'
+
+    ha = HybridAutomaton()
+
+    # mode one: x' = 1, y' = 0, a' = 0 
+    m1 = ha.new_mode('m1')
+    m1.set_dynamics([[0, 0, 1], [0, 0, 0], [0, 0, 0]])
+
+    # mode two: x' = 1, y' = 1, a' = 0 
+    m2 = ha.new_mode('m2')
+    m2.set_dynamics([[0, 0, 1], [0, 0, 1], [0, 0, 0]])
+
+    # invariant: x <= 3.0 & x <= 2.0
+    m1.set_invariant([[1, 0, 0], [1, 0, 0]], [3.0, 2.0])
+
+    # guard: x >= 2.0 & y <= 0.5
+    trans1 = ha.new_transition(m1, m2, 'trans1')
+    trans1.set_guard([[-1, 0, 0], [0, 1, 0]], [-2.0, 0.5])
+
+    # error x >= 4.0
+    error = ha.new_mode('error')
+    trans2 = ha.new_transition(m2, error, "to_error")
+    trans2.set_guard([[-1, 0, 0]], [-4.0])
+
+    # manually run ha.detect_tt_transitions() and check the result
+    ha.detect_tt_transitions()
+
+    assert trans1.time_triggered
+    assert not trans2.time_triggered # not time-triggered because invariant of m2 is True
+
+    # initial set has x = 0, y = [0, 1], a = 1
+    init_lpi = lputil.from_box([(0, 0), (0, 1), (1, 1)], m1)
+    init_list = [StateSet(init_lpi, m1)]
+
+    # settings, step size = 1.0
+    settings = HylaaSettings(1.0, 10.0)
+    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
+    settings.plot.store_plot_result = True
+
+    result = Core(ha, settings).run(init_list)
+    ce = result.counterexample
+
+    assert len(ce) == 2
+    assert ce[0].mode.name == 'm1'
+    assert ce[0].outgoing_transition.name == 'trans1'
+
+    assert ce[1].mode.name == 'm2'
+    assert ce[1].outgoing_transition.name == 'to_error'
+
+    assert abs(ce[0].start[0] - 0.0) < 1e-5
+    assert abs(ce[0].end[0] - 2.0) < 1e-5
+
+    assert abs(ce[1].start[0] - 2.0) < 1e-5
+    assert abs(ce[1].end[0] - 4.0) < 1e-5
+
+    assert len(result.mode_to_polys['m1']) == 3 # time 0, 1, 2
+    assert len(result.mode_to_polys['m2']) == 3 # times 2, 3, 4

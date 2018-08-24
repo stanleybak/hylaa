@@ -522,33 +522,8 @@ class HybridAutomaton(Freezable):
             if mode.a_csr is None: # skip error modes
                 continue
             
-            # find all variables with derivative equal to zero
-            constant_vars = []
-            
-            for i in range(mode.a_csr.shape[0]):
-                nonzeros = mode.a_csr[i].getnnz()
-
-                if nonzeros == 0: # row of all zeros
-                    constant_vars.append(i)
-
-            if not constant_vars:
-                continue
-
             # find all derivatives that only depend on constant vars
-            tt_vars = []
-            for row_index, row in enumerate(mode.a_csr):
-                if row.getnnz() == 0: # skip constant variables
-                    continue
-                
-                all_constant = True
-
-                for i, col in enumerate(row.indices):
-                    if row.data[i] != 0 and not col in constant_vars:
-                        all_constant = False
-                        break
-
-                if all_constant:
-                    tt_vars.append(row_index)
+            tt_vars = get_tt_vars(mode)
 
             print_func("Checking mode '{}', tt_vars = {}, num transitions = {}".format( \
                 mode.name, tt_vars, len(mode.transitions)))
@@ -561,38 +536,92 @@ class HybridAutomaton(Freezable):
                 if is_time_triggered(t, tt_vars, print_func):
                     t.time_triggered = True
 
+def get_tt_vars(mode):
+    'get all variable indices that only depend on constant terms'
+
+    tt_vars = []
+
+    # find all variables with derivative equal to zero
+    constant_vars = []
+
+    for i in range(mode.a_csr.shape[0]):
+        nonzeros = mode.a_csr[i].getnnz()
+
+        if nonzeros == 0: # row of all zeros
+            constant_vars.append(i)
+
+    for row_index, row in enumerate(mode.a_csr):
+        if row.getnnz() == 0: # skip constant variables
+            continue
+
+        all_constant = True
+
+        for i, col in enumerate(row.indices):
+            if row.data[i] != 0 and not col in constant_vars:
+                all_constant = False
+                break
+
+        if all_constant:
+            tt_vars.append(row_index)
+
+    return tt_vars    
+
 def is_time_triggered(t, tt_vars, print_func):
-    'is the passed-in transition time triggered?'
+    '''is the passed-in transition time triggered?
+
+    t is a transition
+    tt_vars is a list of variables with derivatives that only depend on constant terms, like 't' in: t' = a, a' = 0
+
+    '''
 
     rv = False
 
     print_func("checking transition {}, t.guard.rhs = {}".format(t, t.guard_rhs))
 
-    if len(t.guard_rhs) == 1:
-        all_tt_vars = True
-        for i, col in enumerate(t.guard_csr.indices):
-            if t.guard_csr.data[i] != 0 and not col in tt_vars:
-                all_tt_vars = False
+    # all of the conditions in the invariant must involve tt_vars and
+    # one of the conditions in the guard must be the inverse of an invariant condition
+
+    all_invariant_tt = True
+
+    for lc in t.from_mode.inv_list:
+        print_func("checking invariant is tt: {} <= {}".format(lc.csr.toarray(), lc.rhs))
+
+        for i, col in enumerate(lc.csr.indices):
+            if lc.csr.data[i] != 0 and not col in tt_vars:
+                all_invariant_tt = False
                 break
 
-        print_func("t.guard_csr = {}, all_tt_vars = {}".format(t.guard_csr.toarray(), all_tt_vars))
+    if all_invariant_tt:
+        print_func("all invariant conditions are on time-triggered variables... checking for tt guard")
 
-        if all_tt_vars:
-            # check if there is a mode invariant with the opposite condition
-            found_invariant = False
-
-            for lc in t.from_mode.inv_list:
-                print_func("checking invariant {} <= {}".format(lc.csr.toarray(), lc.rhs))
-                
-                if lc.rhs == -1 * t.guard_rhs[0] and (-1 * lc.csr != t.guard_csr[0]).nnz == 0:
-                    print_func("found opposite invariant!")
-                    found_invariant = True
+        for row, rhs in zip(t.guard_csr, t.guard_rhs):
+            print_func("checking guard {} <= {}".format(row.toarray(), rhs))
+                                
+            all_tt_vars = True
+            for i, col in enumerate(row.indices):
+                if row.data[i] != 0 and not col in tt_vars:
+                    all_tt_vars = False
                     break
 
-            if found_invariant:
-                rv = True
+            print_func("t.guard_csr = {}, all_tt_vars = {}".format(row.toarray(), all_tt_vars))
 
-        print_func("Transition {} {} time triggered".format(t, "is" if rv else "is NOT"))
+            if all_tt_vars:
+                # check if there is a mode invariant with the opposite condition
+                found_invariant = False
+
+                for lc in t.from_mode.inv_list:
+                    print_func("checking for inverse with invariant {} <= {}".format(lc.csr.toarray(), lc.rhs))
+
+                    if lc.rhs == -1 * rhs and (-1 * lc.csr != row[0]).nnz == 0:
+                        print_func("found opposite invariant condition!")
+                        found_invariant = True
+                        break
+
+                if found_invariant:
+                    rv = True
+                    break
+
+            print_func("Transition {} {} time triggered".format(t, "is" if rv else "is NOT"))
                    
     return rv
 
@@ -603,53 +632,81 @@ def was_tt_taken(state_lpi, t):
     make sure that a is a constant (not an interval), not equal to 0, and that x is flat (not an interval)
     '''
 
-    assert len(t.guard_rhs) == 1, "should true due to static-time check"
-    dims = state_lpi.dims
     rv = False
+    tt_vars = get_tt_vars(t.to_mode)
 
-    # first look at the guard, and see which variables it uses (find 'x' in x <= K, x' == a)
-    guard_vars = []
+    # find the tt-guard condition first
+    for row, rhs in zip(t.guard_csr, t.guard_rhs):
+        #print(".checking guard {} <= {}".format(row.toarray(), rhs))
 
-    for i, col in enumerate(t.guard_csr.indices):
-        if t.guard_csr.data[i] != 0:
-            guard_vars.append(col)
+        all_tt_vars = True
+        for i, col in enumerate(row.indices):
+            if row.data[i] != 0 and not col in tt_vars:
+                all_tt_vars = False
+                break
 
-    # next, find all the 'a' in x' == a
-    affine_vars = {}
-    a_csr = t.from_mode.a_csr
+        #print(". t.guard_csr = {}, all_tt_vars = {}".format(row.toarray(), all_tt_vars))
+        found_invariant = False
 
-    for var in guard_vars:
-        for index in range(a_csr.indptr[var], a_csr.indptr[var+1]):
-            if a_csr.data[index] != 0:
-                affine_vars[a_csr.indices[index]] = True # insert it into the dict
+        if all_tt_vars:
+            # check if there is a mode invariant with the opposite condition
 
-    all_affine_nonzero = True
+            for lc in t.from_mode.inv_list:
+                #print(". checking for inverse with invariant {} <= {}".format(lc.csr.toarray(), lc.rhs))
 
-    for var in affine_vars:
-        min_dir = [1 if n == var else 0 for n in range(dims)]
-        max_dir = [-1 if n == var else 0 for n in range(dims)]
-        col = state_lpi.cur_vars_offset + var
+                if lc.rhs == -1 * rhs and (-1 * lc.csr != row[0]).nnz == 0:
+                    #print(". found opposite invariant condition!")
+                    found_invariant = True
+                    break
+                
+        if not found_invariant: # this was not the time-triggered condition in the current guard condition
+            continue
 
-        min_val = state_lpi.minimize(direction_vec=min_dir, columns=[col])[0]
-        max_val = state_lpi.minimize(direction_vec=max_dir, columns=[col])[0]
+        dims = state_lpi.dims
 
-        if abs(max_val - min_val) > 1e-9 or abs(max_val) < 1e-9:
-            all_affine_nonzero = False
-            break
+        # first look at the guard condition, and see which variables it uses (find 'x' in x <= K, x' == a)
+        guard_vars = []
 
-    if all_affine_nonzero:
-        # make sure x is flat... first find x
+        for i, col in enumerate(row.indices):
+            if row.data[i] != 0:
+                guard_vars.append(col)
 
-        state_cols = [state_lpi.cur_vars_offset + n for n in range(dims)]
-        direction = t.guard_csr.toarray()[0]
+        # next, find all the 'a' in x' == a
+        affine_vars = {}
+        a_csr = t.from_mode.a_csr
 
-        min_state = state_lpi.minimize(direction_vec=direction, columns=state_cols)
-        max_state = state_lpi.minimize(direction_vec=-1 * direction, columns=state_cols)
+        for var in guard_vars:
+            for index in range(a_csr.indptr[var], a_csr.indptr[var+1]):
+                if a_csr.data[index] != 0:
+                    affine_vars[a_csr.indices[index]] = True # insert it into the dict
 
-        min_val = np.dot(min_state, direction)
-        max_val = np.dot(max_state, direction)
+        all_affine_nonzero = True
 
-        if abs(max_val - min_val) < 1e-9:
-            rv = True
+        for var in affine_vars:
+            min_dir = [1 if n == var else 0 for n in range(dims)]
+            max_dir = [-1 if n == var else 0 for n in range(dims)]
+            col = state_lpi.cur_vars_offset + var
+
+            min_val = state_lpi.minimize(direction_vec=min_dir, columns=[col])[0]
+            max_val = state_lpi.minimize(direction_vec=max_dir, columns=[col])[0]
+
+            if abs(max_val - min_val) > 1e-9 or abs(max_val) < 1e-9:
+                all_affine_nonzero = False
+                break
+
+        if all_affine_nonzero:
+            # make sure x is flat... first find x
+
+            state_cols = [state_lpi.cur_vars_offset + n for n in range(dims)]
+            direction = row.toarray()[0]
+
+            min_state = state_lpi.minimize(direction_vec=direction, columns=state_cols)
+            max_state = state_lpi.minimize(direction_vec=-1 * direction, columns=state_cols)
+
+            min_val = np.dot(min_state, direction)
+            max_val = np.dot(max_state, direction)
+
+            if abs(max_val - min_val) < 1e-9 and max_val >= rhs:
+                rv = True
 
     return rv
