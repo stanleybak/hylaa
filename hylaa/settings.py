@@ -44,7 +44,6 @@ class AggregationSettings(Freezable): # pylint: disable=too-few-public-methods
     'aggregation settings container'
 
     AGG_NONE, AGG_BOX, AGG_ARNOLDI_BOX = range(3)
-
     POP_LOWEST_MINTIME, POP_LOWEST_AVGTIME, POP_LARGEST_MAXTIME = range(3)
 
     def __init__(self):
@@ -54,6 +53,8 @@ class AggregationSettings(Freezable): # pylint: disable=too-few-public-methods
 
         self.require_same_path = True # only aggregate states with same discrete-transition path? (False=all)
         self.pop_strategy = AggregationSettings.POP_LOWEST_AVGTIME
+
+        self.agg_recursive = True # use recursive aggergation (False = flat aggregation)
 
 class PlotSettings(Freezable): # pylint: disable=too-few-public-methods,too-many-instance-attributes
     'plot settings container'
