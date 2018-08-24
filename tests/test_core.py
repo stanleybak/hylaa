@@ -595,57 +595,90 @@ def test_tt_split():
 
     ha = HybridAutomaton()
 
-    # mode one: x' = 1, y' = 0, a' = 0 
-    m1 = ha.new_mode('m1')
-    m1.set_dynamics([[0, 0, 1], [0, 0, 0], [0, 0, 0]])
+    # dynamics variable order: [x0, x1, x2, x3, u, t, affine]
+    pole = ha.new_mode('pole')
+    a_matrix = [ \
+        [0, 1, 0, 0, 0, 0, 0], \
+        [0, 0, 0.7164, 0, 0.9755, 0, 0], \
+        [0, 0, 0, 1, 0, 0, 0], \
+        [0, 0, 0.76, 0, 0.46, 0, 0], \
+        [0, 0, 0, 0, 0, 0, 0], \
+        [0, 0, 0, 0, 0, 0, 1], \
+        [0, 0, 0, 0, 0, 0, 0], \
+        ]
+    pole.set_dynamics(a_matrix)
+    # 0.0 <= t & t <= 0.1
+    pole.set_invariant([[0, 0, 0, 0, 0, -1, 0], [0, 0, 0, 0, 0, 1, 0], ], [0, 0.1, ])
 
-    # mode two: x' = 1, y' = 1, a' = 0 
-    m2 = ha.new_mode('m2')
-    m2.set_dynamics([[0, 0, 1], [0, 0, 1], [0, 0, 0]])
+    trans = ha.new_transition(pole, pole, 'b2')
+    # x3 <= 1.0229164510965 & x2 <= 2.0244571492076 & x3 > -10.0172335505486 & x2 <= 1.0329331979156 & t >= 0.1
+    trans.set_guard([[0, 0, 0, 1, 0, 0, 0],
+                     [0, 0, 1, 0, 0, 0, 0],
+                     [-0, -0, -0, -1, -0, -0, -0],
+                     [0, 0, 1, 0, 0, 0, 0], 
+                     [-0, -0, -0, -0, -0, -1, -0],
+                    ], [1.0229164510965, 2.0244571492076, 10.0172335505486, 1.0329331979156, -0.1, ])
 
-    # invariant: x <= 3.0 & x <= 2.0
-    m1.set_invariant([[1, 0, 0], [1, 0, 0]], [3.0, 2.0])
-
-    # guard: x >= 2.0 & y <= 0.5
-    trans1 = ha.new_transition(m1, m2, 'trans1')
-    trans1.set_guard([[-1, 0, 0], [0, 1, 0]], [-2.0, 0.5])
-
-    # error x >= 4.0
-    error = ha.new_mode('error')
-    trans2 = ha.new_transition(m2, error, "to_error")
-    trans2.set_guard([[-1, 0, 0]], [-4.0])
+    # Reset:
+    # t := 0.0
+    # u := 0.2
+    reset_mat = [ \
+        [1, 0, 0, 0, 0, 0, 0, ], \
+        [0, 1, 0, 0, 0, 0, 0, ], \
+        [0, 0, 1, 0, 0, 0, 0, ], \
+        [0, 0, 0, 1, 0, 0, 0, ], \
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, ], \
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, ], \
+        [0, 0, 0, 0, 0, 0, 1, ], \
+        ]
+    reset_minkowski = [ \
+        [0, ], \
+        [0, ], \
+        [0, ], \
+        [0, ], \
+        [1, ], \
+        [0, ], \
+        [0, ], \
+        ]
+    minkowski_constraints = [ \
+        [1, ], \
+        [-1, ], \
+        ]
+    minkowski_rhs = [0.2, -0.2]
+    trans.set_reset(reset_mat, reset_minkowski, minkowski_constraints, minkowski_rhs)
 
     # manually run ha.detect_tt_transitions() and check the result
-    ha.detect_tt_transitions()
+    def print_none(str):
+        'suppress printing'
+        pass
+    
+    settings = HylaaSettings(0.05, 0.15)
+    settings.plot.plot_mode = PlotSettings.PLOT_IMAGE
+    settings.plot.xdim_dir = 0
+    settings.plot.ydim_dir = 3
+    settings.stdout = HylaaSettings.STDOUT_NONE
 
-    assert trans1.time_triggered
-    assert not trans2.time_triggered # not time-triggered because invariant of m2 is True
+    init_list = []
+    mode = ha.modes['pole']
+    mat = [[1, 0, 0, 0, 0, 0, 0], \
+        [-1, -0, -0, -0, -0, -0, -0], \
+        [0, 1, 0, 0, 0, 0, 0], \
+        [-0, -1, -0, -0, -0, -0, -0], \
+        [0, 0, 1, 0, 0, 0, 0], \
+        [-0, -0, -1, -0, -0, -0, -0], \
+        [0, 0, 0, -1, 0, 0, 0], \
+        [0, 0, 0, 1, 0, 0, 0], \
+        [0, 0, 0, 0, 1, 0, 0], \
+        [-0, -0, -0, -0, -1, -0, -0], \
+        [0, 0, 0, 0, 0, 1, 0], \
+        [-0, -0, -0, -0, -0, -1, -0], \
+        [0, 0, 0, 0, 0, 0, 1], \
+        [-0, -0, -0, -0, -0, -0, -1], ]
+    rhs = [0, -0, 0, -0, 0, -0, 1.3, -1.3, 0, -0, 0, -0, 1, -1, ]
+    init_list.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
 
-    # initial set has x = 0, y = [0, 1], a = 1
-    init_lpi = lputil.from_box([(0, 0), (0, 1), (1, 1)], m1)
-    init_list = [StateSet(init_lpi, m1)]
+    core = Core(ha, settings)
+    result = core.run(init_list)    # expect no exception during running
 
-    # settings, step size = 1.0
-    settings = HylaaSettings(1.0, 10.0)
-    settings.stdout = HylaaSettings.STDOUT_VERBOSE
-    settings.plot.plot_mode = PlotSettings.PLOT_NONE
-    settings.plot.store_plot_result = True
-
-    result = Core(ha, settings).run(init_list)
-    ce = result.counterexample
-
-    assert len(ce) == 2
-    assert ce[0].mode.name == 'm1'
-    assert ce[0].outgoing_transition.name == 'trans1'
-
-    assert ce[1].mode.name == 'm2'
-    assert ce[1].outgoing_transition.name == 'to_error'
-
-    assert abs(ce[0].start[0] - 0.0) < 1e-5
-    assert abs(ce[0].end[0] - 2.0) < 1e-5
-
-    assert abs(ce[1].start[0] - 2.0) < 1e-5
-    assert abs(ce[1].end[0] - 4.0) < 1e-5
-
-    assert len(result.mode_to_polys['m1']) == 3 # time 0, 1, 2
-    assert len(result.mode_to_polys['m2']) == 3 # times 2, 3, 4
+    assert result.last_cur_state.cur_steps_since_start[0] == 3
+    assert result.last_cur_state.cur_steps_since_start[1] == 3

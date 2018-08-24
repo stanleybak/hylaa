@@ -621,7 +621,12 @@ def is_time_triggered(t, tt_vars, print_func):
                     rv = True
                     break
 
-            print_func("Transition {} {} time triggered".format(t, "is" if rv else "is NOT"))
+                print_func("Guard {} <= {} {} time triggered".format(row.toarray(), rhs, "is" if rv else "is NOT"))
+
+                if rv:
+                    break
+
+        print_func("Static Check: Transition {} {} time triggered".format(t, "is" if rv else "is NOT"))
                    
     return rv
 
@@ -655,7 +660,7 @@ def was_tt_taken(state_lpi, t):
                 #print(". checking for inverse with invariant {} <= {}".format(lc.csr.toarray(), lc.rhs))
 
                 if lc.rhs == -1 * rhs and (-1 * lc.csr != row[0]).nnz == 0:
-                    #print(". found opposite invariant condition!")
+                    #print(". found opposite invariant condition")
                     found_invariant = True
                     break
                 
@@ -680,6 +685,8 @@ def was_tt_taken(state_lpi, t):
                 if a_csr.data[index] != 0:
                     affine_vars[a_csr.indices[index]] = True # insert it into the dict
 
+        #print(". guard vars = {}, affine_vars = {}".format(guard_vars, affine_vars.keys()))
+
         all_affine_nonzero = True
 
         for var in affine_vars:
@@ -690,12 +697,15 @@ def was_tt_taken(state_lpi, t):
             min_val = state_lpi.minimize(direction_vec=min_dir, columns=[col])[0]
             max_val = state_lpi.minimize(direction_vec=max_dir, columns=[col])[0]
 
+            #print(". affine var {}, min_val = {}, max_val = {}".format(var, min_val, max_val))
+
             if abs(max_val - min_val) > 1e-9 or abs(max_val) < 1e-9:
                 all_affine_nonzero = False
                 break
 
         if all_affine_nonzero:
             # make sure x is flat... first find x
+            #print(". all affine nonzero, optimizing guard direction")
 
             state_cols = [state_lpi.cur_vars_offset + n for n in range(dims)]
             direction = row.toarray()[0]
@@ -706,7 +716,9 @@ def was_tt_taken(state_lpi, t):
             min_val = np.dot(min_state, direction)
             max_val = np.dot(max_state, direction)
 
-            if abs(max_val - min_val) < 1e-9 and max_val >= rhs:
+            #print(". min_val = {}, max_val = {}, rhs = {}".format(min_val, max_val, rhs))
+
+            if abs(max_val - min_val) < 1e-9 and min_val <= rhs:
                 rv = True
 
     return rv
