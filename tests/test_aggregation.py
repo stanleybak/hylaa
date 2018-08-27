@@ -539,8 +539,7 @@ def test_agg_no_counterexample():
     settings = HylaaSettings(1.0, 10.0)
     settings.stdout = HylaaSettings.STDOUT_DEBUG
     settings.plot.plot_mode = PlotSettings.PLOT_NONE
-    settings.plot.store_plot_result = True
 
     result = Core(ha, settings).run(init_list)
 
-    assert result.counterexample is None
+    assert not result.counterexample

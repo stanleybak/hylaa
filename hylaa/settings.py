@@ -4,9 +4,10 @@ Stanley Bak, 2018
 '''
 
 import math
-from hylaa.util import Freezable
 
 from matplotlib import animation
+
+from hylaa.util import Freezable
 
 # Force matplotlib to not use any Xwindows backend.
 #import matplotlib
@@ -35,6 +36,7 @@ class HylaaSettings(Freezable):  # pylint: disable=too-few-public-methods
         self.process_urgent_guards = False # allow zero continuous-post steps between transitions?
         self.do_guard_strengthening = True # add invariants of target modes to each guard?
         self.optimize_tt_transitions = True # auto-detect time-triggered transitions and use single-step semantics?
+        self.stop_on_error = True
         
         self.aggregation = AggregationSettings()
 
@@ -55,6 +57,7 @@ class AggregationSettings(Freezable): # pylint: disable=too-few-public-methods
         self.pop_strategy = AggregationSettings.POP_LOWEST_AVGTIME
 
         self.agg_recursive = True # use recursive aggergation (False = flat aggregation)
+        self.concrete_trace_deaggregation = True # use concrete traces to guide deaggregation
 
 class PlotSettings(Freezable): # pylint: disable=too-few-public-methods,too-many-instance-attributes
     'plot settings container'
@@ -79,6 +82,8 @@ class PlotSettings(Freezable): # pylint: disable=too-few-public-methods,too-many
         self.label = LabelSettings() # plot title, axis labels, font sizes, ect.
 
         self.num_angles = 512 # how many evenly-spaced angles to put into plot_vecs
+
+        self.draw_stride = 1 # draw every n frames (good to inscrease if number of steps is large)
 
         self.extra_draw_func = lambda ax: None # extra draw function that gets called each frame, param is axis object
         
@@ -131,3 +136,10 @@ class LabelSettings(Freezable):
         self.x_label = ''
         self.y_label = ''
         self.title = ''
+
+class StaticSettings(): # pylint: disable=too-few-public-methods
+    'Static settings'
+
+    # swiglpk has a memory leak: https://github.com/biosustain/swiglpk/issues/31
+    # how much memory should we allow to be used before we print a message and quit
+    MAX_MEMORY_SWIGLPK_LEAK_GB = 1.0 # 2.0

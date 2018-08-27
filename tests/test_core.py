@@ -682,3 +682,29 @@ def test_tt_split():
 
     assert result.last_cur_state.cur_steps_since_start[0] == 3
     assert result.last_cur_state.cur_steps_since_start[1] == 3
+
+def test_zero_dynamics():
+    'test a system with zero dynamic (only should process one frame)'
+
+    ha = HybridAutomaton()
+
+    # with time and affine variable
+    mode = ha.new_mode('mode')
+    mode.set_dynamics([[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]])
+
+    # initial set
+    init_lpi = lputil.from_box([(-5, -5), (0, 1), (0, 0), (1, 1)], mode)
+    init_list = [StateSet(init_lpi, mode)]
+
+    # settings
+    settings = HylaaSettings(math.pi/4, 20*math.pi)
+    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
+    
+    core = Core(ha, settings)
+
+    core.setup(init_list)
+    core.do_step() # pop
+    core.do_step() # propagate and remove
+
+    assert core.cur_state is None, "cur state should be none, since mode dynamics were zero"

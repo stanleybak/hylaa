@@ -235,8 +235,8 @@ class PlotManager(Freezable):
         self.shapes = None # instance of DrawnShapes
         self.interactive = InteractiveState()
 
-        self.drew_first_frame = False # one-time flag
         self._anim = None # animation object
+        self.num_frames_drawn = 0
 
         self.plot_vecs = []
         self.init_plot_vecs()
@@ -404,10 +404,10 @@ class PlotManager(Freezable):
 
         return rv
 
-    def anim_func(self, force_single_frame):
+    def anim_func(self, frame_num):
         'animation draw function'
 
-        if not force_single_frame and self.interactive.paused:
+        if self.interactive.paused:
             Timers.tic("paused")
             time.sleep(0.1)
             Timers.toc("paused")
@@ -415,23 +415,27 @@ class PlotManager(Freezable):
             Timers.tic("frame")
 
             self.shapes.set_cur_state(None)
-            self.core.do_step()
+
+            for _ in range(self.settings.draw_stride):
+                self.core.do_step()
+
+                # if we just wanted a single step (or do_step() caused paused to be set to True)
+                if self.interactive.step or self.interactive.paused:
+                    self.interactive.step = False
+                    self.interactive.paused = True
+                    break
 
             if self.core.cur_state is not None:
                 if not self.plot_current_state(self.core.cur_state):
                     self.core.print_verbose("Continuous state discovered to be UNSAT during plot, removing state")
                     self.core.cur_state = None
 
-            # if we just wanted a single step
-            if self.interactive.step:
-                self.interactive.step = False
-                self.interactive.paused = True
-
             Timers.toc("frame")
 
-            if self.interactive.paused and not force_single_frame:
-                frame_timer = Timers.top_level_timer.get_children_recursive('frame')[0]
-                self.core.print_normal("Paused After Frame #{}".format(frame_timer.num_calls))
+            if self.interactive.paused:
+                self.core.print_normal("Paused After Frame #{}".format(self.num_frames_drawn))
+
+            self.num_frames_drawn += 1
 
         return [self.axes.xaxis, self.axes.yaxis] + self.shapes.get_artists()
 
@@ -501,7 +505,8 @@ class PlotManager(Freezable):
             self.save_image()
         else:
             interval = 1 if self.settings.plot_mode == PlotSettings.PLOT_VIDEO else 0
-            
+
+            self.num_frames_drawn = 0
             self._anim = animation.FuncAnimation(self.fig, self.anim_func, self.anim_iterator, \
                 init_func=self.anim_init_func, interval=interval, blit=True, repeat=False, save_count=sys.maxsize)
 

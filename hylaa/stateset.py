@@ -4,8 +4,6 @@ Stanley Bak
 Aug 2016
 '''
 
-from collections import namedtuple
-
 import numpy as np
 
 from hylaa import lputil
@@ -14,12 +12,9 @@ from hylaa.hybrid_automaton import Mode
 from hylaa.timerutil import Timers
 from hylaa.util import Freezable
 from hylaa.lpinstance import LpInstance
+from hylaa.predecessor import TransitionPredecessor, AggregationPredecessor
 
 from hylaa import lpplot
-
-# predecessor types
-AggregationPredecessor = namedtuple('AggregationPredecessor', ['states'])
-TransitionPredecessor = namedtuple('TransitionPredecessor', ['state', 'transition', 'premode_lpi'])
 
 class StateSet(Freezable):
     '''
@@ -61,8 +56,8 @@ class StateSet(Freezable):
         self.basis_matrix = np.identity(mode.a_csr.shape[0])
         self.input_effects_list = None if mode.b_csr is None else [] # list of input effects at each step
 
+        # used for plotting
         self._verts = None # cached vertices at the current step
-
         self.assigned_plot_dim = False # set to True on first call to verts()
         self.xdim = None # set on first call to verts()
         self.ydim = None # set on first call to verts()

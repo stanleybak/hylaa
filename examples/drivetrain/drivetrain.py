@@ -6,7 +6,7 @@ Command Line arguments: -gen drivetrain "-theta 2 -init_scale 1.0 -reverse_error
 '''
 
 from hylaa.hybrid_automaton import HybridAutomaton
-from hylaa.settings import HylaaSettings, PlotSettings
+from hylaa.settings import HylaaSettings, PlotSettings, AggregationSettings
 from hylaa.core import Core
 from hylaa.stateset import StateSet
 from hylaa import lputil
@@ -14,7 +14,7 @@ from hylaa import lputil
 def define_ha():
     '''make the hybrid automaton and return it'''
 
-    ha = HybridAutomaton()
+    ha = HybridAutomaton('Drivetrain')
 
     # dynamics variable order: [x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, t, affine]
 
@@ -99,24 +99,6 @@ def define_ha():
     negAngleInit.set_invariant([[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0], ], [0.2, ])
 
     error = ha.new_mode('error')
-    a_matrix = [ \
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
-        ]
-    error.set_dynamics(a_matrix)
-
-    _error = ha.new_mode('_error')
 
     trans = ha.new_transition(negAngleInit, negAngle)
     # t >= 0.2
@@ -137,8 +119,6 @@ def define_ha():
     trans = ha.new_transition(posAngle, error)
     # x1 <= 0.03
     trans.set_guard([[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], ], [0.03, ])
-
-    trans = ha.new_transition(error, _error)
 
     return ha
 
@@ -186,11 +166,15 @@ def define_settings():
     see hylaa/settings.py for a complete list of reachability settings'''
 
     # step_size = 5.0E-4, max_time = 2.0
-    settings = HylaaSettings(5.0E-3, 2.0)
-    settings.stdout = HylaaSettings.STDOUT_DEBUG
-    settings.plot.plot_mode = PlotSettings.PLOT_INTERACTIVE
+    settings = HylaaSettings(5.0E-4, 2.0)
+    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
     settings.plot.xdim_dir = 0
     settings.plot.ydim_dir = 2
+
+    settings.stop_on_error = False
+    settings.plot.draw_stride = 10
+    #settings.aggregation.agg_mode = AggregationSettings.AGG_NONE
 
     return settings
 

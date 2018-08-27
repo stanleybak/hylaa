@@ -3,7 +3,6 @@ Main Hylaa Reachability Implementation
 Stanley Bak, 2018
 '''
 
-import math
 from collections import deque
 
 import numpy as np
@@ -12,7 +11,9 @@ from termcolor import cprint
 from hylaa.settings import HylaaSettings, PlotSettings, AggregationSettings
 
 from hylaa.plotutil import PlotManager
-from hylaa.stateset import StateSet, TransitionPredecessor, AggregationPredecessor
+from hylaa.stateset import StateSet
+
+from hylaa.predecessor import TransitionPredecessor, AggregationPredecessor
 from hylaa.hybrid_automaton import HybridAutomaton, was_tt_taken
 from hylaa.timerutil import Timers
 from hylaa.util import Freezable
@@ -86,7 +87,10 @@ class Core(Freezable):
     def is_finished(self):
         'is the computation finished'
 
-        finished = not self.result.safe
+        finished = False
+
+        if self.settings.stop_on_error:
+            finished = not self.result.safe
 
         if not finished:
             finished = self.cur_state is None and not self.waiting_list
@@ -149,9 +153,7 @@ class Core(Freezable):
 
         self.result.safe = False
 
-        if self.cur_state.has_aggregation_precessor():
-            self.result.counterexample = None
-        else:
+        if not self.cur_state.has_aggregation_precessor() and not self.result.counterexample:
             self.result.counterexample = make_counterexample(self.hybrid_automaton, t, lpi)
 
     def check_guards(self):
@@ -223,6 +225,12 @@ class Core(Freezable):
                 else:
                     self.cur_state.step()
                     self.check_guards()
+
+                    # if the current mode has zero dynamic, remove it here
+                    if self.cur_state.mode.a_csr.nnz == 0:
+                        self.print_normal("Mode '{}' has zero dynamics, skipping remaining steps".format( \
+                            self.cur_state.mode.name))
+                        self.cur_state = None
 
         Timers.toc('do_step_continuous_post')
 
@@ -469,7 +477,7 @@ class Core(Freezable):
         if self.settings.do_guard_strengthening:
             ha.do_guard_strengthening()
 
-        ha.check_transition_dimensions()
+        ha.check_transitions()
         
         self.plotman.create_plot()
 

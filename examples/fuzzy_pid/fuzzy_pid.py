@@ -319,13 +319,16 @@ def define_settings():
     '''get the hylaa settings object
     see hylaa/settings.py for a complete list of reachability settings'''
 
-    # step_size = 0.002, max_time = 0.75
-    settings = HylaaSettings(0.001, 0.15)
-    settings.plot.plot_mode = PlotSettings.PLOT_IMAGE # try PLOT_VIDEO (takes 10 minutes)
+    # step_size = 0.001, max_time = 0.75
+    settings = HylaaSettings(0.005, 0.15)
+    settings.plot.plot_mode = PlotSettings.PLOT_LIVE # try PLOT_VIDEO (takes 10 minutes)
     settings.plot.xdim_dir = 2
     settings.plot.ydim_dir = 0
     settings.plot.label.axes_limits = (-0.01, 0.3, -1.1, 1.1) 
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
+
+    #settings.aggregation.require_same_path=False
+    #settings.aggregation.pop_strategy=AggregationSettings.POP_LARGEST_MAXTIME
 
     # custom settings for video export
     def make_video_writer():

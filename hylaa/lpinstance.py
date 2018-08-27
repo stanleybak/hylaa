@@ -13,6 +13,8 @@ import swiglpk as glpk
 from hylaa.util import Freezable
 from hylaa.timerutil import Timers
 
+from hylaa.settings import StaticSettings
+
 class LpInstance(Freezable): # pylint: disable=too-many-public-methods
     'Linear programming wrapper using glpk (through swiglpk python interface)'
 
@@ -864,12 +866,16 @@ class SwigArray():
     def _allocated(cls, num_bytes):
         'track how many bytes were allocated and print warning if threshold is exceeded'
 
+        gb_allowed = StaticSettings.MAX_MEMORY_SWIGLPK_LEAK_GB
         mb = 1024 * 1024
-        threshold = 1024 * mb # 1 gb
+        threshold = 1024 * mb * gb_allowed # gb
 
-        pre = cls.bytes_allocated
         cls.bytes_allocated += num_bytes
 
-        if (pre // threshold) != (cls.bytes_allocated // threshold):
-            print(("Warning: Swig array allocation leaked more than {} GB memory. See: " + \
-                  "https://github.com/biosustain/swiglpk/issues/31").format(pre // threshold))
+        print("Allocated: {} / {} ({:.2f}%)".format(
+            cls.bytes_allocated, threshold, 100 * cls.bytes_allocated / threshold))
+
+        if cls.bytes_allocated > threshold:
+            raise MemoryError(("Swig array allocation leaked more than {} GB memory. This limit can be raised by " + \
+                "increasing StaticSettings.MAX_MEMORY_SWIGLPK_LEAK_GB. For info on the leak, see: " + \
+                  "https://github.com/biosustain/swiglpk/issues/31").format(gb_allowed))

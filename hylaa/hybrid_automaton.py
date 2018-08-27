@@ -186,7 +186,6 @@ class Mode(Freezable):
                     "way encode affine terms. Instead, introduce a fixed affine varible in the A matrix with a' = 0" + \
                     " and a(0) = 1, and refer to that variable in any differential equations that use affine " + \
                     "terms. This check can be disabled by using 'allow_constants=True' in set_inputs().").format(i, lb)
-                
 
     def set_inputs(self, b_csr, u_constraints_csr, u_constraints_rhs, allow_constants=False):
         '''sets the time-varying / uncertain inputs for the mode (optional)
@@ -428,15 +427,20 @@ class HybridAutomaton(Freezable):
 
         return t
 
-    def check_transition_dimensions(self):
+    def check_transitions(self):
         '''
         check that transitios have appropriate resets if the number of variables changes. This is done automatically
         when set_reset is called, but sometimes this may not be called (identity resets). This will check these cases.
+
+        This also checks that guards were assigned and error modes don't have outgoing transitions
         '''
 
         for t in self.transitions:
             assert t.from_mode.a_csr is not None, \
                 "Outgoing transition detected from error mode: {} (not allowed)".format(t)
+
+            assert t.guard_csr is not None, ("Transition '{}' guard was NOT assigned. " + \
+                "Use set_guard_true() for always enabled guards, if that's what was intended.").format(t)
             
             if t.to_mode.a_csr is None:
                 continue
