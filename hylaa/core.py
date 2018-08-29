@@ -110,7 +110,8 @@ class Core(Freezable):
             minkowski_constraints_rhs=t.reset_minkowski_constraints_rhs, successor_has_inputs=successor_has_inputs)
 
         if t_lpi.is_feasible():
-            successor_state = StateSet(t_lpi, t.to_mode, self.cur_state.cur_steps_since_start, predecessor)
+            successor_state = StateSet(t_lpi, t.to_mode, self.cur_state.cur_steps_since_start,
+                                       predecessor)
             self.waiting_list.append(successor_state)
 
             self.print_verbose("Added Discrete Successor to '{}' at step {}".format( \
@@ -153,7 +154,7 @@ class Core(Freezable):
 
         self.result.safe = False
 
-        if not self.cur_state.has_aggregation_precessor() and not self.result.counterexample:
+        if self.cur_state.is_concrete and not self.result.counterexample:
             self.result.counterexample = make_counterexample(self.hybrid_automaton, t, lpi)
 
     def check_guards(self):
@@ -251,14 +252,12 @@ class Core(Freezable):
 
         return score
 
-    def get_agggreation_states(self):
-        '''get the states from the waiting list we are going to aggregate
-
-        This also updates the waiting list.
-
-        returns agg_list, step_range (of states in agg_list)
+    def default_pop_func(self):
+        '''
+        Get the states to remove from the waiting list based on a score-based method
         '''
 
+        # use score method to decide which mode to pop
         to_remove = self.waiting_list[0]
         to_remove_score = self.compute_pop_score(to_remove)
 
@@ -273,10 +272,7 @@ class Core(Freezable):
                                                                                  to_remove.mode.name))
 
         # remove all states for aggregation
-        new_waiting_list = []
         agg_list = []
-        min_steps = float('inf')
-        max_steps = -float('inf')
 
         for state in self.waiting_list:
             should_add = False
@@ -285,29 +281,54 @@ class Core(Freezable):
                 should_add = True
             elif state.mode is to_remove.mode:
                 if self.settings.aggregation.require_same_path:
-                    # look at the parents
                     if (isinstance(to_remove.predecessor, TransitionPredecessor) and \
                         isinstance(state.predecessor, TransitionPredecessor) and \
                         to_remove.predecessor.transition is state.predecessor.transition and \
                         to_remove.predecessor.state.computation_path_id == state.predecessor.state.computation_path_id):
-                        
+
                         should_add = True
                 else: # require_same_path is False
                     should_add = True
 
             if should_add:
                 agg_list.append(state)
-                
-                min_steps = min(min_steps, state.cur_steps_since_start[0])
-                max_steps = max(max_steps, state.cur_steps_since_start[1])
-            else:
+
+        return agg_list
+
+    def get_aggregation_states(self):
+        '''get the states from the waiting list we are going to aggregate
+
+        This also updates the waiting list.
+
+        returns agg_list
+        '''
+
+        Timers.tic('get_aggregation_states')
+
+        if self.settings.aggregation.custom_pop_func:
+            self.print_verbose("Aggregating based on custom pop function")
+
+            agg_list = self.settings.aggregation.custom_pop_func(self.waiting_list)
+        else:
+            agg_list = self.default_pop_func()
+
+        new_waiting_list = []
+
+        for state in self.waiting_list:
+            if not state in agg_list:
                 new_waiting_list.append(state)
+
+        self.print_verbose("agg_list had {} states, new_waiting_list has {} states".format(
+            len(agg_list), len(new_waiting_list)))
+
+        assert agg_list, "agg_list was empty"
+        assert len(agg_list) + len(new_waiting_list) == len(self.waiting_list), "agg_list had new states in it?"
 
         self.waiting_list = new_waiting_list
 
-        assert agg_list, "returning empty agg_list?"
+        Timers.toc('get_aggregation_states')
 
-        return agg_list, [min_steps, max_steps]
+        return agg_list
 
     def perform_aggregation(self, agg_list, step_interval):
         '''
@@ -390,7 +411,10 @@ class Core(Freezable):
         if self.settings.aggregation.agg_mode == AggregationSettings.AGG_NONE:
             rv = self.waiting_list.pop(0)
         else:
-            agg_list, step_interval = self.get_agggreation_states()
+            agg_list = self.get_aggregation_states()
+            min_step = min([state.cur_steps_since_start[0] for state in agg_list])
+            max_step = max([state.cur_steps_since_start[1] for state in agg_list])
+            step_interval = [min_step, max_step]
 
             self.print_verbose("Removed {} state{} for aggregation at steps {}".format(
                 len(agg_list), "s" if len(agg_list) > 1 else "", step_interval))

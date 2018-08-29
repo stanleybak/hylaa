@@ -53,11 +53,12 @@ class AggregationSettings(Freezable): # pylint: disable=too-few-public-methods
         self.agg_mode = AggregationSettings.AGG_ARNOLDI_BOX # transition aggregation method
         self.add_guard = True # when performing aggregation, also add the guard direction?
 
+        self.custom_pop_func = None # function taking in waiting list and returns list of states to aggregate
+        # if custom_pop_func was None, these two settings guide which state gets popped off of waiting list
         self.require_same_path = True # only aggregate states with same discrete-transition path? (False=all)
         self.pop_strategy = AggregationSettings.POP_LOWEST_AVGTIME
 
-        self.agg_recursive = True # use recursive aggergation (False = flat aggregation)
-        self.concrete_trace_deaggregation = True # use concrete traces to guide deaggregation
+        self.deaggregation = False # perform concrete-trace guided deaggregation
 
 class PlotSettings(Freezable): # pylint: disable=too-few-public-methods,too-many-instance-attributes
     'plot settings container'
@@ -75,6 +76,7 @@ class PlotSettings(Freezable): # pylint: disable=too-few-public-methods,too-many
 
         self.filename = None # filename to print data to for certain plot modes
 
+        # these two can also be lists, in which case we'll make multiple plots
         self.xdim_dir = 0 # plotting x dimension number, direction (np.array), None (time), or dict: mode_name -> dir
         self.ydim_dir = 1 # plotting y dimension number, direction (np.array), None (time), or dict: mode_name -> dir
 

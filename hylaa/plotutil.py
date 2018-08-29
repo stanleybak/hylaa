@@ -14,13 +14,14 @@ import numpy as np
 from matplotlib import collections, animation, colors, rcParams
 import matplotlib.pyplot as plt
 from matplotlib.path import Path
-from matplotlib.widgets import Button
+from matplotlib.widgets import Button, TextBox
 from matplotlib.lines import Line2D
 
 from hylaa import lpplot
 from hylaa.timerutil import Timers
 from hylaa.settings import PlotSettings
 from hylaa.util import Freezable
+from hylaa.predecessor import AggregationPredecessor
 
 class AxisLimits(Freezable):
     '''the axis limits'''
@@ -32,6 +33,9 @@ class AxisLimits(Freezable):
         self.ymax = None
 
         self.freeze_attrs()
+
+    def __str__(self):
+        return "({}, {}, {}, {})".format(self.xmin, self.xmax, self.ymin, self.ymax)
 
 class InteractiveState(Freezable):
     '''the state during PLOT_INTERACTIVE'''
@@ -126,9 +130,9 @@ class ModeColors(Freezable):
 class DrawnShapes(Freezable):
     'maintains shapes to be drawn'
 
-    def __init__(self, plotman):
+    def __init__(self, plotman, subplot):
         self.plotman = plotman
-        self.axes = plotman.axes
+        self.axes = plotman.axes_list[subplot]
         self.mode_colors = plotman.mode_colors
 
         # parent is a string
@@ -158,8 +162,10 @@ class DrawnShapes(Freezable):
 
         return rv
 
-    def set_cur_state(self, verts):
+    def set_cur_state(self, verts_list):
         'set the currently tracked set of states for one frame'
+
+        assert verts_list is None or isinstance(verts_list, list)
 
         polys = self.parent_to_polys.get('cur_state')
         
@@ -172,13 +178,14 @@ class DrawnShapes(Freezable):
 
         paths = polys.get_paths()
 
-        if polys is not None and paths:
-            paths.pop() # remove the old polygon
+        while polys is not None and paths:
+            paths.pop() # remove the old polygon(s)
 
-        if verts is not None:
-            # create a new polygon
-            codes = [Path.MOVETO] + [Path.LINETO] * (len(verts) - 2) + [Path.CLOSEPOLY]
-            paths.append(Path(verts, codes))
+        if verts_list is not None:
+            for verts in verts_list:
+                # create a new polygon
+                codes = [Path.MOVETO] + [Path.LINETO] * (len(verts) - 2) + [Path.CLOSEPOLY]
+                paths.append(Path(verts, codes))
 
     def add_reachable_poly(self, poly_verts, mode_name):
         '''add a polygon which was reachable'''
@@ -227,7 +234,8 @@ class PlotManager(Freezable):
         self.settings = hylaa_core.settings.plot
 
         self.fig = None
-        self.axes = None
+        self.axes_list = None
+        
         self.actual_limits = None # AxisLimits object
         self.drawn_limits = None # AxisLimits object
 
@@ -238,7 +246,8 @@ class PlotManager(Freezable):
         self._anim = None # animation object
         self.num_frames_drawn = 0
 
-        self.plot_vecs = []
+        self.plot_vec_list = [] # a list of plot_vecs for each subplot
+        self.num_subplots = None
         self.init_plot_vecs()
 
         self.freeze_attrs()
@@ -246,42 +255,68 @@ class PlotManager(Freezable):
     def init_plot_vecs(self):
         'initialize plot_vecs'
 
-        assert not (self.settings.xdim_dir is None and self.settings.ydim_dir is None)
-
-        if self.settings.xdim_dir is None:
-            self.plot_vecs.append(np.array([0, 1.], dtype=float))
-            self.plot_vecs.append(np.array([0, -1.], dtype=float))
-        elif self.settings.ydim_dir is None:
-            self.plot_vecs.append(np.array([1., 0], dtype=float))
-            self.plot_vecs.append(np.array([-1., 0], dtype=float))
+        if isinstance(self.settings.xdim_dir, list):
+            assert isinstance(self.settings.ydim_dir, list)
+            assert len(self.settings.xdim_dir) == len(self.settings.ydim_dir)
         else:
-            assert self.settings.num_angles >= 3, "needed at least 3 directions in plot_settings.num_angles"
+            self.settings.xdim_dir = [self.settings.xdim_dir]
+            self.settings.ydim_dir = [self.settings.ydim_dir]
 
-            self.plot_vecs = lpplot.make_plot_vecs(self.settings.num_angles)
+        for xdim_dir, ydim_dir in zip(self.settings.xdim_dir, self.settings.ydim_dir):
+            assert not (xdim_dir is None and ydim_dir is None)
+
+            plot_vecs = []
+
+            if xdim_dir is None:
+                plot_vecs.append(np.array([0, 1.], dtype=float))
+                plot_vecs.append(np.array([0, -1.], dtype=float))
+            elif self.settings.ydim_dir is None:
+                plot_vecs.append(np.array([1., 0], dtype=float))
+                plot_vecs.append(np.array([-1., 0], dtype=float))
+            else:
+                assert self.settings.num_angles >= 3, "needed at least 3 directions in plot_settings.num_angles"
+
+                plot_vecs = lpplot.make_plot_vecs(self.settings.num_angles)
+
+            self.plot_vec_list.append(plot_vecs)
+            
+        self.num_subplots = len(self.plot_vec_list)
+        self.core.print_verbose("Num subplots = {}".format(self.num_subplots))
 
     def state_popped(self):
         'a state was popped off the waiting list'
 
         if self.settings.plot_mode != PlotSettings.PLOT_NONE:
-            self.shapes.set_cur_state(None)
+            for subplot in range(self.num_subplots):
+                self.shapes[subplot].set_cur_state(None)
 
-    def update_axis_limits(self, points_list):
+    def update_axis_limits(self, points_list, subplot):
         'update the axes limits to include the passed-in point list'
 
+        print("update axis limits({}) called with {}".format(subplot, points_list))
+        
         first_draw = False
 
         if self.drawn_limits is None:
+            self.drawn_limits = [None] * self.num_subplots
+            self.actual_limits = [None] * self.num_subplots
+
+        if self.drawn_limits[subplot] is None:
             first_draw = True
             first_x, first_y = points_list[0]
-            self.actual_limits = AxisLimits()
-            self.drawn_limits = AxisLimits()
-            self.actual_limits.xmin = self.actual_limits.xmax = first_x
-            self.actual_limits.ymin = self.actual_limits.ymax = first_y
-            self.drawn_limits.xmin = self.drawn_limits.xmax = first_x
-            self.drawn_limits.ymin = self.drawn_limits.ymax = first_y
+            self.actual_limits[subplot] = AxisLimits()
+            self.drawn_limits[subplot] = AxisLimits()
 
-        lim = self.actual_limits
-        drawn = self.drawn_limits
+            lim = self.actual_limits[subplot]
+            drawn = self.drawn_limits[subplot]
+            
+            lim.xmin = lim.xmax = first_x
+            lim.ymin = lim.ymax = first_y
+            drawn.xmin = drawn.xmax = first_x
+            drawn.ymin = drawn.ymax = first_y
+
+        lim = self.actual_limits[subplot]
+        drawn = self.drawn_limits[subplot]
 
         for p in points_list:
             x, y = p
@@ -295,6 +330,8 @@ class PlotManager(Freezable):
                 lim.ymin = y
             elif y > lim.ymax:
                 lim.ymax = y
+
+        print("axis limits for subplot {} are {}".format(subplot, lim))
 
         is_outside = lim.xmin < drawn.xmin or lim.xmax > drawn.xmax or lim.ymin < drawn.ymin or lim.ymax > drawn.ymax
         if first_draw or (is_outside and lim.xmin != lim.xmax and lim.ymin != lim.ymax):
@@ -310,101 +347,123 @@ class PlotManager(Freezable):
             drawn.ymax = lim.ymax + dy * ratio
 
             if drawn.xmin == drawn.xmax:
-                self.axes.set_xlim(drawn.xmin - 1e-1, drawn.xmax + 1e-1)
+                self.axes_list[subplot].set_xlim(drawn.xmin - 1e-1, drawn.xmax + 1e-1)
             else:
-                self.axes.set_xlim(drawn.xmin, drawn.xmax)
+                self.axes_list[subplot].set_xlim(drawn.xmin, drawn.xmax)
 
             if drawn.ymin == drawn.ymax:
-                self.axes.set_ylim(drawn.ymin - 1e-1, drawn.ymax + 1e-1)
+                self.axes_list[subplot].set_ylim(drawn.ymin - 1e-1, drawn.ymax + 1e-1)
             else:
-                self.axes.set_ylim(drawn.ymin, drawn.ymax)
+                self.axes_list[subplot].set_ylim(drawn.ymin, drawn.ymax)
 
     def create_plot(self):
         'create the plot'
 
         if not self.settings.plot_mode in [PlotSettings.PLOT_NONE]:
-            self.fig, self.axes = plt.subplots(nrows=1, figsize=self.settings.plot_size)
+            self.fig, axes_list = plt.subplots(nrows=self.num_subplots, ncols=1, figsize=self.settings.plot_size, \
+                                                    squeeze=False)
+
+            self.axes_list = []
+            
+            for row in axes_list:
+                for axes in row:
+                    self.axes_list.append(axes)
+
             ha = self.core.hybrid_automaton
 
-            title = self.settings.label.title
-            title = title if title is not None else ha.name
+            if self.num_subplots == 1:
+                title = self.settings.label.title
+                title = title if title is not None else ha.name
+                self.axes_list[0].set_title(title, fontsize=self.settings.label.title_size)
 
-            labels = []
-            label_settings = [self.settings.xdim_dir, self.settings.ydim_dir]
-            label_strings = [self.settings.label.x_label, self.settings.label.y_label]
+                if self.settings.label.axes_limits is not None:
+                    # hardcoded axes limits
+                    xmin, xmax, ymin, ymax = self.settings.label.axes_limits
 
-            for label_setting, text in zip(label_settings, label_strings):
-                if text is not None:
-                    labels.append(text)
-                elif label_setting is None:
-                    labels.append('Time')
-                elif isinstance(label_setting, int):
-                    labels.append('$x_{{ {} }}$'.format(label_setting))
-                else:
-                    labels.append('')
+                    self.axes_list[0].set_xlim(xmin, xmax)
+                    self.axes_list[0].set_ylim(ymin, ymax)
 
-            self.axes.set_xlabel(labels[0], fontsize=self.settings.label.label_size)
-            self.axes.set_ylabel(labels[1], fontsize=self.settings.label.label_size)
-            self.axes.set_title(title, fontsize=self.settings.label.title_size)
+            for i in range(self.num_subplots):
+                labels = []
+                label_settings = [self.settings.xdim_dir[i], self.settings.ydim_dir[i]]
+                label_strings = [self.settings.label.x_label, self.settings.label.y_label]
 
-            if self.settings.label.axes_limits is not None:
-                # hardcoded axes limits
-                xmin, xmax, ymin, ymax = self.settings.label.axes_limits
+                for label_setting, text in zip(label_settings, label_strings):
+                    if text is not None:
+                        labels.append(text)
+                    elif label_setting is None:
+                        labels.append('Time')
+                    elif isinstance(label_setting, int):
+                        labels.append('$x_{{ {} }}$'.format(label_setting))
+                    else:
+                        labels.append('')
 
-                self.axes.set_xlim(xmin, xmax)
-                self.axes.set_ylim(ymin, ymax)
+                self.axes_list[i].set_xlabel(labels[0], fontsize=self.settings.label.label_size)
+                self.axes_list[i].set_ylabel(labels[1], fontsize=self.settings.label.label_size)
 
             if self.settings.grid:
-                self.axes.grid(True, linestyle='dashed')
+                for axes in self.axes_list:
+                    axes.grid(True, linestyle='dashed')
 
-                if self.settings.grid_xtics is not None:
-                    self.axes.set_xticks(self.settings.grid_xtics)
+                    if self.settings.grid_xtics is not None:
+                        axes.set_xticks(self.settings.grid_xtics)
 
-                if self.settings.grid_ytics is not None:
-                    self.axes.set_xticks(self.settings.grid_ytics)
+                    if self.settings.grid_ytics is not None:
+                        axes.set_yticks(self.settings.grid_ytics)
 
             # make the x and y axis animated in case of rescaling
-            self.axes.xaxis.set_animated(True)
-            self.axes.yaxis.set_animated(True)
+            for axes in self.axes_list:
+                axes.xaxis.set_animated(True)
+                axes.yaxis.set_animated(True)
 
-            plt.tick_params(axis='both', which='major', labelsize=self.settings.label.tick_label_size)
+                axes.tick_params(axis='both', which='major', labelsize=self.settings.label.tick_label_size)
+
             plt.tight_layout()
 
-            self.shapes = DrawnShapes(self)
+            self.shapes = [DrawnShapes(self, i) for i in range(self.num_subplots)]
 
     def plot_current_state(self, state):
         '''
-        plot the current SymbolicState according to the plot settings. returns still_feasible
+        plot the current StateSet according to the plot settings. returns still_feasible
         '''
 
         rv = True
 
         if self.settings.plot_mode != PlotSettings.PLOT_NONE or self.settings.store_plot_result:
+            for subplot in range(self.num_subplots):
 
-            Timers.tic('verts()')
-            verts = state.verts(self)
-            Timers.toc('verts()')
+                Timers.tic('verts()')
+                verts = state.verts(self, subplot=subplot)
+                Timers.toc('verts()')
 
-            if self.settings.store_plot_result:
-                if state.mode.name in self.core.result.mode_to_polys:
-                    self.core.result.mode_to_polys[state.mode.name].append(verts)
-                else:
-                    self.core.result.mode_to_polys[state.mode.name] = [verts]
+                if self.settings.store_plot_result and subplot == 0: # only subplot 0 is saved
+                    if state.mode.name in self.core.result.mode_to_polys:
+                        self.core.result.mode_to_polys[state.mode.name].append(verts)
+                    else:
+                        self.core.result.mode_to_polys[state.mode.name] = [verts]
 
-            if self.settings.plot_mode != PlotSettings.PLOT_NONE:
-                Timers.tic("add to plot")
-                self.shapes.set_cur_state(verts)
+                if self.settings.plot_mode != PlotSettings.PLOT_NONE:
+                    Timers.tic("add to plot")
 
-                if self.settings.label.axes_limits is None:
-                    self.update_axis_limits(verts)
+                    verts_list = [verts]
 
-                self.shapes.add_reachable_poly(verts, state.mode.name)
+                    # if it's an aggregation, also add the predecessors to the plot
+                    if state.cur_step_in_mode == 0 and isinstance(state.predecessor, AggregationPredecessor):
+                        for parent in state.predecessor.states:
+                            verts_list.append(parent.verts(self))
 
-                Timers.toc("add to plot")
+                    self.shapes[subplot].set_cur_state(verts_list)
+
+                    if self.settings.label.axes_limits is None or self.num_subplots > 1:
+                        self.update_axis_limits(verts, subplot)
+
+                    self.shapes[subplot].add_reachable_poly(verts, state.mode.name)
+
+                    Timers.toc("add to plot")
 
         return rv
 
-    def anim_func(self, frame_num):
+    def anim_func(self, _):
         'animation draw function'
 
         if self.interactive.paused:
@@ -414,7 +473,8 @@ class PlotManager(Freezable):
         else:
             Timers.tic("frame")
 
-            self.shapes.set_cur_state(None)
+            for subplot in range(self.num_subplots):
+                self.shapes[subplot].set_cur_state(None)
 
             for _ in range(self.settings.draw_stride):
                 self.core.do_step()
@@ -437,12 +497,31 @@ class PlotManager(Freezable):
 
             self.num_frames_drawn += 1
 
-        return [self.axes.xaxis, self.axes.yaxis] + self.shapes.get_artists()
+        # return a list of animated artists
+        rv = []
+
+        for axes in self.axes_list:
+            rv.append(axes.xaxis)
+            rv.append(axes.yaxis)
+
+        for subplot in range(self.num_subplots):
+            rv += self.shapes[subplot].get_artists()
+
+        return rv
 
     def anim_init_func(self):
         'animation init function'
 
-        return [self.axes.xaxis, self.axes.yaxis] + self.shapes.get_artists()
+        rv = []
+
+        for axes in self.axes_list:
+            rv.append(axes.xaxis)
+            rv.append(axes.yaxis)
+
+        for subplot in range(self.num_subplots):
+            rv += self.shapes[subplot].get_artists()
+
+        return rv
 
     def anim_iterator(self):
         'generator for the computation iterator'
@@ -464,6 +543,7 @@ class PlotManager(Freezable):
                 yield frame_counter
 
         Timers.toc("anim_iterator")
+
 
     def compute_and_animate(self):
         'do the computation, plotting during the process'
@@ -488,6 +568,8 @@ class PlotManager(Freezable):
             # do one frame
             self.interactive.paused = False
             self.interactive.step = True
+
+            #plt.figure(2)
 
             # shrink plot, add buttons
             plt.subplots_adjust(bottom=0.12)
@@ -522,7 +604,8 @@ class PlotManager(Freezable):
 
         while not self.core.is_finished():
             if compute_plot and self.shapes is not None:
-                self.shapes.set_cur_state(None)
+                for subplot in range(self.num_subplots):
+                    self.shapes[subplot].set_cur_state(None)
 
             self.core.do_step()
 

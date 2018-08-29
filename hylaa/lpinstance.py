@@ -517,7 +517,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         glpk.glp_init_smcp(params)
         params.meth = glpk.GLP_DUALP # use dual simplex since we're reoptimizing often
         params.msg_lev = glpk.GLP_MSG_OFF
-        params.tm_lim = 1000 # 1 second time limit
+        params.tm_lim = 1000 # 1000 ms time limit
 
         Timers.tic('glp_simplex')
         simplex_res = glpk.glp_simplex(self.lp, params)
@@ -525,7 +525,8 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
 
         if simplex_res != 0:
             # this can happen when you replace constraints after already solving once
-            LpInstance.print_normal('Note: simplex() failed ({}), resetting and retrying'.format(simplex_res))
+            LpInstance.print_normal('Note: glp_simplex() failed ({}: {}), resetting and retrying'.format(
+                simplex_res, LpInstance.get_simplex_error_string(simplex_res)))
 
             if simplex_res == glpk.GLP_ESING: # singular matrix, can happen after replacing constraints
                 glpk.glp_std_basis(self.lp)
@@ -557,6 +558,63 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
 
         return rv
 
+    @staticmethod
+    def get_simplex_error_string(simplex_res):
+        '''get the error message when simplex() fails'''
+
+        codes = [glpk.GLP_EBADB, glpk.GLP_ESING, glpk.GLP_ECOND, glpk.GLP_EBOUND, glpk.GLP_EFAIL, glpk.GLP_EOBJLL,
+                 glpk.GLP_EOBJUL, glpk.GLP_EITLIM, glpk.GLP_ETMLIM, glpk.GLP_ENOPFS, glpk.GLP_ENODFS]
+
+        msgs = [ \
+            "Unable to start the search, because the initial basis specified " + \
+            "in the problem object is invalid-the number of basic (auxiliary " + \
+            "and structural) variables is not the same as the number of rows " + \
+            "in the problem object.", 
+
+            "Unable to start the search, because the basis matrix corresponding " + \
+            "to the initial basis is singular within the working " + \
+            "precision.",
+
+            "Unable to start the search, because the basis matrix corresponding " + \
+            "to the initial basis is ill-conditioned, i.e. its " + \
+            "condition number is too large.",
+
+            "Unable to start the search, because some double-bounded " + \
+            "(auxiliary or structural) variables have incorrect bounds.",
+
+            "The search was prematurely terminated due to the solver " + \
+            "failure.",
+
+            "The search was prematurely terminated, because the objective " + \
+            "function being maximized has reached its lower " + \
+            "limit and continues decreasing (the dual simplex only).",
+
+            "The search was prematurely terminated, because the objective " + \
+            "function being minimized has reached its upper " + \
+            "limit and continues increasing (the dual simplex only).",
+
+            "The search was prematurely terminated, because the simplex " + \
+            "iteration limit has been exceeded.",
+
+            "The search was prematurely terminated, because the time " + \
+            "limit has been exceeded.",
+
+            "The LP problem instance has no primal feasible solution " + \
+            "(only if the LP presolver is used).",
+
+            "The LP problem instance has no dual feasible solution " + \
+            "(only if the LP presolver is used).",
+            ]
+
+        rv = "Unknown Error"
+
+        for code, message in zip(codes, msgs):
+            if simplex_res == code:
+                rv = message
+                break
+
+        return rv
+
     def _process_simplex_result(self, simplex_res, columns):
         '''process the result of a glp_simplex call
 
@@ -569,55 +627,8 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         if simplex_res == glpk.GLP_ENOPFS:  # no primal feasible w/ presolver
             rv = None
         elif simplex_res != 0: # simplex failed, report the error
-            codes = [glpk.GLP_EBADB, glpk.GLP_ESING, glpk.GLP_ECOND, glpk.GLP_EBOUND, glpk.GLP_EFAIL, glpk.GLP_EOBJLL,
-                     glpk.GLP_EOBJUL, glpk.GLP_EITLIM, glpk.GLP_ETMLIM, glpk.GLP_ENOPFS, glpk.GLP_ENODFS]
-
-            msgs = [ \
-                "Unable to start the search, because the initial basis specified " + \
-                "in the problem object is invalid-the number of basic (auxiliary " + \
-                "and structural) variables is not the same as the number of rows " + \
-                "in the problem object.", 
-
-                "Unable to start the search, because the basis matrix corresponding " + \
-                "to the initial basis is singular within the working " + \
-                "precision.",
-
-                "Unable to start the search, because the basis matrix corresponding " + \
-                "to the initial basis is ill-conditioned, i.e. its " + \
-                "condition number is too large.",
-
-                "Unable to start the search, because some double-bounded " + \
-                "(auxiliary or structural) variables have incorrect bounds.",
-
-                "The search was prematurely terminated due to the solver " + \
-                "failure.",
-
-                "The search was prematurely terminated, because the objective " + \
-                "function being maximized has reached its lower " + \
-                "limit and continues decreasing (the dual simplex only).",
-
-                "The search was prematurely terminated, because the objective " + \
-                "function being minimized has reached its upper " + \
-                "limit and continues increasing (the dual simplex only).",
-
-                "The search was prematurely terminated, because the simplex " + \
-                "iteration limit has been exceeded.",
-
-                "The search was prematurely terminated, because the time " + \
-                "limit has been exceeded.",
-
-                "The LP problem instance has no primal feasible solution " + \
-                "(only if the LP presolver is used).",
-
-                "The LP problem instance has no dual feasible solution " + \
-                "(only if the LP presolver is used).",
-                ]
-
-            for code, message in zip(codes, msgs):
-                if simplex_res == code:
-                    raise RuntimeError("glp_simplex returned nonzero status ({}): {}".format(code, message))
-
-            raise RuntimeError("glp_simplex returned nonzero status ({}): Unknown Error".format(simplex_res))
+            raise RuntimeError("glp_simplex returned nonzero status ({}): {}".format(
+                simplex_res, LpInstance.get_simplex_error_string(simplex_res)))
         else:
             status = glpk.glp_get_status(self.lp)
 
@@ -872,8 +883,8 @@ class SwigArray():
 
         cls.bytes_allocated += num_bytes
 
-        print("Allocated: {} / {} ({:.2f}%)".format(
-            cls.bytes_allocated, threshold, 100 * cls.bytes_allocated / threshold))
+        #print("Allocated: {} / {} ({:.2f}%)".format(
+        #    cls.bytes_allocated, threshold, 100 * cls.bytes_allocated / threshold))
 
         if cls.bytes_allocated > threshold:
             raise MemoryError(("Swig array allocation leaked more than {} GB memory. This limit can be raised by " + \

@@ -30,7 +30,7 @@ class StateSet(Freezable):
         self.mode = mode
         self.lpi = lpi
 
-        # computation_path_id can check if states are clone()'s at different steps in the same continuous post sequence
+        # computation_path_id can check two StateSets are clones at different steps in the same continuous post sequence
         if computation_path_id is None:
             self.computation_path_id = self.__class__.next_computation_path_id
             self.__class__.next_computation_path_id += 1
@@ -48,6 +48,8 @@ class StateSet(Freezable):
         # the predecessor to this StateSet
         assert isinstance(predecessor, (type(None), AggregationPredecessor, TransitionPredecessor))
         self.predecessor = predecessor
+
+        self.is_concrete = self._is_concrete_state()
         
         # the LP row of the strongest constraint for each invariant condition
         # this is used to eliminate redundant constraints as the lpi is intersected with the invariant at each step
@@ -82,20 +84,21 @@ class StateSet(Freezable):
 
         return "[StateSet in '{}']".format(self.mode.name)
 
-    def has_aggregation_precessor(self):
-        'does this state have an aggregation predecessor'
+    def _is_concrete_state(self):
+        '''is this a concrete state (no aggregation along computation path)
 
-        rv = False
-        state = self
+        this is used to compute self.is_concrete
+        '''
 
-        while state.predecessor is not None:
-            if isinstance(state.predecessor, AggregationPredecessor):
-                rv = True
-                break
-            elif isinstance(state.predecessor, TransitionPredecessor):
-                state = state.predecessor.state
+        rv = True
+
+        if self.predecessor is not None:
+            if isinstance(self.predecessor, AggregationPredecessor):
+                rv = False
+            elif isinstance(self.predecessor, TransitionPredecessor):
+                rv = self.predecessor.state.is_concrete
             else:
-                raise RuntimeError("Unknown predecessor type: {}".format(type(state.predecessor)))
+                raise RuntimeError("Unknown predecessor type: {}".format(type(self.predecessor)))
 
         return rv
             
@@ -127,36 +130,46 @@ class StateSet(Freezable):
 
         Timers.toc("step")
 
-    def verts(self, plotman):
+    def verts(self, plotman, subplot=0):
         'get the vertices for plotting this state set, wraps around so rv[0] == rv[-1]'
 
         Timers.tic('verts')
 
         if self._verts is None:
+            self._verts = [None] * plotman.num_subplots
+
+        if self._verts[subplot] is None:
             min_time = self.cur_steps_since_start[0] * plotman.core.settings.step_size
             max_time = self.cur_steps_since_start[1] * plotman.core.settings.step_size
             time_interval = (min_time, max_time)
 
             if not self.assigned_plot_dim:
                 self.assigned_plot_dim = True
-                self.xdim = plotman.settings.xdim_dir
-                self.ydim = plotman.settings.ydim_dir
 
-                if isinstance(self.xdim, dict):
-                    assert self.mode.name in self.xdim, "mode {} not in xdim plot direction dict".format(self.mode.name)
-                    self.xdim = self.xdim[self.mode.name]
+                self.xdim = []
+                self.ydim = []
 
-                if isinstance(self.ydim, dict):
-                    assert self.mode.name in self.ydim, "mode {} not in ydim plot direction dict".format(self.mode.name)
-                    self.ydim = self.ydim[self.mode.name]
+                for i in range(plotman.num_subplots):
+                    self.xdim.append(plotman.settings.xdim_dir[i])
+                    self.ydim.append(plotman.settings.ydim_dir[i])
 
-            self._verts = lpplot.get_verts(self.lpi, xdim=self.xdim, ydim=self.ydim, plot_vecs=plotman.plot_vecs, \
-                                           cur_time=time_interval)
-            assert self._verts is not None, "verts() was unsat"
+                    if isinstance(self.xdim[i], dict):
+                        assert self.mode.name in self.xdim[i], "mode {} not in xdim plot direction dict".format(
+                            self.mode.name)
+                        self.xdim[i] = self.xdim[i][self.mode.name]
+
+                    if isinstance(self.ydim[i], dict):
+                        assert self.mode.name in self.ydim[i], "mode {} not in ydim plot direction dict".format(
+                            self.mode.name)
+                        self.ydim[i] = self.ydim[i][self.mode.name]
+
+            self._verts[subplot] = lpplot.get_verts(self.lpi, xdim=self.xdim[subplot], ydim=self.ydim[subplot], \
+                                           plot_vecs=plotman.plot_vec_list[subplot], cur_time=time_interval)
+            assert self._verts[subplot] is not None, "verts() was unsat"
             
         Timers.toc('verts')
 
-        return self._verts
+        return self._verts[subplot]
 
     def intersect_invariant(self):
         '''intersect the current state set with the mode invariant

@@ -5,6 +5,10 @@ Converted from file:
 Command Line arguments: -gen drivetrain "-theta 2 -init_scale 1.0 -reverse_errors" -passes sub_constants "" simplify -p -tool hylaa2 ""
 '''
 
+import heapq
+
+import numpy as np
+
 from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa.settings import HylaaSettings, PlotSettings, AggregationSettings
 from hylaa.core import Core
@@ -168,18 +172,35 @@ def define_settings():
     # step_size = 5.0E-4, max_time = 2.0
     settings = HylaaSettings(5.0E-4, 2.0)
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
-    settings.plot.plot_mode = PlotSettings.PLOT_NONE
-    settings.plot.xdim_dir = 0
-    settings.plot.ydim_dir = 2
+    settings.plot.plot_mode = PlotSettings.PLOT_INTERACTIVE
+    settings.plot.xdim_dir = [0, None, None]
+
+    #x0_dir = np.array([0, 0, 0, 0, 0, 0, 0.0833333333333333, 0, -1, 0, 0, 0, 0], dtype=float)
+    settings.plot.ydim_dir = [2, 6, 8]
 
     settings.stop_on_error = False
     settings.plot.draw_stride = 10
     #settings.aggregation.agg_mode = AggregationSettings.AGG_NONE
 
+    def custom_pop_func(waiting_list):
+        'custom pop function for aggregation'
+
+        mode = waiting_list[0].mode
+
+        state_list = [state for state in waiting_list if state.mode == mode]
+
+        num = 2 # performing clustering with this number of items
+
+        return heapq.nsmallest(num, state_list, lambda s: s.cur_steps_since_start)
+    
+
+    settings.aggregation.custom_pop_func = custom_pop_func
+
     return settings
 
 def run_hylaa():
     'runs hylaa, returning a HylaaResult object'
+    
     ha = define_ha()
     init = define_init_states(ha)
     settings = define_settings()

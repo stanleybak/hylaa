@@ -14,10 +14,11 @@ from hylaa.core import Core
 
 from util import assert_verts_is_box
 
-def test_deagg_counterexample():
+def fail_deagg_counterexample():
     'test that aggregation with a counterexample'
-
-    # m1 dynamics: x' == 1, y' == 0, x0, y0: [0, 1], step: 1.0
+    # init: x0, y0 \in [0, 1], step = 1.0
+    # 
+    # m1 dynamics: x' == 1, y' == 0, 
     # m1 invariant: x <= 3
     # m1 -> m2 guard: True
     # m2 dynamics: x' == 0, y' == 1
@@ -59,7 +60,7 @@ def test_deagg_counterexample():
     
     core.step() # pop
 
-    for _ in range(4)
+    for _ in range(4):
         core.step() # continuous post in m1
 
     core.step() # pop
