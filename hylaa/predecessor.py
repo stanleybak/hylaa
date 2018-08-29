@@ -8,8 +8,6 @@ These instances are stored inside StateSets
 from collections import namedtuple
 from hylaa.util import Freezable
 
-TransitionPredecessor = namedtuple('TransitionPredecessor', ['state', 'transition', 'premode_lpi'])
-
 class TransitionPredecessor(Freezable):
     'a predecessor which goes through a discrete transition'
 

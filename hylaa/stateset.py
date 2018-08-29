@@ -4,6 +4,8 @@ Stanley Bak
 Aug 2016
 '''
 
+from collections import namedtuple
+
 import numpy as np
 
 from hylaa import lputil
@@ -12,9 +14,11 @@ from hylaa.hybrid_automaton import Mode
 from hylaa.timerutil import Timers
 from hylaa.util import Freezable
 from hylaa.lpinstance import LpInstance
-from hylaa.predecessor import TransitionPredecessor, AggregationPredecessor
 
 from hylaa import lpplot
+
+TransitionPredecessor = namedtuple('TransitionPredecessor', ['state', 'transition', 'premode_lpi'])
+AggregationPredecessor = namedtuple('AggregationPredecessor', ['states'])
 
 class StateSet(Freezable):
     '''

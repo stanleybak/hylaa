@@ -11,9 +11,8 @@ from termcolor import cprint
 from hylaa.settings import HylaaSettings, PlotSettings, AggregationSettings
 
 from hylaa.plotutil import PlotManager
-from hylaa.stateset import StateSet
+from hylaa.stateset import StateSet, TransitionPredecessor, AggregationPredecessor
 
-from hylaa.predecessor import TransitionPredecessor, AggregationPredecessor
 from hylaa.hybrid_automaton import HybridAutomaton, was_tt_taken
 from hylaa.timerutil import Timers
 from hylaa.util import Freezable
