@@ -8,10 +8,11 @@ from collections import deque
 import numpy as np
 from termcolor import cprint
 
-from hylaa.settings import HylaaSettings, PlotSettings, AggregationSettings
+from hylaa.settings import HylaaSettings, PlotSettings
 
+from hylaa.aggdag import AggDag
 from hylaa.plotutil import PlotManager
-from hylaa.stateset import StateSet, TransitionPredecessor, AggregationPredecessor
+from hylaa.stateset import StateSet, TransitionPredecessor
 
 from hylaa.hybrid_automaton import HybridAutomaton, was_tt_taken
 from hylaa.timerutil import Timers
@@ -33,7 +34,7 @@ class Core(Freezable):
         self.plotman = PlotManager(self)
 
         # computation
-        self.waiting_list = None # list of State Set objects
+        self.aggdag = AggDag(hylaa_settings, self) # manages the waiting list and aggregation dag computation state
         
         self.cur_state = None # a StateSet object
         self.max_steps_remaining = None # bound on num steps left in current mode ; assigned on pop
@@ -71,18 +72,6 @@ class Core(Freezable):
         if self.settings.stdout >= HylaaSettings.STDOUT_DEBUG:
             cprint(msg, self.settings.stdout_colors[HylaaSettings.STDOUT_DEBUG])
 
-    def print_waiting_list(self):
-        'print out the waiting list'
-
-        if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
-            col = self.settings.stdout_colors[HylaaSettings.STDOUT_VERBOSE]
-            
-            cprint("Waiting list has {} states".format(len(self.waiting_list)), col)
-
-            if len(self.waiting_list) < 10:
-                for state in self.waiting_list:
-                    cprint(" {}".format(state), col)
-
     def is_finished(self):
         'is the computation finished'
 
@@ -92,14 +81,15 @@ class Core(Freezable):
             finished = not self.result.safe
 
         if not finished:
-            finished = self.cur_state is None and not self.waiting_list
+            finished = self.cur_state is None and not self.aggdag.waiting_list
 
         return finished
 
     def take_transition(self, t, t_lpi):
         '''take the passed-in transition from the current state (may add to the waiting list)'''
 
-        predecessor = TransitionPredecessor(self.cur_state.clone(keep_computation_path_id=True), t, t_lpi.clone())
+        predecessor = TransitionPredecessor(self.cur_state.clone(keep_computation_path_id=True), t, t_lpi.clone(),
+                                            self.aggdag.current_node)
 
         successor_has_inputs = t.to_mode.b_csr is not None
 
@@ -109,9 +99,8 @@ class Core(Freezable):
             minkowski_constraints_rhs=t.reset_minkowski_constraints_rhs, successor_has_inputs=successor_has_inputs)
 
         if t_lpi.is_feasible():
-            successor_state = StateSet(t_lpi, t.to_mode, self.cur_state.cur_steps_since_start,
-                                       predecessor)
-            self.waiting_list.append(successor_state)
+            successor_state = StateSet(t_lpi, t.to_mode, self.cur_state.cur_steps_since_start, predecessor)
+            self.aggdag.add_to_waiting_list(successor_state)
 
             self.print_verbose("Added Discrete Successor to '{}' at step {}".format( \
                 t.to_mode.name, self.cur_state.cur_steps_since_start))
@@ -234,210 +223,19 @@ class Core(Freezable):
 
         Timers.toc('do_step_continuous_post')
 
-    def compute_pop_score(self, state):
-        '''
-        returns a score used to decide which state to pop off the waiting list. The state with the highest score
-        will be removed first.
-        '''
-
-        if self.settings.aggregation.pop_strategy == AggregationSettings.POP_LOWEST_MINTIME:
-            score = -(state.cur_steps_since_start[0])
-        elif self.settings.aggregation.pop_strategy == AggregationSettings.POP_LOWEST_AVGTIME:
-            score = -(state.cur_steps_since_start[0] + state.cur_steps_since_start[1])
-        elif self.settings.aggregation.pop_strategy == AggregationSettings.POP_LARGEST_MAXTIME:
-            score = state.cur_steps_since_start[1]
-        else:
-            raise RuntimeError("Unknown waiting list pop strategy: {}".format(self.settings.aggregation.pop_strategy))
-
-        return score
-
-    def default_pop_func(self):
-        '''
-        Get the states to remove from the waiting list based on a score-based method
-        '''
-
-        # use score method to decide which mode to pop
-        to_remove = self.waiting_list[0]
-        to_remove_score = self.compute_pop_score(to_remove)
-
-        for state in self.waiting_list:
-            score = self.compute_pop_score(state)
-
-            if score > to_remove_score or score == to_remove_score and state.mode.name < to_remove.mode.name:
-                to_remove_score = score
-                to_remove = state
-
-        self.print_verbose("Aggregating with state at time {} in mode {}".format(to_remove.cur_steps_since_start,
-                                                                                 to_remove.mode.name))
-
-        # remove all states for aggregation
-        agg_list = []
-
-        for state in self.waiting_list:
-            should_add = False
-
-            if state is to_remove:
-                should_add = True
-            elif state.mode is to_remove.mode:
-                if self.settings.aggregation.require_same_path:
-                    if (isinstance(to_remove.predecessor, TransitionPredecessor) and \
-                        isinstance(state.predecessor, TransitionPredecessor) and \
-                        to_remove.predecessor.transition is state.predecessor.transition and \
-                        to_remove.predecessor.state.computation_path_id == state.predecessor.state.computation_path_id):
-
-                        should_add = True
-                else: # require_same_path is False
-                    should_add = True
-
-            if should_add:
-                agg_list.append(state)
-
-        return agg_list
-
-    def get_aggregation_states(self):
-        '''get the states from the waiting list we are going to aggregate
-
-        This also updates the waiting list.
-
-        returns agg_list
-        '''
-
-        Timers.tic('get_aggregation_states')
-
-        if self.settings.aggregation.custom_pop_func:
-            self.print_verbose("Aggregating based on custom pop function")
-
-            agg_list = self.settings.aggregation.custom_pop_func(self.waiting_list)
-        else:
-            agg_list = self.default_pop_func()
-
-        new_waiting_list = []
-
-        for state in self.waiting_list:
-            if not state in agg_list:
-                new_waiting_list.append(state)
-
-        self.print_verbose("agg_list had {} states, new_waiting_list has {} states".format(
-            len(agg_list), len(new_waiting_list)))
-
-        assert agg_list, "agg_list was empty"
-        assert len(agg_list) + len(new_waiting_list) == len(self.waiting_list), "agg_list had new states in it?"
-
-        self.waiting_list = new_waiting_list
-
-        Timers.toc('get_aggregation_states')
-
-        return agg_list
-
-    def perform_aggregation(self, agg_list, step_interval):
-        '''
-        perform aggregation on the passed-in list of states
-        '''
-
-        # create a new state from the aggregation
-        postmode = agg_list[0].mode
-        postmode_dims = postmode.a_csr.shape[0]
-        mid_index = len(agg_list) // 2
-        mid_state = agg_list[mid_index]
-        pred = mid_state.predecessor
-
-        if self.settings.aggregation.agg_mode == AggregationSettings.AGG_BOX or pred is None:
-            agg_dir_mat = np.identity(postmode_dims)
-        elif self.settings.aggregation.agg_mode == AggregationSettings.AGG_ARNOLDI_BOX:
-            # aggregation with a predecessor, use arnoldi directions in predecessor mode in center of
-            # middle aggregagted state, then project using the reset, and reorthogonalize
-
-            assert isinstance(pred, TransitionPredecessor)
-            premode = pred.state.mode
-            pt = lputil.get_box_center(pred.premode_lpi)
-            self.print_debug("aggregation point: {}".format(pt))
-
-            premode_dir_mat = lputil.make_direction_matrix(pt, premode.a_csr)
-            self.print_debug("premode dir mat:\n{}".format(premode_dir_mat))
-
-            if pred.transition.reset_csr is None:
-                agg_dir_mat = premode_dir_mat
-            else:
-                projected_dir_mat = premode_dir_mat * pred.transition.reset_csr.transpose()
-
-                self.print_debug("projected dir mat:\n{}".format(projected_dir_mat))
-
-                # re-orthgohonalize (and create new vectors if necessary)
-                agg_dir_mat = lputil.reorthogonalize_matrix(projected_dir_mat, postmode_dims)
-
-            # also add box directions in target mode (if they don't already exist)
-            box_dirs = []
-            for dim in range(postmode_dims):
-                direction = [0 if d != dim else 1 for d in range(postmode_dims)]
-                exists = False
-
-                for row in agg_dir_mat:
-                    if np.allclose(direction, row):
-                        exists = True
-                        break
-
-                if not exists:
-                    box_dirs.append(direction)
-
-            if box_dirs:
-                agg_dir_mat = np.concatenate((agg_dir_mat, box_dirs), axis=0)
-
-        if pred and self.settings.aggregation.add_guard:
-            # add all the guard conditions to the agg_dir_mat
-
-            if pred.transition.reset_csr is None: # identity reset
-                guard_dir_mat = pred.transition.guard_csr
-            else:
-                # multiply each direction in the guard by the guard
-                guard_dir_mat = pred.transition.guard_csr * pred.transition.reset_csr.transpose()
-
-            if guard_dir_mat.shape[0] > 0:
-                agg_dir_mat = np.concatenate((agg_dir_mat, guard_dir_mat.toarray()), axis=0)
-        else:
-            raise RuntimeError("Unknown aggregatinon mode: {}".format(self.settings.aggregation.agg_mode))
-
-        self.print_debug("agg dir mat:\n{}".format(agg_dir_mat))
-        lpi_list = [state.lpi for state in agg_list]
-
-        new_lpi = lputil.aggregate(lpi_list, agg_dir_mat, postmode)
-
-        predecessor = AggregationPredecessor(agg_list) # Note: these objects weren't clone()'d
-        return StateSet(new_lpi, agg_list[0].mode, step_interval, predecessor)
-
-    def pop_waiting_list(self):
-        'pop a state off the waiting list, possibly doing state-set aggreation'
-
-        if self.settings.aggregation.agg_mode == AggregationSettings.AGG_NONE:
-            rv = self.waiting_list.pop(0)
-        else:
-            agg_list = self.get_aggregation_states()
-            min_step = min([state.cur_steps_since_start[0] for state in agg_list])
-            max_step = max([state.cur_steps_since_start[1] for state in agg_list])
-            step_interval = [min_step, max_step]
-
-            self.print_verbose("Removed {} state{} for aggregation at steps {}".format(
-                len(agg_list), "s" if len(agg_list) > 1 else "", step_interval))
-
-            if len(agg_list) == 1:
-                rv = agg_list[0]
-            else:
-                rv = self.perform_aggregation(agg_list, step_interval)
-                
-        return rv
-
     def do_step_pop(self):
         'do a step where we pop from the waiting list'
 
         Timers.tic('do_step_pop')
 
         self.plotman.state_popped() # reset certain per-mode plot variables
-        self.print_waiting_list()
+        self.aggdag.print_waiting_list()
 
-        self.result.last_cur_state = self.cur_state = self.pop_waiting_list()
+        self.result.last_cur_state = self.cur_state = self.aggdag.pop_waiting_list()
 
         self.print_normal("Removed state in mode '{}' at step {} ({} in mode) (Waiting list has {} left)".format( \
                 self.cur_state.mode.name, self.cur_state.cur_steps_since_start, self.cur_state.cur_step_in_mode, \
-                len(self.waiting_list)))
+                len(self.aggdag.waiting_list)))
 
         # if a_matrix is None, it's an error mode
         if self.cur_state.mode.a_csr is None:
@@ -505,7 +303,7 @@ class Core(Freezable):
         self.plotman.create_plot()
 
         # populate waiting list
-        self.waiting_list = []
+        assert not self.aggdag.waiting_list, "waiting list was not empty"
 
         for state in init_state_list:
             if not state.lpi.is_feasible():
@@ -515,13 +313,13 @@ class Core(Freezable):
             still_feasible = state.intersect_invariant()
 
             if still_feasible:
-                self.waiting_list.append(state)
+                self.aggdag.add_init_state(state)
             else:
                 self.print_normal("Removed an infeasible initial set after invariant intersection in mode {}".format( \
                         state.mode.name))
 
-        if not self.waiting_list:
-            raise RuntimeError("Error: No valid initial states were defined.")
+        if not self.aggdag.waiting_list:
+            raise RuntimeError("Error: No feasible initial states were defined.")
 
         Timers.toc('setup')
 
