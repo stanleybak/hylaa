@@ -53,6 +53,7 @@ def fail_deagg_counterexample():
     settings = HylaaSettings(1.0, 10.0)
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
     settings.plot.plot_mode = PlotSettings.PLOT_NONE
+    settings.aggregation.deaggregation = True
 
     core = Core(ha, settings)
 

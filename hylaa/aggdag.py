@@ -22,8 +22,8 @@ class AggDag(Freezable):
         self.settings = settings
         self.core = core
         
-        self.root = [] # list of root AggDagNode where the computation begins
-        self.current_node = None # the aggdag_node currently under a continuous post operation
+        self.roots = [] # list of root AggDagNode where the computation begins
+        self.cur_node = None # the aggdag_node currently under a continuous post operation
 
         self.waiting_list = [] # a list of StateSet objects
         self.node_parents = [] # a list of AggDagNode objects, the origin nodes of each of the waiting_list states
@@ -37,10 +37,10 @@ class AggDag(Freezable):
         self.node_parents.append(None)
 
     def add_to_waiting_list(self, state):
-        'add a StateSet to the waiting list (transition was feasible)'
+        'add a StateSet to the waiting list (a transition was feasible)'
         
         self.waiting_list.append(state)
-        self.node_parents.append(self.current_node)
+        self.node_parents.append(self.cur_node)
 
     def print_waiting_list(self):
         'print out the waiting list'
@@ -120,7 +120,7 @@ class AggDag(Freezable):
 
         This also updates the internal data structures (waiting_list and AggDag nodes)
 
-        returns agg_list
+        returns agg_list, parent_node
         '''
 
         Timers.tic('get_aggregation_states')
@@ -133,10 +133,17 @@ class AggDag(Freezable):
             agg_list = self.default_pop_func()
 
         new_waiting_list = []
+        new_node_parents = []
+        parent_node = None
 
-        for state in self.waiting_list:
+        for state, node in zip(self.waiting_list, self.node_parents):
             if not state in agg_list:
                 new_waiting_list.append(state)
+                new_node_parents.append(node)
+            elif parent_node is None:
+                parent_node = node
+            else:
+                assert node is parent_node, "aggregation attempted from states with different aggdag parent nodes"
 
         self.core.print_verbose("agg_list had {} states, new_waiting_list has {} states".format(
             len(agg_list), len(new_waiting_list)))
@@ -145,26 +152,52 @@ class AggDag(Freezable):
         assert len(agg_list) + len(new_waiting_list) == len(self.waiting_list), "agg_list had new states in it?"
 
         self.waiting_list = new_waiting_list
+        self.node_parents = new_node_parents
 
         Timers.toc('get_aggregation_states')
 
-        return agg_list
+        return agg_list, parent_node
 
     def pop_waiting_list(self):
-        'pop a state off the waiting list, possibly doing state-set aggreation'
+        'pop a state off the waiting list, possibly doing state-set aggregation'
+
+        aggregated = False
+        parent_node = None
 
         if self.settings.aggregation.agg_mode == AggregationSettings.AGG_NONE:
-            rv = self.waiting_list.pop(0)
+            agg_list = [self.waiting_list.pop(0)]
+            parent_node = self.node_parents.pop(0)
         else:
-            agg_list = self.get_aggregation_states()
+            agg_list, parent_node = self.get_aggregation_states()
             
             self.core.print_verbose("Removed {} state{} for aggregation".format(
                 len(agg_list), "s" if len(agg_list) > 1 else ""))
 
-            if len(agg_list) == 1:
-                rv = agg_list[0]
-            else:
-                rv = perform_aggregation(agg_list, self.settings.aggregation, self.core.print_debug)
+        if len(agg_list) == 1:
+            rv = agg_list[0]
+        else:
+            rv = perform_aggregation(agg_list, self.settings.aggregation, self.core.print_debug)
+            aggregated = True
+
+        assert len(self.waiting_list) == len(self.node_parents)
+
+        # create a new AggDagNode for the current computation
+        self.cur_node = AggDagNode()
+
+        if parent_node is None:
+            self.roots.append(self.cur_node)
+        else:
+            # update transitions involving the aggregated states
+            for state in agg_list:
+                for op in parent_node.op_list:
+                    if isinstance(op, OpTransition) and op.state is state:
+                        assert op.child_node is None
+                        op.child_node = self.cur_node
+
+        if not aggregated:
+            self.cur_node.concrete_state = rv
+        else:
+            self.cur_node.aggregated_state = rv
 
         return rv
 
@@ -174,14 +207,14 @@ class AggDagNode(Freezable): # pylint: disable=too-few-public-methods
     def __init__(self):
         self.op_list = [] # list of Op* objects
 
-        self.concrete_set = None # StateSet
-        self.aggregated_set = None # StateSet, or None if this is a non-aggergated set
+        self.concrete_state = None # StateSet
+        self.aggregated_state = None # StateSet, or None if this is a non-aggergated set
         
         self.freeze_attrs()
 
 # Operation types
-OpInvIntersect = namedtuple('OpInvIntersect', ['step', 'mode', 'i_index', 'stronger'])
-OpTransition = namedtuple('OpTransition', ['step', 'from_mode', 't_index'])
+OpInvIntersect = namedtuple('OpInvIntersect', ['step', 'mode', 'i_index', 'is_stronger'])
+OpTransition = namedtuple('OpTransition', ['step', 'premode_lpi', 'transition', 'state', 'child_node'])
         
 def perform_aggregation(agg_list, agg_settings, print_debug):
     '''
@@ -254,13 +287,14 @@ def perform_aggregation(agg_list, agg_settings, print_debug):
         if guard_dir_mat.shape[0] > 0:
             agg_dir_mat = np.concatenate((agg_dir_mat, guard_dir_mat.toarray()), axis=0)
     else:
-        raise RuntimeError("Unknown aggregatinon mode: {}".format(agg_settings.agg__mode))
+        raise RuntimeError("Unknown aggregation mode: {}".format(agg_settings.agg__mode))
 
     print_debug("agg dir mat:\n{}".format(agg_dir_mat))
     lpi_list = [state.lpi for state in agg_list]
 
     new_lpi = lputil.aggregate(lpi_list, agg_dir_mat, postmode)
 
+    print("TODO: GET RID OF PREDECESSORS (USE AGGDAG ONLY)")
     predecessor = AggregationPredecessor(agg_list) # Note: these objects weren't clone()'d
 
     return StateSet(new_lpi, agg_list[0].mode, step_interval, predecessor)

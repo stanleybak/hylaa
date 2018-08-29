@@ -89,7 +89,7 @@ class Core(Freezable):
         '''take the passed-in transition from the current state (may add to the waiting list)'''
 
         predecessor = TransitionPredecessor(self.cur_state.clone(keep_computation_path_id=True), t, t_lpi.clone(),
-                                            self.aggdag.current_node)
+                                            self.aggdag.cur_node)
 
         successor_has_inputs = t.to_mode.b_csr is not None
 
@@ -98,8 +98,10 @@ class Core(Freezable):
             minkowski_constraints_csr=t.reset_minkowski_constraints_csr, \
             minkowski_constraints_rhs=t.reset_minkowski_constraints_rhs, successor_has_inputs=successor_has_inputs)
 
-        if t_lpi.is_feasible():
+        if t_lpi.is_feasible():            
             successor_state = StateSet(t_lpi, t.to_mode, self.cur_state.cur_steps_since_start, predecessor)
+
+            
             self.aggdag.add_to_waiting_list(successor_state)
 
             self.print_verbose("Added Discrete Successor to '{}' at step {}".format( \

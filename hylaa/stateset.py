@@ -17,6 +17,7 @@ from hylaa.lpinstance import LpInstance
 
 from hylaa import lpplot
 
+# current goal: replace these by storing the information entirely in the aggdag
 AggregationPredecessor = namedtuple('AggregationPredecessor', ['states'])
 TransitionPredecessor = namedtuple('TransitionPredecessor', ['state', 'transition', 'premode_lpi',
                                                              'aggdag_origin_node'])
