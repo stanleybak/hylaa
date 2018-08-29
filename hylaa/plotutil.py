@@ -14,14 +14,14 @@ import numpy as np
 from matplotlib import collections, animation, colors, rcParams
 import matplotlib.pyplot as plt
 from matplotlib.path import Path
-from matplotlib.widgets import Button, TextBox
+from matplotlib.widgets import Button
 from matplotlib.lines import Line2D
 
 from hylaa import lpplot
 from hylaa.timerutil import Timers
 from hylaa.settings import PlotSettings
 from hylaa.util import Freezable
-from hylaa.predecessor import AggregationPredecessor
+from hylaa.stateset import AggregationPredecessor
 
 class AxisLimits(Freezable):
     '''the axis limits'''
@@ -37,7 +37,7 @@ class AxisLimits(Freezable):
     def __str__(self):
         return "({}, {}, {}, {})".format(self.xmin, self.xmax, self.ymin, self.ymax)
 
-class InteractiveState(Freezable):
+class InteractiveState(Freezable): # pylint: disable=too-few-public-methods
     '''the state during PLOT_INTERACTIVE'''
 
     def __init__(self):

@@ -478,14 +478,14 @@ def test_agg_ha():
     #plt.plot(xs, ys, 'k-')
     
     core.do_step() # 2
-    assert len(core.waiting_list) > 1
+    assert len(core.aggdag.waiting_list) > 1
 
     #for state in core.waiting_list:
     #    xs, ys = zip(*state.verts(core.plotman))
     #    plt.plot(xs, ys, 'k-')
     
     core.do_step() # pop
-    assert not core.waiting_list
+    assert not core.aggdag.waiting_list
 
     lpi = core.cur_state.lpi
 

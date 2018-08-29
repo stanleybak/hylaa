@@ -369,7 +369,7 @@ def test_redundant_inv_transition():
 
     assert core.result.last_cur_state.lpi.get_num_rows() == 3 + 2*3 + 1 # 3 for basis matrix, 2*3 for init constraints
 
-    assert len(core.waiting_list) > 2
+    assert len(core.aggdag.waiting_list) > 2
 
     core.plotman.run_to_completion()
 
@@ -482,7 +482,7 @@ def test_inputs_reset():
 
     core.do_step() # trim to invariant
     assert core.cur_state is None
-    assert len(core.waiting_list) == 1
+    assert len(core.aggdag.waiting_list) == 1
 
     core.run_to_completion()
 
