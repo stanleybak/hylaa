@@ -18,8 +18,9 @@ from hylaa.timerutil import Timers
 from hylaa import lputil
 
 # Operation types
-OpInvIntersect = namedtuple('OpInvIntersect', ['node', 'step', 'i_index', 'is_stronger'])
-OpTransition = namedlist('OpTransition', ['node', 'step', 'child_node', 'transition', 'premode_center'])
+OpInvIntersect = namedtuple('OpInvIntersect', ['step', 'node', 'i_index', 'is_stronger'])
+OpTransition = namedlist('OpTransition', ['step', 'parent_node', 'child_node', 'transition', 'premode_center',
+                                          'postmode_state'])
 
 class AggDag(Freezable):
     'Aggregation directed acyclic graph (DAG) used to manage the deaggregation process'
@@ -70,13 +71,13 @@ class AggDag(Freezable):
         '''
 
         cur_state = self.get_cur_state()
-        
-        # OpTransition = namedlist('OpTransition', ['node', 'step', 'child_node', 'transition', 'premode_center'])
-        op = OpTransition(self.cur_node, cur_state.cur_step_in_mode, None, t, premode_center)
-
-        self.cur_node.op_list.append(op)
 
         state = StateSet(t_lpi, t.to_mode, cur_state.cur_steps_since_start, [op], cur_state.is_concrete)
+        
+        # OpTransition: ['step', 'parent_node', 'child_node', 'transition', 'premode_center', 'postmode_state'])
+        op = OpTransition(cur_state.cur_step_in_mode, self.cur_node, None, t, premode_center, state)
+
+        self.cur_node.op_list.append(op)
         
         self.waiting_list.append((state, op))
 
@@ -144,7 +145,8 @@ class AggDag(Freezable):
                     if to_remove_op is None and state_op is None:
                         should_add = True
                     elif to_remove_op and state_op:
-                        if to_remove_op.transition is state_op.transition and to_remove_op.node is state_op.node:
+                        if to_remove_op.transition is state_op.transition and \
+                                                    to_remove_op.parent_node is state_op.parent_node:
                             should_add = True
 
             if should_add:
@@ -279,7 +281,7 @@ def perform_aggregation(agg_list, op_list, agg_settings, print_debug):
         # aggregation with a predecessor, use arnoldi directions in predecessor mode in center of
         # middle aggregagted state, then project using the reset, and reorthogonalize
 
-        premode = op.node.get_mode()
+        premode = op.parent_node.get_mode()
         t = op.transition
         print_debug("aggregation point: {}".format(op.premode_center))
 

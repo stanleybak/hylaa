@@ -21,7 +21,6 @@ from hylaa import lpplot
 from hylaa.timerutil import Timers
 from hylaa.settings import PlotSettings
 from hylaa.util import Freezable
-from hylaa.stateset import AggregationPredecessor
 
 class AxisLimits(Freezable):
     '''the axis limits'''
@@ -429,37 +428,35 @@ class PlotManager(Freezable):
 
         rv = True
 
-        if self.settings.plot_mode != PlotSettings.PLOT_NONE or self.settings.store_plot_result:
-            for subplot in range(self.num_subplots):
-
-                Timers.tic('verts()')
+        for subplot in range(self.num_subplots):
+            if self.settings.store_plot_result and subplot == 0: # only subplot 0 is saved
                 verts = state.verts(self, subplot=subplot)
-                Timers.toc('verts()')
 
-                if self.settings.store_plot_result and subplot == 0: # only subplot 0 is saved
-                    if state.mode.name in self.core.result.mode_to_polys:
-                        self.core.result.mode_to_polys[state.mode.name].append(verts)
-                    else:
-                        self.core.result.mode_to_polys[state.mode.name] = [verts]
+                if state.mode.name in self.core.result.mode_to_polys:
+                    self.core.result.mode_to_polys[state.mode.name].append(verts)
+                else:
+                    self.core.result.mode_to_polys[state.mode.name] = [verts]
 
-                if self.settings.plot_mode != PlotSettings.PLOT_NONE:
-                    Timers.tic("add to plot")
+            if self.settings.plot_mode != PlotSettings.PLOT_NONE:
+                Timers.tic("add to plot")
 
-                    verts_list = [verts]
+                verts = state.verts(self, subplot=subplot)
+                verts_list = [verts]
 
-                    # if it's an aggregation, also add the predecessors to the plot
-                    if state.cur_step_in_mode == 0 and isinstance(state.predecessor, AggregationPredecessor):
-                        for parent in state.predecessor.states:
-                            verts_list.append(parent.verts(self))
+                # if it's an aggregation, also add the predecessors to the plot
+                if state.cur_step_in_mode == 0 and len(state.aggdagg_op_list) > 1:
+                    for op in state.aggdagg_op_list:
+                        if op is not None:
+                            verts_list.append(op.state.verts(self, subplot=subplot))
 
-                    self.shapes[subplot].set_cur_state(verts_list)
+                self.shapes[subplot].set_cur_state(verts_list)
 
-                    if self.settings.label.axes_limits is None or self.num_subplots > 1:
-                        self.update_axis_limits(verts, subplot)
+                if self.settings.label.axes_limits is None or self.num_subplots > 1:
+                    self.update_axis_limits(verts, subplot)
 
-                    self.shapes[subplot].add_reachable_poly(verts, state.mode.name)
+                self.shapes[subplot].add_reachable_poly(verts, state.mode.name)
 
-                    Timers.toc("add to plot")
+                Timers.toc("add to plot")
 
         return rv
 

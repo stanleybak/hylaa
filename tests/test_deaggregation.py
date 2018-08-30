@@ -7,7 +7,7 @@ import math
 import matplotlib.pyplot as plt
 
 from hylaa.hybrid_automaton import HybridAutomaton
-from hylaa.stateset import StateSet, AggregationPredecessor
+from hylaa.stateset import StateSet
 from hylaa.settings import HylaaSettings, PlotSettings
 from hylaa import lputil
 from hylaa.core import Core

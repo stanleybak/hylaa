@@ -13,7 +13,7 @@ from scipy.sparse import csr_matrix
 from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa.settings import HylaaSettings, PlotSettings, AggregationSettings
 from hylaa.core import Core
-from hylaa.stateset import StateSet, TransitionPredecessor, AggregationPredecessor
+from hylaa.stateset import StateSet
 from hylaa import lputil, lpplot
 from hylaa.lpinstance import LpInstance
 
