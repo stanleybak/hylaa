@@ -45,10 +45,7 @@ class AggDag(Freezable):
         rv = None
 
         if self.cur_node is not None:
-            if self.cur_node.aggregated_state is not None:
-                rv = self.cur_node.aggregated_state
-            else:
-                rv = self.cur_node.concrete_state
+            rv = self.cur_node.get_cur_state()
 
         return rv
 
@@ -72,10 +69,12 @@ class AggDag(Freezable):
 
         cur_state = self.get_cur_state()
 
-        state = StateSet(t_lpi, t.to_mode, cur_state.cur_steps_since_start, [op], cur_state.is_concrete)
+        op_list = []
+        state = StateSet(t_lpi, t.to_mode, cur_state.cur_steps_since_start, op_list, cur_state.is_concrete)
         
         # OpTransition: ['step', 'parent_node', 'child_node', 'transition', 'premode_center', 'postmode_state'])
         op = OpTransition(cur_state.cur_step_in_mode, self.cur_node, None, t, premode_center, state)
+        op_list.append(op)
 
         self.cur_node.op_list.append(op)
         
@@ -255,7 +254,17 @@ class AggDagNode(Freezable):
     def get_mode(self):
         'get the mode for this aggdag node'
 
-        return self.aggregated_state.mode if self.aggregated_state is not None else self.concrete_state.mode
+        return self.get_cur_state().mode
+
+    def get_cur_state(self):
+        'get the current state for this node (aggregated if it exists, else concrete)'
+
+        if self.aggregated_state is not None:
+            rv = self.aggregated_state
+        else:
+            rv = self.concrete_state
+
+        return rv
 
 def perform_aggregation(agg_list, op_list, agg_settings, print_debug):
     '''

@@ -441,7 +441,7 @@ class PlotManager(Freezable):
                 verts_list = [verts]
 
                 # if it's an aggregation, also add the predecessors to the plot
-                if state.cur_step_in_mode == 0 and len(state.aggdagg_op_list) > 1:
+                if state.cur_step_in_mode == 0 and len(state.aggdag_op_list) > 1:
                     for op in state.aggdagg_op_list:
                         if op is not None:
                             verts_list.append(op.state.verts(self, subplot=subplot))

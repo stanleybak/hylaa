@@ -15,7 +15,7 @@ from hylaa.settings import HylaaSettings, PlotSettings, AggregationSettings
 from hylaa.core import Core
 from hylaa.stateset import StateSet
 from hylaa import lputil, lpplot
-from hylaa.lpinstance import LpInstance
+from hylaa.aggdag import OpTransition, AggDagNode
 
 from util import pair_almost_in, assert_verts_is_box
 
@@ -253,8 +253,9 @@ def test_aggregate3():
             assert lputil.is_point_in_lpi(vert, lpi)
 
     #plt.show()
-def test_aggregation():
-    'test the aggregation of states across discrete transitions'
+    
+def test_plain():
+    'test plain aggregation of states across discrete transitions'
 
     # m1 dynamics: x' == 1, y' == 0, x0, y0: [0, 1], step: 1.0
     # m1 invariant: x <= 3
@@ -293,26 +294,35 @@ def test_aggregation():
     settings.plot.plot_mode = PlotSettings.PLOT_NONE
     settings.plot.store_plot_result = True
 
-    result = Core(ha, settings).run(init_list)
+    core = Core(ha, settings)
+    result = core.run(init_list)
 
     # check history
     state = result.last_cur_state
 
     assert state.mode == m2
-    assert isinstance(state.predecessor, AggregationPredecessor)
-    unagg_state = state.predecessor.states[0]
-    assert isinstance(unagg_state, StateSet)
+    assert len(state.aggdag_op_list) > 1
+    
+    op0 = state.aggdag_op_list[0]
+    op1 = state.aggdag_op_list[1]
+    assert isinstance(op0, OpTransition)
 
-    assert unagg_state.mode == m2
-    assert isinstance(unagg_state.predecessor, TransitionPredecessor)
-    assert unagg_state.predecessor.transition == trans1
-    assert isinstance(unagg_state.predecessor.premode_lpi, LpInstance)
-    prestate = unagg_state.predecessor.state
-    assert isinstance(prestate, StateSet)
+    # OpTransition: ['step', 'parent_node', 'child_node', 'transition', 'premode_center','postmode_state']
 
-    assert prestate.mode == m1
-    assert prestate.predecessor is None
+    assert len(core.aggdag.roots) == 1
+   
+    assert op0.child_node.get_mode() is m2
+    assert op0.transition == trans1
+    assert op0.parent_node == core.aggdag.roots[0]
+    assert isinstance(op0.postmode_state, StateSet)
+    assert op0.step == 1
+    assert isinstance(op0.child_node, AggDagNode)
+    assert op0.child_node == op1.child_node
+    assert op0.child_node not in core.aggdag.roots
 
+    assert len(op0.parent_node.get_cur_state().aggdag_op_list) == 1
+    assert op0.parent_node.get_cur_state().aggdag_op_list[0] is None
+     
     # check polygons in m2
     polys2 = result.mode_to_polys['m2']
 
@@ -487,7 +497,7 @@ def test_agg_ha():
     core.do_step() # pop
     assert not core.aggdag.waiting_list
 
-    lpi = core.cur_state.lpi
+    lpi = core.aggdag.get_cur_state().lpi
 
     # 3 constraints from basis matrix
     # 2 aggregation directions from premode arnoldi, +1 from null space

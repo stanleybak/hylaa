@@ -36,6 +36,11 @@ class StateSet(Freezable):
             self.cur_steps_since_start = [0, 0]
 
         self.is_concrete = is_concrete
+
+        if aggdag_op_list is None: # assume its an initial stateset
+            aggdag_op_list = [None]
+
+        assert isinstance(aggdag_op_list, list)        
         self.aggdag_op_list = aggdag_op_list # list of OpTransition objects that created this state set
 
         # the LP row of the strongest constraint for each invariant condition
