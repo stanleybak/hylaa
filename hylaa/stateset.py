@@ -4,8 +4,6 @@ Stanley Bak
 Aug 2016
 '''
 
-from collections import namedtuple
-
 import numpy as np
 
 from hylaa import lputil
@@ -17,31 +15,17 @@ from hylaa.lpinstance import LpInstance
 
 from hylaa import lpplot
 
-# current goal: replace these by storing the information entirely in the aggdag
-AggregationPredecessor = namedtuple('AggregationPredecessor', ['states'])
-TransitionPredecessor = namedtuple('TransitionPredecessor', ['state', 'transition', 'premode_lpi',
-                                                             'aggdag_origin_node'])
-
 class StateSet(Freezable):
     '''
-    A set of states with a common mode.
+    A set of states (possibly aggregated) in the same mode.
     '''
 
-    next_computation_path_id = 0 # a unique counter for computation path nodes
-
-    def __init__(self, lpi, mode, cur_steps_since_start=None, predecessor=None, computation_path_id=None):
+    def __init__(self, lpi, mode, cur_steps_since_start=None, aggdag_op_list=None, is_concrete=True):
         assert isinstance(lpi, LpInstance)
         assert isinstance(mode, Mode)
 
         self.mode = mode
         self.lpi = lpi
-
-        # computation_path_id can check two StateSets are clones at different steps in the same continuous post sequence
-        if computation_path_id is None:
-            self.computation_path_id = self.__class__.next_computation_path_id
-            self.__class__.next_computation_path_id += 1
-        else:
-            self.computation_path_id = computation_path_id
 
         self.cur_step_in_mode = 0
 
@@ -51,15 +35,12 @@ class StateSet(Freezable):
         else:
             self.cur_steps_since_start = [0, 0]
 
-        # the predecessor to this StateSet
-        assert isinstance(predecessor, (type(None), AggregationPredecessor, TransitionPredecessor))
-        self.predecessor = predecessor
+        self.is_concrete = is_concrete
+        self.aggdag_op_list = aggdag_op_list # list of OpTransition objects that created this state set
 
-        self.is_concrete = self._is_concrete_state()
-        
         # the LP row of the strongest constraint for each invariant condition
         # this is used to eliminate redundant constraints as the lpi is intersected with the invariant at each step
-        self.invariant_constraint_rows = None 
+        self.invariant_constraint_rows = [None] * len(self.mode.inv_list)
 
         self.basis_matrix = np.identity(mode.a_csr.shape[0])
         self.input_effects_list = None if mode.b_csr is None else [] # list of input effects at each step
@@ -72,42 +53,11 @@ class StateSet(Freezable):
 
         self.freeze_attrs()
 
-    def clone(self, keep_computation_path_id=False):
-        'deep copy this StateSet'
-
-        i = None if not keep_computation_path_id else self.computation_path_id
-
-        rv = StateSet(self.lpi.clone(), self.mode, self.cur_steps_since_start, self.predecessor, i)
-
-        rv.cur_step_in_mode = self.cur_step_in_mode
-        rv.invariant_constraint_rows = self.invariant_constraint_rows.copy()
-        rv.basis_matrix = self.basis_matrix.copy()
-
-        return rv
-
     def __str__(self):
         'short string representation of this state set'
 
         return "[StateSet in '{}']".format(self.mode.name)
 
-    def _is_concrete_state(self):
-        '''is this a concrete state (no aggregation along computation path)
-
-        this is used to compute self.is_concrete
-        '''
-
-        rv = True
-
-        if self.predecessor is not None:
-            if isinstance(self.predecessor, AggregationPredecessor):
-                rv = False
-            elif isinstance(self.predecessor, TransitionPredecessor):
-                rv = self.predecessor.state.is_concrete
-            else:
-                raise RuntimeError("Unknown predecessor type: {}".format(type(self.predecessor)))
-
-        return rv
-            
     def step(self):
         'update the star based on values from a new simulation time instant'
 
@@ -176,42 +126,3 @@ class StateSet(Freezable):
         Timers.toc('verts')
 
         return self._verts[subplot]
-
-    def intersect_invariant(self):
-        '''intersect the current state set with the mode invariant
-
-        returns whether the state set is still feasbile after intersection'''
-
-        Timers.tic("intersect_invariant")
-
-        has_intersection = False
-
-        if self.invariant_constraint_rows is None:
-            self.invariant_constraint_rows = [None] * len(self.mode.inv_list)
-
-        for invariant_index, lc in enumerate(self.mode.inv_list):
-            if lputil.check_intersection(self.lpi, lc.negate()):
-                has_intersection = True
-                old_row = self.invariant_constraint_rows[invariant_index]
-                vec = lc.csr.toarray()[0]
-                rhs = lc.rhs
-
-                if old_row is None:
-                    # new constriant
-                    row = lputil.add_init_constraint(self.lpi, vec, rhs, self.basis_matrix, self.input_effects_list)
-                    self.invariant_constraint_rows[invariant_index] = row
-                else:
-                    # strengthen existing constraint possibly
-                    row = lputil.try_replace_init_constraint(self.lpi, old_row, vec, rhs, self.basis_matrix, \
-                                                             self.input_effects_list)
-                    self.invariant_constraint_rows[invariant_index] = row
-
-                # adding the invariant condition may make the lp infeasible
-                if not self.lpi.is_feasible():
-                    break
-
-        is_feasible = True if not has_intersection else self.lpi.is_feasible()
-
-        Timers.toc("intersect_invariant")
-
-        return is_feasible

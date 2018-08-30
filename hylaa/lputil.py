@@ -559,6 +559,8 @@ def add_curtime_constraints(lpi, csr, rhs_vec):
 def get_box_center(lpi):
     '''get the center of the box overapproximation of the passed-in lpi'''
 
+    Timers.tic('get_box_center')
+
     dims = lpi.dims
     pt = []
 
@@ -571,6 +573,8 @@ def get_box_center(lpi):
         max_val = lpi.minimize(direction_vec=max_dir, columns=[col])[0]
 
         pt.append((min_val + max_val) / 2.0)
+
+    Timers.toc('get_box_center')
 
     return pt
 

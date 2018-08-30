@@ -8,16 +8,16 @@ from collections import deque
 import numpy as np
 from termcolor import cprint
 
-from hylaa.settings import HylaaSettings, PlotSettings
+from hylaa.settings import HylaaSettings, PlotSettings, AggregationSettings
 
 from hylaa.aggdag import AggDag
 from hylaa.plotutil import PlotManager
-from hylaa.stateset import StateSet, TransitionPredecessor
 
+from hylaa.stateset import StateSet
 from hylaa.hybrid_automaton import HybridAutomaton, was_tt_taken
 from hylaa.timerutil import Timers
 from hylaa.util import Freezable
-from hylaa.lpinstance import LpInstance, UnsatError
+from hylaa.lpinstance import LpInstance
 from hylaa import lputil
 
 class Core(Freezable):
@@ -36,14 +36,13 @@ class Core(Freezable):
         # computation
         self.aggdag = AggDag(hylaa_settings, self) # manages the waiting list and aggregation dag computation state
         
-        self.cur_state = None # a StateSet object
         self.max_steps_remaining = None # bound on num steps left in current mode ; assigned on pop
 
-        self.took_tt_transition = False # flag for if a tt was taken and the cur_state should be removed
+        self.took_tt_transition = False # flag for if a tt transition was taken (cur_state should be cleared)
 
         self.result = None # a HylaaResult... assigned on run() to store verification result
 
-        self.num_steps = 0
+        self.continuous_steps = 0
 
         # make random number generation (for example, to find orthogonal directions) deterministic
         np.random.seed(seed=0)
@@ -81,59 +80,59 @@ class Core(Freezable):
             finished = not self.result.safe
 
         if not finished:
-            finished = self.cur_state is None and not self.aggdag.waiting_list
+            finished = self.aggdag.get_cur_state() is None and not self.aggdag.waiting_list
 
         return finished
 
     def take_transition(self, t, t_lpi):
-        '''take the passed-in transition from the current state (may add to the waiting list)'''
+        '''take the passed-in transition from the current state (add to the waiting list)
 
-        predecessor = TransitionPredecessor(self.cur_state.clone(keep_computation_path_id=True), t, t_lpi.clone(),
-                                            self.aggdag.cur_node)
+        t is the AutomatonTransition onject
+        t_lpi is an LpInstance consisting of the states in the premode where the current set and guard intersect
+        '''
 
+        cur_state = self.aggdag.get_cur_state()
         successor_has_inputs = t.to_mode.b_csr is not None
+        premode_center = None
+
+        if self.settings.aggregation.agg_mode == AggregationSettings.AGG_ARNOLDI_BOX:
+            premode_center = lputil.get_box_center(t_lpi)
 
         lputil.add_reset_variables(t_lpi, t.to_mode.mode_id, t.transition_index, \
             reset_csr=t.reset_csr, minkowski_csr=t.reset_minkowski_csr, \
             minkowski_constraints_csr=t.reset_minkowski_constraints_csr, \
             minkowski_constraints_rhs=t.reset_minkowski_constraints_rhs, successor_has_inputs=successor_has_inputs)
 
-        if t_lpi.is_feasible():            
-            successor_state = StateSet(t_lpi, t.to_mode, self.cur_state.cur_steps_since_start, predecessor)
+        if not t_lpi.is_feasible():
+            # successor is infeasible, check if it's the reset's fault
+            cur_state.lpi.reset_lp()
 
-            
-            self.aggdag.add_to_waiting_list(successor_state)
-
-            self.print_verbose("Added Discrete Successor to '{}' at step {}".format( \
-                t.to_mode.name, self.cur_state.cur_steps_since_start))
-
-            # if it's a time-triggered transition, we may remove cur_state immediately
-            if self.settings.optimize_tt_transitions and t.time_triggered:
-                if was_tt_taken(self.cur_state.lpi, t):
-                    self.print_verbose("Transition was time-triggered, finished with current state analysis")
-                    self.took_tt_transition = True
-                else:
-                    self.print_verbose("Transition was NOT taken as time-triggered, due to runtime checks")
-        else:
-            # successor is infeasible, check if it's the reset's fault, or due to numerical precision
-            # if it's due to numerical precision, the current state's lpi is barely feasible. If we reset it, it
-            # becomes infeasible
-            self.cur_state.lpi.reset_lp()
-
-            if self.cur_state.lpi.is_feasible():
+            if cur_state.lpi.is_feasible():
                 # it was due to the reset. The user probably provided bad reset parameters.
                 raise RuntimeError(("Continuous state was empty after applying reset in transition {}, " + \
                                    "was the reset correctly specified?").format(t))
-            else:
-                # it was due to numerical issues, it should be ok to remove the original (unsat) state
-                self.print_normal("Continuous state discovered to be UNSAT during transition, removing state")
+                                   
+            raise RuntimeError("cur_state became infeasible after a transition was taken (numerical issues?)")
 
-                self.cur_state = None
+        self.aggdag.add_transition_successor(t, t_lpi, premode_center)
+
+        self.print_verbose("Added Discrete Successor to '{}' at step {}".format( \
+            t.to_mode.name, cur_state.cur_steps_since_start))
+
+        # if it's a time-triggered transition, we may remove cur_state immediately
+        if self.settings.optimize_tt_transitions and t.time_triggered:
+            if was_tt_taken(cur_state.lpi, t):
+                self.print_verbose("Transition was time-triggered, finished with current state analysis")
+                self.took_tt_transition = True
+            else:
+                self.print_verbose("Transition was NOT taken as time-triggered, due to runtime checks")
 
     def error_reached(self, t, lpi):
         'an error mode was reached after taking transition t, report and create counterexample'
 
-        step_num = self.cur_state.cur_steps_since_start
+        cur_state = self.aggdag.get_cur_state()
+
+        step_num = cur_state.cur_steps_since_start
         times = [round(self.settings.step_size * step_num[0], 12), round(self.settings.step_size * step_num[1], 12)]
 
         if step_num[0] == step_num[1]:
@@ -144,7 +143,7 @@ class Core(Freezable):
 
         self.result.safe = False
 
-        if self.cur_state.is_concrete and not self.result.counterexample:
+        if cur_state.is_concrete and not self.result.counterexample:
             self.result.counterexample = make_counterexample(self.hybrid_automaton, t, lpi)
 
     def check_guards(self):
@@ -152,34 +151,60 @@ class Core(Freezable):
 
         Timers.tic("check_guards")
 
-        try:
-            transitions = self.cur_state.mode.transitions
+        cur_state = self.aggdag.get_cur_state()
 
-            for t in transitions:
-                t_lpi = t.get_guard_intersection(self.cur_state.lpi)
+        for t in cur_state.mode.transitions:
+            t_lpi = t.get_guard_intersection(cur_state.lpi)
 
-                if t_lpi:
-                    if t.to_mode.is_error():
-                        self.error_reached(t, t_lpi)
-                        break
-                    else:
-                        self.take_transition(t, t_lpi)
-
-                    # current state may have become infeasible
-                    if self.cur_state is None:
-                        break
-
-        except UnsatError:
-            self.print_normal("State became infeasible after checking guards. " + \
-                                      "Likely was barely feasible + numerical issues); removing state.")
-            self.cur_state = None
+            if t_lpi:
+                if t.to_mode.is_error():
+                    self.error_reached(t, t_lpi)
+                    break
+                else:
+                    self.take_transition(t, t_lpi)
 
         Timers.toc("check_guards")
+
+    def intersect_invariant(self):
+        '''intersect the current state with the mode invariant'''
+
+        Timers.tic("intersect_invariant")
+
+        cur_state = self.aggdag.get_cur_state()
+        has_intersection = False
+
+        for invariant_index, lc in enumerate(cur_state.mode.inv_list):
+            if lputil.check_intersection(cur_state.lpi, lc.negate()):
+                has_intersection = True
+                old_row = cur_state.invariant_constraint_rows[invariant_index]
+                vec = lc.csr.toarray()[0]
+                rhs = lc.rhs
+
+                if old_row is None:
+                    # new constraint
+                    row = lputil.add_init_constraint(cur_state.lpi, vec, rhs, cur_state.basis_matrix,
+                                                     cur_state.input_effects_list)
+                    cur_state.invariant_constraint_rows[invariant_index] = row
+                else:
+                    # strengthen existing constraint possibly
+                    row = lputil.try_replace_init_constraint(cur_state.lpi, old_row, vec, rhs, cur_state.basis_matrix, \
+                                                             cur_state.input_effects_list)
+                    cur_state.invariant_constraint_rows[invariant_index] = row
+
+                # adding the invariant condition may make the lp infeasible
+                if not cur_state.lpi.is_feasible():
+                    break
+
+        is_feasible = True if not has_intersection else cur_state.lpi.is_feasible()
+
+        Timers.toc("intersect_invariant")
+
+        return is_feasible
 
     def print_current_step_time(self):
         'print the current step and time'
 
-        step_num = self.cur_state.cur_steps_since_start
+        step_num = self.aggdag.get_cur_state().cur_steps_since_start
         times = [round(self.settings.step_size * step_num[0], 12), round(self.settings.step_size * step_num[1], 12)]
 
         if step_num[0] == step_num[1]:
@@ -193,35 +218,36 @@ class Core(Freezable):
 
         Timers.tic('do_step_continuous_post')
 
+        cur_state = self.aggdag.get_cur_state()
         self.print_current_step_time()
 
         if not self.is_finished():
-            # next advance time by one step
-            if self.cur_state.cur_steps_since_start[0] >= self.settings.num_steps:
-                self.print_verbose("cur_state reached time bound, removing")
-                self.cur_state = None
+            if cur_state.cur_steps_since_start[0] >= self.settings.num_steps:
+                self.print_normal("State reached computation time bound")
+                self.aggdag.cur_state_left_invariant()
 
-                if self.is_finished():
-                    self.print_normal("Computation finished after {} steps.".format(self.num_steps))
             elif self.took_tt_transition:
-                self.took_tt_transition = False
-                self.cur_state = None
+                self.print_normal("State reached a time-triggered transition")
+                self.took_tt_transition = False # reset the flag
+                self.aggdag.cur_state_left_invariant()
             else:
-                still_feasible = self.cur_state.intersect_invariant()
+                still_feasible = self.intersect_invariant()
                 
                 if not still_feasible:
-                    self.print_normal("State left the invariant after {} steps".format(self.cur_state.cur_step_in_mode))
-                        
-                    self.cur_state = None
+                    self.print_normal("State left the invariant after {} steps".format(cur_state.cur_step_in_mode))
+                    self.aggdag.cur_state_left_invariant()
                 else:
-                    self.cur_state.step()
-                    self.check_guards()
+                    cur_state.step()
+                    self.check_guards() # check guards here, before doing an invariant intersection
 
                     # if the current mode has zero dynamic, remove it here
-                    if self.cur_state.mode.a_csr.nnz == 0:
-                        self.print_normal("Mode '{}' has zero dynamics, skipping remaining steps".format( \
-                            self.cur_state.mode.name))
-                        self.cur_state = None
+                    if cur_state.mode.a_csr.nnz == 0:
+                        self.print_normal("State in mode '{}' with zero dynamics, skipping remaining steps".format( \
+                            cur_state.mode.name))
+                        self.aggdag.cur_state_left_invariant()
+
+        if self.is_finished():
+            self.print_normal("Computation finished after {} continuous-post steps.".format(self.continuous_steps))
 
         Timers.toc('do_step_continuous_post')
 
@@ -233,27 +259,27 @@ class Core(Freezable):
         self.plotman.state_popped() # reset certain per-mode plot variables
         self.aggdag.print_waiting_list()
 
-        self.result.last_cur_state = self.cur_state = self.aggdag.pop_waiting_list()
+        self.result.last_cur_state = cur_state = self.aggdag.pop_waiting_list()
 
         self.print_normal("Removed state in mode '{}' at step {} ({} in mode) (Waiting list has {} left)".format( \
-                self.cur_state.mode.name, self.cur_state.cur_steps_since_start, self.cur_state.cur_step_in_mode, \
+                cur_state.mode.name, cur_state.cur_steps_since_start, cur_state.cur_step_in_mode, \
                 len(self.aggdag.waiting_list)))
 
         # if a_matrix is None, it's an error mode
-        if self.cur_state.mode.a_csr is None:
-            self.print_normal("Mode '{}' was an error mode; skipping.".format(self.cur_state.mode.name))
+        if cur_state.mode.a_csr is None:
+            self.print_normal("Mode '{}' was an error mode; skipping.".format(cur_state.mode.name))
 
-            self.cur_state = None
+            self.aggdag.cur_state_left_invariant()
         else:
-            self.max_steps_remaining = self.settings.num_steps - self.cur_state.cur_steps_since_start[0]
+            self.max_steps_remaining = self.settings.num_steps - cur_state.cur_steps_since_start[0]
 
-            still_feasible = self.cur_state.intersect_invariant()
+            still_feasible = cur_state.intersect_invariant()
 
             if not still_feasible:
                 self.print_normal("Continuous state was outside of the mode's invariant; skipping.")
-                self.cur_state = None
+                self.aggdag.cur_state_left_invariant()
 
-        # pause after discrete post when using PLOT_INTERACTIVE
+        # pause after popping when using PLOT_INTERACTIVE
         if self.plotman.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
             self.plotman.interactive.paused = True
 
@@ -263,15 +289,15 @@ class Core(Freezable):
         'do a single step of the computation'
 
         Timers.tic('do_step')
-        self.num_steps += 1
 
         if not self.is_finished():
-            if self.cur_state is None:
+            if self.aggdag.get_cur_state() is None:
                 self.do_step_pop()
 
-                if self.settings.process_urgent_guards and self.cur_state is not None:
+                if self.settings.process_urgent_guards and self.aggdag.get_cur_state() is not None:
                     self.check_guards()
             else:
+                self.continuous_steps += 1
                 self.do_step_continuous_post()
 
         Timers.toc('do_step')
