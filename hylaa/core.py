@@ -3,7 +3,7 @@ Main Hylaa Reachability Implementation
 Stanley Bak, 2018
 '''
 
-from collections import deque
+from collections import deque, defaultdict
 
 import numpy as np
 from termcolor import cprint
@@ -165,12 +165,12 @@ class Core(Freezable):
 
         Timers.toc("check_guards")
 
-    def intersect_invariant(self):
+    def intersect_invariant(self, state=None):
         '''intersect the current state with the mode invariant'''
 
         Timers.tic("intersect_invariant")
 
-        cur_state = self.aggdag.get_cur_state()
+        cur_state = state if state is not None else self.aggdag.get_cur_state()
         has_intersection = False
 
         for invariant_index, lc in enumerate(cur_state.mode.inv_list):
@@ -273,7 +273,7 @@ class Core(Freezable):
         else:
             self.max_steps_remaining = self.settings.num_steps - cur_state.cur_steps_since_start[0]
 
-            still_feasible = cur_state.intersect_invariant()
+            still_feasible = self.intersect_invariant()
 
             if not still_feasible:
                 self.print_normal("Continuous state was outside of the mode's invariant; skipping.")
@@ -338,7 +338,7 @@ class Core(Freezable):
                 self.print_normal("Removed an infeasible initial set in mode {}".format(state.mode.name))
                 continue
             
-            still_feasible = state.intersect_invariant()
+            still_feasible = self.intersect_invariant(state)
 
             if still_feasible:
                 self.aggdag.add_init_state(state)
@@ -480,7 +480,7 @@ class HylaaResult(Freezable): # pylint: disable=too-few-public-methods
         self.counterexample = [] # if unsafe, a list of CounterExampleSegment objects
 
         # assigned if setting.plot.store_plot_result is True, a map name -> list of lists (the verts at each step)
-        self.mode_to_polys = {}
+        self.mode_to_polys = defaultdict(list)
 
         # the last core.cur_state object... used for unit testing
         self.last_cur_state = None

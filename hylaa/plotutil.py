@@ -421,21 +421,18 @@ class PlotManager(Freezable):
 
             self.shapes = [DrawnShapes(self, i) for i in range(self.num_subplots)]
 
-    def plot_current_state(self, state):
+    def plot_current_state(self):
         '''
-        plot the current StateSet according to the plot settings. returns still_feasible
+        plot the current StateSet according to the plot settings.
         '''
 
-        rv = True
+        state = self.core.aggdag.get_cur_state()
 
         for subplot in range(self.num_subplots):
             if self.settings.store_plot_result and subplot == 0: # only subplot 0 is saved
                 verts = state.verts(self, subplot=subplot)
 
-                if state.mode.name in self.core.result.mode_to_polys:
-                    self.core.result.mode_to_polys[state.mode.name].append(verts)
-                else:
-                    self.core.result.mode_to_polys[state.mode.name] = [verts]
+                self.core.result.mode_to_polys[state.mode.name].append(verts)
 
             if self.settings.plot_mode != PlotSettings.PLOT_NONE:
                 Timers.tic("add to plot")
@@ -457,8 +454,6 @@ class PlotManager(Freezable):
                 self.shapes[subplot].add_reachable_poly(verts, state.mode.name)
 
                 Timers.toc("add to plot")
-
-        return rv
 
     def anim_func(self, _):
         'animation draw function'
@@ -482,10 +477,8 @@ class PlotManager(Freezable):
                     self.interactive.paused = True
                     break
 
-            if self.core.cur_state is not None:
-                if not self.plot_current_state(self.core.cur_state):
-                    self.core.print_verbose("Continuous state discovered to be UNSAT during plot, removing state")
-                    self.core.cur_state = None
+            if self.core.aggdag.get_cur_state() is not None:
+                self.plot_current_state()
 
             Timers.toc("frame")
 
@@ -606,10 +599,8 @@ class PlotManager(Freezable):
 
             self.core.do_step()
 
-            if compute_plot and self.core.cur_state is not None:
-                if not self.plot_current_state(self.core.cur_state):
-                    self.core.print_verbose("Continuous state discovered to be UNSAT during plot, removing state")
-                    self.core.cur_state = None
+            if compute_plot and self.core.aggdag.get_cur_state():
+                self.plot_current_state()
 
         Timers.toc("run_to_completion")
 
