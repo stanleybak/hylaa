@@ -481,7 +481,7 @@ def test_inputs_reset():
     assert_verts_is_box(lpplot.get_verts(core.result.last_cur_state.lpi), [[math.exp(3), math.exp(3)], [3, 3]])
 
     core.do_step() # trim to invariant
-    assert core.cur_state is None
+    assert core.aggdag.get_cur_state() is None
     assert len(core.aggdag.waiting_list) == 1
 
     core.run_to_completion()
@@ -707,4 +707,4 @@ def test_zero_dynamics():
     core.do_step() # pop
     core.do_step() # propagate and remove
 
-    assert core.cur_state is None, "cur state should be none, since mode dynamics were zero"
+    assert core.aggdag.get_cur_state() is None, "cur state should be none, since mode dynamics were zero"
