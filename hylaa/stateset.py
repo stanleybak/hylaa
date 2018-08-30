@@ -63,6 +63,18 @@ class StateSet(Freezable):
 
         return "[StateSet in '{}']".format(self.mode.name)
 
+    def clone(self):
+        'clone the StateSet at the current state (partial deep copy)'
+
+        rv = StateSet(self.lpi.clone(), self.mode, self.cur_steps_since_start, self.aggdag_op_list, self.is_concrete)
+
+        rv.cur_step_in_mode = self.cur_step_in_mode
+        rv.invariant_constraint_rows = self.invariant_constraint_rows.copy()
+        rv.basis_matrix = self.basis_matrix.copy()
+        rv.input_effects_list = self.input_effects_list.copy()
+
+        return rv
+
     def step(self):
         'update the star based on values from a new simulation time instant'
 

@@ -2,6 +2,7 @@
 *.pyc
 TAGS
 *.png
+*.gv.pdf
 *.so
 *.mp4
 *Debug/

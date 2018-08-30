@@ -211,7 +211,7 @@ class Core(Freezable):
             step_num = step_num[0]
             times = times[0]
 
-        self.print_verbose("Step: {} / {} ({})".format(step_num, self.settings.num_steps, times))
+        self.print_verbose("Step From {} / {} ({})".format(step_num, self.settings.num_steps, times))
 
     def do_step_continuous_post(self):
         '''do a step where it's part of a continuous post'''
@@ -297,8 +297,8 @@ class Core(Freezable):
                 if self.settings.process_urgent_guards and self.aggdag.get_cur_state() is not None:
                     self.check_guards()
             else:
-                self.continuous_steps += 1
                 self.do_step_continuous_post()
+                self.continuous_steps += 1
 
         Timers.toc('do_step')
 

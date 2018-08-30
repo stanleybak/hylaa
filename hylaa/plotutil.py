@@ -442,9 +442,9 @@ class PlotManager(Freezable):
 
                 # if it's an aggregation, also add the predecessors to the plot
                 if state.cur_step_in_mode == 0 and len(state.aggdag_op_list) > 1:
-                    for op in state.aggdagg_op_list:
+                    for op in state.aggdag_op_list:
                         if op is not None:
-                            verts_list.append(op.state.verts(self, subplot=subplot))
+                            verts_list.append(op.postmode_state.verts(self, subplot=subplot))
 
                 self.shapes[subplot].set_cur_state(verts_list)
 

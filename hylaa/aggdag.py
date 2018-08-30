@@ -9,6 +9,8 @@ import numpy as np
 
 from termcolor import cprint
 
+from graphviz import Digraph
+
 from namedlist import namedlist
 
 from hylaa.settings import HylaaSettings, AggregationSettings
@@ -215,8 +217,6 @@ class AggDag(Freezable):
             aggregated = True
 
         # create a new AggDagNode for the current computation
-        parent_steps = [state.cur_step_in_mode for state in agg_list]
-        
         self.cur_node = AggDagNode(op_list)
 
         # update the OpTransition objects with the child information
@@ -236,6 +236,25 @@ class AggDag(Freezable):
             self.cur_node.aggregated_state = rv
 
         return rv
+
+    def show(self):
+        'visualize the aggdag using graphviz'
+
+        # rankdir='LR'
+
+        g = Digraph(name='aggdag')
+        already_drawn_nodes = []
+
+        for i, root in enumerate(self.roots):
+            preroot = 'preroot{}'.format(i)
+            g.node(preroot, style="invis")
+
+            name = "node_{}".format(id(root))
+            g.edge(preroot, name)
+
+            root.viz(g, already_drawn_nodes)
+
+        g.view(cleanup=True)
 
 class AggDagNode(Freezable):
     'A node of the Aggregation DAG'
@@ -265,6 +284,70 @@ class AggDagNode(Freezable):
             rv = self.concrete_state
 
         return rv
+
+    def viz(self, g, already_drawn_nodes):
+        '''draw the aggdag node using the graphiz library
+
+        g is the DiGraph object to draw to
+        '''
+
+        if not self in already_drawn_nodes:
+            already_drawn_nodes.append(self)
+            name = "node_{}".format(id(self))
+            label = self.get_mode().name
+
+            g.node(name, label=label)
+
+            # collapse edges over multiple times into the same outgoing edge
+            enabled_transitions = [] # contains tuples (child_name, step_list)
+
+            for op in self.op_list:
+                if isinstance(op, OpTransition):
+                    if op.child_node is None:
+                        # invisible outgoing edge
+                        invis_name = "out_{}".format(id(op))
+                        g.node(invis_name, style="invis")
+
+                        g.edge(name, invis_name)
+                    else:
+                        child_name = "node_{}".format(id(op.child_node))
+                        found = False
+
+                        for pair in enabled_transitions:
+                            if pair[0] == child_name:
+                                pair[1].append(op.step)
+                                found = True
+
+                        if not found:
+                            enabled_transitions.append((child_name, [op.step]))
+                            
+                    # remove enabled transitions that are no longer enabled
+                    new_enabled_transitions = []
+
+                    for pair in enabled_transitions:
+                        step_list = pair[1]
+                        
+                        if step_list[-1] < op.step:
+                            # print it
+                            label = str(step_list[0]) if len(step_list) == 1 else "[{}, {}]".format( \
+                                step_list[0], step_list[-1])
+                            g.edge(name, child_name, label=label)
+                        else:
+                            # keep it
+                            new_enabled_transitions.append(pair)
+
+            # flush remaining enabled_transitions
+            for child_name, step_list in enabled_transitions:
+                label = str(step_list[0]) if len(step_list) == 1 else "[{}, {}]".format(step_list[0], step_list[-1])
+                g.edge(name, child_name, label=label)
+
+            # print the children after the current node
+            for op in self.op_list:
+                if isinstance(op, OpTransition):
+                    if op.child_node is not None:
+                        op.child_node.viz(g, already_drawn_nodes)
+
+        # ['step', 'parent_node', 'child_node', 'transition', 'premode_center', 'postmode_state']
 
 def perform_aggregation(agg_list, op_list, agg_settings, print_debug):
     '''
