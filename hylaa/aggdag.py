@@ -3,6 +3,8 @@ Stanley Bak
 Aggregation Directed Acyclic Graph (DAG) implementation
 '''
 
+import sys
+
 from collections import namedtuple
 
 import numpy as np
@@ -79,7 +81,7 @@ class AggDag(Freezable):
         op_list.append(op)
 
         self.cur_node.op_list.append(op)
-        
+
         self.waiting_list.append((state, op))
 
     def print_waiting_list(self):
@@ -90,9 +92,15 @@ class AggDag(Freezable):
             
             cprint("Waiting list has {} states".format(len(self.waiting_list)), col)
 
-            if len(self.waiting_list) < 10:
-                for state in self.waiting_list:
-                    cprint(" {}".format(state), col)
+            if len(self.waiting_list) < 20:
+                for state, op in self.waiting_list:
+                    trans = ''
+
+                    if isinstance(op, OpTransition):
+                        trans = op.transition
+                    
+                    cprint(" [Mode: {} (from op {}) at steps {}]".format(state.mode.name, trans,
+                                                                         state.cur_steps_since_start), col)
 
     @staticmethod
     def pop_score(state, strategy):
@@ -121,12 +129,13 @@ class AggDag(Freezable):
         to_remove, to_remove_op = self.waiting_list[0]
         to_remove_score = AggDag.pop_score(to_remove, self.settings.aggregation.pop_strategy)
 
-        for state, _ in self.waiting_list:
+        for state, op in self.waiting_list:
             score = AggDag.pop_score(state, self.settings.aggregation.pop_strategy)
 
             if score > to_remove_score or score == to_remove_score and state.mode.name < to_remove.mode.name:
                 to_remove_score = score
                 to_remove = state
+                to_remove_op = op
 
         self.core.print_verbose("Aggregating with state at time {} in mode {}".format(to_remove.cur_steps_since_start,
                                                                                       to_remove.mode.name))
@@ -146,6 +155,7 @@ class AggDag(Freezable):
                     if to_remove_op is None and state_op is None:
                         should_add = True
                     elif to_remove_op and state_op:
+                    
                         if to_remove_op.transition is state_op.transition and \
                                                     to_remove_op.parent_node is state_op.parent_node:
                             should_add = True
@@ -237,12 +247,16 @@ class AggDag(Freezable):
 
         return rv
 
-    def show(self):
+    def show(self, lr=True):
         'visualize the aggdag using graphviz'
 
-        # rankdir='LR'
-
         g = Digraph(name='aggdag')
+
+        if lr:
+            g.graph_attr['rankdir'] = 'LR'
+
+        #g.edge_attr.update(arrowhead='vee', arrowsize='2')
+        
         already_drawn_nodes = []
 
         for i, root in enumerate(self.roots):
@@ -301,40 +315,46 @@ class AggDagNode(Freezable):
             # collapse edges over multiple times into the same outgoing edge
             enabled_transitions = [] # contains tuples (child_name, step_list)
 
-            for op in self.op_list:
-                if isinstance(op, OpTransition):
-                    if op.child_node is None:
-                        # invisible outgoing edge
-                        invis_name = "out_{}".format(id(op))
-                        g.node(invis_name, style="invis")
+            transition_ops = [op for op in self.op_list if isinstance(op, OpTransition)]
 
-                        g.edge(name, invis_name)
-                    else:
-                        child_name = "node_{}".format(id(op.child_node))
-                        found = False
+            for op in transition_ops:
+                
+                if op.child_node is None:
+                        
+                    # invisible outgoing edge
+                    invis_name = "out_{}".format(id(op))
+                    g.node(invis_name, style="invis")
 
-                        for pair in enabled_transitions:
-                            if pair[0] == child_name:
-                                pair[1].append(op.step)
-                                found = True
-
-                        if not found:
-                            enabled_transitions.append((child_name, [op.step]))
-                            
-                    # remove enabled transitions that are no longer enabled
-                    new_enabled_transitions = []
+                    g.edge(name, invis_name)
+                else:
+                    child_name = "node_{}".format(id(op.child_node))
+                    found = False
 
                     for pair in enabled_transitions:
-                        step_list = pair[1]
-                        
-                        if step_list[-1] < op.step:
-                            # print it
-                            label = str(step_list[0]) if len(step_list) == 1 else "[{}, {}]".format( \
-                                step_list[0], step_list[-1])
-                            g.edge(name, child_name, label=label)
-                        else:
-                            # keep it
-                            new_enabled_transitions.append(pair)
+                        if pair[0] == child_name:
+                            pair[1].append(op.step)
+                            found = True
+
+                    if not found:
+                        enabled_transitions.append((child_name, [op.step]))
+
+                # remove enabled transitions that are no longer enabled
+                new_enabled_transitions = []
+
+                for pair in enabled_transitions:
+                    child_name = pair[0]
+                    step_list = pair[1]
+
+                    if step_list[-1] < op.step:
+                        # print it
+                        label = str(step_list[0]) if len(step_list) == 1 else "[{}, {}]".format( \
+                            step_list[0], step_list[-1])
+                        g.edge(name, child_name, label=label)
+                    else:
+                        # keep it
+                        new_enabled_transitions.append(pair)
+
+                enabled_transitions = new_enabled_transitions
 
             # flush remaining enabled_transitions
             for child_name, step_list in enabled_transitions:
@@ -342,10 +362,9 @@ class AggDagNode(Freezable):
                 g.edge(name, child_name, label=label)
 
             # print the children after the current node
-            for op in self.op_list:
-                if isinstance(op, OpTransition):
-                    if op.child_node is not None:
-                        op.child_node.viz(g, already_drawn_nodes)
+            for op in transition_ops:
+                if op.child_node is not None:
+                    op.child_node.viz(g, already_drawn_nodes)
 
         # ['step', 'parent_node', 'child_node', 'transition', 'premode_center', 'postmode_state']
 

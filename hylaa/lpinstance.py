@@ -15,12 +15,17 @@ from hylaa.timerutil import Timers
 
 from hylaa.settings import StaticSettings
 
+def simple_print(s):
+    'print using the print function'
+
+    print(s)
+
 class LpInstance(Freezable): # pylint: disable=too-many-public-methods
     'Linear programming wrapper using glpk (through swiglpk python interface)'
 
-    print_normal = print # function for printing normal information (reassigned in core)
-    print_verbose = print # function for printing verbose information (reassigned in core)
-    print_debug = print # function for printing debug information (reassigned in core)
+    print_normal = simple_print # function for printing normal information (reassigned in core)
+    print_verbose = simple_print # function for printing verbose information (reassigned in core)
+    print_debug = simple_print # function for printing debug information (reassigned in core)
 
     def __init__(self):
         'initialize the lp instance'

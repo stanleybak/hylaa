@@ -187,6 +187,8 @@ def define_init_states(ha):
     # Variable ordering: [x1, x2, t, affine]
     rv = []
 
+    single_init = False
+
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
     mode = ha.modes['loc2']
     mat = [[-1, 0, 0, 0], \
@@ -198,8 +200,9 @@ def define_init_states(ha):
         [0, 0, 0, 1], \
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
-    
-    rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
+
+    if not single_init:
+        rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
     mode = ha.modes['loc3']
@@ -213,7 +216,8 @@ def define_init_states(ha):
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
 
-    rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
+    if not single_init:
+        rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
     mode = ha.modes['loc4']
@@ -227,7 +231,8 @@ def define_init_states(ha):
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
 
-    rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
+    if not single_init:
+        rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
     mode = ha.modes['loc1']
@@ -240,6 +245,7 @@ def define_init_states(ha):
         [0, 0, 0, 1], \
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
+
     rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
@@ -254,7 +260,8 @@ def define_init_states(ha):
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
 
-    rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
+    if not single_init:
+        rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
     mode = ha.modes['loc6']
@@ -268,7 +275,8 @@ def define_init_states(ha):
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
 
-    rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
+    if not single_init:
+        rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
     mode = ha.modes['loc7']
@@ -282,7 +290,8 @@ def define_init_states(ha):
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
 
-    rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
+    if not single_init:
+        rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
     mode = ha.modes['loc8']
@@ -296,7 +305,8 @@ def define_init_states(ha):
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
 
-    rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
+    if not single_init:
+        rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
     mode = ha.modes['loc9']
@@ -309,8 +319,9 @@ def define_init_states(ha):
         [0, 0, 0, 1], \
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
-    
-    rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
+
+    if not single_init:
+        rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     return rv
 

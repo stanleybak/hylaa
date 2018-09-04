@@ -509,7 +509,7 @@ class HybridAutomaton(Freezable):
                 t.guard_csr = new_guard_csr
                 t.guard_rhs = new_guard_rhs
 
-    def detect_tt_transitions(self, print_func=print): # if you get a syntax error here, make sure you're using python3
+    def detect_tt_transitions(self, print_func=None):
         '''
         Mark all time-triggered transitions within the automaton.
 
@@ -521,6 +521,14 @@ class HybridAutomaton(Freezable):
         at verification-time, a further check will make sure that a is a constant (not an interval), not equal to 0, 
         and that x is flat (not an interval)
         '''
+
+        if print_func is None:
+            def simple_print(s):
+                'print using the print function'
+
+                print(s)
+
+            print_func = simple_print
 
         for mode in self.modes.values():
             if mode.a_csr is None: # skip error modes
