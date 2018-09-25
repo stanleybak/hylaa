@@ -79,7 +79,7 @@ def fail_deagg_counterexample():
     assert isinstance(root.op_list[3], OpTransition) and root.op_list[3].step == 4 # transition from x=[4, 5]
 
     for s in range(4):
-        assert root.op_list[s].transition == trans1 and root.op_list[s].postmode_state.is_concrete
+        assert root.op_list[s].transition == trans1 and root.op_list[s].poststate.is_concrete
 
     assert isinstance(root.op_list[4], OpInvIntersect)
     op4 = root.op_list[4]

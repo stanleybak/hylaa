@@ -91,3 +91,23 @@ def aggregate_box_arnoldi(agg_list, op_list, is_box, is_arnoldi, add_guard, prin
     new_lpi = lputil.aggregate(lpi_list, agg_dir_mat, postmode)
 
     return StateSet(new_lpi, agg_list[0].mode, step_interval, op_list, is_concrete=False)
+
+def aggregate_chull(agg_list, op_list, print_func):
+    '''
+    perform template-based aggregation on the passed-in list of states
+
+    Currently, this can either use box template directions or arnoldi (+box) template directions
+    '''
+
+    min_step = min([state.cur_steps_since_start[0] for state in agg_list])
+    max_step = max([state.cur_steps_since_start[1] for state in agg_list])
+    step_interval = [min_step, max_step]
+
+    print_func("Convex hull aggregation time step interval: {}".format(step_interval))
+
+    postmode = agg_list[0].mode
+    lpi_list = [state.lpi for state in agg_list]
+
+    new_lpi = lputil.aggregate_chull(lpi_list, postmode)
+
+    return StateSet(new_lpi, agg_list[0].mode, step_interval, op_list, is_concrete=False)

@@ -9,7 +9,7 @@ from hylaa import lputil
 from hylaa.util import Freezable
 
 # container class for description of how to perform a single aggregation
-AggType = namedtuple('AggType', ['is_box', 'is_arnoldi_box', 'add_guard'])
+AggType = namedtuple('AggType', ['is_box', 'is_arnoldi_box', 'is_chull', 'add_guard'])
 
 class AggregationStrategy(Freezable):
     '''Aggregation Strategy parent class
@@ -68,7 +68,7 @@ class Unaggregated(AggregationStrategy):
 class Aggregated(AggregationStrategy):
     'a fully aggregated strategy'
 
-    AGG_BOX, AGG_ARNOLDI_BOX = range(2)
+    AGG_BOX, AGG_ARNOLDI_BOX, AGG_CONVEX_HULL = range(3)
     POP_LOWEST_MINTIME, POP_LOWEST_AVGTIME, POP_LARGEST_MAXTIME = range(3)
 
     def __init__(self, agg_type=AGG_ARNOLDI_BOX, pop_type=POP_LOWEST_AVGTIME, require_same_path=True):
@@ -155,5 +155,6 @@ class Aggregated(AggregationStrategy):
 
         is_box = self.agg_type == Aggregated.AGG_BOX
         is_arnoldi_box = self.agg_type == Aggregated.AGG_ARNOLDI_BOX
+        is_chull = self.agg_type == Aggregated.AGG_CONVEX_HULL
 
-        return AggType(is_box, is_arnoldi_box, self.add_guard)
+        return AggType(is_box, is_arnoldi_box, is_chull, self.add_guard)

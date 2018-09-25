@@ -292,8 +292,6 @@ class PlotManager(Freezable):
     def update_axis_limits(self, points_list, subplot):
         'update the axes limits to include the passed-in point list'
 
-        print("update axis limits({}) called with {}".format(subplot, points_list))
-        
         first_draw = False
 
         if self.drawn_limits is None:
@@ -329,8 +327,6 @@ class PlotManager(Freezable):
                 lim.ymin = y
             elif y > lim.ymax:
                 lim.ymax = y
-
-        print("axis limits for subplot {} are {}".format(subplot, lim))
 
         is_outside = lim.xmin < drawn.xmin or lim.xmax > drawn.xmax or lim.ymin < drawn.ymin or lim.ymax > drawn.ymax
         if first_draw or (is_outside and lim.xmin != lim.xmax and lim.ymin != lim.ymax):
@@ -444,7 +440,7 @@ class PlotManager(Freezable):
                 if state.cur_step_in_mode == 0 and len(state.aggdag_op_list) > 1:
                     for op in state.aggdag_op_list:
                         if op is not None:
-                            verts_list.append(op.postmode_state.verts(self, subplot=subplot))
+                            verts_list.append(op.poststate.verts(self, subplot=subplot))
 
                 self.shapes[subplot].set_cur_state(verts_list)
 

@@ -5,12 +5,11 @@ Converted from file:
 Command Line arguments: -gen drivetrain "-theta 2 -init_scale 1.0 -reverse_errors" -passes sub_constants "" simplify -p -tool hylaa2 ""
 '''
 
-import heapq
-
 import numpy as np
 
 from hylaa.hybrid_automaton import HybridAutomaton
-from hylaa.settings import HylaaSettings, PlotSettings, AggregationSettings
+from hylaa.settings import HylaaSettings, PlotSettings
+from hylaa.aggstrat import Aggregated
 from hylaa.core import Core
 from hylaa.stateset import StateSet
 from hylaa import lputil
@@ -131,70 +130,90 @@ def define_init_states(ha):
     # Variable ordering: [x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, t, affine]
     rv = []
     
-    # 1.0 * x1 + 0.0488 = 0.00056 * x4 - 0.0112 & 1.0 * x2 + 15.67 = 0.46699999999999997 * x4 - 9.34 & x3 = 0.0 & x5 = 0.0 & 1.0 * x6 - 20.0 = 1.0 * x4 - 20.0 & 1.0 * x7 - 240.0 = 12.0 * x4 - 240.0 & 1.0 * x8 + 0.0019199999999999998 = 0.00006 * x4 - 0.0012 & 1.0 * x9 - 20.0 = 1.0 * x4 - 20.0 & 1.0 * x10 + 0.0019199999999999998 = 0.00006 * x4 - 0.0012 & 1.0 * x11 - 20.0 = 1.0 * x4 - 20.0 & 20.0 <= x4 & x4 <= 40.0 & t = 0.0 & affine = 1.0
     mode = ha.modes['negAngleInit']
-    mat = [[1, 0, 0, -0.00056, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
-        [-1, -0, -0, 0.00056, -0, -0, -0, -0, -0, -0, -0, -0, -0], \
-        [0, 1, 0, -0.46699999999999997, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
-        [-0, -1, -0, 0.46699999999999997, -0, -0, -0, -0, -0, -0, -0, -0, -0], \
-        [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
-        [-0, -0, -1, -0, -0, -0, -0, -0, -0, -0, -0, -0, -0], \
-        [0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0], \
-        [-0, -0, -0, -0, -1, -0, -0, -0, -0, -0, -0, -0, -0], \
-        [0, 0, 0, -1, 0, 1, 0, 0, 0, 0, 0, 0, 0], \
-        [-0, -0, -0, 1, -0, -1, -0, -0, -0, -0, -0, -0, -0], \
-        [0, 0, 0, -12, 0, 0, 1, 0, 0, 0, 0, 0, 0], \
-        [-0, -0, -0, 12, -0, -0, -1, -0, -0, -0, -0, -0, -0], \
-        [0, 0, 0, -0.00006, 0, 0, 0, 1, 0, 0, 0, 0, 0], \
-        [-0, -0, -0, 0.00006, -0, -0, -0, -1, -0, -0, -0, -0, -0], \
-        [0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 0, 0, 0], \
-        [-0, -0, -0, 1, -0, -0, -0, -0, -1, -0, -0, -0, -0], \
-        [0, 0, 0, -0.00006, 0, 0, 0, 0, 0, 1, 0, 0, 0], \
-        [-0, -0, -0, 0.00006, -0, -0, -0, -0, -0, -1, -0, -0, -0], \
-        [0, 0, 0, -1, 0, 0, 0, 0, 0, 0, 1, 0, 0], \
-        [-0, -0, -0, 1, -0, -0, -0, -0, -0, -0, -1, -0, -0], \
-        [0, 0, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
-        [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0], \
-        [-0, -0, -0, -0, -0, -0, -0, -0, -0, -0, -0, -1, -0], \
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], \
-        [-0, -0, -0, -0, -0, -0, -0, -0, -0, -0, -0, -0, -1], ]
-    rhs = [-0.060000000000000005, 0.060000000000000005, -25.009999999999998, 25.009999999999998, 0, -0, 0, -0, 0, -0, 0, -0, -0.0031199999999999995, 0.0031199999999999995, 0, -0, -0.0031199999999999995, 0.0031199999999999995, 0, -0, -20, 40, 0, -0, 1, -1, ]
-    rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
-    
-    return rv
 
+    #X_0 = {center + alpha * generator, alpha in [-1, 1]}
+    center = [-0.0432, -11, 0, 30, 0, 30, 360, -0.0013, 30, -0.0013, 30]
+    generator = [0.0056, 4.67, 0, 10, 0, 10, 120, 0.0006, 10, 0.0006, 10]
+
+    #variables [x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, t, affine, alpha] (total of 14 variables)
+    mat = []
+    rhs = []
+
+    # bounds on time (t = 0)
+    mat.append([1 if d == 11 else 0 for d in range(14)])
+    rhs.append(0)
+
+    mat.append([-1 if d == 11 else 0 for d in range(14)])
+    rhs.append(0)
+
+    # bounds on affine variable (a = 1)
+    mat.append([1 if d == 12 else 0 for d in range(14)])
+    rhs.append(1)
+
+    mat.append([-1 if d == 12 else 0 for d in range(14)])
+    rhs.append(-1)
+
+    # bounds on alpha (-1 <= alpha <= 1)
+    mat.append([1 if d == 13 else 0 for d in range(14)])
+    rhs.append(1)
+
+    mat.append([-1 if d == 13 else 0 for d in range(14)])
+    rhs.append(1)
+
+    # zonotope generator constraints x = c + alpha * g
+    for d in range(11):
+        row = [0] * 14
+
+        row[d] = -1
+
+        row[12] = center[d]
+        row[13] = generator[d]
+
+        mat.append(row)
+        rhs.append(0)
+
+        mat.append([-1 * x for x in row])
+        rhs.append(0)
+
+    lpi = lputil.from_constraints(mat, rhs, mode, dims=13) # first 13 variables are actual variables (alpha is not)
+
+    rv.append(StateSet(lpi, mode))
+
+    return rv
 
 def define_settings():
     '''get the hylaa settings object
     see hylaa/settings.py for a complete list of reachability settings'''
 
     # step_size = 5.0E-4, max_time = 2.0
-    settings = HylaaSettings(5.0E-4, 2.0)
+    settings = HylaaSettings(5.0E-3, 2.0)
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
     settings.plot.plot_mode = PlotSettings.PLOT_INTERACTIVE
-    settings.plot.xdim_dir = [0, None, None]
+    settings.plot.xdim_dir = 0 # [0, None, None]
 
     #x0_dir = np.array([0, 0, 0, 0, 0, 0, 0.0833333333333333, 0, -1, 0, 0, 0, 0], dtype=float)
-    settings.plot.ydim_dir = [2, 6, 8]
+    #settings.plot.ydim_dir = [2, 6, 8]
+    settings.plot.ydim_dir = 2
 
     settings.stop_on_error = False
-    settings.plot.draw_stride = 10
+    settings.plot.draw_stride = 1 # was 10
     #settings.aggregation.agg_mode = AggregationSettings.AGG_NONE
 
-    def custom_pop_func(waiting_list):
-        'custom pop function for aggregation'
+    #def custom_pop_func(waiting_list):
+    #    'custom pop function for aggregation'
 
-        mode = waiting_list[0].mode
+    #    mode = waiting_list[0].mode
 
-        state_list = [state for state in waiting_list if state.mode == mode]
+    #    state_list = [state for state in waiting_list if state.mode == mode]
 
-        num = 2 # performing clustering with this number of items
+    #    num = 2 # performing clustering with this number of items
 
-        return heapq.nsmallest(num, state_list, lambda s: s.cur_steps_since_start)
+    #    return heapq.nsmallest(num, state_list, lambda s: s.cur_steps_since_start)
     
 
-    settings.aggregation.custom_pop_func = custom_pop_func
+    #settings.aggregation.custom_pop_func = custom_pop_func
+    settings.aggstrat.agg_type = Aggregated.AGG_CONVEX_HULL
 
     return settings
 

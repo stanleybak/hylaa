@@ -356,7 +356,15 @@ def aggregate_chull(lpi_list, mode):
     "Symbolic Orthogonal Projections: A New Polyhedral Representation for Reachability Analysis of Hybrid Systems"
     '''
 
-    lpi = _aggregate_chull_recursive(lpi_list, mode)
+    # make all the base LP's complete by adding the redudant row 0 * x <= 1
+    new_lpi_list = []
+
+    for old_lpi in lpi_list:
+        lpi = old_lpi.clone()
+        lpi.add_rows_less_equal([1])
+        new_lpi_list.append(lpi)
+
+    lpi = _aggregate_chull_recursive(new_lpi_list, mode)
 
     # need to essentially take snapshot variables
     csr = lpi.get_full_constraints()

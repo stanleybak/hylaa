@@ -157,7 +157,12 @@ class AggDag(Freezable):
 
             at = self.settings.aggstrat.get_agg_type(agg_list, op_list)
 
-            if at.is_box or at.is_arnoldi_box:
+            if at.is_chull:
+                assert not at.is_box and not at.is_arnoldi_box
+
+                rv = aggregate.aggregate_chull(agg_list, op_list, self.core.print_debug)
+
+            elif at.is_box or at.is_arnoldi_box:
                 rv = aggregate.aggregate_box_arnoldi(agg_list, op_list, at.is_box, at.is_arnoldi_box, at.add_guard,
                                                      self.core.print_debug)
             else:
