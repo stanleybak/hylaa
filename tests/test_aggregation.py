@@ -5,9 +5,9 @@ Tests for Hylaa aggregation. Made for use with py.test
 import math
 import random
 
-import numpy as np
-
 #import matplotlib.pyplot as plt
+
+import numpy as np
 from scipy.sparse import csr_matrix
 
 from hylaa.hybrid_automaton import HybridAutomaton
@@ -254,7 +254,59 @@ def test_aggregate3():
             assert lputil.is_point_in_lpi(vert, lpi)
 
     #plt.show()
+
+def test_chull():
+    'tests aggregation of a cirle of sets using convex hull'
+
+    mode = HybridAutomaton().new_mode('mode_name')
+
+    r = 1.0
+    eps = 0.05
+    num_sets = 16
+    lpi_list = []
+
+    for theta in np.linspace(0, 2*math.pi, num_sets, endpoint=False):
+        y = r * math.sin(theta)
+        x = r * math.cos(theta)
+        
+        mat = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+        rhs = [x + eps, -(x - eps), y + eps, -(y - eps)]
+        lpi = lputil.from_constraints(mat, rhs, mode)
     
+        lpi_list.append(lpi)
+        
+    #verts = []
+
+    #for lpi in lpi_list:
+    #    verts += lpplot.get_verts(lpi)
+
+    #    xs, ys = zip(*lpplot.get_verts(lpi))
+    #    plt.plot(xs, ys, 'k-')
+
+    lpi = lputil.aggregate_chull(lpi_list, mode)
+
+    #xs, ys = zip(*lpplot.get_verts(lpi))
+    #plt.plot(xs, ys, 'r--')
+
+    #for vert in verts:
+    #    assert lputil.is_point_in_lpi(vert, lpi)
+
+    #plt.show()
+
+    # test if it's really convex hull
+    for theta in np.linspace(0, 2*math.pi, num_sets):
+        y = (r + 2*eps) * math.sin(theta)
+        x = (r + 2*eps) * math.cos(theta)
+        
+        assert not lputil.is_point_in_lpi([x, y], lpi)
+
+        y = (r - 2*eps) * math.sin(theta)
+        x = (r - 2*eps) * math.cos(theta)
+
+        assert lputil.is_point_in_lpi([x, y], lpi)
+
+    #assert False
+        
 def test_plain():
     'test plain aggregation of states across discrete transitions'
 

@@ -10,7 +10,7 @@ import math
 
 import numpy as np
 import scipy as sp
-from scipy.sparse import csr_matrix, csc_matrix
+from scipy.sparse import csr_matrix, csc_matrix, hstack
 
 from hylaa.lpinstance import LpInstance, SwigArray
 from hylaa.timerutil import Timers
@@ -47,8 +47,15 @@ def from_box(box_list, mode):
 
     return from_constraints(csr, rhs, mode)
 
-def from_constraints(csr, rhs, mode):
-    'make a new lp instance from a passed-in set of constraints and rhs'
+def from_constraints(csr, rhs, mode, types=None, names=None, dims=None):
+    '''make a new lp instance from a passed-in set of constraints and rhs
+
+    if types/names is None, then assume all constraints are '<=' constriants
+
+    if dims is None, assume the number of columns in the csr matrix is the number of variables
+    otherwise, assume the left-most columns in the csr_matrix are the current-time variables 
+
+    '''
 
     if not isinstance(csr, csr_matrix):
         csr = csr_matrix(csr, dtype=float)
@@ -59,18 +66,28 @@ def from_constraints(csr, rhs, mode):
     assert len(rhs.shape) == 1
     assert csr.shape[0] == len(rhs)
     assert is_feasible(csr, rhs), "initial constraints are not feasible"
-    
-    dims = csr.shape[1]
+    assert (types is None) == (names is None)
+
+    if dims is None:
+        dims = csr.shape[1]
+    else:
+        assert dims <= csr.shape[1]
 
     lpi = LpInstance()
     lpi.add_rows_equal_zero(dims)
 
-    names = ["m{}_i{}".format(mode.mode_id, var_index) for var_index in range(dims)]
+    if names is None:
+        names = ["m{}_i{}".format(mode.mode_id, var_index) for var_index in range(csr.shape[1])]
+        
     names += ["m{}_c{}".format(mode.mode_id, var_index) for var_index in range(dims)]
     
     lpi.add_cols(names)
 
-    lpi.add_rows_less_equal(rhs)
+    if types is None:
+        lpi.add_rows_less_equal(rhs)
+    else:
+        assert len(types) == len(rhs)
+        lpi.add_rows_with_types(types, rhs)
 
     has_inputs = mode.b_csr is not None
 
@@ -83,33 +100,33 @@ def from_constraints(csr, rhs, mode):
     inds = []
     indptr = [0]
 
-    # I -I for first n rows
+    # I 0 -I for first n rows
     for n in range(dims):
         data.append(1)
         inds.append(n)
 
         data.append(-1)
-        inds.append(dims + n)
+        inds.append(csr.shape[1] + n)
 
         if has_inputs:
             data.append(1)
-            inds.append(2*dims+n)
+            inds.append(csr.shape[1] + dims + n)
 
         indptr.append(len(data))
         
-    num_cols = 2*dims if not has_inputs else 3*dims
+    num_cols = csr.shape[1] + dims if not has_inputs else 2*dims + csr.shape[1]
     basis_constraints = csr_matrix((data, inds, indptr), shape=(dims, num_cols), dtype=float)
     basis_constraints.check_format()
 
     lpi.set_constraints_csr(basis_constraints)
 
-    # add constraints on initial conditions
+    # add constraints on initial conditions, offset by <dims> rows
     lpi.set_constraints_csr(csr, offset=(dims, 0))
 
-    # add total input effects
+    # add total input effects rows
     if has_inputs:
         rows_before = lpi.get_num_rows()
-        ie_pos = (rows_before, 2*dims)
+        ie_pos = (rows_before, dims + csr.shape[1])
         lpi.add_rows_equal_zero(dims)
 
         # -I
@@ -118,7 +135,8 @@ def from_constraints(csr, rhs, mode):
     else:
         ie_pos = None
 
-    lpi.set_reach_vars(dims, (0, 0), dims, ie_pos)
+    cur_vars_offset = csr.shape[1]
+    lpi.set_reach_vars(dims, (0, 0), cur_vars_offset, ie_pos)
 
     return lpi
 
@@ -329,6 +347,110 @@ def try_replace_init_constraint(lpi, old_row_index, direction, rhs, basis_mat=No
             is_stronger = False
 
     return new_row_index, is_stronger
+
+def aggregate_chull(lpi_list, mode):
+    '''
+    perform aggregation using convex hull (non-recursive call)
+
+    This uses the sop closed convex hull algorithm from Willem Hagemann. See his PhD Dissertation:
+    "Symbolic Orthogonal Projections: A New Polyhedral Representation for Reachability Analysis of Hybrid Systems"
+    '''
+
+    lpi = _aggregate_chull_recursive(lpi_list, mode)
+
+    # need to essentially take snapshot variables
+    csr = lpi.get_full_constraints()
+    rhs = lpi.get_rhs()
+    types = lpi.get_types()
+    names = lpi.get_names()
+    
+    return from_constraints(csr, rhs, mode, types=types, names=names, dims=lpi.dims)
+
+def _aggregate_chull_recursive(lpi_list, mode):
+    '''
+    perform aggregation using convex hull (recursive call)
+
+    This uses the sop closed convex hull algorithm from Willem Hagemann. See his PhD Dissertation:
+    "Symbolic Orthogonal Projections: A New Polyhedral Representation for Reachability Analysis of Hybrid Systems"
+    '''
+
+    # recursive cases:
+    #if isinstance(lpi_list, LpInstance):
+    #    return lpi_list
+    
+    if len(lpi_list) == 1:
+        return lpi_list[0]
+
+    if len(lpi_list) > 2:
+        mid = len(lpi_list) // 2
+        return aggregate_chull([aggregate_chull(lpi_list[:mid], mode), aggregate_chull(lpi_list[mid:], mode)], mode)
+
+    # base case: exactly two lpis in lpi_list
+    assert len(lpi_list) == 2
+
+    dims = lpi_list[0].dims
+    assert lpi_list[1].dims == dims
+
+    lpi1 = lpi_list[0]
+    csr1 = lpi1.get_full_constraints()
+    rhs1 = lpi1.get_rhs()
+    types1 = lpi1.get_types()
+
+    # csr1 contains L_left A L_right, split it into these three in order to construct L
+    l_left = csr1[:, 0:lpi1.cur_vars_offset]
+    a1 = csr1[:, lpi1.cur_vars_offset:lpi1.cur_vars_offset+dims]
+    l_right = csr1[:, lpi1.cur_vars_offset+dims:]
+
+    l1 = hstack([l_left, l_right])
+
+    # repeat for lpi2
+    lpi2 = lpi_list[1]
+    csr2 = lpi2.get_full_constraints()
+    rhs2 = lpi2.get_rhs()
+    types2 = lpi2.get_types()
+
+    # csr1 contains L_left A L_right, split it into these three in order to construct L
+    l_left = csr2[:, 0:lpi2.cur_vars_offset]
+    a2 = csr2[:, lpi2.cur_vars_offset:lpi2.cur_vars_offset+dims]
+    l_right = csr2[:, lpi2.cur_vars_offset+dims:]
+    l2 = hstack([l_left, l_right])
+
+    lpi = LpInstance()
+    #lpi.add_rows_equal_zero(dims)
+
+    types = types1 + types2
+    rhs = [n for n in rhs1] + ([0] * len(rhs2))
+
+    lpi.add_rows_with_types(types, rhs)
+
+    cols = []
+
+    cols += [f"A1_{i}" for i in range(dims)]
+    cols += [f"A2_{i}" for i in range(dims)]
+    cols += [f"L1_{i}" for i in range(l1.shape[1])]
+    cols += [f"L2_{i}" for i in range(l2.shape[1])]
+    cols += ["a"]
+
+    lpi.add_cols(cols)
+
+    # set constraints
+    l2_zero = csr_matrix((a1.shape[0], l2.shape[1])) # the 0 above L2
+    l1_zero = csr_matrix((a2.shape[0], l1.shape[1])) # the 0 below L1
+    a1_zero = csr_matrix((a2.shape[0], a1.shape[1])) # the 0 below A1
+
+    rhs1_vmat = csr_matrix(np.array([[num] for num in rhs1]))
+    rhs2_vmat = csr_matrix(np.array([[num] for num in rhs2]))
+
+    top = csr_matrix(hstack([a1, a1, l1, l2_zero, rhs1_vmat]))
+    lpi.set_constraints_csr(top)
+
+    bottom = csr_matrix(hstack([a1_zero, -a2, l1_zero, l2, -rhs2_vmat]))
+    lpi.set_constraints_csr(bottom, offset=(top.shape[0], 0))
+
+    lpi.dims = dims
+    lpi.cur_vars_offset = 0
+
+    return lpi
 
 def aggregate(lpi_list, direction_matrix, mode):
     '''

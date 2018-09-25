@@ -304,6 +304,38 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
             for i in range(num_vars):
                 glpk.glp_set_col_bnds(self.lp, num_cols + i + 1, glpk.GLP_FR, 0, 0)  # free variable (-inf, inf)
 
+    def add_rows_with_types(self, types, rhs_vec):
+        '''add rows to the LP with the given types
+
+        types is a vector of types: swiglpk.GLP_FX, swiglpk.GLP_UP, or swiglpk.GLP_LO
+        rhs_vector is the right-hand-side values of the constriants
+        '''
+
+        assert len(types) == len(rhs_vec)
+
+        if isinstance(rhs_vec, list):
+            rhs_vec = np.array(rhs_vec, dtype=float)
+
+        assert isinstance(rhs_vec, np.ndarray) and len(rhs_vec.shape) == 1, "expected 1-d right-hand-side vector"
+
+        if rhs_vec.shape[0] > 0:
+            num_rows = glpk.glp_get_num_rows(self.lp)
+
+            # create new row for each constraint
+            glpk.glp_add_rows(self.lp, len(rhs_vec))
+            
+            for i, pair in enumerate(zip(rhs_vec, types)):
+                rhs, ty = pair
+
+                if ty == glpk.GLP_UP:
+                    glpk.glp_set_row_bnds(self.lp, num_rows + i + 1, glpk.GLP_UP, 0, rhs)  # '<=' constraint
+                elif ty == glpk.GLP_LO:
+                    glpk.glp_set_row_bnds(self.lp, num_rows + i + 1, glpk.GLP_LO, rhs, 0)  # '>=' constraint
+                else:
+                    assert ty == glpk.GLP_FX
+
+                    glpk.glp_set_row_bnds(self.lp, num_rows + i + 1, glpk.GLP_FX, rhs, rhs)  # '>=' constraint
+
     def add_rows_less_equal(self, rhs_vec):
         '''add rows to the LP with <= constraints
 
