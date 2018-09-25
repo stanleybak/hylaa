@@ -5,7 +5,7 @@ Fuzzy PID controller
 from matplotlib import animation
 
 from hylaa.hybrid_automaton import HybridAutomaton
-from hylaa.settings import HylaaSettings, PlotSettings, AggregationSettings
+from hylaa.settings import HylaaSettings, PlotSettings
 from hylaa.core import Core
 from hylaa.stateset import StateSet
 from hylaa import lputil
@@ -187,7 +187,7 @@ def define_init_states(ha):
     # Variable ordering: [x1, x2, t, affine]
     rv = []
 
-    single_init = False
+    should_init = lambda name: True
 
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
     mode = ha.modes['loc2']
@@ -201,7 +201,7 @@ def define_init_states(ha):
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
 
-    if not single_init:
+    if should_init(mode.name):
         rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
@@ -216,7 +216,7 @@ def define_init_states(ha):
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
 
-    if not single_init:
+    if should_init(mode.name):
         rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
@@ -231,7 +231,7 @@ def define_init_states(ha):
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
 
-    if not single_init:
+    if should_init(mode.name):
         rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
@@ -246,7 +246,8 @@ def define_init_states(ha):
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
 
-    rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
+    if should_init(mode.name):
+        rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
     mode = ha.modes['loc5']
@@ -260,7 +261,7 @@ def define_init_states(ha):
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
 
-    if not single_init:
+    if should_init(mode.name):
         rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
@@ -275,7 +276,7 @@ def define_init_states(ha):
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
 
-    if not single_init:
+    if should_init(mode.name):
         rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
@@ -290,7 +291,7 @@ def define_init_states(ha):
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
 
-    if not single_init:
+    if should_init(mode.name):
         rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
@@ -305,7 +306,7 @@ def define_init_states(ha):
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
 
-    if not single_init:
+    if should_init(mode.name):
         rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     # -1.0 <= x1 & x1 <= 1.0 & x2 = 0.0 & t = 0.0 & affine = 1.0
@@ -320,7 +321,7 @@ def define_init_states(ha):
         [-0, -0, -0, -1], ]
     rhs = [1, 1, 0, -0, 0, -0, 1, -1, ]
 
-    if not single_init:
+    if should_init(mode.name):
         rv.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
     
     return rv
@@ -332,7 +333,7 @@ def define_settings():
 
     # step_size = 0.001, max_time = 0.75
     settings = HylaaSettings(0.005, 0.15)
-    settings.plot.plot_mode = PlotSettings.PLOT_IMAGE # try PLOT_VIDEO (takes 10 minutes)
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE # try PLOT_VIDEO (takes 10 minutes)
     settings.plot.xdim_dir = 2
     settings.plot.ydim_dir = 0
     settings.plot.label.axes_limits = (-0.01, 0.3, -1.1, 1.1) 
@@ -340,6 +341,7 @@ def define_settings():
 
     #settings.aggregation.require_same_path=False
     #settings.aggregation.pop_strategy=AggregationSettings.POP_LARGEST_MAXTIME
+    #self.aggstrat = aggstrat.Aggregated()
 
     # custom settings for video export
     def make_video_writer():

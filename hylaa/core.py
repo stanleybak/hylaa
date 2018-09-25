@@ -8,7 +8,7 @@ from collections import deque, defaultdict
 import numpy as np
 from termcolor import cprint
 
-from hylaa.settings import HylaaSettings, PlotSettings, AggregationSettings
+from hylaa.settings import HylaaSettings, PlotSettings
 
 from hylaa.aggdag import AggDag
 from hylaa.plotutil import PlotManager
@@ -84,49 +84,6 @@ class Core(Freezable):
 
         return finished
 
-    def take_transition(self, t, t_lpi):
-        '''take the passed-in transition from the current state (add to the waiting list)
-
-        t is the AutomatonTransition onject
-        t_lpi is an LpInstance consisting of the states in the premode where the current set and guard intersect
-        '''
-
-        cur_state = self.aggdag.get_cur_state()
-        successor_has_inputs = t.to_mode.b_csr is not None
-        premode_center = None
-
-        if self.settings.aggregation.agg_mode == AggregationSettings.AGG_ARNOLDI_BOX:
-            premode_center = lputil.get_box_center(t_lpi)
-
-        lputil.add_reset_variables(t_lpi, t.to_mode.mode_id, t.transition_index, \
-            reset_csr=t.reset_csr, minkowski_csr=t.reset_minkowski_csr, \
-            minkowski_constraints_csr=t.reset_minkowski_constraints_csr, \
-            minkowski_constraints_rhs=t.reset_minkowski_constraints_rhs, successor_has_inputs=successor_has_inputs)
-
-        if not t_lpi.is_feasible():
-            # successor is infeasible, check if it's the reset's fault
-            cur_state.lpi.reset_lp()
-
-            if cur_state.lpi.is_feasible():
-                # it was due to the reset. The user probably provided bad reset parameters.
-                raise RuntimeError(("Continuous state was empty after applying reset in transition {}, " + \
-                                   "was the reset correctly specified?").format(t))
-                                   
-            raise RuntimeError("cur_state became infeasible after a transition was taken (numerical issues?)")
-
-        self.aggdag.add_transition_successor(t, t_lpi, premode_center)
-
-        self.print_verbose("Added Discrete Successor to '{}' at step {}".format( \
-            t.to_mode.name, cur_state.cur_steps_since_start))
-
-        # if it's a time-triggered transition, we may remove cur_state immediately
-        if self.settings.optimize_tt_transitions and t.time_triggered:
-            if was_tt_taken(cur_state.lpi, t):
-                self.print_verbose("Transition was time-triggered, finished with current state analysis")
-                self.took_tt_transition = True
-            else:
-                self.print_verbose("Transition was NOT taken as time-triggered, due to runtime checks")
-
     def error_reached(self, t, lpi):
         'an error mode was reached after taking transition t, report and create counterexample'
 
@@ -161,41 +118,53 @@ class Core(Freezable):
                     self.error_reached(t, t_lpi)
                     break
                 else:
-                    self.take_transition(t, t_lpi)
+                    self.aggdag.add_transition_successor(t, t_lpi)
+
+                    self.print_verbose("Added Discrete Successor to '{}' at step {}".format( \
+                                       t.to_mode.name, cur_state.cur_steps_since_start))
+
+                    # if it's a time-triggered transition, we may remove cur_state immediately
+                    if self.settings.optimize_tt_transitions and t.time_triggered:
+                        if was_tt_taken(cur_state.lpi, t):
+                            self.print_verbose("Transition was time-triggered, finished with current state analysis")
+                            self.took_tt_transition = True
+                        else:
+                            self.print_verbose("Transition was NOT taken as time-triggered, due to runtime checks")
 
         Timers.toc("check_guards")
 
-    def intersect_invariant(self, state=None):
-        '''intersect the current state with the mode invariant'''
+    def intersect_invariant(self, state, add_ops_to_aggdag=True):
+        '''intersect the (current or passed-in) state with the mode invariant'''
 
         Timers.tic("intersect_invariant")
 
-        cur_state = state if state is not None else self.aggdag.get_cur_state()
-        has_intersection = False
+        is_feasible = True
 
-        for invariant_index, lc in enumerate(cur_state.mode.inv_list):
-            if lputil.check_intersection(cur_state.lpi, lc.negate()):
-                has_intersection = True
-                old_row = cur_state.invariant_constraint_rows[invariant_index]
+        for invariant_index, lc in enumerate(state.mode.inv_list):
+            if lputil.check_intersection(state.lpi, lc.negate()):
+                old_row = state.invariant_constraint_rows[invariant_index]
                 vec = lc.csr.toarray()[0]
                 rhs = lc.rhs
 
                 if old_row is None:
                     # new constraint
-                    row = lputil.add_init_constraint(cur_state.lpi, vec, rhs, cur_state.basis_matrix,
-                                                     cur_state.input_effects_list)
-                    cur_state.invariant_constraint_rows[invariant_index] = row
+                    row = lputil.add_init_constraint(state.lpi, vec, rhs, state.basis_matrix,
+                                                     state.input_effects_list)
+                    state.invariant_constraint_rows[invariant_index] = row
+                    is_stronger = False
                 else:
                     # strengthen existing constraint possibly
-                    row = lputil.try_replace_init_constraint(cur_state.lpi, old_row, vec, rhs, cur_state.basis_matrix, \
-                                                             cur_state.input_effects_list)
-                    cur_state.invariant_constraint_rows[invariant_index] = row
+                    row, is_stronger = lputil.try_replace_init_constraint(state.lpi, old_row, vec, rhs, \
+                        state.basis_matrix, state.input_effects_list)
+                    state.invariant_constraint_rows[invariant_index] = row
+
+                if add_ops_to_aggdag:
+                    self.aggdag.add_invariant_op(state.cur_step_in_mode, invariant_index, is_stronger)
 
                 # adding the invariant condition may make the lp infeasible
-                if not cur_state.lpi.is_feasible():
+                if not state.lpi.is_feasible():
+                    is_feasible = False
                     break
-
-        is_feasible = True if not has_intersection else cur_state.lpi.is_feasible()
 
         Timers.toc("intersect_invariant")
 
@@ -231,7 +200,7 @@ class Core(Freezable):
                 self.took_tt_transition = False # reset the flag
                 self.aggdag.cur_state_left_invariant()
             else:
-                still_feasible = self.intersect_invariant()
+                still_feasible = self.intersect_invariant(cur_state)
                 
                 if not still_feasible:
                     self.print_normal("State left the invariant after {} steps".format(cur_state.cur_step_in_mode))
@@ -273,7 +242,7 @@ class Core(Freezable):
         else:
             self.max_steps_remaining = self.settings.num_steps - cur_state.cur_steps_since_start[0]
 
-            still_feasible = self.intersect_invariant()
+            still_feasible = self.intersect_invariant(cur_state)
 
             if not still_feasible:
                 self.print_normal("Continuous state was outside of the mode's invariant; skipping.")
@@ -338,9 +307,12 @@ class Core(Freezable):
                 self.print_normal("Removed an infeasible initial set in mode {}".format(state.mode.name))
                 continue
             
-            still_feasible = self.intersect_invariant(state)
+            still_feasible = self.intersect_invariant(state, add_ops_to_aggdag=False)
 
             if still_feasible:
+                # reset the cached info about invariant intersections, since the intersection ops are not in the aggdag
+                state.invariant_constraint_rows = [None] * len(state.mode.inv_list)
+                
                 self.aggdag.add_init_state(state)
             else:
                 self.print_normal("Removed an infeasible initial set after invariant intersection in mode {}".format( \

@@ -288,8 +288,11 @@ def try_replace_init_constraint(lpi, old_row_index, direction, rhs, basis_mat=No
 
     this is used for removing redundant invariant constraints
 
-    This returns row_index, if the constriant is replaced, or the new row index of the new constraint
+    This returns (row_index, is_stronger) where row_index is the index of the new constraint and is_stronger is
+    a boolean indicating if the old constraint was completely replaced (the new constraint was strictly stronger)
     '''
+
+    is_stronger = True
 
     if basis_mat is None:
         basis_mat = get_basis_matrix(lpi)
@@ -323,8 +326,9 @@ def try_replace_init_constraint(lpi, old_row_index, direction, rhs, basis_mat=No
             rows = lpi.get_num_rows()
 
             lpi.set_constraints_csr(old_constraint, offset=(rows - 1, 0))
+            is_stronger = False
 
-    return new_row_index
+    return new_row_index, is_stronger
 
 def aggregate(lpi_list, direction_matrix, mode):
     '''

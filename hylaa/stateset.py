@@ -40,7 +40,7 @@ class StateSet(Freezable):
         if aggdag_op_list is None: # assume its an initial stateset
             aggdag_op_list = [None]
 
-        assert isinstance(aggdag_op_list, list)        
+        assert isinstance(aggdag_op_list, (list, tuple))        
         self.aggdag_op_list = aggdag_op_list # list of OpTransition objects that created this state set
 
         # the LP row of the strongest constraint for each invariant condition

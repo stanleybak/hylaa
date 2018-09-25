@@ -8,6 +8,7 @@ import math
 from matplotlib import animation
 
 from hylaa.util import Freezable
+from hylaa import aggstrat
 
 # Force matplotlib to not use any Xwindows backend.
 #import matplotlib
@@ -38,27 +39,9 @@ class HylaaSettings(Freezable):  # pylint: disable=too-few-public-methods
         self.optimize_tt_transitions = True # auto-detect time-triggered transitions and use single-step semantics?
         self.stop_on_error = True
         
-        self.aggregation = AggregationSettings()
+        self.aggstrat = aggstrat.Aggregated() # aggregation strategy class
 
         self.freeze_attrs()
-
-class AggregationSettings(Freezable): # pylint: disable=too-few-public-methods
-    'aggregation settings container'
-
-    AGG_NONE, AGG_BOX, AGG_ARNOLDI_BOX = range(3)
-    POP_LOWEST_MINTIME, POP_LOWEST_AVGTIME, POP_LARGEST_MAXTIME = range(3)
-
-    def __init__(self):
-        
-        self.agg_mode = AggregationSettings.AGG_ARNOLDI_BOX # transition aggregation method
-        self.add_guard = True # when performing aggregation, also add the guard direction?
-
-        self.custom_pop_func = None # function taking in waiting list and returns list of states to aggregate
-        # if custom_pop_func was None, these two settings guide which state gets popped off of waiting list
-        self.require_same_path = True # only aggregate states with same discrete-transition path? (False=all)
-        self.pop_strategy = AggregationSettings.POP_LOWEST_AVGTIME
-
-        self.deaggregation = False # perform concrete-trace guided deaggregation
 
 class PlotSettings(Freezable): # pylint: disable=too-few-public-methods,too-many-instance-attributes
     'plot settings container'
@@ -138,10 +121,3 @@ class LabelSettings(Freezable):
         self.x_label = ''
         self.y_label = ''
         self.title = ''
-
-class StaticSettings(): # pylint: disable=too-few-public-methods
-    'Static settings'
-
-    # swiglpk has a memory leak: https://github.com/biosustain/swiglpk/issues/31
-    # how much memory should we allow to be used before we print a message and quit
-    MAX_MEMORY_SWIGLPK_LEAK_GB = 1.0 # 2.0

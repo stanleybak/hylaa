@@ -11,11 +11,12 @@ import numpy as np
 from scipy.sparse import csr_matrix
 
 from hylaa.hybrid_automaton import HybridAutomaton
-from hylaa.settings import HylaaSettings, PlotSettings, AggregationSettings
+from hylaa.settings import HylaaSettings, PlotSettings
 from hylaa.core import Core
 from hylaa.stateset import StateSet
 from hylaa import lputil, lpplot
 from hylaa.aggdag import OpTransition, AggDagNode
+from hylaa.aggstrat import Aggregated
 
 from util import pair_almost_in, assert_verts_is_box
 
@@ -307,14 +308,12 @@ def test_plain():
     op1 = state.aggdag_op_list[1]
     assert isinstance(op0, OpTransition)
 
-    # OpTransition: ['step', 'parent_node', 'child_node', 'transition', 'premode_center','postmode_state']
-
     assert len(core.aggdag.roots) == 1
    
     assert op0.child_node.get_mode() is m2
     assert op0.transition == trans1
     assert op0.parent_node == core.aggdag.roots[0]
-    assert isinstance(op0.postmode_state, StateSet)
+    assert isinstance(op0.poststate, StateSet)
     assert op0.step == 1
     assert isinstance(op0.child_node, AggDagNode)
     assert op0.child_node == op1.child_node
@@ -369,12 +368,14 @@ def test_agg_with_reset():
     # settings, step size = 1.0
     settings = HylaaSettings(1.0, 4.0)
     settings.stdout = HylaaSettings.STDOUT_NONE
+    
     settings.plot.plot_mode = PlotSettings.PLOT_NONE
 
-    settings.aggregation.agg_mode = AggregationSettings.AGG_BOX
-    settings.aggregation.add_guard = True
+    # use agg_box
+    settings.aggstrat.agg_type = Aggregated.AGG_BOX
 
     core = Core(ha, settings)
+    
     result = core.run(init_list)
 
     lpi = result.last_cur_state.lpi

@@ -173,16 +173,18 @@ def test_replace_init_constraint():
     assert lpi.get_num_rows() == 7
 
     # try to replace constraint y >= 4.6 (should be stronger than 4.5)
-    row_index = lputil.try_replace_init_constraint(lpi, row_index, direction, -4.6)
-        
+    row_index, is_stronger = lputil.try_replace_init_constraint(lpi, row_index, direction, -4.6)
+
+    assert is_stronger
     assert row_index == 6
     assert lpi.get_num_rows() == 7
     assert lpi.get_rhs()[row_index] == -4.6
 
     # try to replace constraint x <= 0.9 (should be incomparable)
     xdir = np.array([1, 0], dtype=float)
-    row_index = lputil.try_replace_init_constraint(lpi, row_index, xdir, 0.9)
+    row_index, is_stronger = lputil.try_replace_init_constraint(lpi, row_index, xdir, 0.9)
 
+    assert not is_stronger
     assert lpi.get_num_rows() == 8
     assert lpi.get_rhs()[row_index] == 0.9
 

@@ -66,7 +66,7 @@ class TimerData():
             raise RuntimeError("Timer started twice: {}".format(self.name))
 
         self.num_calls += 1
-        self.last_start_time = time.time()
+        self.last_start_time = time.perf_counter()
 
     def toc(self):
         'stop the timer'
@@ -76,7 +76,7 @@ class TimerData():
         if self.last_start_time is None:
             raise RuntimeError("Timer stopped without being started: {}".format(self.name))
 
-        self.total_secs += time.time() - self.last_start_time
+        self.total_secs += time.perf_counter() - self.last_start_time
         self.last_start_time = None
 
 class Timers():

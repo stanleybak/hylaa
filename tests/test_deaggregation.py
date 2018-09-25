@@ -9,7 +9,7 @@ from hylaa import lputil
 from hylaa.core import Core
 from hylaa.aggdag import OpTransition, OpInvIntersect
 
-def test_deagg_counterexample():
+def fail_deagg_counterexample():
     'test that aggregation with a counterexample'
     # init: x0, y0 \in [0, 1], step = 1.0
     # 
@@ -54,13 +54,9 @@ def test_deagg_counterexample():
 
     core.setup(init_list)
 
-    core.run_to_completion()
-
-    core.aggdag.show()
-
-    return
-
     core.do_step() # pop
+
+    assert core.aggdag.cur_node is not None
 
     for _ in range(5): # 4 + 1 step to leave invariant
         core.do_step() # continuous post in m1

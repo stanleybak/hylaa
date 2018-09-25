@@ -13,7 +13,12 @@ import swiglpk as glpk
 from hylaa.util import Freezable
 from hylaa.timerutil import Timers
 
-from hylaa.settings import StaticSettings
+class StaticSettings(): # pylint: disable=too-few-public-methods
+    'Static settings'
+
+    # swiglpk has a memory leak: https://github.com/biosustain/swiglpk/issues/31
+    # how much memory should we allow to be used before we print a message and quit
+    MAX_MEMORY_SWIGLPK_LEAK_GB = 1.0 # 2.0
 
 def simple_print(s):
     'print using the print function'
@@ -893,5 +898,5 @@ class SwigArray():
 
         if cls.bytes_allocated > threshold:
             raise MemoryError(("Swig array allocation leaked more than {} GB memory. This limit can be raised by " + \
-                "increasing StaticSettings.MAX_MEMORY_SWIGLPK_LEAK_GB. For info on the leak, see: " + \
+                "increasing lpinstance.StaticSettings.MAX_MEMORY_SWIGLPK_LEAK_GB. For info on the leak, see: " + \
                   "https://github.com/biosustain/swiglpk/issues/31").format(gb_allowed))
