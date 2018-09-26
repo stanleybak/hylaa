@@ -133,50 +133,10 @@ def define_init_states(ha):
     mode = ha.modes['negAngleInit']
 
     #X_0 = {center + alpha * generator, alpha in [-1, 1]}
-    center = [-0.0432, -11, 0, 30, 0, 30, 360, -0.0013, 30, -0.0013, 30]
-    generator = [0.0056, 4.67, 0, 10, 0, 10, 120, 0.0006, 10, 0.0006, 10]
+    center = [-0.0432, -11, 0, 30, 0, 30, 360, -0.0013, 30, -0.0013, 30, 0, 1]
+    generator = [0.0056, 4.67, 0, 10, 0, 10, 120, 0.0006, 10, 0.0006, 10, 0, 0]
 
-    #variables [x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, t, affine, alpha] (total of 14 variables)
-    mat = []
-    rhs = []
-
-    # bounds on time (t = 0)
-    mat.append([1 if d == 11 else 0 for d in range(14)])
-    rhs.append(0)
-
-    mat.append([-1 if d == 11 else 0 for d in range(14)])
-    rhs.append(0)
-
-    # bounds on affine variable (a = 1)
-    mat.append([1 if d == 12 else 0 for d in range(14)])
-    rhs.append(1)
-
-    mat.append([-1 if d == 12 else 0 for d in range(14)])
-    rhs.append(-1)
-
-    # bounds on alpha (-1 <= alpha <= 1)
-    mat.append([1 if d == 13 else 0 for d in range(14)])
-    rhs.append(1)
-
-    mat.append([-1 if d == 13 else 0 for d in range(14)])
-    rhs.append(1)
-
-    # zonotope generator constraints x = c + alpha * g
-    for d in range(11):
-        row = [0] * 14
-
-        row[d] = -1
-
-        row[12] = center[d]
-        row[13] = generator[d]
-
-        mat.append(row)
-        rhs.append(0)
-
-        mat.append([-1 * x for x in row])
-        rhs.append(0)
-
-    lpi = lputil.from_constraints(mat, rhs, mode, dims=13) # first 13 variables are actual variables (alpha is not)
+    lpi = lputil.from_zonotope(center, [generator], mode)
 
     rv.append(StateSet(lpi, mode))
 
@@ -187,7 +147,7 @@ def define_settings():
     see hylaa/settings.py for a complete list of reachability settings'''
 
     # step_size = 5.0E-4, max_time = 2.0
-    settings = HylaaSettings(5.0E-3, 2.0)
+    settings = HylaaSettings(5.0E-4, 2.0)
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
     settings.plot.plot_mode = PlotSettings.PLOT_INTERACTIVE
     settings.plot.xdim_dir = 0 # [0, None, None]
@@ -197,7 +157,8 @@ def define_settings():
     settings.plot.ydim_dir = 2
 
     settings.stop_on_error = False
-    settings.plot.draw_stride = 1 # was 10
+    settings.plot.draw_stride = 10
+    settings.plot.num_angles = 4096 * 128 # required for convex hull to show up correctly
     #settings.aggregation.agg_mode = AggregationSettings.AGG_NONE
 
     #def custom_pop_func(waiting_list):

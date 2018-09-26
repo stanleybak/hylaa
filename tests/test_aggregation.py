@@ -634,7 +634,6 @@ def test_chull_lines():
 
     lpi_list.append(lpi.clone())
 
-    all_verts = []
     verts = lpplot.get_verts(lpi)
     all_verts += verts
     #xs, ys = zip(*verts)
@@ -648,5 +647,73 @@ def test_chull_lines():
     #plt.show()
 
     for vert in all_verts:
-        print(vert)
         assert lputil.is_point_in_lpi(vert, chull_lpi)
+
+def test_chull_drivetrain():
+    'convex hull aggregation debugging from drivetrain system'
+
+    mode = HybridAutomaton().new_mode('mode_name')
+
+    center = [-0.0432, -11, 0, 30, 0, 30, 360, -0.0013, 30, -0.0013, 30, 0, 1]
+    generator = [0.0056, 4.67, 0, 10, 0, 10, 120, 0.0006, 10, 0.0006, 10, 0, 0]
+
+    lpi = lputil.from_zonotope(center, [generator], mode)
+
+    # neg_angle init dynamics
+    a_mat = np.array([ \
+        [0, 0, 0, 0, 0, 0, 0.0833333333333333, 0, -1, 0, 0, 0, 0], \
+        [13828.8888888889, -26.6666666666667, 60, 60, 0, 0, -5, -60, 0, 0, 0, 0, 116.666666666667], \
+        [0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -5], \
+        [0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0], \
+        [0, 0, 0, 0, -714.285714285714, -0.04, 0, 0, 0, 714.285714285714, 0, 0, 0], \
+        [-2777.77777777778, 3.33333333333333, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -83.3333333333333], \
+        [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0], \
+        [100, 0, 0, 0, 0, 0, 0, -1000, -0.01, 1000, 0, 0, 3], \
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0], \
+        [0, 0, 0, 0, 1000, 0, 0, 1000, 0, -2000, -0.01, 0, 0], \
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1], \
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], \
+        ], dtype=float)
+
+    # plot dimensions
+    xdim = 0
+    ydim = 1
+
+    step = 5.0E-2
+    t1 = 0
+    bm = expm(a_mat * t1)
+    lputil.set_basis_matrix(lpi, bm)
+
+    lpi_list = [lpi.clone()]
+
+    all_verts = []
+    verts = lpplot.get_verts(lpi, xdim=xdim, ydim=ydim)
+    all_verts += verts
+    #xs, ys = zip(*verts)
+    #plt.plot(xs, ys, 'k-')
+
+    t2 = t1 + step
+    bm = expm(a_mat * t2)
+    lputil.set_basis_matrix(lpi, bm)
+
+    lpi_list.append(lpi.clone())
+
+    verts = lpplot.get_verts(lpi, xdim=xdim, ydim=ydim)
+    all_verts += verts
+    #xs, ys = zip(*verts)
+    #plt.plot(xs, ys, 'k-')
+
+    chull_lpi = lputil.aggregate_chull(lpi_list, mode)
+
+    plot_vecs = lpplot.make_plot_vecs(num_angles=2**14, offset=0.01)
+    verts = lpplot.get_verts(chull_lpi, xdim=xdim, ydim=ydim, plot_vecs=plot_vecs)
+    #print(chull_lpi)
+    #xs, ys = zip(*verts)
+    #plt.plot(xs, ys, 'r--')
+
+    #plt.show()
+
+    for vert in all_verts:
+        assert lputil.is_point_in_lpi(vert, chull_lpi)
+

@@ -189,7 +189,8 @@ def set_basis_matrix(lpi, basis_mat):
     'modify the lpi in place to set the basis matrix'
 
     assert basis_mat.shape[0] == basis_mat.shape[1], "expected square matrix"
-    assert basis_mat.shape[0] == lpi.dims, "basis matrix wrong shape"
+    assert basis_mat.shape[0] == lpi.dims, \
+      f"basis matrix wrong shape, expected ({lpi.dims}, {lpi.dims}), got {basis_mat.shape}"
 
     # this is done using the optimized swigvec interface in lpinstance
 

@@ -104,14 +104,12 @@ def get_verts(lpi, xdim=0, ydim=1, plot_vecs=None, cur_time=0.0):
 
     return verts
 
-def make_plot_vecs(num_angles=256, offset=0.01):
+def make_plot_vecs(num_angles=256, offset=0.0):
     'make plot_vecs with equally spaced directions, returning the result'
 
     plot_vecs = []
 
-    step = 2.0 * math.pi / num_angles
-
-    for theta in np.arange(0.0, 2.0*math.pi, step):
+    for theta in np.linspace(0.0, 2.0*math.pi, num_angles, endpoint=False):
         x = math.cos(theta + offset)
         y = math.sin(theta + offset)
 
@@ -218,8 +216,8 @@ def _binary_search_boundaries(lpi, start, end, start_point, end_point, xdim, ydi
 
         mid_point = _minimize(lpi, xdim, ydim, plot_vecs[mid])
 
-        not_start = not np.allclose(start_point, mid_point, atol=1e-3)
-        not_end = not np.allclose(end_point, mid_point, atol=1e-3)
+        not_start = not np.allclose(start_point, mid_point, atol=1e-6)
+        not_end = not np.allclose(end_point, mid_point, atol=1e-6)
 
         if not_start:
             rv += _binary_search_boundaries(lpi, start, mid, start_point, mid_point, xdim, ydim, plot_vecs)
