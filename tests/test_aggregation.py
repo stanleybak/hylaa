@@ -5,10 +5,11 @@ Tests for Hylaa aggregation. Made for use with py.test
 import math
 import random
 
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 
 import numpy as np
 from scipy.sparse import csr_matrix
+from scipy.linalg import expm
 
 from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa.settings import HylaaSettings, PlotSettings
@@ -304,8 +305,6 @@ def test_chull():
         x = (r - 2*eps) * math.cos(theta)
 
         assert lputil.is_point_in_lpi([x, y], lpi)
-
-    #assert False
         
 def test_plain():
     'test plain aggregation of states across discrete transitions'
@@ -606,3 +605,48 @@ def test_agg_no_counterexample():
     result = Core(ha, settings).run(init_list)
 
     assert not result.counterexample
+
+def test_chull_lines():
+    'tests aggregation of two lines in 2d using convex hull'
+
+    mode = HybridAutomaton().new_mode('mode_name')
+
+    center = [-5, -1, 7]
+    generator = [0.5, 0.1, 1.0]
+    lpi = lputil.from_zonotope(center, [generator], mode)
+
+    t1 = math.pi / 3
+    a_mat = np.array([[-0.3, 1, 0], [-1, -0.3, 0], [0, 0.1, 1.1]], dtype=float)
+    bm = expm(a_mat * t1)
+    lputil.set_basis_matrix(lpi, bm)
+
+    lpi_list = [lpi.clone()]
+
+    all_verts = []
+    verts = lpplot.get_verts(lpi)
+    all_verts += verts
+    #xs, ys = zip(*verts)
+    #plt.plot(xs, ys, 'k-')
+
+    t2 = t1 + 0.1
+    bm = expm(a_mat * t2)
+    lputil.set_basis_matrix(lpi, bm)
+
+    lpi_list.append(lpi.clone())
+
+    all_verts = []
+    verts = lpplot.get_verts(lpi)
+    all_verts += verts
+    #xs, ys = zip(*verts)
+    #plt.plot(xs, ys, 'k-')
+
+    chull_lpi = lputil.aggregate_chull(lpi_list, mode)
+
+    #xs, ys = zip(*lpplot.get_verts(chull_lpi))
+    #plt.plot(xs, ys, 'r--')
+
+    #plt.show()
+
+    for vert in all_verts:
+        print(vert)
+        assert lputil.is_point_in_lpi(vert, chull_lpi)

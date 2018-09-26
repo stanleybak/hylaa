@@ -47,6 +47,51 @@ def from_box(box_list, mode):
 
     return from_constraints(csr, rhs, mode)
 
+def from_zonotope(center, generator_list, mode):
+    'make a new lp instance from the passed in zonotope'
+
+    #variables [x1, x2, ..., center_var, alpha1, alpha2, ...]
+    mat = []
+    rhs = []
+
+    cdims = len(center)
+    dims = cdims + 1 + len(generator_list)
+
+    # bounds on center_var (center_var = 1)
+    mat.append([1 if d == cdims else 0 for d in range(dims)])
+    rhs.append(1)
+
+    mat.append([-1 if d == cdims else 0 for d in range(dims)])
+    rhs.append(-1)
+
+    for i, g in enumerate(generator_list):
+        assert len(g) == cdims, "expected each generator to have the same number of dims as the center"
+        
+        # bounds on each alpha (-1 <= alpha <= 1)
+        mat.append([1 if d == cdims + 1 + i else 0 for d in range(dims)])
+        rhs.append(1)
+
+        mat.append([-1 if d == cdims + 1 + i else 0 for d in range(dims)])
+        rhs.append(1)
+
+    # zonotope generator constraints x = c + alpha1 * g1 + alpha2 * g2 + ...
+    for dim, c in enumerate(center):
+        row = [0] * dims
+
+        row[dim] = -1
+        row[cdims] = c
+
+        for gindex, generator in enumerate(generator_list):     
+            row[cdims + 1 + gindex] = generator[dim]
+
+        mat.append(row)
+        rhs.append(0)
+
+        mat.append([-1 * x for x in row])
+        rhs.append(0)
+
+    return from_constraints(mat, rhs, mode, dims=cdims)
+
 def from_constraints(csr, rhs, mode, types=None, names=None, dims=None):
     '''make a new lp instance from a passed-in set of constraints and rhs
 
@@ -866,7 +911,7 @@ def is_point_in_lpi(point, orig_lpi):
 
     print("Warning: Using testing function lputil.is_point_in_lpi (slow)")
 
-    assert len(point) == orig_lpi.dims
+    assert len(point) <= orig_lpi.dims
 
     inds = []
     data = []

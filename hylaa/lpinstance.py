@@ -703,6 +703,11 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
                         "problem has unbounded solution",
                         "solution is undefined"]
 
+                if status == glpk.GLP_UNBND:
+                    ray = glpk.glp_get_unbnd_ray(self.lp)
+
+                    raise RuntimeError(f"LP had unbounded solution in minimize(). Unbounded ray was variable #{ray}")
+
                 for code, message in zip(codes, msgs):
                     if status == code:
                         raise RuntimeError("LP status after solving in minimize() was '{}': {}".format(message, code))
