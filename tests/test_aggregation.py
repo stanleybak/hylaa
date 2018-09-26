@@ -706,9 +706,8 @@ def test_chull_drivetrain():
 
     chull_lpi = lputil.aggregate_chull(lpi_list, mode)
 
-    plot_vecs = lpplot.make_plot_vecs(num_angles=2**14, offset=0.01)
+    plot_vecs = lpplot.make_plot_vecs(num_angles=256, offset=0.01)
     verts = lpplot.get_verts(chull_lpi, xdim=xdim, ydim=ydim, plot_vecs=plot_vecs)
-    #print(chull_lpi)
     #xs, ys = zip(*verts)
     #plt.plot(xs, ys, 'r--')
 
@@ -716,4 +715,3 @@ def test_chull_drivetrain():
 
     for vert in all_verts:
         assert lputil.is_point_in_lpi(vert, chull_lpi)
-

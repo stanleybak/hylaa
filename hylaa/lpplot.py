@@ -94,7 +94,9 @@ def get_verts(lpi, xdim=0, ydim=1, plot_vecs=None, cur_time=0.0):
                 verts.append([xmin, cur_time[1]])
         else:
             # 2-d plot
-            pts = _find_boundary_pts(lpi, xdim, ydim, plot_vecs)
+            bboxw = bbox_widths(lpi, xdim, ydim)
+            
+            pts = find_boundary_pts(lpi, xdim, ydim, plot_vecs, bboxw)
             verts = [[pt[0], pt[1]] for pt in pts]
 
         # wrap polygon back to first point
@@ -103,6 +105,29 @@ def get_verts(lpi, xdim=0, ydim=1, plot_vecs=None, cur_time=0.0):
         verts = None
 
     return verts
+
+def bbox_widths(lpi, xdim, ydim):
+    'find and return the bounding box widths of the lp for the passed-in dimensions'
+
+    rv = []
+    dims = lpi.dims
+
+    for dim in [xdim, ydim]:
+        col = lpi.cur_vars_offset + dim
+        min_dir = [1 if i == dim else 0 for i in range(dims)]
+        max_dir = [-1 if i == dim else 0 for i in range(dims)]
+        
+        min_val = lpi.minimize(direction_vec=min_dir, columns=[col])[0]
+        max_val = lpi.minimize(direction_vec=max_dir, columns=[col])[0]
+
+        dx = max_val - min_val
+
+        if dx < 1e-5:
+            dx = 1e-5
+
+        rv.append(dx)
+
+    return rv
 
 def make_plot_vecs(num_angles=256, offset=0.0):
     'make plot_vecs with equally spaced directions, returning the result'
@@ -119,7 +144,7 @@ def make_plot_vecs(num_angles=256, offset=0.0):
 
     return plot_vecs
 
-def _find_boundary_pts(lpi, xdim, ydim, plot_vecs):
+def find_boundary_pts(lpi, xdim, ydim, plot_vecs, bboxw):
     '''
     find points along an LPs boundary by solving several LPs and
     returns a list of points on the boundary which maximize each
@@ -131,31 +156,31 @@ def _find_boundary_pts(lpi, xdim, ydim, plot_vecs):
     assert len(plot_vecs) >= 2
 
     # optimized approach: do binary search to find changes
-    point = _minimize(lpi, xdim, ydim, plot_vecs[0])
+    point = _minimize(lpi, xdim, ydim, plot_vecs[0], bboxw)
     rv.append(point.copy())
 
     # add it in thirds, to ensure we don't miss anything
     third = len(plot_vecs) // 3
 
     # 0 to 1/3
-    point = _minimize(lpi, xdim, ydim, plot_vecs[third])
+    point = _minimize(lpi, xdim, ydim, plot_vecs[third], bboxw)
 
     if not np.array_equal(point, rv[-1]):
-        rv += _binary_search_boundaries(lpi, 0, third, rv[-1], point, xdim, ydim, plot_vecs)
+        rv += _binary_search_boundaries(lpi, 0, third, rv[-1], point, xdim, ydim, plot_vecs, bboxw)
         rv.append(point.copy())
 
     # 1/3 to 2/3
-    point = _minimize(lpi, xdim, ydim, plot_vecs[2*third])
+    point = _minimize(lpi, xdim, ydim, plot_vecs[2*third], bboxw)
 
     if not np.array_equal(point, rv[-1]):
-        rv += _binary_search_boundaries(lpi, third, 2*third, rv[-1], point, xdim, ydim, plot_vecs)
+        rv += _binary_search_boundaries(lpi, third, 2*third, rv[-1], point, xdim, ydim, plot_vecs, bboxw)
         rv.append(point.copy())
 
     # 2/3 to end
-    point = _minimize(lpi, xdim, ydim, plot_vecs[-1])
+    point = _minimize(lpi, xdim, ydim, plot_vecs[-1], bboxw)
 
     if not np.array_equal(point, rv[-1]):
-        rv += _binary_search_boundaries(lpi, 2*third, len(plot_vecs) - 1, rv[-1], point, xdim, ydim, plot_vecs)
+        rv += _binary_search_boundaries(lpi, 2*third, len(plot_vecs) - 1, rv[-1], point, xdim, ydim, plot_vecs, bboxw)
         rv.append(point.copy())
 
     # pop last point if it's the same as the first point
@@ -164,7 +189,7 @@ def _find_boundary_pts(lpi, xdim, ydim, plot_vecs):
 
     return rv
 
-def _minimize(lpi, xdim, ydim, direction):
+def _minimize(lpi, xdim, ydim, direction, bounding_box_widths):
     'minimize to lp... returning the 2-d point of the minimum'
 
     dims = 0
@@ -187,10 +212,10 @@ def _minimize(lpi, xdim, ydim, direction):
     optimize_direction = np.zeros(dims, dtype=float)
 
     if xdim is not None:
-        optimize_direction += direction[0] * xdim
+        optimize_direction += direction[0] * xdim / bounding_box_widths[0]
 
     if ydim is not None:
-        optimize_direction += direction[1] * ydim
+        optimize_direction += direction[1] * ydim / bounding_box_widths[1]
 
     lpi.set_minimize_direction(optimize_direction)
 
@@ -201,7 +226,7 @@ def _minimize(lpi, xdim, ydim, direction):
     
     return np.array([xcoord, ycoord], dtype=float)
 
-def _binary_search_boundaries(lpi, start, end, start_point, end_point, xdim, ydim, plot_vecs):
+def _binary_search_boundaries(lpi, start, end, start_point, end_point, xdim, ydim, plot_vecs, bboxw):
     '''
     return all the optimized points in the star for the passed-in directions, between
     the start and end indices, exclusive
@@ -214,18 +239,18 @@ def _binary_search_boundaries(lpi, start, end, start_point, end_point, xdim, ydi
     if start + 1 < end:
         mid = (start + end) // 2
 
-        mid_point = _minimize(lpi, xdim, ydim, plot_vecs[mid])
+        mid_point = _minimize(lpi, xdim, ydim, plot_vecs[mid], bboxw)
 
         not_start = not np.allclose(start_point, mid_point, atol=1e-6)
         not_end = not np.allclose(end_point, mid_point, atol=1e-6)
 
         if not_start:
-            rv += _binary_search_boundaries(lpi, start, mid, start_point, mid_point, xdim, ydim, plot_vecs)
+            rv += _binary_search_boundaries(lpi, start, mid, start_point, mid_point, xdim, ydim, plot_vecs, bboxw)
 
         if not_start and not_end:
             rv.append(mid_point)
 
         if not_end:
-            rv += _binary_search_boundaries(lpi, mid, end, mid_point, end_point, xdim, ydim, plot_vecs)
+            rv += _binary_search_boundaries(lpi, mid, end, mid_point, end_point, xdim, ydim, plot_vecs, bboxw)
 
     return rv

@@ -158,7 +158,7 @@ def define_settings():
 
     settings.stop_on_error = False
     settings.plot.draw_stride = 10
-    settings.plot.num_angles = 4096 * 128 # required for convex hull to show up correctly
+    #settings.plot.num_angles = 4096 * 128 # required for convex hull to show up correctly
     #settings.aggregation.agg_mode = AggregationSettings.AGG_NONE
 
     #def custom_pop_func(waiting_list):
