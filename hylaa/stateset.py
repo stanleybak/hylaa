@@ -47,7 +47,9 @@ class StateSet(Freezable):
         # this is used to eliminate redundant constraints as the lpi is intersected with the invariant at each step
         self.invariant_constraint_rows = [None] * len(self.mode.inv_list)
 
-        self.basis_matrix = np.identity(mode.a_csr.shape[0])
+        # mode might be an error mode, in which case a_csr is None
+        self.basis_matrix = None if mode.a_csr is None else np.identity(mode.a_csr.shape[0])
+        
         self.input_effects_list = None if mode.b_csr is None else [] # list of input effects at each step
 
         # used for plotting
@@ -138,6 +140,7 @@ class StateSet(Freezable):
 
             self._verts[subplot] = lpplot.get_verts(self.lpi, xdim=self.xdim[subplot], ydim=self.ydim[subplot], \
                                            plot_vecs=plotman.plot_vec_list[subplot], cur_time=time_interval)
+            
             assert self._verts[subplot] is not None, "verts() was unsat"
             
         Timers.toc('verts')

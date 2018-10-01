@@ -3,9 +3,9 @@ Stanley Bak
 Aggregation Directed Acyclic Graph (DAG) implementation
 '''
 
-from collections import namedtuple
+import sys
 
-import numpy as np
+from collections import namedtuple
 
 from termcolor import cprint
 
@@ -58,14 +58,16 @@ class AggDag(Freezable):
         return rv
 
     def cur_state_left_invariant(self):
-        '''called when the current state left the invariant'''
+        '''called when the current state left the invariant (or exceeds reach time bound)'''
 
         state = self.get_cur_state()
 
         op = OpLeftInvariant(state.cur_step_in_mode, self.cur_node)
         self.cur_node.op_list.append(op)
 
-        self.cur_node = None        
+        self.cur_node = None
+
+        self.settings.aggstrat.finished_continuous_post(self)
 
     def add_init_state(self, state):
         'add an initial state'
@@ -140,6 +142,11 @@ class AggDag(Freezable):
         assert len(agg_pair_list[0]) == 2, "expected pop_waiting_list to return list of pairs: (StateSet, OpTransition)"
         assert isinstance(agg_pair_list[0][0], StateSet)
         assert isinstance(agg_pair_list[0][1], (OpTransition, type(None)))
+
+        # if we're popping error mode, pop them one at a time
+        # this is to prevent aggregation, which may use sucessor mode dynamics information
+        if agg_pair_list[0][0].mode.a_csr is None: 
+            agg_pair_list = [agg_pair_list[0]]
 
         # remove each element of agg_pair_list from the waiting_list
         waiting_list_presize = len(self.waiting_list)
@@ -225,6 +232,13 @@ class AggDagNode(Freezable):
         self.parent_ops = parent_ops
         
         self.freeze_attrs()
+
+    def refine_split(self):
+        'refine the aggdag node by splitting its aggregated set in two'
+
+        print(f"parent_ops ({len(self.parent_ops)} = {self.parent_ops}")
+        print("debug exit")
+        sys.exit(1)
 
     def get_mode(self):
         'get the mode for this aggdag node'

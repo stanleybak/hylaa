@@ -34,75 +34,75 @@ def get_verts(lpi, xdim=0, ydim=1, plot_vecs=None, cur_time=0.0):
     if isinstance(cur_time, (float, int)):
         cur_time = [float(cur_time), float(cur_time)]
 
-    try:
-        if xdim is None and ydim is None:
-            if abs(cur_time[0] - cur_time[1]) < tol:
-                pts = [[cur_time, cur_time]]
-            else:
-                pts = []
-                pts.append([cur_time.min, cur_time.min])
-                pts.append([cur_time.min, cur_time.max])
-                pts.append([cur_time.max, cur_time.max])
-                pts.append([cur_time.max, cur_time.min])
-                
-        elif xdim is None:
-            # plot over time
-            if isinstance(ydim, int):
-                ydim = np.array([1.0 if dim == ydim else 0.0 for dim in range(lpi.dims)], dtype=float)
-
-            lpi.set_minimize_direction(ydim)
-            res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)])
-            ymin = np.dot(ydim, res)
-
-            lpi.set_minimize_direction(-1 * ydim)
-            res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)])
-            ymax = np.dot(ydim, res)
-
-            verts = [[cur_time[0], ymin]]
-
-            if abs(ymin - ymax) > tol:
-                verts.append([cur_time[0], ymax])
-
-                if abs(cur_time[0] - cur_time[1]) > tol:
-                    verts.append([cur_time[1], ymax])
-
-            if abs(cur_time[0] - cur_time[1]) > tol:
-                verts.append([cur_time[1], ymin])
-                
-        elif ydim is None:
-            # plot over time
-            if isinstance(xdim, int):
-                xdim = np.array([1.0 if dim == xdim else 0.0 for dim in range(lpi.dims)], dtype=float)
-
-            lpi.set_minimize_direction(xdim)
-            res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)])
-            xmin = np.dot(xdim, res)
-
-            lpi.set_minimize_direction(-1 * xdim)
-            res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)])
-            xmax = np.dot(xdim, res)
-
-            verts = [[xmin, cur_time[0]]]
-
-            if abs(xmin - xmax) > tol:
-                verts.append([xmax, cur_time[0]])
-
-                if abs(cur_time[0] - cur_time[1]) > tol:
-                    verts.append([xmax, cur_time[1]])
-
-            if abs(cur_time[0] - cur_time[1]) > tol:
-                verts.append([xmin, cur_time[1]])
+    #try:
+    if xdim is None and ydim is None:
+        if abs(cur_time[0] - cur_time[1]) < tol:
+            pts = [[cur_time, cur_time]]
         else:
-            # 2-d plot
-            bboxw = bbox_widths(lpi, xdim, ydim)
-            
-            pts = find_boundary_pts(lpi, xdim, ydim, plot_vecs, bboxw)
-            verts = [[pt[0], pt[1]] for pt in pts]
+            pts = []
+            pts.append([cur_time.min, cur_time.min])
+            pts.append([cur_time.min, cur_time.max])
+            pts.append([cur_time.max, cur_time.max])
+            pts.append([cur_time.max, cur_time.min])
 
-        # wrap polygon back to first point
-        verts.append(verts[0])
-    except UnsatError:
-        verts = None
+    elif xdim is None:
+        # plot over time
+        if isinstance(ydim, int):
+            ydim = np.array([1.0 if dim == ydim else 0.0 for dim in range(lpi.dims)], dtype=float)
+
+        lpi.set_minimize_direction(ydim)
+        res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)], retry_on_unsat=True)
+        ymin = np.dot(ydim, res)
+
+        lpi.set_minimize_direction(-1 * ydim)
+        res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)], retry_on_unsat=True)
+        ymax = np.dot(ydim, res)
+
+        verts = [[cur_time[0], ymin]]
+
+        if abs(ymin - ymax) > tol:
+            verts.append([cur_time[0], ymax])
+
+            if abs(cur_time[0] - cur_time[1]) > tol:
+                verts.append([cur_time[1], ymax])
+
+        if abs(cur_time[0] - cur_time[1]) > tol:
+            verts.append([cur_time[1], ymin])
+
+    elif ydim is None:
+        # plot over time
+        if isinstance(xdim, int):
+            xdim = np.array([1.0 if dim == xdim else 0.0 for dim in range(lpi.dims)], dtype=float)
+
+        lpi.set_minimize_direction(xdim)
+        res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)], retry_on_unsat=True)
+        xmin = np.dot(xdim, res)
+
+        lpi.set_minimize_direction(-1 * xdim)
+        res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)], retry_on_unsat=True)
+        xmax = np.dot(xdim, res)
+
+        verts = [[xmin, cur_time[0]]]
+
+        if abs(xmin - xmax) > tol:
+            verts.append([xmax, cur_time[0]])
+
+            if abs(cur_time[0] - cur_time[1]) > tol:
+                verts.append([xmax, cur_time[1]])
+
+        if abs(cur_time[0] - cur_time[1]) > tol:
+            verts.append([xmin, cur_time[1]])
+    else:
+        # 2-d plot
+        bboxw = bbox_widths(lpi, xdim, ydim)
+
+        pts = find_boundary_pts(lpi, xdim, ydim, plot_vecs, bboxw)
+        verts = [[pt[0], pt[1]] for pt in pts]
+
+    # wrap polygon back to first point
+    verts.append(verts[0])
+    #except UnsatError:
+    #    verts = None
 
     return verts
 
@@ -117,8 +117,8 @@ def bbox_widths(lpi, xdim, ydim):
         min_dir = [1 if i == dim else 0 for i in range(dims)]
         max_dir = [-1 if i == dim else 0 for i in range(dims)]
         
-        min_val = lpi.minimize(direction_vec=min_dir, columns=[col])[0]
-        max_val = lpi.minimize(direction_vec=max_dir, columns=[col])[0]
+        min_val = lpi.minimize(direction_vec=min_dir, columns=[col], retry_on_unsat=True)[0]
+        max_val = lpi.minimize(direction_vec=max_dir, columns=[col], retry_on_unsat=True)[0]
 
         dx = max_val - min_val
 
@@ -219,7 +219,7 @@ def _minimize(lpi, xdim, ydim, direction, bounding_box_widths):
 
     lpi.set_minimize_direction(optimize_direction)
 
-    res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(dims)])
+    res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(dims)], retry_on_unsat=True)
 
     xcoord = 0 if xdim is None else np.dot(res, xdim)
     ycoord = 0 if ydim is None else np.dot(res, ydim)

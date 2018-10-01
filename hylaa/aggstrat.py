@@ -45,6 +45,8 @@ class AggregationStrategy(Freezable):
         If the list is a single element, no aggregation is performed.
         '''
 
+        print("!! pop waiting list called on aggstrat()")
+
         return [waiting_list[0]]
 
     def pretransition(self, t, t_lpi, op_transition):

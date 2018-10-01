@@ -586,6 +586,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         Timers.toc('minimize')
 
         if rv is None and retry_on_unsat:
+            # this happens with rendezvous system, step=1.0, convex hull aggregation and passivity times [120, 125]
             LpInstance.print_normal("Note: minimize failed with retry_on_unsat was true, resetting and retrying...")
                         
             glpk.glp_cpx_basis(self.lp) # resets the initial basis

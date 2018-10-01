@@ -16,12 +16,15 @@ from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa.settings import HylaaSettings, PlotSettings, LabelSettings
 from hylaa.core import Core
 from hylaa.stateset import StateSet
-from hylaa import lputil
+from hylaa import lputil, aggstrat
 
 def make_automaton(safe):
     'make the hybrid automaton'
 
     ha = HybridAutomaton('Spacecraft Rendezvous with Abort')
+
+    passive_min_time = 120
+    passive_max_time = 130
     
     ############## Modes ##############
     p2 = ha.new_mode('P2')
@@ -56,7 +59,7 @@ def make_automaton(safe):
         [-1.0, 1.0, 0., 0., 0., 0], \
         [1.0, -1.0, 0., 0., 0., 0], \
         [0., 0., 0., 0., 1., 0]]
-    inv_rhs = [100, 100, 100, 100, 141.1, 141.1, 141.1, 141.1, 120.0]
+    inv_rhs = [100, 100, 100, 100, 141.1, 141.1, 141.1, 141.1, passive_max_time]
     p3.set_dynamics(a_mat)
     p3.set_invariant(inv_mat, inv_rhs)
 
@@ -70,8 +73,7 @@ def make_automaton(safe):
          [0, 0, 0, 0, 0, 1.], \
          [0, 0, 0, 0, 0, 0]]
     passive.set_dynamics(a_mat)
-
-
+    
     error = ha.new_mode('error')
 
     ############## Normal Transitions ##############
@@ -88,9 +90,9 @@ def make_automaton(safe):
     guard_rhs = [100, 100, 100, 100, 141.1, 141.1, 141.1, 141.1]
     t1.set_guard(guard_mat, guard_rhs)
 
-    ha.new_transition(p2, passive).set_guard([[0.0, 0.0, 0.0, 0.0, -1.0, 0]], [-120])
+    ha.new_transition(p2, passive).set_guard([[0.0, 0.0, 0.0, 0.0, -1.0, 0]], [-passive_min_time])
 
-    ha.new_transition(p3, passive).set_guard([[0.0, 0.0, 0.0, 0.0, -1.0, 0]], [-120])
+    ha.new_transition(p3, passive).set_guard([[0.0, 0.0, 0.0, 0.0, -1.0, 0]], [-passive_min_time])
 
     ############## Error Transitions ##############
     # In the aborting mode, the vehicle must avoid the target, which is modeled as a box B with
@@ -118,15 +120,15 @@ def make_automaton(safe):
     h = meters_per_min_limit * math.cos(math.pi / 8.0)
     w = meters_per_min_limit * math.sin(math.pi / 8.0)
     
-    ha.new_transition(p3, error).set_guard([[0, 0, 1., 0., 0., 0]], [-h])
-    ha.new_transition(p3, error).set_guard([[0, 0, -1., 0., 0., 0]], [-h])
-    ha.new_transition(p3, error).set_guard([[0, 0, 0., 1., 0., 0]], [-h])
-    ha.new_transition(p3, error).set_guard([[0, 0, 0., -1., 0., 0]], [-h])
+    #ha.new_transition(p3, error).set_guard([[0, 0, 1., 0., 0., 0]], [-h])
+    #ha.new_transition(p3, error).set_guard([[0, 0, -1., 0., 0., 0]], [-h])
+    #ha.new_transition(p3, error).set_guard([[0, 0, 0., 1., 0., 0]], [-h])
+    #ha.new_transition(p3, error).set_guard([[0, 0, 0., -1., 0., 0]], [-h])
 
-    ha.new_transition(p3, error).set_guard([[0, 0, 1., 1., 0., 0]], [-(w + h)])
-    ha.new_transition(p3, error).set_guard([[0, 0, -1., 1., 0., 0]], [-(w + h)])
-    ha.new_transition(p3, error).set_guard([[0, 0, -1., -1., 0., 0]], [-(w + h)])
-    ha.new_transition(p3, error).set_guard([[0, 0, 1., -1., 0., 0]], [-(w + h)])
+    #ha.new_transition(p3, error).set_guard([[0, 0, 1., 1., 0., 0]], [-(w + h)])
+    #ha.new_transition(p3, error).set_guard([[0, 0, -1., 1., 0., 0]], [-(w + h)])
+    #ha.new_transition(p3, error).set_guard([[0, 0, -1., -1., 0., 0]], [-(w + h)])
+    #ha.new_transition(p3, error).set_guard([[0, 0, 1., -1., 0., 0]], [-(w + h)])
     
     return ha
 
@@ -139,19 +141,63 @@ def make_init(ha):
 
     return init_list
 
+class MyAggStrat(aggstrat.Aggregated):
+    'custom aggregation strategy'
+
+    def __init__(self):
+        aggstrat.Aggregated.__init__(self)
+
+        #self.agg_type = agg_strat.Aggregated.CONVEX_HULL
+
+    def pop_waiting_list(self, waiting_list):
+        '''
+        Get the states to remove from the waiting list based on a score-based method
+
+        this function returns a list of 2-tuples (StateSet, OpTransition). 
+        If the list is a single element, no aggregation is performed.
+        '''
+
+        pop_list = aggstrat.Aggregated.pop_waiting_list(self, waiting_list)
+
+        if pop_list[0][0].mode.name == 'passive':
+            return pop_list #[0:6] # no aggregation into passive mode
+
+        return pop_list
+
+    def finished_continuous_post(self, aggdag):
+        'event function, called whenever we just finished with a continuous post operation'
+
+        # scan the aggdag waiting list for non-concrete error mode states
+
+        recheck = True
+
+        while recheck:
+            recheck = False
+
+            for state, op in aggdag.waiting_list:
+                if state.mode.is_error() and not state.is_concrete:
+                    # splt the parent aggdag
+                    print("splitting parent node of error states")
+                    op.parent_node.refine_split()
+                    recheck = True
+
 def make_settings(safe):
     'make the reachability settings object'
 
     # see hylaa.settings for a list of reachability settings
     settings = HylaaSettings(1.0, 200.0) # step: 0.1, bound: 200.0
-    settings.plot.plot_mode = PlotSettings.PLOT_IMAGE
+
+    settings.stop_on_aggregated_error = False
+    settings.aggstrat = MyAggStrat() # Aggregated.AGG_CONVEX_HULL
+
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE # PLOT_LIVE
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
 
-    settings.plot.filename = "rendezvous.png"
+    settings.plot.filename = "rendezvous_full_passivity.png"
     settings.plot.plot_size = (10, 10)
         
-    settings.plot.xdim_dir = [0, 2]
-    settings.plot.ydim_dir = [1, 3]
+    settings.plot.xdim_dir = [0, 0]
+    settings.plot.ydim_dir = [1, 1]
     settings.plot.label = [LabelSettings(), LabelSettings()]
     
     settings.plot.label[0].big(size=32)
@@ -160,32 +206,23 @@ def make_settings(safe):
     settings.plot.label[0].x_label = '$x$'
     settings.plot.label[0].y_label = '$y$'
 
-    settings.plot.label[1].x_label = '$x_{vel}$'
-    settings.plot.label[1].y_label = '$y_{vel}$'
+    settings.plot.label[1].x_label = '$x$'
+    settings.plot.label[1].y_label = '$y$'
 
     settings.plot.label[0].axes_limits = [-130, 130, -80, 80]
-    settings.plot.label[1].axes_limits = [-5, 5, -5, 5]
+    settings.plot.label[1].axes_limits = [-10, 10, -10, 10]
 
     y = 57.735
     line = [(-100, y), (-100, -y), (0, 0), (-100, y)]
     c1 = collections.LineCollection([line], animated=True, colors=('gray'), linewidths=(2), linestyle='dashed')
+    c1_copy = collections.LineCollection([line], animated=True, colors=('gray'), linewidths=(2), linestyle='dashed')
 
     rad = 0.2
     line = [(-rad, -rad), (-rad, rad), (rad, rad), (rad, -rad), (-rad, -rad)]
     c2 = collections.LineCollection([line], animated=True, colors=('red'), linewidths=(2))
+    c2_copy = collections.LineCollection([line], animated=True, colors=('red'), linewidths=(2))
 
-    meters_per_sec_limit = 0.055 if safe else 0.05
-    meters_per_min_limit = meters_per_sec_limit * 60
-    x = meters_per_min_limit * math.cos(math.pi / 8.0)
-    y = meters_per_min_limit * math.sin(math.pi / 8.0)
-
-    line = [(-x, y), (-y, x), (y, x), (x, y), (x, -y), (y, -x), (-y, -x), (-x, -y), (-x, y)]
-    vel_oct = collections.LineCollection([line], animated=True, colors=('gray'), linewidths=(2), linestyle='dashed')
-
-    r = meters_per_min_limit
-    patch_col = collections.PatchCollection([Circle((0, 0), r)], alpha=0.1)
-
-    settings.plot.extra_collections = [[c1, c2], [vel_oct, patch_col]]
+    settings.plot.extra_collections = [[c1, c2], [c1_copy, c2_copy]]
 
     return settings
 

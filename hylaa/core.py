@@ -76,10 +76,11 @@ class Core(Freezable):
 
         finished = False
 
-        if self.settings.stop_on_error:
-            finished = not self.result.safe
-
-        if not finished:
+        if self.settings.stop_on_aggregated_error and self.result.has_aggergated_error:
+            finished = True
+        elif self.settings.stop_on_concrete_error and self.result.has_concrete_error:
+            finished = True
+        else:    
             finished = self.aggdag.get_cur_state() is None and not self.aggdag.waiting_list
 
         return finished
@@ -96,12 +97,17 @@ class Core(Freezable):
             step_num = step_num[0]
             times = times[0]
         
-        self.print_normal("Unsafe at Step: {} / {}, time {}".format(step_num, self.settings.num_steps, times))
+        self.print_normal("Unsafe Mode Reached at Step: {} / {}, time {}".format( \
+            step_num, self.settings.num_steps, times))
 
-        self.result.safe = False
+        self.result.has_aggregated_error = True
 
-        if cur_state.is_concrete and not self.result.counterexample:
-            self.result.counterexample = make_counterexample(self.hybrid_automaton, t, lpi)
+        # if this is a concrete state (not aggregated) and we don't yet have a counter-example
+        if cur_state.is_concrete:
+            self.result.has_concrete_error = True
+
+            if not self.result.counterexample:
+                self.result.counterexample = make_counterexample(self.hybrid_automaton, t, lpi)
 
     def check_guards(self):
         '''check for discrete successors with the guards'''
@@ -116,20 +122,25 @@ class Core(Freezable):
             if t_lpi:
                 if t.to_mode.is_error():
                     self.error_reached(t, t_lpi)
-                    break
-                else:
-                    self.aggdag.add_transition_successor(t, t_lpi)
 
-                    self.print_verbose("Added Discrete Successor to '{}' at step {}".format( \
-                                       t.to_mode.name, cur_state.cur_steps_since_start))
+                    if self.settings.stop_on_aggregated_error:
+                        break
 
-                    # if it's a time-triggered transition, we may remove cur_state immediately
-                    if self.settings.optimize_tt_transitions and t.time_triggered:
-                        if was_tt_taken(cur_state.lpi, t):
-                            self.print_verbose("Transition was time-triggered, finished with current state analysis")
-                            self.took_tt_transition = True
-                        else:
-                            self.print_verbose("Transition was NOT taken as time-triggered, due to runtime checks")
+                    if cur_state.is_concrete and self.settings.stop_on_concrete_error:
+                        break
+                
+                self.aggdag.add_transition_successor(t, t_lpi)
+
+                self.print_verbose("Added Discrete Successor to '{}' at step {}".format( \
+                                   t.to_mode.name, cur_state.cur_steps_since_start))
+
+                # if it's a time-triggered transition, we may remove cur_state immediately
+                if self.settings.optimize_tt_transitions and t.time_triggered:
+                    if was_tt_taken(cur_state.lpi, t):
+                        self.print_verbose("Transition was time-triggered, finished with current state analysis")
+                        self.took_tt_transition = True
+                    else:
+                        self.print_verbose("Transition was NOT taken as time-triggered, due to runtime checks")
 
         Timers.toc("check_guards")
 
@@ -352,8 +363,10 @@ class Core(Freezable):
         if self.settings.stdout >= HylaaSettings.STDOUT_VERBOSE:
             Timers.print_stats()
 
-        if not self.result.safe:
-            self.print_normal("Result: Error modes are reachable.\n")
+        if self.result.has_concrete_error:
+            self.print_normal("Result: Error modes are reachable (found counter-example).\n")
+        elif self.result.has_aggergated_error:
+            self.print_normal("Result: Error modes are reachable when aggergation (overapproximation) was used.\n")
         else:
             self.print_normal("Result: System is safe. Error modes are NOT reachable.\n")
 
@@ -447,7 +460,10 @@ class HylaaResult(Freezable): # pylint: disable=too-few-public-methods
 
     def __init__(self):
         self.top_level_timer = None # TimerData for total time
-        self.safe = True # was the verification result safe?
+
+        # verification result:
+        self.has_aggregated_error = False
+        self.has_concrete_error = False
 
         self.counterexample = [] # if unsafe, a list of CounterExampleSegment objects
 

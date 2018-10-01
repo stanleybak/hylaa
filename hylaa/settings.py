@@ -37,7 +37,10 @@ class HylaaSettings(Freezable):  # pylint: disable=too-few-public-methods
         self.process_urgent_guards = False # allow zero continuous-post steps between transitions?
         self.do_guard_strengthening = True # add invariants of target modes to each guard?
         self.optimize_tt_transitions = True # auto-detect time-triggered transitions and use single-step semantics?
-        self.stop_on_error = True
+
+        # what to do when an error appears reachable
+        self.stop_on_aggregated_error = True # stop whenever any state (aggregated or not) reaches an error mode
+        self.stop_on_concrete_error = True # stop whenver a concrete state reaches an error
         
         self.aggstrat = aggstrat.Aggregated() # aggregation strategy class
 
