@@ -140,6 +140,17 @@ class DrawnShapes(Freezable):
         self.parent_to_polys = OrderedDict()
         self.parent_to_markers = OrderedDict()
 
+        self.extra_collection_list = []
+
+        if plotman.settings.extra_collections:
+            if isinstance(plotman.settings.extra_collections[0], list):
+                self.extra_collection_list = plotman.settings.extra_collections[subplot]
+            elif subplot == 0:
+                self.extra_collection_list = plotman.settings.extra_collections
+
+            for col in self.extra_collection_list:
+                self.axes.add_collection(col)
+
         self.freeze_attrs()
 
     def get_artists(self):
@@ -147,7 +158,7 @@ class DrawnShapes(Freezable):
 
         rv = []
 
-        # make sure cur_state is last
+        # objects later in the list will be drawn after (above)
         
         for name, polys in self.parent_to_polys.items():
             if name != "cur_state":
@@ -158,6 +169,9 @@ class DrawnShapes(Freezable):
 
         for markers in self.parent_to_markers.values():
             rv.append(markers)
+
+        for collection in self.extra_collection_list:
+            rv.append(collection)
 
         return rv
 
@@ -366,22 +380,18 @@ class PlotManager(Freezable):
 
             ha = self.core.hybrid_automaton
 
-            if self.num_subplots == 1:
-                title = self.settings.label.title
-                title = title if title is not None else ha.name
-                self.axes_list[0].set_title(title, fontsize=self.settings.label.title_size)
+            if not isinstance(self.settings.label, list):
+                self.settings.label = [self.settings.label]
 
-                if self.settings.label.axes_limits is not None:
-                    # hardcoded axes limits
-                    xmin, xmax, ymin, ymax = self.settings.label.axes_limits
-
-                    self.axes_list[0].set_xlim(xmin, xmax)
-                    self.axes_list[0].set_ylim(ymin, ymax)
+            # only use title for the first subplot the first plot
+            title = self.settings.label[0].title
+            title = title if title is not None else ha.name
+            self.axes_list[0].set_title(title, fontsize=self.settings.label[0].title_size)
 
             for i in range(self.num_subplots):
                 labels = []
                 label_settings = [self.settings.xdim_dir[i], self.settings.ydim_dir[i]]
-                label_strings = [self.settings.label.x_label, self.settings.label.y_label]
+                label_strings = [self.settings.label[i].x_label, self.settings.label[i].y_label]
 
                 for label_setting, text in zip(label_settings, label_strings):
                     if text is not None:
@@ -393,8 +403,15 @@ class PlotManager(Freezable):
                     else:
                         labels.append('')
 
-                self.axes_list[i].set_xlabel(labels[0], fontsize=self.settings.label.label_size)
-                self.axes_list[i].set_ylabel(labels[1], fontsize=self.settings.label.label_size)
+                self.axes_list[i].set_xlabel(labels[0], fontsize=self.settings.label[i].label_size)
+                self.axes_list[i].set_ylabel(labels[1], fontsize=self.settings.label[i].label_size)
+
+                if self.settings.label[i].axes_limits is not None:
+                    # hardcoded axes limits
+                    xmin, xmax, ymin, ymax = self.settings.label[i].axes_limits
+
+                    self.axes_list[i].set_xlim(xmin, xmax)
+                    self.axes_list[i].set_ylim(ymin, ymax)
 
             if self.settings.grid:
                 for axes in self.axes_list:
@@ -407,11 +424,11 @@ class PlotManager(Freezable):
                         axes.set_yticks(self.settings.grid_ytics)
 
             # make the x and y axis animated in case of rescaling
-            for axes in self.axes_list:
+            for i, axes in enumerate(self.axes_list):
                 axes.xaxis.set_animated(True)
                 axes.yaxis.set_animated(True)
 
-                axes.tick_params(axis='both', which='major', labelsize=self.settings.label.tick_label_size)
+                axes.tick_params(axis='both', which='major', labelsize=self.settings.label[i].tick_label_size)
 
             plt.tight_layout()
 
@@ -444,7 +461,7 @@ class PlotManager(Freezable):
 
                 self.shapes[subplot].set_cur_state(verts_list)
 
-                if self.settings.label.axes_limits is None or self.num_subplots > 1:
+                if self.settings.label[subplot].axes_limits is None:
                     self.update_axis_limits(verts, subplot)
 
                 self.shapes[subplot].add_reachable_poly(verts, state.mode.name)

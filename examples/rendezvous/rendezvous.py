@@ -9,13 +9,16 @@ Stanley Bak, July 2018
 
 import math
 
+from matplotlib import collections
+from matplotlib.patches import Circle
+
 from hylaa.hybrid_automaton import HybridAutomaton
-from hylaa.settings import HylaaSettings, PlotSettings
+from hylaa.settings import HylaaSettings, PlotSettings, LabelSettings
 from hylaa.core import Core
 from hylaa.stateset import StateSet
 from hylaa import lputil
 
-def make_automaton(safe=True):
+def make_automaton(safe):
     'make the hybrid automaton'
 
     ha = HybridAutomaton('Spacecraft Rendezvous with Abort')
@@ -136,33 +139,62 @@ def make_init(ha):
 
     return init_list
 
-def make_settings():
+def make_settings(safe):
     'make the reachability settings object'
 
     # see hylaa.settings for a list of reachability settings
-    settings = HylaaSettings(0.1, 200.0) # step: 0.1, bound: 200.0
-    settings.plot.plot_mode = PlotSettings.PLOT_NONE
-    settings.stdout = HylaaSettings.STDOUT_NORMAL
+    settings = HylaaSettings(1.0, 200.0) # step: 0.1, bound: 200.0
+    settings.plot.plot_mode = PlotSettings.PLOT_IMAGE
+    settings.stdout = HylaaSettings.STDOUT_VERBOSE
 
-
-    settings.plot.xdim_dir = 0
-    settings.plot.ydim_dir = 1
-    settings.plot.plot_size = (10, 10)
-    settings.plot.label.big(size=32)
     settings.plot.filename = "rendezvous.png"
-    settings.plot.label.x_label = '$x$'
-    settings.plot.label.y_label = '$y$'
+    settings.plot.plot_size = (10, 10)
+        
+    settings.plot.xdim_dir = [0, 2]
+    settings.plot.ydim_dir = [1, 3]
+    settings.plot.label = [LabelSettings(), LabelSettings()]
+    
+    settings.plot.label[0].big(size=32)
+    settings.plot.label[1].big(size=32)
+
+    settings.plot.label[0].x_label = '$x$'
+    settings.plot.label[0].y_label = '$y$'
+
+    settings.plot.label[1].x_label = '$x_{vel}$'
+    settings.plot.label[1].y_label = '$y_{vel}$'
+
+    settings.plot.label[0].axes_limits = [-200, 200, -100, 100]
+    settings.plot.label[1].axes_limits = [-5, 5, -5, 5]
+
+    y = 57.735
+    line = [(-100, y), (-100, -y), (0, 0), (-100, y)]
+    c1 = collections.LineCollection([line], animated=True, colors=('gray'), linewidths=(2), linestyle='dashed')
+
+    meters_per_sec_limit = 0.055 if safe else 0.05
+    meters_per_min_limit = meters_per_sec_limit * 60
+    x = meters_per_min_limit * math.cos(math.pi / 8.0)
+    y = meters_per_min_limit * math.sin(math.pi / 8.0)
+
+    line = [(-x, y), (-y, x), (y, x), (x, y), (x, -y), (y, -x), (-y, -x), (-x, -y), (-x, y)]
+    c2 = collections.LineCollection([line], animated=True, colors=('gray'), linewidths=(2), linestyle='dashed')
+
+    r = meters_per_min_limit
+    patch_col = collections.PatchCollection([Circle((0, 0), r)], alpha=0.1)
+
+    settings.plot.extra_collections = [[c1], [c2, patch_col]]
 
     return settings
 
 def main():
     'main entry point'
 
-    ha = make_automaton(safe=True)
+    safe = True
+
+    ha = make_automaton(safe)
 
     init_states = make_init(ha)
 
-    settings = make_settings()
+    settings = make_settings(safe)
 
     Core(ha, settings).run(init_states)
 

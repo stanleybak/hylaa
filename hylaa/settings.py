@@ -59,18 +59,17 @@ class PlotSettings(Freezable): # pylint: disable=too-few-public-methods,too-many
 
         self.filename = None # filename to print data to for certain plot modes
 
-        # these two can also be lists, in which case we'll make multiple plots
+        self.plot_size = (8, 8) # inches
+
+        # these settings can be lists, in which case we'll make multiple plots
         self.xdim_dir = 0 # plotting x dimension number, direction (np.array), None (time), or dict: mode_name -> dir
         self.ydim_dir = 1 # plotting y dimension number, direction (np.array), None (time), or dict: mode_name -> dir
-
-        self.plot_size = (8, 8) # inches
         self.label = LabelSettings() # plot title, axis labels, font sizes, ect.
+        self.extra_collections = None # list of extra animation collections
 
         self.num_angles = 512 # how many evenly-spaced angles to put into plot_vecs
 
         self.draw_stride = 1 # draw every n frames (good to inscrease if number of steps is large)
-
-        self.extra_draw_func = lambda ax: None # extra draw function that gets called each frame, param is axis object
         
         self.reachable_poly_width = 2 # width of reachable polygon outlines
         self.extend_plot_range_ratio = 0.1 # extend plot axis range 10% at a time
@@ -79,7 +78,7 @@ class PlotSettings(Freezable): # pylint: disable=too-few-public-methods,too-many
         self.grid_xtics = None # override default xtics value, for example np.linspace(0.0, 5.0, 1.0)
         self.grid_ytics = None # override default ytics value, for example np.linspace(0.0, 5.0, 1.0)
 
-        self.use_markers_for_small = True # draw markers when the reachable set is tiny instead of invisible polygons
+        self.use_markers_for_small = True # draw markers when the reachable set is tiny instead of (invisible) polygons
 
         # function which returns the Writer with the desired settings used to create a video, used for video export
         def make_video_writer():
