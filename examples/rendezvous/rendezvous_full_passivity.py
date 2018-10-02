@@ -10,7 +10,6 @@ Stanley Bak, July 2018
 import math
 
 from matplotlib import collections
-from matplotlib.patches import Circle
 
 from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa.settings import HylaaSettings, PlotSettings, LabelSettings
@@ -23,11 +22,11 @@ def make_automaton(safe):
 
     ha = HybridAutomaton('Spacecraft Rendezvous with Abort')
 
-    passive_min_time = 120
-    passive_max_time = 130
+    passive_min_time = 0
+    passive_max_time = 250
     
     ############## Modes ##############
-    p2 = ha.new_mode('P2')
+    p2 = ha.new_mode('Far')
     a_mat = [\
         [0.0, 0.0, 1.0, 0.0, 0.0, 0], \
         [0.0, 0.0, 0.0, 1.0, 0.0, 0], \
@@ -41,7 +40,7 @@ def make_automaton(safe):
     p2.set_invariant(inv_mat, inv_rhs)
 
 
-    p3 = ha.new_mode('P3')
+    p3 = ha.new_mode('Approaching')
     a_mat = [\
         [0.0, 0.0, 1.0, 0.0, 0.0, 0], \
         [0.0, 0.0, 0.0, 1.0, 0.0, 0], \
@@ -64,7 +63,7 @@ def make_automaton(safe):
     p3.set_invariant(inv_mat, inv_rhs)
 
 
-    passive = ha.new_mode('passive')
+    passive = ha.new_mode('Abort')
     a_mat = [\
          [0, 0, 1, 0, 0, 0], \
          [0, 0, 0, 1, 0, 0], \
@@ -74,7 +73,7 @@ def make_automaton(safe):
          [0, 0, 0, 0, 0, 0]]
     passive.set_dynamics(a_mat)
     
-    error = ha.new_mode('error')
+    error = ha.new_mode('Error')
 
     ############## Normal Transitions ##############
     t1 = ha.new_transition(p2, p3)
@@ -135,7 +134,7 @@ def make_automaton(safe):
 def make_init(ha):
     'make the initial states'
 
-    p2 = ha.modes['P2']
+    p2 = ha.modes['Far']
     init_lpi = lputil.from_box([(-925.0, -875.0), (-425.0, -375.0), (0.0, 0.0), (0.0, 0.0), (0.0, 0.0), (1.0, 1.0)], p2)
     init_list = [StateSet(init_lpi, p2)]
 
@@ -145,6 +144,9 @@ class MyAggStrat(aggstrat.Aggregated):
     'custom aggregation strategy'
 
     def __init__(self):
+
+        self.aggdag_save_index = 0
+        
         aggstrat.Aggregated.__init__(self)
 
         #self.agg_type = agg_strat.Aggregated.CONVEX_HULL
@@ -164,22 +166,40 @@ class MyAggStrat(aggstrat.Aggregated):
 
         return pop_list
 
-    def finished_continuous_post(self, aggdag):
-        'event function, called whenever we just finished with a continuous post operation'
+    def pre_pop_waiting_list(self, aggdag):
+        '''event function, called before popping the waiting list
+
+        if it returns True, we should draw another frame and call pre_pop again before continuing
+        '''
+
+        print("pre_pop_waiting_list")
+
+        # save the aggdag after each continuous post
+        aggdag.viz(filename=f'aggdag{self.aggdag_save_index}')
+        self.aggdag_save_index += 1
 
         # scan the aggdag waiting list for non-concrete error mode states
+        agg_type = aggstrat.AggType(False, True, False, True) # arnoldi box with guard aggregation
 
-        recheck = True
+        redraw = False
 
-        while recheck:
-            recheck = False
+        for state, op in aggdag.waiting_list:
+            print(f"prepop checking {state} ({state.is_concrete}), {op}")
+            
+            if state.mode.is_error() and not state.is_concrete:
+                # split the parent aggdag
+                print("Rendezvous: splitting parent node of error states")
+                op.parent_node.refine_split(agg_type)
+                redraw = True
 
-            for state, op in aggdag.waiting_list:
-                if state.mode.is_error() and not state.is_concrete:
-                    # splt the parent aggdag
-                    print("splitting parent node of error states")
-                    op.parent_node.refine_split()
-                    recheck = True
+                aggdag.viz(filename=f'aggdag{self.aggdag_save_index}')
+                self.aggdag_save_index += 1
+
+                break
+
+        print(f"prepop returning redraw = {redraw}")
+        
+        return redraw
 
 def make_settings(safe):
     'make the reachability settings object'
@@ -190,39 +210,39 @@ def make_settings(safe):
     settings.stop_on_aggregated_error = False
     settings.aggstrat = MyAggStrat() # Aggregated.AGG_CONVEX_HULL
 
-    settings.plot.plot_mode = PlotSettings.PLOT_NONE # PLOT_LIVE
+    settings.plot.plot_mode = PlotSettings.PLOT_INTERACTIVE
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
 
     settings.plot.filename = "rendezvous_full_passivity.png"
-    settings.plot.plot_size = (10, 10)
-        
-    settings.plot.xdim_dir = [0, 0]
-    settings.plot.ydim_dir = [1, 1]
-    settings.plot.label = [LabelSettings(), LabelSettings()]
+    settings.plot.plot_size = (8, 9)
+
+    settings.plot.xdim_dir = [0] * 3
+    settings.plot.ydim_dir = [1] * 3
+    settings.plot.label = []
+    settings.plot.extra_collections = []
+
+    for _ in range(3):
+        ls = LabelSettings()
+        settings.plot.label.append(ls)
     
-    settings.plot.label[0].big(size=32)
-    settings.plot.label[1].big(size=32)
+        ls.big(size=24)
 
-    settings.plot.label[0].x_label = '$x$'
-    settings.plot.label[0].y_label = '$y$'
+        ls.x_label = '$x$'
+        ls.y_label = '$y$'
 
-    settings.plot.label[1].x_label = '$x$'
-    settings.plot.label[1].y_label = '$y$'
+        y = 57.735
+        line = [(-100, y), (-100, -y), (0, 0), (-100, y)]
+        c1 = collections.LineCollection([line], animated=True, colors=('gray'), linewidths=(2), linestyle='dashed')
 
-    settings.plot.label[0].axes_limits = [-130, 130, -80, 80]
-    settings.plot.label[1].axes_limits = [-10, 10, -10, 10]
+        rad = 0.2
+        line = [(-rad, -rad), (-rad, rad), (rad, rad), (rad, -rad), (-rad, -rad)]
+        c2 = collections.LineCollection([line], animated=True, colors=('red'), linewidths=(2))
 
-    y = 57.735
-    line = [(-100, y), (-100, -y), (0, 0), (-100, y)]
-    c1 = collections.LineCollection([line], animated=True, colors=('gray'), linewidths=(2), linestyle='dashed')
-    c1_copy = collections.LineCollection([line], animated=True, colors=('gray'), linewidths=(2), linestyle='dashed')
+        settings.plot.extra_collections.append([c1, c2])
 
-    rad = 0.2
-    line = [(-rad, -rad), (-rad, rad), (rad, rad), (rad, -rad), (-rad, -rad)]
-    c2 = collections.LineCollection([line], animated=True, colors=('red'), linewidths=(2))
-    c2_copy = collections.LineCollection([line], animated=True, colors=('red'), linewidths=(2))
-
-    settings.plot.extra_collections = [[c1, c2], [c1_copy, c2_copy]]
+    settings.plot.label[0].axes_limits = [-950, 400, -450, 70]
+    settings.plot.label[1].axes_limits = [-150, 50, -70, 70]
+    settings.plot.label[2].axes_limits = [-5, 2, -3, 3]
 
     return settings
 

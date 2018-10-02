@@ -183,6 +183,7 @@ class DrawnShapes(Freezable):
         polys = self.parent_to_polys.get('cur_state')
         
         if polys is None:
+            # setup for first time drawing cur_state
             lw = self.plotman.settings.reachable_poly_width
             polys = collections.PolyCollection([], lw=lw, animated=True, edgecolor='k', facecolor=(0., 0., 0., 0.))
             self.axes.add_collection(polys)
@@ -200,8 +201,10 @@ class DrawnShapes(Freezable):
                 codes = [Path.MOVETO] + [Path.LINETO] * (len(verts) - 2) + [Path.CLOSEPOLY]
                 paths.append(Path(verts, codes))
 
-    def add_reachable_poly(self, poly_verts, mode_name):
+    def add_reachable_poly(self, poly_verts, stateset, subplot, num_subplots):
         '''add a polygon which was reachable'''
+
+        mode_name = stateset.mode.name
 
         if len(poly_verts) <= 2 and self.plotman.settings.use_markers_for_small:
             markers = self.parent_to_markers.get('mode_' + mode_name)
@@ -235,6 +238,17 @@ class DrawnShapes(Freezable):
 
             codes = [Path.MOVETO] + [Path.LINETO] * (len(poly_verts) - 2) + [Path.CLOSEPOLY]
             paths.append(Path(poly_verts, codes))
+
+            # save the Path list in the StateSet
+            if stateset.plot_paths is None:
+                stateset.plot_paths = [None] * num_subplots
+                stateset.plot_paths_indices = [None] * num_subplots
+                
+            if stateset.plot_paths[subplot] is None:
+                stateset.plot_paths[subplot] = paths
+                stateset.plot_paths_indices[subplot] = []
+
+            stateset.plot_paths_indices[subplot].append(len(paths) - 1)
 
 class PlotManager(Freezable):
     'manager object for plotting during or after computation'
@@ -464,7 +478,7 @@ class PlotManager(Freezable):
                 if self.settings.label[subplot].axes_limits is None:
                     self.update_axis_limits(verts, subplot)
 
-                self.shapes[subplot].add_reachable_poly(verts, state.mode.name)
+                self.shapes[subplot].add_reachable_poly(verts, state, subplot, self.num_subplots)
 
                 Timers.toc("add to plot")
 

@@ -10,9 +10,8 @@ from termcolor import cprint
 
 from hylaa.settings import HylaaSettings, PlotSettings
 
-from hylaa.aggdag import AggDag
 from hylaa.plotutil import PlotManager
-
+from hylaa.aggdag import AggDag
 from hylaa.stateset import StateSet
 from hylaa.hybrid_automaton import HybridAutomaton, was_tt_taken
 from hylaa.timerutil import Timers
@@ -76,7 +75,7 @@ class Core(Freezable):
 
         finished = False
 
-        if self.settings.stop_on_aggregated_error and self.result.has_aggergated_error:
+        if self.settings.stop_on_aggregated_error and self.result.has_aggregated_error:
             finished = True
         elif self.settings.stop_on_concrete_error and self.result.has_concrete_error:
             finished = True
@@ -85,12 +84,10 @@ class Core(Freezable):
 
         return finished
 
-    def error_reached(self, t, lpi):
+    def error_reached(self, state, t, t_lpi):
         'an error mode was reached after taking transition t, report and create counterexample'
 
-        cur_state = self.aggdag.get_cur_state()
-
-        step_num = cur_state.cur_steps_since_start
+        step_num = state.cur_steps_since_start
         times = [round(self.settings.step_size * step_num[0], 12), round(self.settings.step_size * step_num[1], 12)]
 
         if step_num[0] == step_num[1]:
@@ -103,11 +100,11 @@ class Core(Freezable):
         self.result.has_aggregated_error = True
 
         # if this is a concrete state (not aggregated) and we don't yet have a counter-example
-        if cur_state.is_concrete:
+        if state.is_concrete:
             self.result.has_concrete_error = True
 
             if not self.result.counterexample:
-                self.result.counterexample = make_counterexample(self.hybrid_automaton, t, lpi)
+                self.result.counterexample = make_counterexample(self.hybrid_automaton, t, t_lpi)
 
     def check_guards(self):
         '''check for discrete successors with the guards'''
@@ -121,7 +118,7 @@ class Core(Freezable):
 
             if t_lpi:
                 if t.to_mode.is_error():
-                    self.error_reached(t, t_lpi)
+                    self.error_reached(cur_state, t, t_lpi)
 
                     if self.settings.stop_on_aggregated_error:
                         break
@@ -220,7 +217,7 @@ class Core(Freezable):
                     cur_state.step()
                     self.check_guards() # check guards here, before doing an invariant intersection
 
-                    # if the current mode has zero dynamic, remove it here
+                    # if the current mode has zero dynamics, remove it here
                     if cur_state.mode.a_csr.nnz == 0:
                         self.print_normal("State in mode '{}' with zero dynamics, skipping remaining steps".format( \
                             cur_state.mode.name))
@@ -272,10 +269,17 @@ class Core(Freezable):
 
         if not self.is_finished():
             if self.aggdag.get_cur_state() is None:
-                self.do_step_pop()
+                delay_pop = self.settings.aggstrat.pre_pop_waiting_list(self.aggdag)
 
-                if self.settings.process_urgent_guards and self.aggdag.get_cur_state() is not None:
-                    self.check_guards()
+                if delay_pop:
+                    # pause after popping when using PLOT_INTERACTIVE
+                    if self.plotman.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
+                        self.plotman.interactive.paused = True
+                else:
+                    self.do_step_pop()
+
+                    if self.settings.process_urgent_guards and self.aggdag.get_cur_state() is not None:
+                        self.check_guards()
             else:
                 self.do_step_continuous_post()
                 self.continuous_steps += 1
@@ -365,7 +369,7 @@ class Core(Freezable):
 
         if self.result.has_concrete_error:
             self.print_normal("Result: Error modes are reachable (found counter-example).\n")
-        elif self.result.has_aggergated_error:
+        elif self.result.has_aggregated_error:
             self.print_normal("Result: Error modes are reachable when aggergation (overapproximation) was used.\n")
         else:
             self.print_normal("Result: System is safe. Error modes are NOT reachable.\n")

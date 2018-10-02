@@ -55,6 +55,14 @@ class AggregationStrategy(Freezable):
         # premode_center = lputil.get_box_center(t_lpi)
         pass
 
+    def pre_pop_waiting_list(self, aggdag):
+        '''event function, called before popping the waiting list
+
+        if it returns True, we should draw another frame and call pre_pop again before continuing
+        '''
+
+        return False
+
     def get_agg_type(self, agg_list, op_list):
         '''
         Gets the type of aggregation to be performed for the passed in objects. 

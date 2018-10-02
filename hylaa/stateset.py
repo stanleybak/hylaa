@@ -52,11 +52,14 @@ class StateSet(Freezable):
         
         self.input_effects_list = None if mode.b_csr is None else [] # list of input effects at each step
 
-        # used for plotting
+        #### plotting variables below ####
         self._verts = None # cached vertices at the current step
         self.assigned_plot_dim = False # set to True on first call to verts()
         self.xdim = None # set on first call to verts()
         self.ydim = None # set on first call to verts()
+
+        self.plot_paths = None # list of matplotlib Path objects for current mode
+        self.plot_paths_indices = None # list of indices corresponding to drawn states
 
         self.freeze_attrs()
 
@@ -65,43 +68,49 @@ class StateSet(Freezable):
 
         return "[StateSet in '{}']".format(self.mode.name)
 
-    def clone(self):
-        'clone the StateSet at the current state (partial deep copy)'
+    def step(self, step_in_mode=None):
+        '''update the star based on values from a new simulation time instant
 
-        rv = StateSet(self.lpi.clone(), self.mode, self.cur_steps_since_start, self.aggdag_op_list, self.is_concrete)
-
-        rv.cur_step_in_mode = self.cur_step_in_mode
-        rv.invariant_constraint_rows = self.invariant_constraint_rows.copy()
-        rv.basis_matrix = self.basis_matrix.copy()
-        rv.input_effects_list = self.input_effects_list.copy()
-
-        return rv
-
-    def step(self):
-        'update the star based on values from a new simulation time instant'
+        the default is to advance by one step, otherwise step_in_mode can force
+        going to a specific step number
+        '''
 
         Timers.tic("step")
 
-        self.cur_step_in_mode += 1
-        self.cur_steps_since_start[0] += 1
-        self.cur_steps_since_start[1] += 1
+        if step_in_mode is None:
+            step_in_mode = self.cur_step_in_mode + 1
 
-        Timers.tic('get_bm')
-        self.basis_matrix, input_effects_matrix = self.mode.time_elapse.get_basis_matrix(self.cur_step_in_mode)
-        Timers.toc('get_bm')
+        num_steps = step_in_mode - self.cur_step_in_mode
 
-        Timers.tic('set_bm')
-        lputil.set_basis_matrix(self.lpi, self.basis_matrix)
-        Timers.toc('set_bm')
+        # we can't do negative steps because we add input effects in the lpi for each step
+        assert num_steps >= 0, "step() called with negative num steps"
 
-        if input_effects_matrix is not None:
-            self.input_effects_list.append(input_effects_matrix)
-            
-            Timers.tic('add_input_effects')
-            lputil.add_input_effects_matrix(self.lpi, input_effects_matrix, self.mode)
-            Timers.toc('add_input_effects')
+        if num_steps > 0:
+            Timers.tic('get_bm')
+            self.basis_matrix, input_effects_matrix = self.mode.time_elapse.get_basis_matrix(step_in_mode)
+            Timers.toc('get_bm')
 
-        self._verts = None # cached vertices no longer valid
+            Timers.tic('set_bm')
+            lputil.set_basis_matrix(self.lpi, self.basis_matrix)
+            Timers.toc('set_bm')
+
+            if input_effects_matrix is not None:
+                Timers.tic('input effects matrix')
+                # if we're doing multiple steps here we need to get each step's input effects matrix
+                for step in range(self.cur_step_in_mode + 1, step_in_mode):
+                    _, ie_mat = self.mode.time_elapse.get_basis_matrix(step)
+                    self.input_effects_list.append(ie_mat)
+                    lputil.add_input_effects_matrix(self.lpi, ie_mat, self.mode)
+
+                # add the input effects matrix for the final step (computed before with basis matrix)
+                self.input_effects_list.append(input_effects_matrix)
+                lputil.add_input_effects_matrix(self.lpi, input_effects_matrix, self.mode)
+                Timers.toc('input effects matrix')
+
+            self.cur_step_in_mode += num_steps
+            self.cur_steps_since_start[0] += num_steps
+            self.cur_steps_since_start[1] += num_steps
+            self._verts = None # cached vertices no longer valid
 
         Timers.toc("step")
 

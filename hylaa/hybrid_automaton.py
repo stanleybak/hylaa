@@ -52,11 +52,6 @@ class LinearConstraint(Freezable):
 
         return rv
 
-    def clone(self):
-        'create a deep copy of this LinearConstraints object'
-
-        return LinearConstraint(self.csr.copy(), self.rhs)
-
     def negate(self):
         'return the negation of the condition'
 

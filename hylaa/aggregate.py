@@ -37,7 +37,7 @@ def aggregate_box_arnoldi(agg_list, op_list, is_box, is_arnoldi, add_guard, prin
         # aggregation with a predecessor, use arnoldi directions in predecessor mode in center of
         # middle aggregagted state, then project using the reset, and reorthogonalize
 
-        premode = op.parent_node.get_mode()
+        premode = op.parent_node.stateset.mode
         t = op.transition
         print_func("aggregation point: {}".format(op.premode_center))
 

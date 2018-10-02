@@ -3,17 +3,17 @@ Stanley Bak
 Aggregation Directed Acyclic Graph (DAG) implementation
 '''
 
-import sys
-
 from collections import namedtuple
 
 from termcolor import cprint
 
 from graphviz import Digraph
 
+from matplotlib.path import Path
 from hylaa.settings import HylaaSettings
 from hylaa.util import Freezable
 from hylaa.stateset import StateSet
+from hylaa.timerutil import Timers
 from hylaa import lputil, aggregate
 
 # Operation types
@@ -29,6 +29,9 @@ class OpTransition(): # pylint: disable=too-few-public-methods
         self.child_node = child_node
         self.transition = transition
         self.poststate = poststate
+
+    def __str__(self):
+        return f"[OpTransition({self.step}, {self.transition})]"
 
 class AggDag(Freezable):
     'Aggregation directed acyclic graph (DAG) used to manage the deaggregation process'
@@ -47,7 +50,7 @@ class AggDag(Freezable):
     def get_cur_state(self):
         '''get the current state being propagated
 
-        This may be None, an aggregated state, or a concrete state
+        This may be None, or a StateSet
         '''
 
         rv = None
@@ -66,8 +69,6 @@ class AggDag(Freezable):
         self.cur_node.op_list.append(op)
 
         self.cur_node = None
-
-        self.settings.aggstrat.finished_continuous_post(self)
 
     def add_init_state(self, state):
         'add an initial state'
@@ -102,17 +103,22 @@ class AggDag(Freezable):
         op = OpInvIntersect(step, self.cur_node, i_index, is_stronger)
         self.cur_node.op_list.append(op)
 
-    def add_transition_successor(self, t, t_lpi):
+    def add_transition_successor(self, t, t_lpi, cur_state=None, cur_node=None):
         '''take the passed-in transition from the current state (add to the waiting list)
 
         t is the AutomatonTransition onject
         t_lpi is an LpInstance consisting of the states in the premode where the current set and guard intersect
         '''
 
-        cur_state = self.get_cur_state()
+        if cur_state is None:
+            cur_state = self.get_cur_state()
+
+        if cur_node is None:
+            cur_node = self.cur_node
+            
         successor_has_inputs = t.to_mode.b_csr is not None
 
-        op = OpTransition(cur_state.cur_step_in_mode, self.cur_node, None, t, None)
+        op = OpTransition(cur_state.cur_step_in_mode, cur_node, None, t, None)
 
         self.settings.aggstrat.pretransition(t, t_lpi, op)
 
@@ -128,13 +134,12 @@ class AggDag(Freezable):
         state = StateSet(t_lpi, t.to_mode, cur_state.cur_steps_since_start, op_list, cur_state.is_concrete)
         op.poststate = state
 
-        self.cur_node.op_list.append(op)
+        cur_node.op_list.append(op)
+        
         self.waiting_list.append((state, op))
 
     def pop_waiting_list(self):
         'pop a state off the waiting list, possibly doing state-set aggregation'
-
-        aggregated = False
 
         agg_pair_list = self.settings.aggstrat.pop_waiting_list(self.waiting_list)
 
@@ -155,51 +160,23 @@ class AggDag(Freezable):
                                                                             "elements not orignally in waiting_list"
 
         agg_list, op_list = zip(*agg_pair_list)
+        agg_type = None
 
-        if len(agg_list) == 1:
-            rv = agg_list[0]
-        else:
-            self.core.print_verbose(f"Aggregating {len(agg_list)} states")
-            aggregated = True
-
-            at = self.settings.aggstrat.get_agg_type(agg_list, op_list)
-
-            if at.is_chull:
-                assert not at.is_box and not at.is_arnoldi_box
-
-                rv = aggregate.aggregate_chull(agg_list, op_list, self.core.print_debug)
-
-            elif at.is_box or at.is_arnoldi_box:
-                rv = aggregate.aggregate_box_arnoldi(agg_list, op_list, at.is_box, at.is_arnoldi_box, at.add_guard,
-                                                     self.core.print_debug)
-            else:
-                raise RuntimeError(f"Unsupported aggregation type: {at}")
+        if len(agg_list) > 1:
+            agg_type = self.settings.aggstrat.get_agg_type(agg_list, op_list)
 
         # create a new AggDagNode for the current computation
-        self.cur_node = AggDagNode(op_list)
+        self.cur_node = AggDagNode(agg_list, op_list, agg_type, self)
 
-        # update the OpTransition objects with the child information
-        all_none = True
+        return self.cur_node.get_cur_state()
 
-        for op in op_list:
-            if op:
-                all_none = False
-                op.child_node = self.cur_node
-
-        if all_none:
-            self.roots.append(self.cur_node)
-
-        if not aggregated:
-            self.cur_node.concrete_state = rv
-        else:
-            self.cur_node.aggregated_state = rv
-
-        return rv
-
-    def show(self, lr=True):
+    def viz(self, lr=True, filename=None):
         'visualize the aggdag using graphviz'
 
-        g = Digraph(name='aggdag')
+        if filename is not None:
+            g = Digraph(name='aggdag', format='png')
+        else:
+            g = Digraph(name='aggdag')
 
         if lr:
             g.graph_attr['rankdir'] = 'LR'
@@ -217,41 +194,227 @@ class AggDag(Freezable):
 
             root.viz(g, already_drawn_nodes)
 
-        g.view(cleanup=True)
+        if filename is not None:
+            g.render(filename, cleanup=True)
+        else:
+            g.view(cleanup=True)
 
 class AggDagNode(Freezable):
     'A node of the Aggregation DAG'
 
-    def __init__(self, parent_ops):
+    def __init__(self, state_list, parent_op_list, agg_type, aggdag):
+        self.aggdag = aggdag
         self.op_list = [] # list of Op* objects
 
-        self.concrete_state = None # StateSet
-        self.aggregated_state = None # StateSet, or None if this is a non-aggergated set
+        self.stateset = None # StateSet
 
         # parent information
-        self.parent_ops = parent_ops
+        self.parent_ops = parent_op_list
+
+        # make the stateset
+        state = None
+        
+        if len(state_list) == 1:
+            state = state_list[0]
+        else:
+            self.aggdag.core.print_verbose(f"Aggregating {len(state_list)} states")
+            state = self.aggregate_from_state_op_list(state_list, parent_op_list, agg_type)
+
+        # update the OpTransition objects with the child information
+        all_none = True
+
+        for op in parent_op_list:
+            if op:
+                all_none = False
+                op.child_node = self
+
+        # if all the parent transitions are None, this is a root node and must be stored as such
+        if all_none:
+            self.aggdag.roots.append(self)
+
+        self.stateset = state
         
         self.freeze_attrs()
 
-    def refine_split(self):
-        'refine the aggdag node by splitting its aggregated set in two'
+    def aggregate_from_state_op_list(self, agg_list, op_list, agg_type):
+        '''aggregate states into a single state from a list of states and operatons
 
-        print(f"parent_ops ({len(self.parent_ops)} = {self.parent_ops}")
-        print("debug exit")
-        sys.exit(1)
+        agg_list - a list of states
+        op_list - a list of operations
+        agg_type the AggType tuple, the aggregation type to use
 
-    def get_mode(self):
-        'get the mode for this aggdag node'
+        returns a single StateSet which is the desired aggregation
+        '''
 
-        return self.get_cur_state().mode
+        at = agg_type
+
+        if at.is_chull:
+            assert not at.is_box and not at.is_arnoldi_box
+
+            rv = aggregate.aggregate_chull(agg_list, op_list, self.aggdag.core.print_debug)
+
+        elif at.is_box or at.is_arnoldi_box:
+            rv = aggregate.aggregate_box_arnoldi(agg_list, op_list, at.is_box, at.is_arnoldi_box, at.add_guard,
+                                                 self.aggdag.core.print_debug)
+        else:
+            raise RuntimeError(f"Unsupported aggregation type: {at}")
+
+        return rv
+
+    def refine_split(self, agg_type):
+        'refine this aggdag node by splitting its aggregated set in two'
+
+        mid_index = len(self.parent_ops) // 2
+        parent_op_lists = [self.parent_ops[:mid_index], self.parent_ops[mid_index:]]
+
+        # we only support splitting on leaf nodes currently (need to implement recursive version)
+        for op in self.op_list:
+            if isinstance(op, OpTransition):
+                assert op.child_node is None, "refine_split currently only implemented for leaf nodes"
+
+                # remove this entry from waiting list
+                removed = False
+                
+                for i, pair in enumerate(self.aggdag.waiting_list):
+                    _, op_trans = pair
+                    if op_trans is op:
+                        del self.aggdag.waiting_list[i]
+                        removed = True
+                        break
+
+                assert removed, "op_transition not found in waiting list?"
+
+        # delete the plotted set
+        if self.stateset.plot_paths and self.aggdag.core.settings.plot.draw_stride == 1:
+            for op in self.op_list:
+                if isinstance(op, OpTransition):
+                    index = op.step
+
+                    # delete the current index by setting the verts to (0,0)
+                    codes = [Path.MOVETO, Path.CLOSEPOLY]
+                    verts = [(0, 0), (0, 0)]
+
+                    for plot_paths in self.stateset.plot_paths:
+                        plot_paths[index] = Path(verts, codes)
+
+                    
+        for parent_op_list in parent_op_lists:
+            agg_list = [op.poststate for op in parent_op_list]
+            node = AggDagNode(agg_list, parent_op_list, agg_type, self.aggdag)
+            node.replay_op_list(self.op_list)
+
+    def replay_op_list(self, op_list):
+        '''replay the operations in the current node in the provided op_list
+        this is used when nodes are split to leverage parent information'''
+
+        Timers.tic('replay_op_list')
+
+        cur_state = self.get_cur_state()
+        assert cur_state is not None
+
+        for i, op in enumerate(op_list):
+            self.aggdag.core.print_verbose(f"replaying {i}: {op}")
+
+            if isinstance(op, OpLeftInvariant):
+                self.op_list.append(op)
+            elif isinstance(op, OpTransition):
+                self.replay_op_transition(cur_state, op)
+            elif isinstance(op, OpInvIntersect):
+                # if there is a later invariant intersection with the same hyperplane and it's stronger, skip this one
+
+                skip = False
+
+                for future_i in range(i+1, len(op_list)):
+                    future_op = op_list[future_i]
+
+                    if not isinstance(future_op, OpInvIntersect):
+                        # another op (such as a transition, can't skip current one)
+                        break
+                    
+                    if future_op.i_index == op.i_index:
+                        if future_op.is_stronger:
+                            skip = True
+
+                        break
+
+                if not skip:                   
+                    is_feasible = self.replay_op_intersect_invariant(cur_state, op)
+
+                    if not is_feasible:
+                        op = OpLeftInvariant(op.step, self)
+                        self.op_list.append(op)
+                        break
+
+        Timers.toc('replay_op_list')
+
+    def replay_op_transition(self, state, op):
+        '''replay a single operation of type OpTransition
+        '''
+
+        assert op.child_node is None, "replay op_transition currently only implemented for leaf nodes"
+        print_verbose = self.aggdag.core.print_verbose
+
+        state.step(op.step)
+        # check if the transition is still enabled
+        
+        t = op.transition
+
+        t_lpi = t.get_guard_intersection(state.lpi)
+
+        if t_lpi:
+            if t.to_mode.is_error():
+                self.aggdag.core.error_reached(state, t, t_lpi)
+
+            self.aggdag.add_transition_successor(t, t_lpi, state, self)
+            
+            print_verbose("Replay Transition Added Discrete Successor to '{}' at step {}".format( \
+                          t.to_mode.name, state.cur_steps_since_start))
+        else:
+            print_verbose(f"Replay skipped transition at step {state.cur_steps_since_start}")
+
+    def replay_op_intersect_invariant(self, state, op):
+        '''replay a single operation of type OpInvIntersect
+
+        This returns a boolean: is the current state set is still feasible?
+        '''
+
+        op.node = self
+        step, _, invariant_index, is_stronger = op
+
+        state.step(step)
+
+        lc = state.mode.inv_list[invariant_index]
+        
+        if lputil.check_intersection(state.lpi, lc.negate()):
+            old_row = state.invariant_constraint_rows[invariant_index]
+            vec = lc.csr.toarray()[0]
+            rhs = lc.rhs
+
+            if old_row is None:
+                # new constraint
+                row = lputil.add_init_constraint(state.lpi, vec, rhs, state.basis_matrix,
+                                                 state.input_effects_list)
+                state.invariant_constraint_rows[invariant_index] = row
+                is_stronger = False
+            else:
+                # strengthen existing constraint possibly
+                row, is_stronger = lputil.try_replace_init_constraint(state.lpi, old_row, vec, rhs, \
+                    state.basis_matrix, state.input_effects_list)
+                state.invariant_constraint_rows[invariant_index] = row
+
+            # ad the op to the aggdag
+            op = OpInvIntersect(step, self, invariant_index, is_stronger)
+            self.op_list.append(op)
+
+        return state.lpi.is_feasible()
 
     def get_cur_state(self):
-        'get the current state for this node (aggregated if it exists, else concrete)'
+        'get the current state for this node (None if it has left the invariant)'
 
-        if self.aggregated_state is not None:
-            rv = self.aggregated_state
+        if self.op_list and isinstance(self.op_list[-1], OpLeftInvariant):
+            rv = None
         else:
-            rv = self.concrete_state
+            rv = self.stateset
 
         return rv
 
@@ -263,45 +426,56 @@ class AggDagNode(Freezable):
 
         already_drawn_nodes.append(self)
         name = "node_{}".format(id(self))
-        label = self.get_mode().name
+        label = self.stateset.mode.name
 
+        if isinstance(self.op_list[-1], OpLeftInvariant):
+            steps = self.op_list[-1].step
+            label += f" ({steps})"
+
+        print(f"vizing node {name} ({label})")
         g.node(name, label=label)
 
         # collapse edges over multiple times into the same outgoing edge
-        enabled_transitions = [] # contains tuples (child_name, step_list)
+        enabled_transitions = [] # contains tuples (child_name, op_list)
 
         for op in self.op_list:
             if isinstance(op, OpTransition):
                 if op.child_node is None:
-
-                    # invisible outgoing edge
-                    invis_name = "out_{}".format(id(op))
-                    g.node(invis_name, style="invis")
-
-                    g.edge(name, invis_name)
+                    # unprocessed transition child node
+                    child_name = f"out_{id(self)}_{id(op.transition)}"
                 else:
                     child_name = "node_{}".format(id(op.child_node))
-                    found = False
+                    
+                found = False
 
-                    for pair in enabled_transitions:
-                        if pair[0] == child_name:
-                            pair[1].append(op.step)
-                            found = True
+                for pair in enabled_transitions:
+                    if pair[0] == child_name:
+                        pair[1].append(op)
+                        found = True
 
-                    if not found:
-                        enabled_transitions.append((child_name, [op.step]))
+                if not found:
+                    enabled_transitions.append((child_name, [op]))
             elif isinstance(op, OpLeftInvariant):
                 # flush remaining enabled_transitions
-                for child_name, step_list in enabled_transitions:
-                    label = str(step_list[0]) if len(step_list) == 1 else "[{}, {}]".format(step_list[0], step_list[-1])
-                    g.edge(name, child_name, label=label)
-                
-                # print left-nvariant edge
-                invis_name = "out_{}".format(id(op))
-                g.node(invis_name, style="invis")
+                for child_name, op_list in enabled_transitions:
+                    if len(op_list) == 1:
+                        label = str(op_list[0].step)
+                    else:
+                        label = "[{}, {}]".format(op_list[0].step, op_list[-1].step)
 
-                label = str(op.step)
-                g.edge(name, invis_name, label=label, arrowhead='dot', style='dotted')
+                    if child_name.startswith('out_'): # outgoing edges to unprocessed nodes
+                        to_mode_name = op_list[0].transition.to_mode.name
+                        g.node(child_name, label=to_mode_name, style="dashed")
+                    
+                    g.edge(name, child_name, label=label)
+
+                enabled_transitions = []
+                # print left-invariant edge
+                #invis_name = "out_{}".format(id(op))
+                #g.node(invis_name, style="invis")
+
+                #label = str(op.step)
+                #g.edge(name, invis_name, label=label, arrowhead='dot', style='dotted')
 
             ###############################
             # remove enabled transitions that are no longer enabled
@@ -309,12 +483,19 @@ class AggDagNode(Freezable):
 
             for pair in enabled_transitions:
                 child_name = pair[0]
-                step_list = pair[1]
+                op_list = pair[1]
 
-                if step_list[-1] < op.step:
+                if op_list[-1].step < op.step - 1:
                     # print it
-                    label = str(step_list[0]) if len(step_list) == 1 else "[{}, {}]".format( \
-                        step_list[0], step_list[-1])
+                    if len(op_list) == 1:
+                        label = str(op_list[0].step)
+                    else:
+                        label = "[{}, {}]".format(op_list[0].step, op_list[-1].step)
+
+                    if child_name.startswith('out_'): # outgoing edges to unprocessed nodes
+                        to_mode_name = op_list[0].transition.to_mode.name
+                        g.node(child_name, label=to_mode_name, style="dashed")
+                        
                     g.edge(name, child_name, label=label)
                 else:
                     # keep it
