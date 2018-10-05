@@ -140,75 +140,14 @@ def make_init(ha):
 
     return init_list
 
-class MyAggStrat(aggstrat.Aggregated):
-    'custom aggregation strategy'
-
-    def __init__(self):
-
-        self.aggdag_save_index = 0
-        
-        aggstrat.Aggregated.__init__(self)
-
-        #self.agg_type = agg_strat.Aggregated.CONVEX_HULL
-
-    def pop_waiting_list(self, waiting_list):
-        '''
-        Get the states to remove from the waiting list based on a score-based method
-
-        this function returns a list of 2-tuples (StateSet, OpTransition). 
-        If the list is a single element, no aggregation is performed.
-        '''
-
-        pop_list = aggstrat.Aggregated.pop_waiting_list(self, waiting_list)
-
-        if pop_list[0][0].mode.name == 'passive':
-            return pop_list #[0:6] # no aggregation into passive mode
-
-        return pop_list
-
-    def pre_pop_waiting_list(self, aggdag):
-        '''event function, called before popping the waiting list
-
-        if it returns True, we should draw another frame and call pre_pop again before continuing
-        '''
-
-        print("pre_pop_waiting_list")
-
-        # save the aggdag after each continuous post
-        aggdag.viz(filename=f'aggdag{self.aggdag_save_index}')
-        self.aggdag_save_index += 1
-
-        # scan the aggdag waiting list for non-concrete error mode states
-        agg_type = aggstrat.AggType(False, True, False, True) # arnoldi box with guard aggregation
-
-        redraw = False
-
-        for state, op in aggdag.waiting_list:
-            print(f"prepop checking {state} ({state.is_concrete}), {op}")
-            
-            if state.mode.is_error() and not state.is_concrete:
-                # split the parent aggdag
-                print("Rendezvous: splitting parent node of error states")
-                op.parent_node.refine_split(agg_type)
-                redraw = True
-
-                aggdag.viz(filename=f'aggdag{self.aggdag_save_index}')
-                self.aggdag_save_index += 1
-
-                break
-
-        print(f"prepop returning redraw = {redraw}")
-        
-        return redraw
-
 def make_settings(safe):
     'make the reachability settings object'
 
     # see hylaa.settings for a list of reachability settings
-    settings = HylaaSettings(1.0, 200.0) # step: 0.1, bound: 200.0
+    settings = HylaaSettings(10.0, 200.0) # step: 0.1, bound: 200.0
 
     settings.stop_on_aggregated_error = False
-    settings.aggstrat = MyAggStrat() # Aggregated.AGG_CONVEX_HULL
+    settings.aggstrat.deaggregate = True # use deaggregation
 
     settings.plot.plot_mode = PlotSettings.PLOT_INTERACTIVE
     settings.stdout = HylaaSettings.STDOUT_VERBOSE

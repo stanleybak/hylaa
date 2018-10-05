@@ -133,6 +133,7 @@ class DrawnShapes(Freezable):
         self.plotman = plotman
         self.axes = plotman.axes_list[subplot]
         self.mode_colors = plotman.mode_colors
+        self.subplot = subplot
 
         # parent is a string
         # for modes, prefix is 'mode_'
@@ -201,9 +202,10 @@ class DrawnShapes(Freezable):
                 codes = [Path.MOVETO] + [Path.LINETO] * (len(verts) - 2) + [Path.CLOSEPOLY]
                 paths.append(Path(verts, codes))
 
-    def add_reachable_poly(self, poly_verts, stateset, subplot, num_subplots):
+    def add_reachable_poly(self, stateset):
         '''add a polygon which was reachable'''
 
+        poly_verts = stateset.verts(self.plotman, self.subplot)
         mode_name = stateset.mode.name
 
         if len(poly_verts) <= 2 and self.plotman.settings.use_markers_for_small:
@@ -240,15 +242,7 @@ class DrawnShapes(Freezable):
             paths.append(Path(poly_verts, codes))
 
             # save the Path list in the StateSet
-            if stateset.plot_paths is None:
-                stateset.plot_paths = [None] * num_subplots
-                stateset.plot_paths_indices = [None] * num_subplots
-                
-            if stateset.plot_paths[subplot] is None:
-                stateset.plot_paths[subplot] = paths
-                stateset.plot_paths_indices[subplot] = []
-
-            stateset.plot_paths_indices[subplot].append(len(paths) - 1)
+            stateset.set_plot_path(self.subplot, paths, len(paths) - 1)
 
 class PlotManager(Freezable):
     'manager object for plotting during or after computation'
@@ -462,8 +456,6 @@ class PlotManager(Freezable):
                 self.core.result.mode_to_polys[state.mode.name].append(verts)
 
             if self.settings.plot_mode != PlotSettings.PLOT_NONE:
-                Timers.tic("add to plot")
-
                 verts = state.verts(self, subplot=subplot)
                 verts_list = [verts]
 
@@ -478,9 +470,36 @@ class PlotManager(Freezable):
                 if self.settings.label[subplot].axes_limits is None:
                     self.update_axis_limits(verts, subplot)
 
-                self.shapes[subplot].add_reachable_poly(verts, state, subplot, self.num_subplots)
+        # finally, add a reachable poly for the current state
+        if self.settings.plot_mode != PlotSettings.PLOT_NONE:
+            self.add_reachable_poly(state)
 
-                Timers.toc("add to plot")
+    def add_reachable_poly(self, state):
+        'add a reacahble poly to all subplots'
+
+        for shape in self.shapes:
+            shape.add_reachable_poly(state)
+                
+    def highlight_states(self, states):
+        '''highlight the passed-in steates (using current_state settings)
+
+        states is a list of either StateSet objects or a list of verts for each subplot
+        '''
+
+        for subplot in range(self.num_subplots):
+            verts_list = []
+
+            for state in states:
+                if isinstance(state, list):
+                    verts_list.append(state[subplot])
+                else:
+                    verts = state.verts(self, subplot=subplot)
+                    verts_list.append(verts)
+
+                if self.settings.label[subplot].axes_limits is None:
+                    self.update_axis_limits(verts, subplot)
+
+            self.shapes[subplot].set_cur_state(verts_list)
 
     def anim_func(self, _):
         'animation draw function'

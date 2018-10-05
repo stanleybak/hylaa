@@ -9,7 +9,6 @@ from termcolor import cprint
 
 from graphviz import Digraph
 
-from matplotlib.path import Path
 from hylaa.settings import HylaaSettings
 from hylaa.util import Freezable
 from hylaa.stateset import StateSet
@@ -44,6 +43,8 @@ class AggDag(Freezable):
         self.cur_node = None # the aggdag_node currently under a continuous post operation
 
         self.waiting_list = [] # a list of tuples: (StateSet, OpTransition)
+
+        self.viz_count = 0
         
         self.freeze_attrs()
 
@@ -170,6 +171,13 @@ class AggDag(Freezable):
 
         return self.cur_node.get_cur_state()
 
+    def save_viz(self):
+        'save the viz to a sequentially-named file'
+
+        self.viz(filename=f"viz{self.viz_count}")
+
+        self.viz_count += 1
+
     def viz(self, lr=True, filename=None):
         'visualize the aggdag using graphviz'
 
@@ -220,6 +228,8 @@ class AggDagNode(Freezable):
             self.aggdag.core.print_verbose(f"Aggregating {len(state_list)} states")
             state = self.aggregate_from_state_op_list(state_list, parent_op_list, agg_type)
 
+            print(f"aggregated state in mode {state.mode.name}")
+
         # update the OpTransition objects with the child information
         all_none = True
 
@@ -262,7 +272,15 @@ class AggDagNode(Freezable):
         return rv
 
     def refine_split(self, agg_type):
-        'refine this aggdag node by splitting its aggregated set in two'
+        '''refine this aggdag node by splitting its aggregated set in two
+
+        this returns an action list used for updating the plot frame-by-frame (if plotting is enabled)
+        for action list documentaton see aggstrat.pre_pop_waiting_list
+        '''
+
+        self.aggdag.save_viz()
+
+        actions = []
 
         mid_index = len(self.parent_ops) // 2
         parent_op_lists = [self.parent_ops[:mid_index], self.parent_ops[mid_index:]]
@@ -284,68 +302,113 @@ class AggDagNode(Freezable):
 
                 assert removed, "op_transition not found in waiting list?"
 
-        # delete the plotted set
-        if self.stateset.plot_paths and self.aggdag.core.settings.plot.draw_stride == 1:
-            for op in self.op_list:
-                if isinstance(op, OpTransition):
-                    index = op.step
+        split_nodes = []
 
-                    # delete the current index by setting the verts to (0,0)
-                    codes = [Path.MOVETO, Path.CLOSEPOLY]
-                    verts = [(0, 0), (0, 0)]
+        print("can't plot this state set at an earlier step? ARGH! add this functionality!!!")
+        plot_states = []
 
-                    for plot_paths in self.stateset.plot_paths:
-                        plot_paths[index] = Path(verts, codes)
-
-                    
         for parent_op_list in parent_op_lists:
+            # for each of the two split sets
+            
             agg_list = [op.poststate for op in parent_op_list]
             node = AggDagNode(agg_list, parent_op_list, agg_type, self.aggdag)
-            node.replay_op_list(self.op_list)
+            split_nodes.append(node)
 
-    def replay_op_list(self, op_list):
-        '''replay the operations in the current node in the provided op_list
-        this is used when nodes are split to leverage parent information'''
+            # plot node and split nodes
+            plot_states.append(node.stateset)
 
-        Timers.tic('replay_op_list')
+        self.aggdag.core.plotman.add_reachable_poly(node.stateset)
+        actions = (self._replay_split_op_list, (split_nodes, 0))
+
+        return actions
+
+    def _replay_split_op_list(self, split_nodes, next_step):
+        '''replay the op list when splitting, up to the next transition
+
+        returns action_list for the next call
+        '''
+
+        actions = []
+
+        for i in range(next_step, len(self.op_list)):
+            op = self.op_list[i]
+            
+            for node in split_nodes:
+                if not node.op_list or not isinstance(node.op_list[-1], OpLeftInvariant):
+                    node.replay_op(i, op, self.op_list)
+
+            if isinstance(op, OpTransition) and self.stateset.step_to_paths:
+                # draw the spliting and use action_list to delay further processing
+
+                # first clear the old plotted state
+                verts = self.stateset.del_plot_path(op.step)
+
+                # plot the verts of the deleted old plotted state
+                state_list = [verts]
+
+                # also plot the new states (if they're feasible)
+                for node in split_nodes:
+                    if not node.op_list or not isinstance(node.op_list[-1], OpLeftInvariant):
+
+                        print("plotting split stateset at step {}".format(node.stateset.cur_step_in_mode))
+                        state_list.append(node.stateset)
+
+                        self.aggdag.core.plotman.add_reachable_poly(node.stateset)
+
+                self.aggdag.core.plotman.highlight_states(state_list)
+
+                # delay further processing the op list so we can draw a frame
+                actions.append((self._replay_split_op_list, (split_nodes, i+1)))
+                self.aggdag.save_viz()
+                        
+                break
+
+        print("returning actions len {}".format(len(actions)))
+        
+        return actions
+
+    def replay_op(self, i, op, op_list):
+        '''replay a single operation in the current node
+        this is used when nodes are split, to leverage parent information
+        '''
+        
+        Timers.tic('replay_op')
 
         cur_state = self.get_cur_state()
         assert cur_state is not None
 
-        for i, op in enumerate(op_list):
-            self.aggdag.core.print_verbose(f"replaying {i}: {op}")
+        self.aggdag.core.print_verbose(f"replaying {i}: {op}")
 
-            if isinstance(op, OpLeftInvariant):
-                self.op_list.append(op)
-            elif isinstance(op, OpTransition):
-                self.replay_op_transition(cur_state, op)
-            elif isinstance(op, OpInvIntersect):
-                # if there is a later invariant intersection with the same hyperplane and it's stronger, skip this one
+        if isinstance(op, OpLeftInvariant):
+            self.op_list.append(op)
+        elif isinstance(op, OpTransition):
+            self.replay_op_transition(cur_state, op)
+        elif isinstance(op, OpInvIntersect):
+            # if there is a later invariant intersection with the same hyperplane and it's stronger, skip this one
 
-                skip = False
+            skip = False
 
-                for future_i in range(i+1, len(op_list)):
-                    future_op = op_list[future_i]
+            for future_i in range(i+1, len(op_list)):
+                future_op = op_list[future_i]
 
-                    if not isinstance(future_op, OpInvIntersect):
-                        # another op (such as a transition, can't skip current one)
-                        break
-                    
-                    if future_op.i_index == op.i_index:
-                        if future_op.is_stronger:
-                            skip = True
+                if not isinstance(future_op, OpInvIntersect):
+                    # another op (such as a transition, can't skip current one)
+                    break
 
-                        break
+                if future_op.i_index == op.i_index:
+                    if future_op.is_stronger:
+                        skip = True
 
-                if not skip:                   
-                    is_feasible = self.replay_op_intersect_invariant(cur_state, op)
+                    break
 
-                    if not is_feasible:
-                        op = OpLeftInvariant(op.step, self)
-                        self.op_list.append(op)
-                        break
+            if not skip:                   
+                is_feasible = self.replay_op_intersect_invariant(cur_state, op)
 
-        Timers.toc('replay_op_list')
+                if not is_feasible:
+                    op = OpLeftInvariant(op.step, self)
+                    self.op_list.append(op)
+
+        Timers.toc('replay_op')
 
     def replay_op_transition(self, state, op):
         '''replay a single operation of type OpTransition
@@ -355,6 +418,7 @@ class AggDagNode(Freezable):
         print_verbose = self.aggdag.core.print_verbose
 
         state.step(op.step)
+        print("replayed op transition, step is now {}".format(state.cur_step_in_mode))
         # check if the transition is still enabled
         
         t = op.transition
@@ -378,7 +442,6 @@ class AggDagNode(Freezable):
         This returns a boolean: is the current state set is still feasible?
         '''
 
-        op.node = self
         step, _, invariant_index, is_stronger = op
 
         state.step(step)
@@ -428,7 +491,7 @@ class AggDagNode(Freezable):
         name = "node_{}".format(id(self))
         label = self.stateset.mode.name
 
-        if isinstance(self.op_list[-1], OpLeftInvariant):
+        if self.op_list and isinstance(self.op_list[-1], OpLeftInvariant):
             steps = self.op_list[-1].step
             label += f" ({steps})"
 

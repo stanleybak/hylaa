@@ -45,8 +45,6 @@ class AggregationStrategy(Freezable):
         If the list is a single element, no aggregation is performed.
         '''
 
-        print("!! pop waiting list called on aggstrat()")
-
         return [waiting_list[0]]
 
     def pretransition(self, t, t_lpi, op_transition):
@@ -58,10 +56,10 @@ class AggregationStrategy(Freezable):
     def pre_pop_waiting_list(self, aggdag):
         '''event function, called before popping the waiting list
 
-        if it returns True, we should draw another frame and call pre_pop again before continuing
+        this returns None or a list of (func, param) to be called before processing the next step
         '''
 
-        return False
+        return None
 
     def get_agg_type(self, agg_list, op_list):
         '''
@@ -81,13 +79,13 @@ class Aggregated(AggregationStrategy):
     AGG_BOX, AGG_ARNOLDI_BOX, AGG_CONVEX_HULL = range(3)
     POP_LOWEST_MINTIME, POP_LOWEST_AVGTIME, POP_LARGEST_MAXTIME = range(3)
 
-    def __init__(self, agg_type=AGG_ARNOLDI_BOX, pop_type=POP_LOWEST_AVGTIME, require_same_path=True):
+    def __init__(self, agg_type=AGG_ARNOLDI_BOX, deaggregate=False):
         self.agg_type = agg_type
-        self.pop_type = pop_type
+        self.pop_type = Aggregated.POP_LOWEST_AVGTIME
 
         self.add_guard = True # add the guard direction when performing aggregation
-
-        self.require_same_path = require_same_path
+        self.require_same_path = True
+        self.deaggregate = deaggregate
 
         AggregationStrategy.__init__(self)
 
@@ -163,8 +161,34 @@ class Aggregated(AggregationStrategy):
         This returns an instance of AggType
         '''
 
+        return self._get_agg_type()
+
+    def _get_agg_type(self):
+        '''
+        Gets the type of aggregation to be performed.
+        '''
+    
         is_box = self.agg_type == Aggregated.AGG_BOX
         is_arnoldi_box = self.agg_type == Aggregated.AGG_ARNOLDI_BOX
         is_chull = self.agg_type == Aggregated.AGG_CONVEX_HULL
 
         return AggType(is_box, is_arnoldi_box, is_chull, self.add_guard)
+
+    def pre_pop_waiting_list(self, aggdag):
+        '''event function, called before popping the waiting list
+
+        this returns None or a list of (func, param) to be called before processing the next step
+        '''
+
+        actions = []
+
+        if self.deaggregate:
+            # scan the aggdag waiting list for non-concrete error mode states
+            agg_type = self._get_agg_type()
+
+            for state, op in aggdag.waiting_list:
+                if state.mode.is_error() and not state.is_concrete:
+                    actions.append((op.parent_node.refine_split, (agg_type, )))
+                    break
+        
+        return actions

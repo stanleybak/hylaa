@@ -6,6 +6,8 @@ Aug 2016
 
 import numpy as np
 
+from matplotlib.path import Path
+
 from hylaa import lputil
 
 from hylaa.hybrid_automaton import Mode
@@ -58,8 +60,8 @@ class StateSet(Freezable):
         self.xdim = None # set on first call to verts()
         self.ydim = None # set on first call to verts()
 
-        self.plot_paths = None # list of matplotlib Path objects for current mode
-        self.plot_paths_indices = None # list of indices corresponding to drawn states
+        # map of step number in mode -> list (for each subplot) of pairs: (matploatlib Path object list, index)
+        self.step_to_paths = {} 
 
         self.freeze_attrs()
 
@@ -155,3 +157,41 @@ class StateSet(Freezable):
         Timers.toc('verts')
 
         return self._verts[subplot]
+
+    def set_plot_path(self, subplot, path_list, path_index):
+        '''
+        set the matplotlib path object for this stateset at the current step
+        '''
+
+        step = self.cur_step_in_mode
+
+        if step not in self.step_to_paths:
+            l = []
+            self.step_to_paths[step] = l
+        else:
+            l = self.step_to_paths[step]
+
+        while len(l) <= subplot:
+            l.append([])
+
+        l[subplot] = (path_list, path_index)
+
+    def del_plot_path(self, step):
+        '''
+        delete a plotted matplotlib Path object for this stateset.
+
+        returns a list of verts (one for each subplot) that was deleted
+        '''
+
+        rv = []
+        l = self.step_to_paths[step]
+
+        codes = [Path.MOVETO, Path.CLOSEPOLY]
+        verts = [(0, 0), (0, 0)]
+
+        # for every subplot
+        for path_list, index in l:
+            rv.append(path_list[index].vertices)
+            path_list[index] = Path(verts, codes)
+
+        return rv

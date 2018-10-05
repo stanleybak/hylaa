@@ -43,6 +43,9 @@ class Core(Freezable):
 
         self.continuous_steps = 0
 
+        # a deque of pairs (func, param) to call after the before doing the next step
+        self.delayed_actions = deque()
+
         # make random number generation (for example, to find orthogonal directions) deterministic
         np.random.seed(seed=0)
 
@@ -80,8 +83,8 @@ class Core(Freezable):
         elif self.settings.stop_on_concrete_error and self.result.has_concrete_error:
             finished = True
         else:    
-            finished = self.aggdag.get_cur_state() is None and not self.aggdag.waiting_list
-
+            finished = self.aggdag.get_cur_state() is None and not self.aggdag.waiting_list and not self.delayed_actions
+            
         return finished
 
     def error_reached(self, state, t, t_lpi):
@@ -267,12 +270,23 @@ class Core(Freezable):
 
         Timers.tic('do_step')
 
-        if not self.is_finished():
-            if self.aggdag.get_cur_state() is None:
-                delay_pop = self.settings.aggstrat.pre_pop_waiting_list(self.aggdag)
+        if self.delayed_actions:
+            action = self.delayed_actions.popleft()
+            func, param = action
+            more_actions = func(*param)
 
-                if delay_pop:
-                    # pause after popping when using PLOT_INTERACTIVE
+            # if there were more actinons, prepend them
+            if more_actions:
+                self.delayed_actions.extendleft(reversed(more_actions))
+
+        elif not self.is_finished():
+            if self.aggdag.get_cur_state() is None:
+                new_delayed_actions = self.settings.aggstrat.pre_pop_waiting_list(self.aggdag)
+
+                if new_delayed_actions:
+                    self.delayed_actions += new_delayed_actions
+
+                    # pause here when using PLOT_INTERACTIVE
                     if self.plotman.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
                         self.plotman.interactive.paused = True
                 else:
