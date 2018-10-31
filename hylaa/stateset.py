@@ -28,7 +28,7 @@ class StateSet(Freezable):
 
         self.mode = mode
         self.lpi = lpi
-
+    
         self.cur_step_in_mode = 0
 
         if cur_steps_since_start is not None:
@@ -88,6 +88,7 @@ class StateSet(Freezable):
         assert num_steps >= 0, "step() called with negative num steps"
 
         if num_steps > 0:
+
             Timers.tic('get_bm')
             self.basis_matrix, input_effects_matrix = self.mode.time_elapse.get_basis_matrix(step_in_mode)
             Timers.toc('get_bm')

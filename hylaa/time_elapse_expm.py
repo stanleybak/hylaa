@@ -89,20 +89,21 @@ class TimeElapseExpmMult(Freezable):
 
             Timers.toc('quick_step')
         else:
+            print(f".time_elapse_expm doing slow step to step {step_num}")
             Timers.tic('slow_step')
 
             Timers.tic('expm')
-            mat_exp = expm(self.a_csc * step_num)
+            # compute one step behind, because this is what's used by input effects matrix
+            prev_step_mat_exp = expm(self.a_csc * (step_num-1) * self.time_elapser.step_size)
             Timers.toc('expm')
 
-            Timers.tic('toarray')
-            self.cur_basis_matrix = mat_exp.toarray()
-            Timers.toc('toarray')
+            # advance one step to get current basis matrix
+            self.cur_basis_matrix = np.dot(prev_step_mat_exp.toarray(), self.one_step_matrix_exp)
 
             # inputs
             if self.b_csc is not None:
                 Timers.tic("input effects")
-                self.cur_input_effects_matrix = (mat_exp * self.one_step_input_effects_matrix).toarray()
+                self.cur_input_effects_matrix = prev_step_mat_exp * self.one_step_input_effects_matrix
                 Timers.toc("input effects")
 
             Timers.toc('slow_step')

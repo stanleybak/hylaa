@@ -16,6 +16,7 @@ from hylaa.settings import HylaaSettings, PlotSettings, LabelSettings
 from hylaa.core import Core
 from hylaa.stateset import StateSet
 from hylaa import lputil, aggstrat
+from hylaa.aggstrat import Aggregated
 
 def make_automaton(safe):
     'make the hybrid automaton'
@@ -140,6 +141,24 @@ def make_init(ha):
 
     return init_list
 
+class MyAggergated(Aggregated):
+    'a custom aggregation strategy'
+
+    def __init__(self):
+        Aggregated.__init__(self)
+
+    def pop_waiting_list(self, waiting_list):
+        '''
+        Get the states to remove from the waiting list based on a score-based method
+        '''
+
+        states = Aggregated.pop_waiting_list(self, waiting_list)
+
+        if len(states) == 9:
+            states = states[0:4]
+
+        return states
+
 def make_settings(safe):
     'make the reachability settings object'
 
@@ -147,6 +166,8 @@ def make_settings(safe):
     settings = HylaaSettings(10.0, 200.0) # step: 0.1, bound: 200.0
 
     settings.stop_on_aggregated_error = False
+
+    #settings.aggstrat = MyAggergated()
     settings.aggstrat.deaggregate = True # use deaggregation
 
     settings.plot.plot_mode = PlotSettings.PLOT_INTERACTIVE
@@ -157,6 +178,7 @@ def make_settings(safe):
 
     settings.plot.xdim_dir = [0] * 3
     settings.plot.ydim_dir = [1] * 3
+    settings.plot.grid = False
     settings.plot.label = []
     settings.plot.extra_collections = []
 
@@ -171,7 +193,7 @@ def make_settings(safe):
 
         y = 57.735
         line = [(-100, y), (-100, -y), (0, 0), (-100, y)]
-        c1 = collections.LineCollection([line], animated=True, colors=('gray'), linewidths=(2), linestyle='dashed')
+        c1 = collections.LineCollection([line], animated=True, colors=('gray'), linewidths=(1), linestyle='dashed')
 
         rad = 0.2
         line = [(-rad, -rad), (-rad, rad), (rad, rad), (rad, -rad), (-rad, -rad)]
@@ -180,8 +202,9 @@ def make_settings(safe):
         settings.plot.extra_collections.append([c1, c2])
 
     settings.plot.label[0].axes_limits = [-950, 400, -450, 70]
-    settings.plot.label[1].axes_limits = [-150, 50, -70, 70]
-    settings.plot.label[2].axes_limits = [-5, 2, -3, 3]
+    #settings.plot.label[1].axes_limits = [-150, 50, -70, 70]
+    settings.plot.label[1].axes_limits = [-80, 5, -30, 5]
+    settings.plot.label[2].axes_limits = [-5, 3, -3, 3]
 
     return settings
 

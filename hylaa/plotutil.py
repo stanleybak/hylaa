@@ -160,13 +160,15 @@ class DrawnShapes(Freezable):
         rv = []
 
         # objects later in the list will be drawn after (above)
+        draw_above = ['gray_state', 'cur_state']
         
         for name, polys in self.parent_to_polys.items():
-            if name != "cur_state":
+            if not name in draw_above:
                 rv.append(polys)
 
-        if "cur_state" in self.parent_to_polys:
-            rv.append(self.parent_to_polys.get('cur_state'))
+        for name in draw_above:
+            if name in self.parent_to_polys:
+                rv.append(self.parent_to_polys.get(name))
 
         for markers in self.parent_to_markers.values():
             rv.append(markers)
@@ -176,20 +178,42 @@ class DrawnShapes(Freezable):
 
         return rv
 
+    def set_gray_state(self, verts_list):
+        'set the dasehd set of states for one frame'
+
+        def init_polycollection_func():
+            "initialization function if polycollection doesn't exist"
+            
+            return collections.PolyCollection([], lw=self.plotman.settings.reachable_poly_width, animated=True,
+                                              edgecolor='gray', facecolor=(0., 0., 0., 0.))
+
+        self._set_named_state(verts_list, 'gray_state', init_polycollection_func)
+
     def set_cur_state(self, verts_list):
         'set the currently tracked set of states for one frame'
 
+        def init_polycollection_func():
+            "initialization function if polycollection doesn't exist"
+            
+            return collections.PolyCollection([], lw=self.plotman.settings.reachable_poly_width, animated=True,
+                                              edgecolor='k', facecolor=(0., 0., 0., 0.))
+
+        self._set_named_state(verts_list, 'cur_state', init_polycollection_func)
+
+    def _set_named_state(self, verts_list, name, init_polycollection_func):
+        'set a tracked set of states by name for one frame (for example "cur_state")'
+
         assert verts_list is None or isinstance(verts_list, list)
 
-        polys = self.parent_to_polys.get('cur_state')
+        polys = self.parent_to_polys.get(name)
         
         if polys is None:
             # setup for first time drawing cur_state
-            lw = self.plotman.settings.reachable_poly_width
-            polys = collections.PolyCollection([], lw=lw, animated=True, edgecolor='k', facecolor=(0., 0., 0., 0.))
+
+            polys = init_polycollection_func()
             self.axes.add_collection(polys)
 
-            self.parent_to_polys['cur_state'] = polys
+            self.parent_to_polys[name] = polys
 
         paths = polys.get_paths()
 
@@ -479,9 +503,30 @@ class PlotManager(Freezable):
 
         for shape in self.shapes:
             shape.add_reachable_poly(state)
-                
+
+    def highlight_states_gray(self, states):
+        '''highlight the passed-in states (using gray line settings)
+
+        states is a list of either StateSet objects or a list of verts for each subplot
+        '''
+
+        for subplot in range(self.num_subplots):
+            verts_list = []
+
+            for state in states:
+                if isinstance(state, list):
+                    verts_list.append(state[subplot])
+                else:
+                    verts = state.verts(self, subplot=subplot)
+                    verts_list.append(verts)
+
+                if self.settings.label[subplot].axes_limits is None:
+                    self.update_axis_limits(verts, subplot)
+
+            self.shapes[subplot].set_gray_state(verts_list)
+
     def highlight_states(self, states):
-        '''highlight the passed-in steates (using current_state settings)
+        '''highlight the passed-in states (using current_state settings)
 
         states is a list of either StateSet objects or a list of verts for each subplot
         '''
@@ -511,8 +556,9 @@ class PlotManager(Freezable):
         else:
             Timers.tic("frame")
 
-            for subplot in range(self.num_subplots):
-                self.shapes[subplot].set_cur_state(None)
+            for ds in self.shapes:
+                ds.set_cur_state(None)
+                ds.set_gray_state(None)
 
             for _ in range(self.settings.draw_stride):
                 self.core.do_step()

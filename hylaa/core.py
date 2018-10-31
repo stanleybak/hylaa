@@ -273,6 +273,7 @@ class Core(Freezable):
         if self.delayed_actions:
             action = self.delayed_actions.popleft()
             func, param = action
+
             more_actions = func(*param)
 
             # if there were more actinons, prepend them
