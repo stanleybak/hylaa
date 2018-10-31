@@ -15,7 +15,7 @@ from hylaa.aggdag import AggDag
 from hylaa.stateset import StateSet
 from hylaa.hybrid_automaton import HybridAutomaton, was_tt_taken
 from hylaa.timerutil import Timers
-from hylaa.util import Freezable
+from hylaa.util import Freezable, execute_delayed_action
 from hylaa.lpinstance import LpInstance
 from hylaa import lputil
 
@@ -261,6 +261,7 @@ class Core(Freezable):
 
         # pause after popping when using PLOT_INTERACTIVE
         if self.plotman.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
+            print(".core paused after popping")
             self.plotman.interactive.paused = True
 
         Timers.toc('do_step_pop')
@@ -270,17 +271,13 @@ class Core(Freezable):
 
         Timers.tic('do_step')
 
+        should_pause = False
+
         if self.delayed_actions:
-            action = self.delayed_actions.popleft()
-            func, param = action
+            should_pause = execute_delayed_action(self.delayed_actions)
+            print(f".core finished executing delayed actions, should_pause is {should_pause}")
 
-            more_actions = func(*param)
-
-            # if there were more actinons, prepend them
-            if more_actions:
-                self.delayed_actions.extendleft(reversed(more_actions))
-
-        elif not self.is_finished():
+        if not should_pause and not self.is_finished():
             if self.aggdag.get_cur_state() is None:
                 new_delayed_actions = self.settings.aggstrat.pre_pop_waiting_list(self.aggdag)
 
@@ -289,7 +286,8 @@ class Core(Freezable):
 
                     # pause here when using PLOT_INTERACTIVE
                     if self.plotman.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
-                        self.plotman.interactive.paused = True
+                        should_pause = True
+                        print(".core paused because there are NEW delayed actions after prepop waiting list")
                 else:
                     self.do_step_pop()
 
@@ -298,6 +296,9 @@ class Core(Freezable):
             else:
                 self.do_step_continuous_post()
                 self.continuous_steps += 1
+
+        if should_pause:
+            self.plotman.interactive.paused = True
 
         Timers.toc('do_step')
 

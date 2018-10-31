@@ -204,7 +204,7 @@ def make_settings(safe):
     settings.plot.label[0].axes_limits = [-950, 400, -450, 70]
     #settings.plot.label[1].axes_limits = [-150, 50, -70, 70]
     settings.plot.label[1].axes_limits = [-80, 5, -30, 5]
-    settings.plot.label[2].axes_limits = [-5, 3, -3, 3]
+    settings.plot.label[2].axes_limits = [-3, 1.5, -1.5, 1.5]
 
     return settings
 

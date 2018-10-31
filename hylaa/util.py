@@ -7,6 +7,8 @@ Methods / Classes in this one shouldn't require non-standard imports.
 import os
 import sys
 
+from collections import deque
+
 class Freezable():
     'a class where you can freeze the fields (prevent new fields from being created)'
 
@@ -40,3 +42,25 @@ if not DID_PYTHON3_CHECK:
         sys.stdout.write("Hylaa requires Python 3, but was run with Python {}.{}.\n".format(
             sys.version_info[0], sys.version_info[1]))
         sys.exit(1)
+
+def execute_delayed_action(actions):
+    '''execute the first delayed action in the given deque, where each element is (func, args)
+
+    where func returns a 2-tuple: list_of_new_actions, should_pause_plot
+
+    this modifies the actions list in place, and returns True/False if we should pauase after the given action
+    '''
+
+    assert isinstance(actions, deque)
+    should_pause = False
+
+    while not should_pause and actions:
+        func, param = actions.popleft()
+
+        more_actions, should_pause = func(*param)
+
+        # if there were more actions, prepend them
+        if more_actions:
+            actions.extendleft(reversed(more_actions))
+
+    return should_pause

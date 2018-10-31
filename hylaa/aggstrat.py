@@ -3,10 +3,10 @@ Stanley Bak
 Aggregation Strategy Classes
 '''
 
-from collections import namedtuple
+from collections import namedtuple, deque
 
 from hylaa import lputil
-from hylaa.util import Freezable
+from hylaa.util import Freezable, execute_delayed_action
 
 # container class for description of how to perform a single aggregation
 AggType = namedtuple('AggType', ['is_box', 'is_arnoldi_box', 'is_chull', 'add_guard'])
@@ -180,7 +180,7 @@ class Aggregated(AggregationStrategy):
         this returns None or a list of (func, param) to be called before processing the next step
         '''
 
-        actions = []
+        actions = deque()
 
         if self.deaggregate:
             # scan the aggdag waiting list for non-concrete error mode states
@@ -190,5 +190,8 @@ class Aggregated(AggregationStrategy):
                 if state.mode.is_error() and not state.is_concrete:
                     actions.append((op.parent_node.refine_split, (agg_type, )))
                     break
+
+            if actions:
+                execute_delayed_action(actions)
         
         return actions

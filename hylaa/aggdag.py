@@ -3,14 +3,14 @@ Stanley Bak
 Aggregation Directed Acyclic Graph (DAG) implementation
 '''
 
-from collections import namedtuple
+from collections import namedtuple, deque
 
 from termcolor import cprint
 
 from graphviz import Digraph
 
-from hylaa.settings import HylaaSettings, PlotSettings
-from hylaa.util import Freezable
+from hylaa.settings import HylaaSettings
+from hylaa.util import Freezable, execute_delayed_action
 from hylaa.stateset import StateSet
 from hylaa.timerutil import Timers
 from hylaa import lputil, aggregate
@@ -283,7 +283,7 @@ class AggDagNode(Freezable):
 
         self.aggdag.save_viz()
 
-        actions = []
+        actions = deque()
 
         mid_index = len(self.parent_ops) // 2
         parent_op_lists = [self.parent_ops[:mid_index], self.parent_ops[mid_index:]]
@@ -306,7 +306,6 @@ class AggDagNode(Freezable):
                 assert removed, "op_transition not found in waiting list?"
 
         split_nodes = []
-        plot_states = []
 
         for parent_op_list in parent_op_lists:
             # for each of the two split sets
@@ -315,31 +314,21 @@ class AggDagNode(Freezable):
             node = AggDagNode(agg_list, parent_op_list, agg_type, self.aggdag)
             split_nodes.append(node)
 
-            # plot node and split nodes
-            plot_states.append(node.stateset)
-
             #self.aggdag.core.plotman.add_reachable_poly(node.stateset)
             actions.append((self._replay_split_op_list, (split_nodes, 0)))
 
-        if self.aggdag.settings.plot.plot_mode != PlotSettings.PLOT_NONE:
-            # plot a copy of self at step zero
-            full_parent_op_list = self.parent_ops
-            full_agg_list = [op.poststate for op in full_parent_op_list]
+        # do the first action now
+        should_pause = execute_delayed_action(actions)
 
-            self_copy = AggDagNode(full_agg_list, full_parent_op_list, self.agg_type_from_parents, self.aggdag)
-            self.aggdag.core.plotman.highlight_states_gray([self_copy.stateset])
-            
-        # plot plot_states
-        self.aggdag.core.plotman.highlight_states(plot_states)
-
-        return actions
+        return actions, should_pause
 
     def _replay_split_op_list(self, split_nodes, replay_start_step):
         '''replay the op list when splitting, up to the next transition
 
-        returns new_action_list for the next call
+        returns new_action_list, should_pause for the next call
         '''
 
+        should_pause = False
         actions = []
 
         for i in range(replay_start_step, len(self.op_list)):
@@ -349,11 +338,10 @@ class AggDagNode(Freezable):
                 if not node.op_list or not isinstance(node.op_list[-1], OpLeftInvariant):
                     node.replay_op(i, op, self.op_list)
 
-                    if node is split_nodes[0]:
-                        print(f". new basis matrix:\n{node.stateset.basis_matrix}")
-
             if isinstance(op, OpTransition) and self.stateset.step_to_paths: # step_to_paths is None if plotting is off
                 # draw the spliting and use action_list to delay further processing
+                should_pause = True
+                print(". set should_pause to True")
 
                 # first clear the old plotted state
                 verts = self.stateset.del_plot_path(op.step)
@@ -378,9 +366,9 @@ class AggDagNode(Freezable):
                         
                 break
 
-        print("returning actions len {}".format(len(actions)))
+        print("refine_split returning actions len {}, should_pause = {}".format(len(actions), should_pause))
         
-        return actions
+        return actions, should_pause
 
     def replay_op(self, i, op, op_list):
         '''
