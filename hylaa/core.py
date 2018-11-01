@@ -261,7 +261,6 @@ class Core(Freezable):
 
         # pause after popping when using PLOT_INTERACTIVE
         if self.plotman.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
-            print(".core paused after popping")
             self.plotman.interactive.paused = True
 
         Timers.toc('do_step_pop')
@@ -274,13 +273,10 @@ class Core(Freezable):
         should_pause = False
 
         if self.delayed_actions:
-            print(f".core --------- executing delayed actions ----------")
             should_pause = execute_delayed_action(self.delayed_actions)
-            print(f".core finished executing delayed actions, should_pause is {should_pause}")
 
         if not should_pause and not self.is_finished():
             if self.aggdag.get_cur_state() is None:
-                print(f".core doing pre_pop_waiting_list()")
                 new_delayed_actions = self.settings.aggstrat.pre_pop_waiting_list(self.aggdag)
 
                 if new_delayed_actions:
@@ -289,7 +285,6 @@ class Core(Freezable):
                     # pause here when using PLOT_INTERACTIVE
                     if self.plotman.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
                         should_pause = True
-                        print(".core paused because there are NEW delayed actions after prepop waiting list")
                 else:
                     self.do_step_pop()
 
@@ -299,7 +294,7 @@ class Core(Freezable):
                 self.do_step_continuous_post()
                 self.continuous_steps += 1
 
-        if should_pause:
+        if should_pause and self.plotman.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
             self.plotman.interactive.paused = True
 
         Timers.toc('do_step')

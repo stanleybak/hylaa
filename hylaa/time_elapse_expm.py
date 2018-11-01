@@ -89,7 +89,6 @@ class TimeElapseExpmMult(Freezable):
 
             Timers.toc('quick_step')
         else:
-            print(f".time_elapse_expm doing slow step to step {step_num}")
             Timers.tic('slow_step')
 
             Timers.tic('expm')

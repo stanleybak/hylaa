@@ -57,10 +57,7 @@ def execute_delayed_action(actions):
     while not should_pause and actions:
         func, param = actions.popleft()
 
-        print(f".util execute_delayed_actions, calling func() = {func}")
         more_actions, should_pause = func(*param)
-        print(f".util execute_delayed_actions, finished calling func, more_actions_len = {len(more_actions)}, " + \
-              f"should_pause={should_pause}")
 
         # if there were more actions, prepend them
         if more_actions:
