@@ -192,6 +192,7 @@ class Aggregated(AggregationStrategy):
                     break
 
             if actions:
+                print(f".aggstrat in pre_pop_waiting_list, executing delayed actions")
                 execute_delayed_action(actions)
         
         return actions

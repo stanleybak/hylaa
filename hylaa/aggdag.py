@@ -314,11 +314,15 @@ class AggDagNode(Freezable):
             node = AggDagNode(agg_list, parent_op_list, agg_type, self.aggdag)
             split_nodes.append(node)
 
-            #self.aggdag.core.plotman.add_reachable_poly(node.stateset)
-            actions.append((self._replay_split_op_list, (split_nodes, 0)))
+        #self.aggdag.core.plotman.add_reachable_poly(node.stateset)
+
+        # only add a single action, since all split nodes get propagated at the same function call
+        actions.append((self._replay_split_op_list, (split_nodes, 0)))
 
         # do the first action now
+        print(f".refine_split executing delayed actions")
         should_pause = execute_delayed_action(actions)
+        print(f".refine_split finished executing delayed actions, should_pause = {should_pause}")
 
         return actions, should_pause
 
@@ -341,10 +345,12 @@ class AggDagNode(Freezable):
             if isinstance(op, OpTransition) and self.stateset.step_to_paths: # step_to_paths is None if plotting is off
                 # draw the spliting and use action_list to delay further processing
                 should_pause = True
-                print(". set should_pause to True")
+                print(f".aggdag.replay_split_op_list got OpTransition at step {op.step}, set should_pause to True")
 
                 # first clear the old plotted state
                 verts = self.stateset.del_plot_path(op.step)
+
+                print(f".setting gray verts[0]: {verts[0]}")
 
                 # plot the verts of the deleted old plotted state
                 self.aggdag.core.plotman.highlight_states_gray([verts])
@@ -366,7 +372,8 @@ class AggDagNode(Freezable):
                         
                 break
 
-        print("refine_split returning actions len {}, should_pause = {}".format(len(actions), should_pause))
+        print(".aggdag.replay_split_op_list returning actions len {}, should_pause = {}".format(
+            len(actions), should_pause))
         
         return actions, should_pause
 
@@ -375,6 +382,8 @@ class AggDagNode(Freezable):
         replay a single operation in the current node
         this is used when nodes are split, to leverage parent information
         '''
+
+        print(".aggdag.replay_op started")
         
         Timers.tic('replay_op')
 
@@ -413,6 +422,7 @@ class AggDagNode(Freezable):
                     self.op_list.append(op)
 
         Timers.toc('replay_op')
+        print(".aggdag.replay_op ended")
 
     def replay_op_transition(self, state, op):
         '''replay a single operation of type OpTransition

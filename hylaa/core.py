@@ -274,11 +274,13 @@ class Core(Freezable):
         should_pause = False
 
         if self.delayed_actions:
+            print(f".core --------- executing delayed actions ----------")
             should_pause = execute_delayed_action(self.delayed_actions)
             print(f".core finished executing delayed actions, should_pause is {should_pause}")
 
         if not should_pause and not self.is_finished():
             if self.aggdag.get_cur_state() is None:
+                print(f".core doing pre_pop_waiting_list()")
                 new_delayed_actions = self.settings.aggstrat.pre_pop_waiting_list(self.aggdag)
 
                 if new_delayed_actions:
