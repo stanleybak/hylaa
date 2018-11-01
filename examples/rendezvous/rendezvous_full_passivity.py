@@ -170,7 +170,7 @@ def make_settings(safe):
     #settings.aggstrat = MyAggergated()
     settings.aggstrat.deaggregate = True # use deaggregation
 
-    settings.plot.plot_mode = PlotSettings.PLOT_INTERACTIVE
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
 
     settings.plot.filename = "rendezvous_full_passivity.png"
