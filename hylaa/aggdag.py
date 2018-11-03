@@ -14,6 +14,7 @@ from hylaa.util import Freezable, execute_delayed_action
 from hylaa.stateset import StateSet
 from hylaa.timerutil import Timers
 from hylaa import lputil, aggregate
+from hylaa.deaggregation import DeaggregationManager
 
 # Operation types
 OpInvIntersect = namedtuple('OpInvIntersect', ['step', 'node', 'i_index', 'is_stronger'])
@@ -43,6 +44,8 @@ class AggDag(Freezable):
         self.cur_node = None # the aggdag_node currently under a continuous post operation
 
         self.waiting_list = [] # a list of tuples: (StateSet, OpTransition)
+
+        self.deagg_man = DeaggregationManager(self)
 
         self.viz_count = 0
         
@@ -229,6 +232,8 @@ class AggDagNode(Freezable):
             self.aggdag.core.print_verbose(f"Aggregating {len(state_list)} states")
             state = self.aggregate_from_state_op_list(state_list, parent_op_list, agg_type)
 
+        assert not state.mode.is_error(), f"Created AddDag node for error mode, is_concrete? {state.is_concrete}"
+
         # update the OpTransition objects with the child information
         all_none = True
 
@@ -285,9 +290,12 @@ class AggDagNode(Freezable):
         parent_op_lists = [self.parent_ops[:mid_index], self.parent_ops[mid_index:]]
 
         # we only support splitting on leaf nodes currently (need to implement recursive version)
+
+        # remove all states in the waiting list that come from this node
         for op in self.op_list:
             if isinstance(op, OpTransition):
-                assert op.child_node is None, "refine_split currently only implemented for leaf nodes"
+                assert op.child_node is None, f"refine_split currently only implemented for leaf nodes, " + \
+                  f"had child in mode {op.child_node.stateset.mode.name}"
 
                 # remove this entry from waiting list
                 removed = False

@@ -163,7 +163,7 @@ def make_settings(safe):
     'make the reachability settings object'
 
     # see hylaa.settings for a list of reachability settings
-    settings = HylaaSettings(10.0, 200.0) # step: 0.1, bound: 200.0
+    settings = HylaaSettings(1.0, 200.0) # step: 0.1, bound: 200.0
 
     settings.stop_on_aggregated_error = False
 

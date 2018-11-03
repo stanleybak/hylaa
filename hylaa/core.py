@@ -43,9 +43,6 @@ class Core(Freezable):
 
         self.continuous_steps = 0
 
-        # a deque of pairs (func, param) to call after the before doing the next step
-        self.delayed_actions = deque()
-
         # make random number generation (for example, to find orthogonal directions) deterministic
         np.random.seed(seed=0)
 
@@ -83,7 +80,8 @@ class Core(Freezable):
         elif self.settings.stop_on_concrete_error and self.result.has_concrete_error:
             finished = True
         else:    
-            finished = self.aggdag.get_cur_state() is None and not self.aggdag.waiting_list and not self.delayed_actions
+            finished = self.aggdag.get_cur_state() is None and not self.aggdag.waiting_list and \
+                       not self.aggdag.doing_replay()
             
         return finished
 
@@ -270,32 +268,17 @@ class Core(Freezable):
 
         Timers.tic('do_step')
 
-        should_pause = False
+        if not self.is_finished():
+            if self.aggdag.deagg_man.doing_replay():
+                self.aggdag.deagg_man.do_step()
+            elif self.aggdag.get_cur_state() is None:
+                self.do_step_pop()
 
-        if self.delayed_actions:
-            should_pause = execute_delayed_action(self.delayed_actions)
-
-        if not should_pause and not self.is_finished():
-            if self.aggdag.get_cur_state() is None:
-                new_delayed_actions = self.settings.aggstrat.pre_pop_waiting_list(self.aggdag)
-
-                if new_delayed_actions:
-                    self.delayed_actions += new_delayed_actions
-
-                    # pause here when using PLOT_INTERACTIVE
-                    if self.plotman.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
-                        should_pause = True
-                else:
-                    self.do_step_pop()
-
-                    if self.settings.process_urgent_guards and self.aggdag.get_cur_state() is not None:
-                        self.check_guards()
+                if self.settings.process_urgent_guards and self.aggdag.get_cur_state() is not None:
+                    self.check_guards()
             else:
                 self.do_step_continuous_post()
                 self.continuous_steps += 1
-
-        if should_pause and self.plotman.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
-            self.plotman.interactive.paused = True
 
         Timers.toc('do_step')
 

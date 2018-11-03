@@ -186,10 +186,13 @@ class Aggregated(AggregationStrategy):
             # scan the aggdag waiting list for non-concrete error mode states
             agg_type = self._get_agg_type()
 
+            split_parent_nodes = []
+
             for state, op in aggdag.waiting_list:
-                if state.mode.is_error() and not state.is_concrete:
+                if state.mode.is_error() and not state.is_concrete and not op.parent_node in split_parent_nodes:
+                    split_parent_nodes.append(op.parent_node) # only split nodes one time
                     actions.append((op.parent_node.refine_split, (agg_type, )))
-                    break
+                    #break
 
             if actions:
                 print(f".aggstrat in pre_pop_waiting_list, executing delayed actions")

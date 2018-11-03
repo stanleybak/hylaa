@@ -28,7 +28,7 @@ def make_automaton():
     # x' == 1 
     m3 = ha.new_mode('orange')
     m3.set_dynamics([[0, 0, 1], [0, 0, -0], [0, 0, 0]])
-    m3.set_invariant([1., 0, 0], [10]) # x <= 10
+    m3.set_invariant([1., 0, 0], [5]) # x <= 5
 
     t = ha.new_transition(m1, m2)
     t.set_guard_true()
