@@ -121,7 +121,7 @@ class AggDag(Freezable):
 
         step_in_mode = state.cur_step_in_mode
         steps_since_start = state.cur_steps_since_start
-        is_concrete = state.is_concrete()
+        is_concrete = state.is_concrete
 
         successor_has_inputs = t.to_mode.b_csr is not None
 
@@ -202,6 +202,11 @@ class AggDag(Freezable):
         self.cur_node = AggDagNode(op_list, agg_type, self)
 
         return self.cur_node.get_cur_state()
+
+    def make_node(self, ops, agg_type):
+        'make an aggdag node'
+
+        return AggDagNode(ops, agg_type, self)
 
     def save_viz(self):
         'save the viz to a sequentially-named file'

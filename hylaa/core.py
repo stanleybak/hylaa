@@ -81,7 +81,7 @@ class Core(Freezable):
             finished = True
         else:    
             finished = self.aggdag.get_cur_state() is None and not self.aggdag.waiting_list and \
-                       not self.aggdag.doing_replay()
+                       not self.aggdag.deagg_man.doing_replay()
             
         return finished
 

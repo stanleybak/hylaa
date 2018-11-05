@@ -40,7 +40,7 @@ def test_ha():
     core = Core(ha, settings)
     result = core.run(init_list)
 
-    assert not result.safe
+    assert result.has_concrete_error
 
     ce = result.counterexample[0]
 
@@ -107,7 +107,7 @@ def test_plot_over_time():
 
     result = Core(ha, settings).run(init_list)
 
-    assert result.safe
+    assert not result.has_aggregated_error and not result.has_concrete_error
 
     # check the reachable state
     # we would expect at the end that x = [4, 5], t = pi

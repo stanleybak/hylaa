@@ -7,7 +7,7 @@ Nov 2018
 
 from collections import deque
 
-from util import Freezable
+from hylaa.util import Freezable
 
 class DeaggregationManager(Freezable):
     'manager for deaggregation data'

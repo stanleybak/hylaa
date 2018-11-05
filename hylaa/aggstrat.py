@@ -3,10 +3,10 @@ Stanley Bak
 Aggregation Strategy Classes
 '''
 
-from collections import namedtuple, deque
+from collections import namedtuple
 
 from hylaa import lputil
-from hylaa.util import Freezable, execute_delayed_action
+from hylaa.util import Freezable
 
 # container class for description of how to perform a single aggregation
 AggType = namedtuple('AggType', ['is_box', 'is_arnoldi_box', 'is_chull', 'add_guard'])
@@ -93,10 +93,12 @@ class Aggregated(AggregationStrategy):
         '''
 
         # use score method to decide which mode to pop
-        to_remove_state, to_remove_op = waiting_list[0]
+        to_remove_op = waiting_list[0]
+        to_remove_state = to_remove_op.poststate
         to_remove_score = self.pop_score(to_remove_state)
 
-        for state, op in waiting_list:
+        for op in waiting_list:
+            state = op.poststate
             score = self.pop_score(state)
 
             if score > to_remove_score or score == to_remove_score and state.mode.name < to_remove_state.mode.name:
@@ -105,10 +107,10 @@ class Aggregated(AggregationStrategy):
                 to_remove_op = op
 
         # remove all states for aggregation
-        agg_list = []
+        op_list = []
 
-        for state_op in waiting_list:
-            state, op = state_op
+        for op in waiting_list:
+            state = op.poststate
             should_add = False
 
             if state is to_remove_state:
@@ -125,9 +127,9 @@ class Aggregated(AggregationStrategy):
                             should_add = True
 
             if should_add:
-                agg_list.append(state_op)
+                op_list.append(op)
 
-        return agg_list
+        return op_list
     
     def pop_score(self, state):
         '''
@@ -172,6 +174,18 @@ class Aggregated(AggregationStrategy):
 
         return AggType(is_box, is_arnoldi_box, is_chull, self.add_guard)
 
+    def find_aggregated_ancestor(self, node):
+        '''
+        find an ancestor of the node that is an aggregation
+        '''
+
+        if len(node.parent_ops) > 1:
+            rv = node
+        else:
+            rv = self.find_aggregated_ancestor(node.parent_ops[0].parent_node)
+
+        return rv
+
     def get_deagg_node(self, aggdag):
         '''Called before popping a state off the waiting list. Get the aggdag node to deaggregate (if any).
         '''
@@ -181,9 +195,11 @@ class Aggregated(AggregationStrategy):
         if self.deaggregate:
             # scan the aggdag waiting list for non-concrete error mode states
 
-            for state, op in aggdag.waiting_list:
+            for op in aggdag.waiting_list:
+                state = op.poststate
+                
                 if state.mode.is_error() and not state.is_concrete:
-                    rv = op.parent_node
+                    rv = self.find_aggregated_ancestor(op.parent_node)
                     break
         
         return rv
