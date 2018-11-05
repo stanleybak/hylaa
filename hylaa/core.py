@@ -15,7 +15,7 @@ from hylaa.aggdag import AggDag
 from hylaa.stateset import StateSet
 from hylaa.hybrid_automaton import HybridAutomaton, was_tt_taken
 from hylaa.timerutil import Timers
-from hylaa.util import Freezable, execute_delayed_action
+from hylaa.util import Freezable
 from hylaa.lpinstance import LpInstance
 from hylaa import lputil
 
@@ -269,16 +269,25 @@ class Core(Freezable):
         Timers.tic('do_step')
 
         if not self.is_finished():
-            if self.aggdag.deagg_man.doing_replay():
-                self.aggdag.deagg_man.do_step()
-            elif self.aggdag.get_cur_state() is None:
-                self.do_step_pop()
-
-                if self.settings.process_urgent_guards and self.aggdag.get_cur_state() is not None:
-                    self.check_guards()
-            else:
+            if self.aggdag.get_cur_state():
                 self.do_step_continuous_post()
                 self.continuous_steps += 1
+            elif self.aggdag.deagg_man.doing_replay():
+                # in the middle of a deaggregation replay
+                self.aggdag.deagg_man.do_step_replay()
+            else:
+                # begin a deaggregation replay or pop a state off the waiting list
+                deagg_node = self.settings.aggstrat.get_deagg_node(self.aggdag)
+
+                if deagg_node:
+                    self.aggdag.deagg_man.begin_replay(deagg_node)
+                    self.aggdag.deagg_man.do_step_replay() # do the first step
+                else:
+                    # pop state off waiting list
+                    self.do_step_pop()
+
+                    if self.settings.process_urgent_guards and self.aggdag.get_cur_state() is not None:
+                        self.check_guards()
 
         Timers.toc('do_step')
 

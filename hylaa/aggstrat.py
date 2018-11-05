@@ -39,13 +39,19 @@ class AggregationStrategy(Freezable):
     def pop_waiting_list(self, waiting_list):
         '''determine which waiting list elements should be aggregated for the next continuous post computation
 
-        waiting_list is a list of 2-tuples: (StateSet, OpTransition)
+        waiting_list is a list of OpTransition
 
-        this function returns a list of 2-tuples (StateSet, OpTransition). 
+        this function returns a list of OpTransition. 
         If the list is a single element, no aggregation is performed.
         '''
 
         return [waiting_list[0]]
+
+    def get_deagg_node(self, aggdag):
+        '''Called before popping a state off the waiting list. Get the aggdag node to deaggregate (if any).
+        '''
+
+        return None
 
     def pretransition(self, t, t_lpi, op_transition):
         'event function, called when taking a transition before the reset is applied'
@@ -53,15 +59,7 @@ class AggregationStrategy(Freezable):
         # premode_center = lputil.get_box_center(t_lpi)
         pass
 
-    def pre_pop_waiting_list(self, aggdag):
-        '''event function, called before popping the waiting list
-
-        this returns None or a list of (func, param) to be called before processing the next step
-        '''
-
-        return None
-
-    def get_agg_type(self, agg_list, op_list):
+    def get_agg_type(self, op_list):
         '''
         Gets the type of aggregation to be performed for the passed in objects. 
 
@@ -154,7 +152,7 @@ class Aggregated(AggregationStrategy):
         if self.agg_type == Aggregated.AGG_ARNOLDI_BOX:
             op_transition.premode_center = lputil.get_box_center(t_lpi)
 
-    def get_agg_type(self, agg_list, op_list):
+    def get_agg_type(self, op_list):
         '''
         Gets the type of aggregation to be performed for the passed in objects. 
 
@@ -174,28 +172,18 @@ class Aggregated(AggregationStrategy):
 
         return AggType(is_box, is_arnoldi_box, is_chull, self.add_guard)
 
-    def pre_pop_waiting_list(self, aggdag):
-        '''event function, called before popping the waiting list
-
-        this returns None or a list of (func, param) to be called before processing the next step
+    def get_deagg_node(self, aggdag):
+        '''Called before popping a state off the waiting list. Get the aggdag node to deaggregate (if any).
         '''
 
-        actions = deque()
+        rv = None
 
         if self.deaggregate:
             # scan the aggdag waiting list for non-concrete error mode states
-            agg_type = self._get_agg_type()
-
-            split_parent_nodes = []
 
             for state, op in aggdag.waiting_list:
-                if state.mode.is_error() and not state.is_concrete and not op.parent_node in split_parent_nodes:
-                    split_parent_nodes.append(op.parent_node) # only split nodes one time
-                    actions.append((op.parent_node.refine_split, (agg_type, )))
-                    #break
-
-            if actions:
-                print(f".aggstrat in pre_pop_waiting_list, executing delayed actions")
-                execute_delayed_action(actions)
+                if state.mode.is_error() and not state.is_concrete:
+                    rv = op.parent_node
+                    break
         
-        return actions
+        return rv
