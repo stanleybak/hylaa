@@ -269,16 +269,17 @@ class AggDagNode(Freezable):
 
         assert not state.mode.is_error(), f"Created AddDag node for error mode, is_concrete? {state.is_concrete}"
 
-        # update the OpTransition objects with the child information
-        all_none = True
+        add_root = False
 
         for op in parent_op_list:
-            if op:
-                all_none = False
-                op.child_node = self
-
-        # if all the parent transitions are None, this is a root node and must be stored as such
-        if all_none:
+            assert op.child_node is None, "all OpTransition should have child_node=None in AggDagNode consturctor"
+            
+            op.child_node = self
+            
+            if op.parent_node is None:
+                add_root = True
+            
+        if add_root:
             self.aggdag.roots.append(self)
 
         self.stateset = state

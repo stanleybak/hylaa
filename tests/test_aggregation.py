@@ -361,7 +361,7 @@ def test_plain():
 
     assert len(core.aggdag.roots) == 1
    
-    assert op0.child_node.get_mode() is m2
+    assert op0.child_node.stateset.mode is m2
     assert op0.transition == trans1
     assert op0.parent_node == core.aggdag.roots[0]
     assert isinstance(op0.poststate, StateSet)
@@ -370,8 +370,8 @@ def test_plain():
     assert op0.child_node == op1.child_node
     assert op0.child_node not in core.aggdag.roots
 
-    assert len(op0.parent_node.get_cur_state().aggdag_op_list) == 1
-    assert op0.parent_node.get_cur_state().aggdag_op_list[0] is None
+    assert len(op0.parent_node.stateset.aggdag_op_list) == 1
+    assert op0.parent_node.stateset.aggdag_op_list[0] is None
      
     # check polygons in m2
     polys2 = result.mode_to_polys['m2']
