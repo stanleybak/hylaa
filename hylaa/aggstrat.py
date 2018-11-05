@@ -201,5 +201,5 @@ class Aggregated(AggregationStrategy):
                 if state.mode.is_error() and not state.is_concrete:
                     rv = self.find_aggregated_ancestor(op.parent_node)
                     break
-        
+
         return rv

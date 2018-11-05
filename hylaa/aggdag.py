@@ -272,8 +272,7 @@ class AggDagNode(Freezable):
         add_root = False
 
         for op in parent_op_list:
-            assert op.child_node is None, "all OpTransition should have child_node=None in AggDagNode consturctor"
-            
+            # child node here may be None, or an existing child node that we override
             op.child_node = self
             
             if op.parent_node is None:
@@ -304,8 +303,7 @@ class AggDagNode(Freezable):
         parent_op_lists = [self.parent_ops[:mid_index], self.parent_ops[mid_index:]]
 
         for parent_op_list in parent_op_lists:
-            agg_list = [op.poststate for op in parent_op_list]
-            node = AggDagNode(agg_list, parent_op_list, self.agg_type_from_parents, self.aggdag)
+            node = AggDagNode(parent_op_list, self.agg_type_from_parents, self.aggdag)
 
             rv.append(node)
 
@@ -341,7 +339,12 @@ class AggDagNode(Freezable):
         has the stateset represented by the node become infeasible (left the invariant?)
         '''
 
-        return self.op_list and not isinstance(self.op_list[-1], OpLeftInvariant)
+        rv = False
+
+        if self.op_list:
+            rv = isinstance(self.op_list[-1], OpLeftInvariant)
+
+        return rv
 
     def replay_op(self, op_list, i):
         '''

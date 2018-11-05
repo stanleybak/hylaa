@@ -105,6 +105,7 @@ class Core(Freezable):
             self.result.has_concrete_error = True
 
             if not self.result.counterexample:
+                self.print_verbose("Reached concrete error state; making concrete counter-example")
                 self.result.counterexample = make_counterexample(self.hybrid_automaton, t, t_lpi)
 
     def check_guards(self):
@@ -257,9 +258,8 @@ class Core(Freezable):
                 self.print_normal("Continuous state was outside of the mode's invariant; skipping.")
                 self.aggdag.cur_state_left_invariant()
 
-        # pause after popping when using PLOT_INTERACTIVE
-        if self.plotman.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
-            self.plotman.interactive.paused = True
+        # pause plot
+        self.plotman.interactive.paused = True
 
         Timers.toc('do_step_pop')
                 

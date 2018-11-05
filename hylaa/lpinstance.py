@@ -537,13 +537,12 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
 
         Timers.toc("set_minimize_direction")
 
-    def minimize(self, direction_vec=None, columns=None, fail_on_unsat=True, retry_on_unsat=False):
+    def minimize(self, direction_vec=None, columns=None, fail_on_unsat=True):
         '''minimize the lp
 
         if direction_vec is not None, this will first assign the optimization direction
         if columns is not None, will only return the requested columns (default= all columns)
-        if fail_on_unsat is True and the LP is infeasible, a UnsatError is raised
-        if retry_on_unsat is True, this will try resetting statuses and solving a second time if the first LP is
+        if fail_on_unsat is True and the LP is infeasible, an UnsatError is raised
         unsat (sometimes happens in GLPK due to likely bug, see space station model)
 
         returns None if UNSAT, otherwise the optimization result. Use columns=[] if you're not interested in the result
@@ -585,13 +584,12 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
 
         Timers.toc('minimize')
 
-        if rv is None and retry_on_unsat:
-            # this happens with rendezvous system, step=1.0, convex hull aggregation and passivity times [120, 125]
-            LpInstance.print_normal("Note: minimize failed with retry_on_unsat was true, resetting and retrying...")
+        if rv is None and fail_on_unsat:
+            LpInstance.print_normal("Note: minimize failed with fail_on_unsat was true, resetting and retrying...")
                         
             glpk.glp_cpx_basis(self.lp) # resets the initial basis
 
-            rv = self.minimize(direction_vec, columns, fail_on_unsat, False)
+            rv = self.minimize(direction_vec, columns, False)
 
             if rv is not None:
                 LpInstance.print_verbose("Note: LP was infeasible, but then feasible after resetting statuses")

@@ -10,7 +10,7 @@ from hylaa.core import Core
 from hylaa.stateset import StateSet
 from hylaa import lputil
 
-def make_automaton():
+def make_automaton(unsafe_box):
     'make the hybrid automaton'
 
     ha = HybridAutomaton('Deaggregation Example')
@@ -38,7 +38,15 @@ def make_automaton():
 
     error = ha.new_mode('error')
     t = ha.new_transition(m3, error)
-    t.set_guard([[-1, 0, 0], [1, 0, 0], [0, -1, 0], [0, 1, 0]], [-1, 2, -3.1, 3.9]) # x >= 1 x <= 2, y >= 1.1, y <= 1.9
+
+    unsafe_rhs = [-unsafe_box[0][0], unsafe_box[0][1], -unsafe_box[1][0], unsafe_box[1][1]]
+    
+    # x >= 1.1 x <= 1.9, y >= 2.7, y <= 4.3
+    t.set_guard([[-1, 0, 0], [1, 0, 0], [0, -1, 0], [0, 1, 0]], unsafe_rhs)
+
+    t = ha.new_transition(m2, error)
+    # x >= 1.1 x <= 1.9, y >= 2.7, y <= 4.3
+    t.set_guard([[-1, 0, 0], [1, 0, 0], [0, -1, 0], [0, 1, 0]], unsafe_rhs) 
     
     return ha
 
@@ -52,7 +60,7 @@ def make_init(ha):
 
     return init_list
 
-def make_settings():
+def make_settings(unsafe_box):
     'make the reachability settings object'
 
     # see hylaa.settings for a list of reachability settings
@@ -85,7 +93,14 @@ def make_settings():
     line = [(-20, 3.5), (20, 3.5)]
     cols.append(collections.LineCollection([line], animated=True, colors=('gray'), linewidths=(2), linestyle='dashed'))
 
-    line = [(2, 3.9), (1, 3.9), (1, 3.1), (2, 3.1), (2, 3.9)]
+    # x >= 1.1 x <= 1.9, y >= 2.7, y <= 4.3
+    line = []
+    line.append((unsafe_box[0][0], unsafe_box[1][0]))
+    line.append((unsafe_box[0][1], unsafe_box[1][0]))
+    line.append((unsafe_box[0][1], unsafe_box[1][1]))
+    line.append((unsafe_box[0][0], unsafe_box[1][1]))
+    line.append((unsafe_box[0][0], unsafe_box[1][0]))
+   
     cols.append(collections.LineCollection([line], animated=True, colors=('red'), linewidths=(2), linestyle='dashed'))
 
     settings.plot.extra_collections.append(cols)
@@ -95,11 +110,13 @@ def make_settings():
 def main():
     'main entry point'
 
-    ha = make_automaton()
+    unsafe_box = [[1.1, 1.9], [3.1, 3.9]]
+
+    ha = make_automaton(unsafe_box)
 
     init_states = make_init(ha)
 
-    settings = make_settings()
+    settings = make_settings(unsafe_box)
 
     Core(ha, settings).run(init_states)
 

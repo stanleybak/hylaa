@@ -549,7 +549,7 @@ class PlotManager(Freezable):
     def anim_func(self, _):
         'animation draw function'
 
-        if self.interactive.paused:
+        if self.interactive.paused and self.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
             Timers.tic("paused")
             time.sleep(0.1)
             Timers.toc("paused")

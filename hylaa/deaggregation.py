@@ -50,9 +50,9 @@ class DeaggregationManager(Freezable):
         for i in range(self.replay_step, len(self.deagg_parent.op_list)):
             op = self.deagg_parent.op_list[i]
             is_transition = self.aggdag.is_op_transition(op)
-            
+
             for child in self.deagg_children:
-                if not child.node_left_invaraint():
+                if not child.node_left_invariant():
                     child.replay_op(self.deagg_parent.op_list, i)
 
             if is_transition:
@@ -75,6 +75,9 @@ class DeaggregationManager(Freezable):
                 
             self.deagg_parent = self.deagg_children = self.replay_step = self.node_to_ops = None
 
+        if self.doing_replay():
+            self.aggdag.core.plotman.interactive.paused = True
+
     def update_transition_successors(self, old_op, new_op):
         '''
         during a replay, update a node's successsors recursively
@@ -95,7 +98,7 @@ class DeaggregationManager(Freezable):
         perform operations after an op transition. returns true if we should break the replay loop (to draw a frame).
         '''
 
-        should_break = False        
+        should_break = False
 
         # update plot
         if self.deagg_parent.stateset.step_to_paths: # step_to_paths is None if plotting is off

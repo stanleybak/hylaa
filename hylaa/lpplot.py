@@ -10,8 +10,6 @@ make_plot_vecs is useful for controlling the accuracy (and decreasing overhead c
 import math
 import numpy as np
 
-from hylaa.lpinstance import UnsatError
-
 def get_verts(lpi, xdim=0, ydim=1, plot_vecs=None, cur_time=0.0):
     '''get the vertices defining (an underapproximation) of the outside of the given linear constraints
     These will be usable for plotting, so that rv[0] == rv[-1]. A single point may be returned if the constraints
@@ -51,11 +49,11 @@ def get_verts(lpi, xdim=0, ydim=1, plot_vecs=None, cur_time=0.0):
             ydim = np.array([1.0 if dim == ydim else 0.0 for dim in range(lpi.dims)], dtype=float)
 
         lpi.set_minimize_direction(ydim)
-        res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)], retry_on_unsat=True)
+        res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)])
         ymin = np.dot(ydim, res)
 
         lpi.set_minimize_direction(-1 * ydim)
-        res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)], retry_on_unsat=True)
+        res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)])
         ymax = np.dot(ydim, res)
 
         verts = [[cur_time[0], ymin]]
@@ -75,11 +73,11 @@ def get_verts(lpi, xdim=0, ydim=1, plot_vecs=None, cur_time=0.0):
             xdim = np.array([1.0 if dim == xdim else 0.0 for dim in range(lpi.dims)], dtype=float)
 
         lpi.set_minimize_direction(xdim)
-        res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)], retry_on_unsat=True)
+        res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)])
         xmin = np.dot(xdim, res)
 
         lpi.set_minimize_direction(-1 * xdim)
-        res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)], retry_on_unsat=True)
+        res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)])
         xmax = np.dot(xdim, res)
 
         verts = [[xmin, cur_time[0]]]
@@ -101,8 +99,6 @@ def get_verts(lpi, xdim=0, ydim=1, plot_vecs=None, cur_time=0.0):
 
     # wrap polygon back to first point
     verts.append(verts[0])
-    #except UnsatError:
-    #    verts = None
 
     return verts
 
@@ -117,8 +113,8 @@ def bbox_widths(lpi, xdim, ydim):
         min_dir = [1 if i == dim else 0 for i in range(dims)]
         max_dir = [-1 if i == dim else 0 for i in range(dims)]
         
-        min_val = lpi.minimize(direction_vec=min_dir, columns=[col], retry_on_unsat=True)[0]
-        max_val = lpi.minimize(direction_vec=max_dir, columns=[col], retry_on_unsat=True)[0]
+        min_val = lpi.minimize(direction_vec=min_dir, columns=[col])[0]
+        max_val = lpi.minimize(direction_vec=max_dir, columns=[col])[0]
 
         dx = max_val - min_val
 
@@ -219,7 +215,7 @@ def _minimize(lpi, xdim, ydim, direction, bounding_box_widths):
 
     lpi.set_minimize_direction(optimize_direction)
 
-    res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(dims)], retry_on_unsat=True)
+    res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(dims)])
 
     xcoord = 0 if xdim is None else np.dot(res, xdim)
     ycoord = 0 if ydim is None else np.dot(res, ydim)
