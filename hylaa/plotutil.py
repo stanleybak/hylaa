@@ -184,8 +184,8 @@ class DrawnShapes(Freezable):
         def init_polycollection_func():
             "initialization function if polycollection doesn't exist"
             
-            return collections.PolyCollection([], lw=self.plotman.settings.reachable_poly_width, animated=True,
-                                              edgecolor='gray', facecolor=(0., 0., 0., 0.))
+            return collections.PolyCollection([], lw=self.plotman.settings.reachable_poly_width + 3, animated=True,
+                                              edgecolor='gray', facecolor=(0., 0., 0., 0.), zorder=2)
 
         self._set_named_state(verts_list, 'gray_state', init_polycollection_func)
 
@@ -196,7 +196,7 @@ class DrawnShapes(Freezable):
             "initialization function if polycollection doesn't exist"
             
             return collections.PolyCollection([], lw=self.plotman.settings.reachable_poly_width, animated=True,
-                                              edgecolor='k', facecolor=(0., 0., 0., 0.))
+                                              edgecolor='k', facecolor=(0., 0., 0., 0.0), zorder=3)
 
         self._set_named_state(verts_list, 'cur_state', init_polycollection_func)
 
@@ -290,6 +290,9 @@ class PlotManager(Freezable):
 
         self._anim = None # animation object
         self.num_frames_drawn = 0
+
+        self.pause_frames = None # for video plots
+        self.frame_text = None # for video plots when settings.video_show_frame = True
 
         self.plot_vec_list = [] # a list of plot_vecs for each subplot
         self.num_subplots = None
@@ -420,6 +423,10 @@ class PlotManager(Freezable):
             title = title if title is not None else ha.name
             self.axes_list[0].set_title(title, fontsize=self.settings.label[0].title_size)
 
+            if self.settings.video_show_frame and self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
+                ax = self.axes_list[0]
+                self.frame_text = ax.text(0.01, 0.99, '', transform=ax.transAxes, verticalalignment='top')
+
             for i in range(self.num_subplots):
                 labels = []
                 label_settings = [self.settings.xdim_dir[i], self.settings.ydim_dir[i]]
@@ -546,13 +553,25 @@ class PlotManager(Freezable):
 
             self.shapes[subplot].set_cur_state(verts_list)
 
-    def anim_func(self, _):
+    def anim_func(self, frame):
         'animation draw function'
+
+        if self.settings.video_show_frame and self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
+            self.frame_text.set_text(f'Frame: {frame}')
 
         if self.interactive.paused and self.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
             Timers.tic("paused")
             time.sleep(0.1)
             Timers.toc("paused")
+        elif self.interactive.paused and self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
+            if self.pause_frames is None:
+                self.pause_frames = self.settings.video_pause_frames
+            else:
+                self.pause_frames -= 1
+
+                if self.pause_frames == 0:
+                    self.pause_frames = None
+                    self.interactive.paused = False
         else:
             Timers.tic("frame")
 
@@ -588,6 +607,9 @@ class PlotManager(Freezable):
 
         for subplot in range(self.num_subplots):
             rv += self.shapes[subplot].get_artists()
+
+        if self.settings.video_show_frame and self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
+            rv.append(self.frame_text)
 
         return rv
 

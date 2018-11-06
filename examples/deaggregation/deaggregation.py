@@ -16,19 +16,19 @@ def make_automaton(unsafe_box):
     ha = HybridAutomaton('Deaggregation Example')
 
     # x' = 2
-    m1 = ha.new_mode('green')
+    m1 = ha.new_mode('mode0_right')
     m1.set_dynamics([[0, 0, 2], [0, 0, 0], [0, 0, 0]])
     m1.set_invariant([[1, 0, 0]], [3.5]) # x <= 3.5
 
     # y' == 2
-    m2 = ha.new_mode('cyan')
+    m2 = ha.new_mode('mode1_up')
     m2.set_dynamics([[0, 0, 0], [0, 0, 2], [0, 0, 0]])
     m2.set_invariant([0., 1., 0], [3.5]) # y <= 3.5
 
-    # x' == 1 
-    m3 = ha.new_mode('orange')
-    m3.set_dynamics([[0, 0, 1], [0, 0, -0], [0, 0, 0]])
-    m3.set_invariant([1., 0, 0], [5]) # x <= 5
+    # x' == 2 
+    m3 = ha.new_mode('mode2_right')
+    m3.set_dynamics([[0, 0, 2], [0, 0, -0], [0, 0, 0]])
+    m3.set_invariant([1., 0, 0], [7]) # x <= 7
 
     t = ha.new_transition(m1, m2)
     t.set_guard_true()
@@ -53,7 +53,7 @@ def make_automaton(unsafe_box):
 def make_init(ha):
     'make the initial states'
 
-    mode = ha.modes['green']
+    mode = ha.modes['mode0_right']
     init_lpi = lputil.from_box([(0, 1), (0, 1.0), (1.0, 1.0)], mode)
     
     init_list = [StateSet(init_lpi, mode)]
@@ -66,12 +66,16 @@ def make_settings(unsafe_box):
     # see hylaa.settings for a list of reachability settings
     settings = HylaaSettings(1.0, 20.0)
     settings.process_urgent_guards = True
-    settings.plot.plot_mode = PlotSettings.PLOT_INTERACTIVE
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
-    settings.plot.filename = "deaggregation.png"
+
+    settings.plot.video_pause_frames = 5
+    settings.plot.video_fps = 5
+    settings.plot.plot_mode = PlotSettings.PLOT_INTERACTIVE
+    settings.plot.filename = "deaggregation.mp4"
 
     settings.stop_on_aggregated_error = False
     settings.aggstrat.deaggregate = True # use deaggregation
+    settings.aggstrat.deagg_leaves_first = False # roots first
 
     settings.plot.extra_collections = []
     settings.plot.label = []
@@ -100,7 +104,7 @@ def make_settings(unsafe_box):
     line.append((unsafe_box[0][1], unsafe_box[1][1]))
     line.append((unsafe_box[0][0], unsafe_box[1][1]))
     line.append((unsafe_box[0][0], unsafe_box[1][0]))
-   
+
     cols.append(collections.LineCollection([line], animated=True, colors=('red'), linewidths=(2), linestyle='dashed'))
 
     settings.plot.extra_collections.append(cols)
@@ -110,7 +114,7 @@ def make_settings(unsafe_box):
 def main():
     'main entry point'
 
-    unsafe_box = [[1.1, 1.9], [3.1, 3.9]]
+    unsafe_box = [[5.1, 5.9], [4.1, 4.9]]
 
     ha = make_automaton(unsafe_box)
 

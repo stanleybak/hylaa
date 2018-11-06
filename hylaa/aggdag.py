@@ -161,16 +161,30 @@ class AggDag(Freezable):
         cur_node.op_list.append(op)
         self.waiting_list.append(op)
 
+    def _get_node_leaf_ops(self, node):
+        'recursively get all the leaf ops originating from the given node'
+
+        rv = []
+
+        for op in node.op_list:
+            if isinstance(op, OpTransition):
+                if op.child_node is None:
+                    rv.append(op)
+                else:
+                    rv += self._get_node_leaf_ops(op.child_node)
+
+        return rv
+
     def remove_node_from_waiting_list(self, node):
         'remove all waiting list states originating from the passed-in node'
+
+        to_remove_ops = self._get_node_leaf_ops(node)
 
         new_waiting_list = []
 
         for op in self.waiting_list:
-            if not op.parent_node is node:
+            if not op in to_remove_ops:
                 new_waiting_list.append(op)
-
-        assert len(new_waiting_list) != len(self.waiting_list), "remove_waiting_list_node() didn't remove anything"
 
         self.waiting_list = new_waiting_list
 
@@ -206,6 +220,7 @@ class AggDag(Freezable):
     def make_node(self, ops, agg_type):
         'make an aggdag node'
 
+        print(f".aggdag make_node called with {len(ops)} ops")
         return AggDagNode(ops, agg_type, self)
 
     def save_viz(self):
@@ -240,9 +255,14 @@ class AggDag(Freezable):
             root.viz(g, already_drawn_nodes)
 
         if filename is not None:
+            print(f"vizzed to filename: {filename}")
             g.render(filename, cleanup=True)
         else:
             g.view(cleanup=True)
+
+        # sanity check: all nodes in waiting list were drawn
+        for op in self.waiting_list:
+            assert op.parent_node in already_drawn_nodes
 
 class AggDagNode(Freezable):
     'A node of the Aggregation DAG'
@@ -292,6 +312,9 @@ class AggDagNode(Freezable):
     def __eq__(self, other):
         return self is other
 
+    def __str__(self):
+        return f"[AggDagNode in mode {self.stateset.mode.name} w/{len(self.parent_ops)} parent_ops, id={id(self)}]"
+
     def split(self):
         'for deaggreagtion, split the current (aggregated) node into two, returns a pair of nodes'
 
@@ -304,6 +327,8 @@ class AggDagNode(Freezable):
 
         for parent_op_list in parent_op_lists:
             node = AggDagNode(parent_op_list, self.agg_type_from_parents, self.aggdag)
+
+            print(f".aggdag split into new node using {len(parent_op_list)} ops; stateset: {str(node.stateset)}")
 
             rv.append(node)
 
@@ -398,7 +423,6 @@ class AggDagNode(Freezable):
         '''replay a single operation of type OpTransition
         '''
 
-        assert op.child_node is None, "replay op_transition currently only implemented for leaf nodes"
         print_verbose = self.aggdag.core.print_verbose
 
         state.step(op.step)
@@ -478,6 +502,10 @@ class AggDagNode(Freezable):
         g is the DiGraph object to draw to
         '''
 
+        # sanity check that all parent nodes match
+        for parent_op in self.parent_ops:
+            assert parent_op.child_node is self
+
         already_drawn_nodes.append(self)
         name = "node_{}".format(id(self))
         label = self.stateset.mode.name
@@ -485,8 +513,10 @@ class AggDagNode(Freezable):
         if self.op_list and isinstance(self.op_list[-1], OpLeftInvariant):
             steps = self.op_list[-1].step
             label += f" ({steps})"
+        else:
+            label += " (incomplete)"
 
-        print(f"vizing node {name} ({label})")
+        print(f"vizing node {name} ({label}) with {len(self.parent_ops)} parent ops")
         g.node(name, label=label)
 
         # collapse edges over multiple times into the same outgoing edge
@@ -516,6 +546,7 @@ class AggDagNode(Freezable):
                         label = str(op_list[0].step)
                     else:
                         label = "[{}, {}]".format(op_list[0].step, op_list[-1].step)
+                        
 
                     if child_name.startswith('out_'): # outgoing edges to unprocessed nodes
                         to_mode_name = op_list[0].transition.to_mode.name

@@ -68,7 +68,7 @@ class StateSet(Freezable):
     def __str__(self):
         'short string representation of this state set'
 
-        return "[StateSet in '{}']".format(self.mode.name)
+        return f"[StateSet in mode '{self.mode.name}' @ step '{self.cur_step_in_mode}']"
 
     def step(self, step_in_mode=None):
         '''update the star based on values from a new simulation time instant
@@ -85,7 +85,8 @@ class StateSet(Freezable):
         num_steps = step_in_mode - self.cur_step_in_mode
 
         # we can't do negative steps because we add input effects in the lpi for each step
-        assert num_steps >= 0, "step() called with negative num steps"
+        assert num_steps >= 0, "step() called with negative num steps (mode: " + \
+          f"{self.mode.name}, cur_step_in_mode: {self.cur_step_in_mode}, requested_step: {step_in_mode})"
 
         if num_steps > 0:
 

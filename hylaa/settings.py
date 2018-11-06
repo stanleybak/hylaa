@@ -83,15 +83,19 @@ class PlotSettings(Freezable): # pylint: disable=too-few-public-methods,too-many
 
         self.use_markers_for_small = True # draw markers when the reachable set is tiny instead of (invisible) polygons
 
+        self.video_fps = 40
+        self.video_extra_frames = 40 # extra frames at the end of a video so it doesn't end so abruptly
+        self.video_pause_frames = 20 # frames to render in video whenever a 'pause' occurs
+        self.video_show_frame = True # show the frame counter?
+
         # function which returns the Writer with the desired settings used to create a video, used for video export
         def make_video_writer():
             'returns the Writer to create a video for export'
 
             writer_class = animation.writers['ffmpeg']
-            return writer_class(fps=50, metadata=dict(artist='Me'), bitrate=1800)
+            return writer_class(fps=self.video_fps, metadata=dict(artist='Me'), bitrate=1800)
 
         self.make_video_writer_func = make_video_writer
-        self.video_extra_frames = 20 # extra frames at the end of a video so it doesn't end so abruptly
 
         self.freeze_attrs()
 

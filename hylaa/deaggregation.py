@@ -24,7 +24,7 @@ class DeaggregationManager(Freezable):
         # during replay, transition sucessors may have common children nodes that got aggregated
         # this maps the overapproximation node to the new unaggregated components (list of stateset and list of ops)
         # str(AggDagNode.id()) -> list_of_TransitionOps 
-        self.node_to_ops = None # maps old parent aggregated node to list of new children
+        self.nodes_to_ops = None # maps (newop.parent, oldop.child) to list of transtion_ops
 
         self.replay_step = None # current step during a replay
 
@@ -42,7 +42,9 @@ class DeaggregationManager(Freezable):
         if self.replay_step is None:
             self.deagg_parent, self.deagg_children = self.waiting_nodes.popleft()
             self.replay_step = 0
-            self.node_to_ops = {}
+            self.nodes_to_ops = {}
+
+            print(f".deagg got deagg children: {[str(c.stateset) for c in self.deagg_children]}")
 
         # replay up to the next OpTransition
         finished_replay = True
@@ -66,14 +68,22 @@ class DeaggregationManager(Freezable):
 
         if finished_replay:
             # update recursive children
-            for parent, ops in self.node_to_ops.items():
+            plot_state_list = []
+            
+            for pair, ops in self.nodes_to_ops.items():
+                _, child = pair
                 self.aggdag.core.print_verbose(f"making node for recursive deaggregation with t={ops[0].transition}")
 
                 # aggregate all ops into a single node
-                node = self.aggdag.make_node(ops, parent.agg_type_from_parents)
-                self.waiting_nodes.append((parent, [node]))
+                node = self.aggdag.make_node(ops, child.agg_type_from_parents)
+                print(f".deagg node made with stateset: {node.stateset}")
                 
-            self.deagg_parent = self.deagg_children = self.replay_step = self.node_to_ops = None
+                self.waiting_nodes.append((child, [node]))
+                plot_state_list.append(node.stateset)
+
+            self.aggdag.core.plotman.highlight_states(plot_state_list)
+            self.deagg_parent = self.deagg_children = self.replay_step = self.nodes_to_ops = None
+            self.aggdag.save_viz()
 
         if self.doing_replay():
             self.aggdag.core.plotman.interactive.paused = True
@@ -83,13 +93,16 @@ class DeaggregationManager(Freezable):
         during a replay, update a node's successsors recursively
         '''
 
-        node = old_op.child_node
+        # aggregation will only be done if both new_op.parent and old_op.child match
+        parent_node = new_op.parent_node
+        child_node = old_op.child_node
+        pair = (parent_node, child_node)
 
-        if node not in self.node_to_ops:
+        if pair not in self.nodes_to_ops:
             ops = []
-            self.node_to_ops[node] = ops
+            self.nodes_to_ops[pair] = ops
         else:
-            ops = self.node_to_ops[node]
+            ops = self.nodes_to_ops[pair]
 
         ops.append(new_op)
 
@@ -127,4 +140,6 @@ class DeaggregationManager(Freezable):
         # remove all states in the waiting list that come from this node
         self.aggdag.remove_node_from_waiting_list(node)
 
+        print(f".deagg begin_replay() called, splitting node in mode {node.stateset.mode.name} with " + \
+              f"{len(node.parent_ops)} parent_ops: {[str(op) for op in node.parent_ops]}")
         self.waiting_nodes.append((node, node.split()))

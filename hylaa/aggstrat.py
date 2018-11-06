@@ -84,6 +84,7 @@ class Aggregated(AggregationStrategy):
         self.add_guard = True # add the guard direction when performing aggregation
         self.require_same_path = True
         self.deaggregate = deaggregate
+        self.deagg_leaves_first = True # should we deaggregate leaf nodes first?
 
         AggregationStrategy.__init__(self)
 
@@ -174,15 +175,17 @@ class Aggregated(AggregationStrategy):
 
         return AggType(is_box, is_arnoldi_box, is_chull, self.add_guard)
 
-    def find_aggregated_ancestor(self, node):
+    def get_ancestors(self, node):
         '''
-        find an ancestor of the node that is an aggregation
+        get an ordered list of all the ancestors, starting from the root to the leaf
         '''
 
-        if len(node.parent_ops) > 1:
-            rv = node
-        else:
-            rv = self.find_aggregated_ancestor(node.parent_ops[0].parent_node)
+        rv = []
+
+        if node.parent_ops[0].parent_node is not None:
+            rv += self.get_ancestors(node.parent_ops[0].parent_node)
+
+        rv.append(node)
 
         return rv
 
@@ -199,7 +202,22 @@ class Aggregated(AggregationStrategy):
                 state = op.poststate
                 
                 if state.mode.is_error() and not state.is_concrete:
-                    rv = self.find_aggregated_ancestor(op.parent_node)
+                    ancestors = self.get_ancestors(op.parent_node)
+
+                    if self.deagg_leaves_first:
+                        ancestors.reverse()
+
+                    rv = None
+
+                    for node in ancestors:
+                        if len(node.parent_ops) > 1:
+                            rv = node
+                            break
+                            
+                    assert rv is not None, "didn't find aggregated ancestor?"
                     break
+
+        if rv:
+            aggdag.save_viz()
 
         return rv
