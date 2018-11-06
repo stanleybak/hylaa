@@ -217,7 +217,7 @@ class Aggregated(AggregationStrategy):
                     assert rv is not None, "didn't find aggregated ancestor?"
                     break
 
-        if rv:
-            aggdag.save_viz()
+        #if rv:
+        #    aggdag.save_viz()
 
         return rv

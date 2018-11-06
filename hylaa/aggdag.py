@@ -9,7 +9,7 @@ from termcolor import cprint
 
 from graphviz import Digraph
 
-from hylaa.settings import HylaaSettings
+from hylaa.settings import HylaaSettings, PlotSettings
 from hylaa.util import Freezable
 from hylaa.stateset import StateSet
 from hylaa.timerutil import Timers
@@ -45,7 +45,7 @@ class AggDag(Freezable):
 
         self.waiting_list = [] # a list of OpTransition (with child_node = None). StateSet is in op.poststate
 
-        self.deagg_man = DeaggregationManager(self)
+        self.deagg_man = DeaggregationManager(self, self.settings.plot.plot_mode != PlotSettings.PLOT_NONE)
 
         self.viz_count = 0
         
@@ -220,7 +220,6 @@ class AggDag(Freezable):
     def make_node(self, ops, agg_type):
         'make an aggdag node'
 
-        print(f".aggdag make_node called with {len(ops)} ops")
         return AggDagNode(ops, agg_type, self)
 
     def save_viz(self):
@@ -327,8 +326,6 @@ class AggDagNode(Freezable):
 
         for parent_op_list in parent_op_lists:
             node = AggDagNode(parent_op_list, self.agg_type_from_parents, self.aggdag)
-
-            print(f".aggdag split into new node using {len(parent_op_list)} ops; stateset: {str(node.stateset)}")
 
             rv.append(node)
 

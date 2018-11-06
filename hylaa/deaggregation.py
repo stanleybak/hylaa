@@ -12,8 +12,9 @@ from hylaa.util import Freezable
 class DeaggregationManager(Freezable):
     'manager for deaggregation data'
 
-    def __init__(self, aggdag):
+    def __init__(self, aggdag, plot_on):
         self.aggdag = aggdag
+        self.plot_on = plot_on
         
         self.waiting_nodes = deque() # a deque of 2-tuples (parent, children_list) of AggDagNodes awaiting deaggregation
 
@@ -43,8 +44,6 @@ class DeaggregationManager(Freezable):
             self.deagg_parent, self.deagg_children = self.waiting_nodes.popleft()
             self.replay_step = 0
             self.nodes_to_ops = {}
-
-            print(f".deagg got deagg children: {[str(c.stateset) for c in self.deagg_children]}")
 
         # replay up to the next OpTransition
         finished_replay = True
@@ -76,14 +75,16 @@ class DeaggregationManager(Freezable):
 
                 # aggregate all ops into a single node
                 node = self.aggdag.make_node(ops, child.agg_type_from_parents)
-                print(f".deagg node made with stateset: {node.stateset}")
                 
                 self.waiting_nodes.append((child, [node]))
                 plot_state_list.append(node.stateset)
 
-            self.aggdag.core.plotman.highlight_states(plot_state_list)
+            if self.plot_on:
+                self.aggdag.core.plotman.highlight_states(plot_state_list)
+                
             self.deagg_parent = self.deagg_children = self.replay_step = self.nodes_to_ops = None
-            self.aggdag.save_viz()
+
+            #self.aggdag.save_viz()
 
         if self.doing_replay():
             self.aggdag.core.plotman.interactive.paused = True
@@ -140,6 +141,4 @@ class DeaggregationManager(Freezable):
         # remove all states in the waiting list that come from this node
         self.aggdag.remove_node_from_waiting_list(node)
 
-        print(f".deagg begin_replay() called, splitting node in mode {node.stateset.mode.name} with " + \
-              f"{len(node.parent_ops)} parent_ops: {[str(op) for op in node.parent_ops]}")
         self.waiting_nodes.append((node, node.split()))
