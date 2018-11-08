@@ -94,11 +94,10 @@ def make_dynamics(variables, derivatives, constant_dict, has_affine_variable=Fal
         subs[sym_var] = value
 
     for der in derivatives:
+        print(f"parsing: {der}")
         sym_der = parse_expr(der)
 
         sym_der = sym_der.subs(subs)
-
-        print(f"substutued der: {sym_der}")
 
         rv.append(extract_linear_terms(sym_der, variables, has_affine_variable))
 
@@ -106,3 +105,49 @@ def make_dynamics(variables, derivatives, constant_dict, has_affine_variable=Fal
         rv.append([0] * (len(variables) + 1))
 
     return rv
+
+def make_condition(variables, condition_list, constant_dict):
+    '''make a condition matrix and right-hand-side (rhs) from a set of string conditions.
+    condition_list is a list of strings with a single '<=' or '>=' condition like 'x - 1 + y <= 2 * x + 3'
+
+    returns a 2-tuple: (mat, rhs)
+    '''
+
+    mat = []
+    rhs = []
+    subs = {}
+    
+    for var, value in constant_dict.items():
+        sym_var = sympy.symbols(var)
+        subs[sym_var] = value
+
+    for cond in condition_list:
+        less_than_count = cond.count('<=')
+        greater_than_count = cond.count('>=')
+
+        if less_than_count + greater_than_count != 1:
+            raise RuntimeError(f"Expected condition with single '<=' or '>=': {cond}")
+
+        if greater_than_count == 1:
+            cond = cond.replace(">=", "<=")
+
+        left, right = cond.split("<=")
+
+        # swap left and right for '>=' expressions
+        if greater_than_count == 1:
+            left, right = right, left
+
+        # make the expression: left - (right) <= 0
+        subtract_cond = f"{left} - ({right})"
+        
+        sym_cond = parse_expr(subtract_cond)
+
+        # substitute in constants
+        sym_cond = sym_cond.subs(subs)
+
+        terms = extract_linear_terms(sym_cond, variables, has_affine_variable=True)
+        mat.append(terms[:-1])
+        rhs.append(-1 * terms[-1])
+
+
+    return mat, rhs

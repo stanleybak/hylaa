@@ -8,6 +8,8 @@ import numpy as np
 from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa import symbolic
 
+from sympy.parsing.sympy_parser import parse_expr
+
 def test_step_slow():
     'tests slow-step with non-one step size'
 
@@ -32,7 +34,7 @@ def test_step_slow():
     assert np.allclose(basis_mat, slow_basis_mat)
     assert np.allclose(input_mat, slow_input_mat)
 
-def test_symbloic():
+def test_symbolic_amat():
     'test symbolic dynamics extraction'
 
     constant_dict = {'alpha': 10}
@@ -79,3 +81,34 @@ def test_symbloic():
     expected = np.array([[1, 1, 0], [1, 1, 10], [0, 0, 0]], dtype=float)
 
     assert np.allclose(a_mat, expected)
+
+def test_symbolic_condition():
+    'test symbolic extraction of a condition A x <= b'
+
+    constant_dict = {'deltap': 0.5}
+    variables = ['px', 'py']
+    
+    orig = "px<=deltap & py<=-px*0.7 & py>=px*0.8 + 5.0"
+
+    cond_list = orig.split('&')
+
+    mat, rhs = symbolic.make_condition(variables, cond_list, constant_dict)
+    expected_mat = np.array([[1, 0], [0.7, 1], [0.8, -1]], dtype=float)
+    expected_rhs = [0.5, 0, -5]
+
+    assert np.allclose(mat, expected_mat)
+    assert np.allclose(rhs, expected_rhs)
+
+    for cond in ["0 <= x <= 1", "0 < x", "0 >= y >= -1", "0 <= x >= 0"]: 
+        try:
+            symbolic.make_condition(["x", "y"], [cond], {})
+            assert False, f"expected exception on condition {cond}"
+        except RuntimeError:
+            pass
+
+def test_parse():
+    'simple test for sympy parse'
+
+    s = "x*zeta"
+
+    sym_der = parse_expr(s)
