@@ -522,7 +522,8 @@ class PlotManager(Freezable):
 
             for state in states:
                 if isinstance(state, list):
-                    verts_list.append(state[subplot])
+                    verts = state[subplot] # list of vertices
+                    verts_list.append(verts)
                 else:
                     verts = state.verts(self, subplot=subplot)
                     verts_list.append(verts)

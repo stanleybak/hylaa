@@ -55,6 +55,8 @@ class DeaggregationManager(Freezable):
             for child in self.deagg_children:
                 if not child.node_left_invariant():
                     child.replay_op(self.deagg_parent.op_list, i)
+                else:
+                    self.aggdag.core.print_verbose("child has left invariant")
 
             if is_transition:
                 should_break = self.post_replay_op_transition(op)

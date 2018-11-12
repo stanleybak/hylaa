@@ -196,28 +196,49 @@ class Aggregated(AggregationStrategy):
         rv = None
 
         if self.deaggregate:
-            # scan the aggdag waiting list for non-concrete error mode states
+
+            # if nodes have multiple outgoing transitions they will become deaggregated
+            node_to_transition = {}
 
             for op in aggdag.waiting_list:
                 state = op.poststate
-                
-                if state.mode.is_error() and not state.is_concrete:
-                    ancestors = self.get_ancestors(op.parent_node)
 
-                    if self.deagg_leaves_first:
-                        ancestors.reverse()
+                if state.is_concrete: # only try to split non-concrete states
+                    continue
 
-                    rv = None
+                # highest deaggregation priority: non-concrete states that reach an error mode
+                if state.mode.is_error():
+                    rv = op.parent_node
 
-                    for node in ancestors:
-                        if len(node.parent_ops) > 1:
-                            rv = node
-                            break
-                            
-                    assert rv is not None, "didn't find aggregated ancestor?"
+                # other deaggregation condition: different outgoing transitions from the same node
+                if op.parent_node in node_to_transition:
+                    transition = node_to_transition[op.parent_node]
+
+                    if op.transition is not transition:
+                        rv = op.parent_node
+                else:
+                    node_to_transition[op.parent_node] = op.transition
+
+                    assert op.parent_node.node_left_invariant()
+                    
+                    if op.parent_node.op_list[-1].reached_time_bound:
+                        # both a transition and reached time bound... split it
+                        rv = op.parent_node
+
+        # split earlier or latest ancestor, depending on settings
+        if rv:
+            ancestors = self.get_ancestors(rv)
+
+            if self.deagg_leaves_first:
+                ancestors.reverse()
+
+            rv = None
+
+            for node in ancestors:
+                if len(node.parent_ops) > 1:
+                    rv = node
                     break
 
-        #if rv:
-        #    aggdag.save_viz()
+            assert rv is not None, "didn't find aggregated ancestor?"
 
         return rv

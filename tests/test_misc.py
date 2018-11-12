@@ -47,14 +47,14 @@ def test_symbolic_amat():
     for der, row in zip(derivatives, expected):
         ders = [der, '0']
     
-        a_mat = symbolic.make_dynamics(variables, ders, constant_dict)
+        a_mat = symbolic.make_dynamics_mat(variables, ders, constant_dict)
 
         assert np.allclose(a_mat[0], row)
 
     # check with and without affine term
     variables = ['x', 'y']
     ders = ['x - alpha * alpha / 2 + 2* y ', 'y']
-    a_mat = symbolic.make_dynamics(variables, ders, constant_dict, has_affine_variable=True)
+    a_mat = symbolic.make_dynamics_mat(variables, ders, constant_dict, has_affine_variable=True)
 
     print(f"a_mat:\n{a_mat}")
 
@@ -64,20 +64,20 @@ def test_symbolic_amat():
 
     # check errors
     try:
-        symbolic.make_dynamics(['x', 'y'], ['x + y', 'x * 2 * y'], constant_dict)
+        symbolic.make_dynamics_mat(['x', 'y'], ['x + y', 'x * 2 * y'], constant_dict)
 
         assert False, "expected RuntimeError (nonlinear)"
     except RuntimeError:
         pass
 
     try:
-        symbolic.make_dynamics(['x', 'y'], ['x + y', 'x + y + alpha'], constant_dict)
+        symbolic.make_dynamics_mat(['x', 'y'], ['x + y', 'x + y + alpha'], constant_dict)
 
         assert False, "expected RuntimeError (no affine variable)"
     except RuntimeError:
         pass
 
-    a_mat = symbolic.make_dynamics(['x', 'y'], ['x + y', 'x + y + alpha'], constant_dict, has_affine_variable=True)
+    a_mat = symbolic.make_dynamics_mat(['x', 'y'], ['x + y', 'x + y + alpha'], constant_dict, has_affine_variable=True)
     expected = np.array([[1, 1, 0], [1, 1, 10], [0, 0, 0]], dtype=float)
 
     assert np.allclose(a_mat, expected)
@@ -106,9 +106,11 @@ def test_symbolic_condition():
         except RuntimeError:
             pass
 
-def test_parse():
-    'simple test for sympy parse'
-
-    s = "x*zeta"
-
-    sym_der = parse_expr(s)
+    # try again
+    cond_list = ['I >= 20']
+    mat, rhs = symbolic.make_condition(['x', 'I', 'z'], cond_list, constant_dict, has_affine_variable=True)
+    expected_mat = np.array([[0, -1, 0, 0]], dtype=float)
+    expected_rhs = [-20]
+    assert np.allclose(mat, expected_mat)
+    assert np.allclose(rhs, expected_rhs)
+    

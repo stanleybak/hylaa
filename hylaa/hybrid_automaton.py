@@ -393,7 +393,12 @@ class Transition(Freezable):
         return rv
 
     def __str__(self):
-        return self.from_mode.name + " -> " + self.to_mode.name
+        s = self.from_mode.name + " -> " + self.to_mode.name
+
+        if self.name:
+            s += f" ({self.name})"
+
+        return s
 
 class HybridAutomaton(Freezable):
     'The hybrid automaton'

@@ -18,7 +18,7 @@ from hylaa.deaggregation import DeaggregationManager
 
 # Operation types
 OpInvIntersect = namedtuple('OpInvIntersect', ['step', 'node', 'i_index', 'is_stronger'])
-OpLeftInvariant = namedtuple('OpLeftInvariant', ['step', 'node'])
+OpLeftInvariant = namedtuple('OpLeftInvariant', ['step', 'node', 'reached_time_bound'])
 
 class OpTransition(): # pylint: disable=too-few-public-methods
     'a transition operation'
@@ -70,12 +70,12 @@ class AggDag(Freezable):
 
         return rv
 
-    def cur_state_left_invariant(self):
+    def cur_state_left_invariant(self, reached_time_bound=False):
         '''called when the current state left the invariant (or exceeds reach time bound)'''
 
         state = self.get_cur_state()
 
-        op = OpLeftInvariant(state.cur_step_in_mode, self.cur_node)
+        op = OpLeftInvariant(state.cur_step_in_mode, self.cur_node, reached_time_bound)
         self.cur_node.op_list.append(op)
 
         self.cur_node = None
@@ -407,11 +407,11 @@ class AggDagNode(Freezable):
 
                     break
 
-            if not skip:                   
+            if not skip:           
                 is_feasible = self.replay_op_intersect_invariant(cur_state, op)
 
                 if not is_feasible:
-                    op = OpLeftInvariant(op.step, self)
+                    op = OpLeftInvariant(op.step, self, False)
                     self.op_list.append(op)
 
         Timers.toc('replay_op')
@@ -509,7 +509,11 @@ class AggDagNode(Freezable):
 
         if self.op_list and isinstance(self.op_list[-1], OpLeftInvariant):
             steps = self.op_list[-1].step
-            label += f" ({steps})"
+
+            if self.op_list[-1].reached_time_bound:
+                label += f" ({steps}*)"
+            else:
+                label += f" ({steps})"
         else:
             label += " (incomplete)"
 

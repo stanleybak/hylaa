@@ -203,7 +203,7 @@ class Core(Freezable):
         if not self.is_finished():
             if cur_state.cur_steps_since_start[0] >= self.settings.num_steps:
                 self.print_normal("State reached computation time bound")
-                self.aggdag.cur_state_left_invariant()
+                self.aggdag.cur_state_left_invariant(reached_time_bound=True)
 
             elif self.took_tt_transition:
                 self.print_normal("State reached a time-triggered transition")

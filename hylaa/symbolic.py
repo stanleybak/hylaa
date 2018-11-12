@@ -80,7 +80,18 @@ def _extract_linear_terms_rec(e, variables, rv, has_affine_variable):
     else:
         raise RuntimeError(f"unsupported term of type {type(e)}: '{e}'")
 
-def make_dynamics(variables, derivatives, constant_dict, has_affine_variable=False):
+def make_reset_mat(variables, resets, constant_dict, has_affine_variable=False):
+    'make the matrix for a reset operation'
+
+    mat = make_dynamics_mat(variables, resets, constant_dict, has_affine_variable=has_affine_variable)
+
+    if has_affine_variable:
+        # affine variable should be identity reset, rather than all 0's as in dynamics
+        mat[-1][-1] = 1.0
+
+    return mat
+
+def make_dynamics_mat(variables, derivatives, constant_dict, has_affine_variable=False):
     '''make the dynamics A matrix from the list of variables, derivatives, and a dict mapping constants to values
 
     returns a list of lists (a matrix) of size len(variables) by len(variables)
@@ -88,38 +99,50 @@ def make_dynamics(variables, derivatives, constant_dict, has_affine_variable=Fal
 
     rv = []
     subs = {}
+    symbol_dict = {}
+    
+    for var in variables:
+        symbol_dict[var] = sympy.symbols(var)
     
     for var, value in constant_dict.items():
         sym_var = sympy.symbols(var)
         subs[sym_var] = value
+        symbol_dict[var] = sym_var
 
     for der in derivatives:
-        print(f"parsing: {der}")
-        sym_der = parse_expr(der)
+        sym_der = parse_expr(der, local_dict=symbol_dict)
 
         sym_der = sym_der.subs(subs)
 
-        rv.append(extract_linear_terms(sym_der, variables, has_affine_variable))
+        row = extract_linear_terms(sym_der, variables, has_affine_variable)
+        rv.append(row)
 
     if has_affine_variable:
         rv.append([0] * (len(variables) + 1))
 
     return rv
 
-def make_condition(variables, condition_list, constant_dict):
+def make_condition(variables, condition_list, constant_dict, has_affine_variable=False):
     '''make a condition matrix and right-hand-side (rhs) from a set of string conditions.
     condition_list is a list of strings with a single '<=' or '>=' condition like 'x - 1 + y <= 2 * x + 3'
 
     returns a 2-tuple: (mat, rhs)
     '''
 
+    assert isinstance(condition_list, list), "condition_list should be a list of string conditions"
+
     mat = []
     rhs = []
     subs = {}
+    symbol_dict = {}
+
+    for var in variables:
+        symbol_dict[var] = sympy.symbols(var)
     
     for var, value in constant_dict.items():
         sym_var = sympy.symbols(var)
         subs[sym_var] = value
+        symbol_dict[var] = sym_var
 
     for cond in condition_list:
         less_than_count = cond.count('<=')
@@ -140,14 +163,18 @@ def make_condition(variables, condition_list, constant_dict):
         # make the expression: left - (right) <= 0
         subtract_cond = f"{left} - ({right})"
         
-        sym_cond = parse_expr(subtract_cond)
+        sym_cond = parse_expr(subtract_cond, local_dict=symbol_dict)
 
         # substitute in constants
         sym_cond = sym_cond.subs(subs)
 
         terms = extract_linear_terms(sym_cond, variables, has_affine_variable=True)
-        mat.append(terms[:-1])
-        rhs.append(-1 * terms[-1])
+        row = terms[:-1]
 
+        if has_affine_variable:
+            row.append(0)
+        
+        mat.append(row)
+        rhs.append(-1 * terms[-1])
 
     return mat, rhs
