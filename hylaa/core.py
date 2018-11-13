@@ -3,7 +3,7 @@ Main Hylaa Reachability Implementation
 Stanley Bak, 2018
 '''
 
-from collections import deque, defaultdict
+from collections import defaultdict
 
 import numpy as np
 from termcolor import cprint
@@ -12,6 +12,7 @@ from hylaa.settings import HylaaSettings, PlotSettings
 
 from hylaa.plotutil import PlotManager
 from hylaa.aggdag import AggDag
+from hylaa.counterexample import make_counterexample
 from hylaa.stateset import StateSet
 from hylaa.hybrid_automaton import HybridAutomaton, was_tt_taken
 from hylaa.timerutil import Timers
@@ -106,7 +107,9 @@ class Core(Freezable):
 
             if not self.result.counterexample:
                 self.print_verbose("Reached concrete error state; making concrete counter-example")
-                self.result.counterexample = make_counterexample(self.hybrid_automaton, t, t_lpi)
+                self.result.counterexample = make_counterexample(self.hybrid_automaton, state, t, t_lpi)
+
+                self.plotman.draw_counterexample(self.result.counterexample)
 
     def check_guards(self):
         '''check for discrete successors with the guards'''
@@ -386,83 +389,6 @@ class Core(Freezable):
         Timers.reset()
 
         return self.result
-
-def make_counterexample(ha, transition_to_error, lpi):
-    '''make and return the result counter-example from the lp solution'''
-
-    lp_solution = lpi.minimize() # resolves the LP to get the full unsafe solution
-    names = lpi.get_names()
-
-    counterexample = []
-
-    for name, value in zip(names, lp_solution):
-
-        # if first initial variable of mode then assign the segment.mode variable
-        if name.startswith('m') and '_i0' in name:
-            seg = CounterExampleSegment()
-            counterexample.append(seg)
-
-            parts = name.split('_')
-
-            if len(parts) == 2:
-                assert len(counterexample) == 1, "only the initial mode should have no predecessor transition"
-            else:
-                assert len(parts) == 3
-
-                # assign outgoing transition of previous counterexample segment
-                transition_index = int(parts[2][1:])
-                t = counterexample[-2].mode.transitions[transition_index]
-                counterexample[-2].outgoing_transition = t
-
-            mode_id = int(parts[0][1:])
-
-            for mode in ha.modes.values():
-                if mode.mode_id == mode_id:
-                    seg.mode = mode
-                    break
-
-            assert seg.mode is not None, "mode id {} not found in automaton".format(mode_id)
-
-        if name.startswith('m'): # mode variable
-            if '_i' in name:
-                seg.start.append(value)
-            elif '_c' in name:
-                seg.end.append(value)
-            elif '_I' in name:
-                if '_I0' in name:
-                    seg.inputs.appendleft([])
-                    
-                # inputs are in backwards order due to how the LP is constructed, prepend it
-                seg.inputs[0].append(value)
-
-        elif name.startswith('reset'):
-            seg.reset_minkowski_vars.append(value)
-
-    # add the final transition which is not encoded in the names of the variables
-    seg.outgoing_transition = transition_to_error
-
-    return counterexample
-
-class CounterExampleSegment(Freezable):
-    'a part of a counter-example trace'
-
-    def __init__(self):
-        self.mode = None # Mode object
-        self.start = []
-        self.end = []
-        self.outgoing_transition = None # Transition object
-        self.reset_minkowski_vars = [] # a list of minkowski variables in the outgoing reset
-
-        self.inputs = deque() # inputs at each step (a deque of m-tuples, where m is the number of inputs)
-        
-        self.freeze_attrs()
-
-    def __str__(self):
-        return "[CE_Segment: {} -> {} in '{}']".format( \
-            self.start, self.end, "<None>" if self.mode is None else self.mode.name)
-
-    def __repr__(self):
-        return str(self)
 
 class HylaaResult(Freezable): # pylint: disable=too-few-public-methods
     'result object returned by core.run()'

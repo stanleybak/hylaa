@@ -5,10 +5,10 @@ tests for misc aspects of hylaa
 
 import numpy as np
 
+from sympy.parsing.sympy_parser import parse_expr
+
 from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa import symbolic
-
-from sympy.parsing.sympy_parser import parse_expr
 
 def test_step_slow():
     'tests slow-step with non-one step size'

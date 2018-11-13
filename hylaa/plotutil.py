@@ -21,6 +21,7 @@ from hylaa import lpplot
 from hylaa.timerutil import Timers
 from hylaa.settings import PlotSettings
 from hylaa.util import Freezable
+from hylaa.counterexample import replay_counterexample
 
 class AxisLimits(Freezable):
     '''the axis limits'''
@@ -330,6 +331,46 @@ class PlotManager(Freezable):
             
         self.num_subplots = len(self.plot_vec_list)
         self.core.print_verbose("Num subplots = {}".format(self.num_subplots))
+
+    def draw_counterexample(self, ce_segments):
+        '''we got a concrete counter example, draw it (if we're plotting)
+        
+        currently this only works for simple plots
+        '''
+
+        if self.settings.plot_mode != PlotSettings.PLOT_NONE and self.settings.show_counterexample:
+            pts, times = replay_counterexample(ce_segments, self.core.hybrid_automaton, self.core.settings)
+
+            for i, shapes in enumerate(self.shapes):
+                w = self.settings.reachable_poly_width
+
+                # project pts onto axis
+                xdim = self.settings.xdim_dir[i]
+                ydim = self.settings.ydim_dir[i]
+
+                if xdim is None:
+                    xs = times
+                elif isinstance(xdim, int):
+                    xs = [pt[xdim] for pt in pts]
+                else:
+                    continue
+
+                if ydim is None:
+                    ys = times
+                elif isinstance(ydim, int):
+                    ys = [pt[ydim] for pt in pts]
+                else:
+                    continue
+
+                verts = [v for v in zip(xs, ys)]
+
+                if self.settings.label[i].axes_limits is None:
+                    self.update_axis_limits(verts, i)
+
+                lc = collections.LineCollection([verts], lw=w, color='black', zorder=4)
+
+                shapes.axes.add_collection(lc)
+                shapes.extra_collection_list.append(lc)
 
     def state_popped(self):
         'a state was popped off the waiting list'

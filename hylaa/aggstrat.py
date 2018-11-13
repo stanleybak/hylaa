@@ -76,6 +76,7 @@ class Aggregated(AggregationStrategy):
 
     AGG_BOX, AGG_ARNOLDI_BOX, AGG_CONVEX_HULL = range(3)
     POP_LOWEST_MINTIME, POP_LOWEST_AVGTIME, POP_LARGEST_MAXTIME = range(3)
+    DEAGG_LEAVES_FIRST, DEAGG_ROOT_FIRST, DEAGG_MOST_STATES = range(3)
 
     def __init__(self, agg_type=AGG_ARNOLDI_BOX, deaggregate=False):
         self.agg_type = agg_type
@@ -84,7 +85,7 @@ class Aggregated(AggregationStrategy):
         self.add_guard = True # add the guard direction when performing aggregation
         self.require_same_path = True
         self.deaggregate = deaggregate
-        self.deagg_leaves_first = True # should we deaggregate leaf nodes first?
+        self.deagg_preference = Aggregated.DEAGG_MOST_STATES
 
         AggregationStrategy.__init__(self)
 
@@ -175,20 +176,6 @@ class Aggregated(AggregationStrategy):
 
         return AggType(is_box, is_arnoldi_box, is_chull, self.add_guard)
 
-    def get_ancestors(self, node):
-        '''
-        get an ordered list of all the ancestors, starting from the root to the leaf
-        '''
-
-        rv = []
-
-        if node.parent_ops[0].parent_node is not None:
-            rv += self.get_ancestors(node.parent_ops[0].parent_node)
-
-        rv.append(node)
-
-        return rv
-
     def get_deagg_node(self, aggdag):
         '''Called before popping a state off the waiting list. Get the aggdag node to deaggregate (if any).
         '''
@@ -227,10 +214,14 @@ class Aggregated(AggregationStrategy):
 
         # split earlier or latest ancestor, depending on settings
         if rv:
-            ancestors = self.get_ancestors(rv)
+            ancestors = get_ancestors(rv)
 
-            if self.deagg_leaves_first:
+            if self.deagg_preference == Aggregated.DEAGG_LEAVES_FIRST:
                 ancestors.reverse()
+            elif self.deagg_preference == Aggregated.DEAGG_MOST_STATES:
+                # sort ancestors by the number of parent states
+                count_parent_ops = lambda node: len(node.parent_ops)
+                ancestors = reversed(sorted(ancestors, key=count_parent_ops))
 
             rv = None
 
@@ -242,3 +233,17 @@ class Aggregated(AggregationStrategy):
             assert rv is not None, "didn't find aggregated ancestor?"
 
         return rv
+
+def get_ancestors(node):
+    '''
+    get an ordered list of all the ancestors, starting from the root to the leaf
+    '''
+
+    rv = []
+
+    if node.parent_ops[0].parent_node is not None:
+        rv += get_ancestors(node.parent_ops[0].parent_node)
+
+    rv.append(node)
+
+    return rv

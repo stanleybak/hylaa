@@ -13,6 +13,8 @@ Stanley Bak, Nov 2018
 
 import math
 
+import numpy as np
+
 from matplotlib import collections
 
 from hylaa.hybrid_automaton import HybridAutomaton
@@ -22,7 +24,7 @@ from hylaa.stateset import StateSet
 from hylaa import lputil, aggstrat, symbolic
 from hylaa.aggstrat import Aggregated
 
-def make_automaton(theta_deg):
+def make_automaton(theta_deg, maxi=20):
     'make the hybrid automaton'
 
     ha = HybridAutomaton('Gearbox')
@@ -49,15 +51,22 @@ def make_automaton(theta_deg):
     a_mat = symbolic.make_dynamics_mat(variables, derivatives, constant_dict, has_affine_variable=True)
     move_free.set_dynamics(a_mat)
 
-    invariant = "px<=deltap & py<=-px*0.726542528005361 & py>=px*0.726542528005361"
+    invariant = f"px<=deltap & py<=-px*0.726542528005361 & py>=px*0.726542528005361 & I <= {maxi}"
     mat, rhs = symbolic.make_condition(variables, invariant.split('&'), constant_dict, has_affine_variable=True)
     move_free.set_invariant(mat, rhs)
+
+    meshed = ha.new_mode('meshed')
+    a_mat = np.zeros((6, 6))
+    meshed.set_dynamics(a_mat)
+
+    # error mode
+    error = ha.new_mode('error')
 
     ############## Cyclic Transitions ##############
     # t1
     t1 = ha.new_transition(move_free, move_free, "t1")
-    guard = "py>=-px*0.726542528005361 & vx*0.587785252292473+vy*0.809016994374947>=0"
-    mat, rhs = symbolic.make_condition(variables, guard.split('&'), constant_dict, has_affine_variable=True)
+    t1_guard = "py>=-px*0.726542528005361 & vx*0.587785252292473+vy*0.809016994374947>=0"
+    mat, rhs = symbolic.make_condition(variables, t1_guard.split('&'), constant_dict, has_affine_variable=True)
     t1.set_guard(mat, rhs)
 
     # projection of a point onto a plane
@@ -66,38 +75,76 @@ def make_automaton(theta_deg):
     nx = math.cos(math.pi / 2 - constant_dict['theta'])
     ny = math.sin(math.pi / 2 - constant_dict['theta'])
 
+    i_reset = "I+(vx*0.587785252292473+vy*0.809016994374947)*(zeta+1)*ms*mg2/(ms*(0.809016994374947*0.809016994374947)+mg2*(0.587785252292473*0.587785252292473))" 
     resets = [f"px - (px*{nx} + py*{ny}) * {nx}",
               f"py - (px*{nx} + py*{ny}) * {ny}",
               "(vx*(ms*0.809016994374947*0.809016994374947-mg2*zeta*0.587785252292473*0.587785252292473)+vy*(-(zeta+1)*mg2*0.587785252292473*0.809016994374947))/(ms*(0.809016994374947*0.809016994374947)+mg2*(0.587785252292473*0.587785252292473))", 
               "(vx*(-(zeta+1)*ms*0.587785252292473*0.809016994374947)+vy*(mg2*0.587785252292473*0.587785252292473-ms*zeta*0.809016994374947*0.809016994374947))/(ms*(0.809016994374947*0.809016994374947)+mg2*(0.587785252292473*0.587785252292473))", 
-              "I+(vx*0.587785252292473+vy*0.809016994374947)*(zeta+1)*ms*mg2/(ms*(0.809016994374947*0.809016994374947)+mg2*(0.587785252292473*0.587785252292473))"]
+              i_reset]
     reset_mat = symbolic.make_reset_mat(variables, resets, constant_dict, has_affine_variable=True)
     t1.set_reset(reset_mat)
 
+    # T1 to error mode
+    t1_to_error = ha.new_transition(move_free, error, "t1_to_error")
+    guard = f"{t1_guard} & {i_reset}>={maxi}"
+    mat, rhs = symbolic.make_condition(variables, guard.split('&'), constant_dict, has_affine_variable=True)
+    t1_to_error.set_guard(mat, rhs)
+    t1_to_error.set_reset(reset_mat)
+
     # t2
     t2 = ha.new_transition(move_free, move_free, "t2")
-    guard = "py<=px*0.726542528005361 & vx*0.587785252292473-vy*0.809016994374947>=0"
-    mat, rhs = symbolic.make_condition(variables, guard.split('&'), constant_dict, has_affine_variable=True)
+    t2_guard = "py<=px*0.726542528005361 & vx*0.587785252292473-vy*0.809016994374947>=0"
+    mat, rhs = symbolic.make_condition(variables, t2_guard.split('&'), constant_dict, has_affine_variable=True)
     t2.set_guard(mat, rhs)
 
     ny = -ny
 
+    i_reset = "I+(vx*0.587785252292473-vy*0.809016994374947)*(zeta+1)*ms*mg2/(ms*(0.809016994374947*0.809016994374947)+mg2*(0.587785252292473*0.587785252292473))"
     resets = [f"px - (px*{nx} + py*{ny}) * {nx}",
               f"py - (px*{nx} + py*{ny}) * {ny}",
               "(vx*(ms*0.809016994374947*0.809016994374947-mg2*zeta*0.587785252292473*0.587785252292473)+vy*((zeta+1)*mg2*0.587785252292473*0.809016994374947))/(ms*(0.809016994374947*0.809016994374947)+mg2*(0.587785252292473*0.587785252292473))",
               "(vx*((zeta+1)*ms*0.587785252292473*0.809016994374947)+vy*(mg2*0.587785252292473*0.587785252292473-ms*zeta*0.809016994374947*0.809016994374947))/(ms*(0.809016994374947*0.809016994374947)+mg2*(0.587785252292473*0.587785252292473))",
-              "I+(vx*0.587785252292473-vy*0.809016994374947)*(zeta+1)*ms*mg2/(ms*(0.809016994374947*0.809016994374947)+mg2*(0.587785252292473*0.587785252292473))"]
+              i_reset]
     reset_mat = symbolic.make_reset_mat(variables, resets, constant_dict, has_affine_variable=True)
     t2.set_reset(reset_mat)
 
-    # error transition
-    error = ha.new_mode('error')
-
-    t_error_i = ha.new_transition(move_free, error, "I_too_high")
-    guard = "I >= 20"
+    # T2 to error mode
+    t2_to_error = ha.new_transition(move_free, error, "t2_to_error")
+    guard = f"{t2_guard} & {i_reset}>={maxi}"
     mat, rhs = symbolic.make_condition(variables, guard.split('&'), constant_dict, has_affine_variable=True)
-    t_error_i.set_guard(mat, rhs)
-    
+    t2_to_error.set_guard(mat, rhs)
+    t2_to_error.set_reset(reset_mat)
+
+    #### transitions to meshed
+
+    guards = ["px >= deltap & vx >= 0 & vy >= 0",
+              "px >= deltap & vx >= 0 & vy <= 0",
+              "px >= deltap & vx <= 0 & vy >= 0",
+              "px >= deltap & vx <= 0 & vy <= 0"]
+
+    i_resets = ["I+ms*vx+ms*vy", "I+ms*vx-ms*vy", "I-ms*vx+ms*vy", "I-ms*vx-ms*vy"]
+
+    for i, (guard, i_reset) in enumerate(zip(guards, i_resets)):
+        t3 = ha.new_transition(move_free, meshed, f"meshed_{i}")
+
+        t3_guard = guard + f" & I <= {maxi}"
+        mat, rhs = symbolic.make_condition(variables, t3_guard.split('&'), constant_dict, has_affine_variable=True)
+        t3.set_guard(mat, rhs)
+
+        resets = [f"px",
+                  f"py",
+                  "0",
+                  "0",
+                  i_reset]
+        reset_mat = symbolic.make_reset_mat(variables, resets, constant_dict, has_affine_variable=True)
+        t3.set_reset(reset_mat)
+
+        # T3 to error mode
+        t3_to_error = ha.new_transition(move_free, error, f"t3_to_error_{i}")
+        t3_err_guard = guard + f" & I >= {maxi}"
+        mat, rhs = symbolic.make_condition(variables, t3_err_guard.split('&'), constant_dict, has_affine_variable=True)
+        t3_to_error.set_guard(mat, rhs)
+            
     return ha
 
 def make_init(ha):
@@ -105,9 +152,18 @@ def make_init(ha):
 
     mode = ha.modes['move_free']
     # px==-0.0165 & py==0.003 & vx==0 & vy==0 & I==0 & affine==1.0
-    init_lpi = lputil.from_box([(-0.0165, -0.0165), (0.003, 0.0035), (0, 0), (0, 0), (0, 0), (1.0, 1.0)], mode)
+    #init_lpi = lputil.from_box([(-0.0165, -0.0165), (-0.005, 0.005), (0, 0), (0, 0), (0, 0), (1.0, 1.0)], mode)
+
+    
+    #init_lpi = lputil.from_box([(-0.02, -0.02), (-0.005, -0.003), (0, 0), (0, 0), (0, 0), (1.0, 1.0)], mode)
+    start = [-0.02, -0.004213714568273684, 0.0, 0.0, 0.0, 1.0]
+    tol = 1e-7
+    init_lpi = lputil.from_box([(x - tol, x + tol) if i < 2 else (x, x) for i, x in enumerate(start)], mode)
+
     init_list = [StateSet(init_lpi, mode)]
 
+    # why does 0.003-0.005 reach an error with i=30 for roots first but not leaves first?
+ 
     return init_list
 
 def make_settings(theta_deg):
@@ -120,10 +176,11 @@ def make_settings(theta_deg):
 
     #settings.aggstrat = MyAggergated()
     settings.aggstrat.deaggregate = True # use deaggregation
+    settings.aggstrat.deagg_preference = Aggregated.DEAGG_ROOT_FIRST
 
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
 
-    settings.plot.plot_mode = PlotSettings.PLOT_INTERACTIVE
+    settings.plot.plot_mode = PlotSettings.PLOT_LIVE
     settings.plot.filename = "gearbox.png"
     settings.plot.plot_size = (8, 9)
 
@@ -164,14 +221,18 @@ def main():
     'main entry point'
 
     theta_deg = 36
+    maxi = 27
 
-    ha = make_automaton(theta_deg)
+    ha = make_automaton(theta_deg, maxi)
 
     init_states = make_init(ha)
 
     settings = make_settings(theta_deg)
 
-    Core(ha, settings).run(init_states)
+    result = Core(ha, settings).run(init_states)
+
+    if result.counterexample:
+        print(f"counterexample start: {result.counterexample[0].start}")
 
 if __name__ == "__main__":
     main()

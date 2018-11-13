@@ -39,7 +39,7 @@ class HylaaSettings(Freezable):  # pylint: disable=too-few-public-methods
         self.optimize_tt_transitions = True # auto-detect time-triggered transitions and use single-step semantics?
 
         # what to do when an error appears reachable
-        self.stop_on_aggregated_error = True # stop whenever any state (aggregated or not) reaches an error mode
+        self.stop_on_aggregated_error = False # stop whenever any state (aggregated or not) reaches an error mode
         self.stop_on_concrete_error = True # stop whenver a concrete state reaches an error
         
         self.aggstrat = aggstrat.Aggregated() # aggregation strategy class
@@ -82,6 +82,8 @@ class PlotSettings(Freezable): # pylint: disable=too-few-public-methods,too-many
         self.grid_ytics = None # override default ytics value, for example np.linspace(0.0, 5.0, 1.0)
 
         self.use_markers_for_small = True # draw markers when the reachable set is tiny instead of (invisible) polygons
+
+        self.show_counterexample = True # draw concrete counter-example in the last frame?
 
         self.video_fps = 40
         self.video_extra_frames = 40 # extra frames at the end of a video so it doesn't end so abruptly

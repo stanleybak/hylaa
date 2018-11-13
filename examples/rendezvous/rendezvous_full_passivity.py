@@ -163,17 +163,18 @@ def make_settings(safe):
     'make the reachability settings object'
 
     # see hylaa.settings for a list of reachability settings
-    settings = HylaaSettings(0.1, 200.0) # step: 0.1, bound: 200.0
+    settings = HylaaSettings(1.0, 200.0) # step: 0.1, bound: 200.0
 
     settings.stop_on_aggregated_error = False
 
     #settings.aggstrat = MyAggergated()
     settings.aggstrat.deaggregate = True # use deaggregation
+    settings.aggstrat.deagg_preference = Aggregated.DEAGG_LEAVES_FIRST
 
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
 
     settings.plot.video_pause_frames = 10
-    settings.plot.plot_mode = PlotSettings.PLOT_NONE
+    settings.plot.plot_mode = PlotSettings.PLOT_LIVE
     settings.plot.filename = "rendezvous_full_passivity.mp4"
     settings.plot.plot_size = (8, 9)
 

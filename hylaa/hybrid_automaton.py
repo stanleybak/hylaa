@@ -305,10 +305,15 @@ class Transition(Freezable):
         '''
 
         assert self.from_mode.a_csr is not None, "A matrix not assigned in predecessor mode {}".format(self.from_mode)
-        assert self.to_mode.a_csr is not None, "A matrix not assigned in successor mode {}".format(self.to_mode)
+
+        to_mode_csr = self.to_mode.a_csr
+
+        # reset to an error mode
+        if to_mode_csr is None:
+            to_mode_csr = self.from_mode.a_csr
 
         if reset_csr is None:
-            assert self.from_mode.a_csr.shape[0] == self.to_mode.a_csr.shape[0], "identity reset but num dims changes"
+            assert self.from_mode.a_csr.shape[0] == to_mode_csr.shape[0], "identity reset but num dims changes"
             reset_csr = sp.sparse.identity(self.from_mode.a_csr.shape[0], dtype=float, format='csr')
 
         if not isinstance(reset_csr, csr_matrix):
@@ -325,8 +330,8 @@ class Transition(Freezable):
         
         assert reset_csr.shape[1] == self.from_mode.a_csr.shape[0], "reset matrix expected {} columns, got {}".format(
             self.from_mode.a_csr.shape[0], reset_csr.shape[1])
-        assert reset_csr.shape[0] == self.to_mode.a_csr.shape[0], "reset matrix expected {} rows, got {}".format(
-            self.to_mode.a_csr.shape[0], reset_csr.shape[0])
+        assert reset_csr.shape[0] == to_mode_csr.shape[0], "reset matrix expected {} rows, got {}".format(
+            to_mode_csr.shape[0], reset_csr.shape[0])
 
         if reset_minkowski_constraints_rhs is not None:
             assert len(reset_minkowski_constraints_rhs.shape) == 1
@@ -339,7 +344,7 @@ class Transition(Freezable):
                 reset_minkowski_csr = sp.sparse.identity(new_vars, dtype=float, format='csr')
 
             assert isinstance(reset_minkowski_csr, csr_matrix)
-            assert reset_minkowski_csr.shape[0] == self.to_mode.a_csr.shape[0]
+            assert reset_minkowski_csr.shape[0] == to_mode_csr.shape[0]
             assert reset_minkowski_csr.shape[1] == new_vars, \
                 "expected num reset_minkowski columns({}) to match reset_minkowski_constraints columns({})".format( \
                 reset_minkowski_csr.shape[1], new_vars)
