@@ -152,13 +152,13 @@ def make_init(ha):
 
     mode = ha.modes['move_free']
     # px==-0.0165 & py==0.003 & vx==0 & vy==0 & I==0 & affine==1.0
-    #init_lpi = lputil.from_box([(-0.0165, -0.0165), (-0.005, 0.005), (0, 0), (0, 0), (0, 0), (1.0, 1.0)], mode)
+    init_lpi = lputil.from_box([(-0.0165, -0.0165), (0.003, 0.005), (0, 0), (0, 0), (0, 0), (1.0, 1.0)], mode)
 
     
     #init_lpi = lputil.from_box([(-0.02, -0.02), (-0.005, -0.003), (0, 0), (0, 0), (0, 0), (1.0, 1.0)], mode)
-    start = [-0.02, -0.004213714568273684, 0.0, 0.0, 0.0, 1.0]
-    tol = 1e-7
-    init_lpi = lputil.from_box([(x - tol, x + tol) if i < 2 else (x, x) for i, x in enumerate(start)], mode)
+    #start = [-0.02, -0.004213714568273684, 0.0, 0.0, 0.0, 1.0]
+    #tol = 1e-7
+    #init_lpi = lputil.from_box([(x - tol, x + tol) if i < 2 else (x, x) for i, x in enumerate(start)], mode)
 
     init_list = [StateSet(init_lpi, mode)]
 
@@ -176,11 +176,11 @@ def make_settings(theta_deg):
 
     #settings.aggstrat = MyAggergated()
     settings.aggstrat.deaggregate = True # use deaggregation
-    settings.aggstrat.deagg_preference = Aggregated.DEAGG_ROOT_FIRST
+    settings.aggstrat.deagg_preference = Aggregated.DEAGG_LEAVES_FIRST
 
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
 
-    settings.plot.plot_mode = PlotSettings.PLOT_LIVE
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
     settings.plot.filename = "gearbox.png"
     settings.plot.plot_size = (8, 9)
 
@@ -221,7 +221,7 @@ def main():
     'main entry point'
 
     theta_deg = 36
-    maxi = 27
+    maxi = 30
 
     ha = make_automaton(theta_deg, maxi)
 
