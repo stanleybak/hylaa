@@ -23,7 +23,7 @@ from hylaa import lputil
 class Core(Freezable):
     'main computation object. initialize and call run()'
 
-    def __init__(self, ha, hylaa_settings):
+    def __init__(self, ha, hylaa_settings, seed=0):
         assert isinstance(hylaa_settings, HylaaSettings)
         assert isinstance(ha, HybridAutomaton)
 
@@ -44,8 +44,16 @@ class Core(Freezable):
 
         self.continuous_steps = 0
 
+        # simulation
+        self.doing_simulation = False
+        self.sim_waiting_list = None # list of (mode, pt, num_step)
+        self.sim_states = None # list of (mode, pt, num_step)
+        self.sim_basis_matrix = None # one-step basis matrix in current mode
+        self.sim_should_try_guards = None # False for the first step unless urgent_guards is True
+        self.sim_took_transition = None  # list of booleans for each sim
+
         # make random number generation (for example, to find orthogonal directions) deterministic
-        np.random.seed(seed=0)
+        np.random.seed(seed=seed)
 
         LpInstance.print_normal = self.print_normal
         LpInstance.print_verbose = self.print_verbose
@@ -76,13 +84,16 @@ class Core(Freezable):
 
         finished = False
 
-        if self.settings.stop_on_aggregated_error and self.result.has_aggregated_error:
-            finished = True
-        elif self.settings.stop_on_concrete_error and self.result.has_concrete_error:
-            finished = True
-        else:    
-            finished = self.aggdag.get_cur_state() is None and not self.aggdag.waiting_list and \
-                       not self.aggdag.deagg_man.doing_replay()
+        if self.doing_simulation:
+            finished = not self.sim_states and not self.sim_waiting_list
+        else:
+            if self.settings.stop_on_aggregated_error and self.result.has_aggregated_error:
+                finished = True
+            elif self.settings.stop_on_concrete_error and self.result.has_concrete_error:
+                finished = True
+            else:    
+                finished = self.aggdag.get_cur_state() is None and not self.aggdag.waiting_list and \
+                           not self.aggdag.deagg_man.doing_replay()
             
         return finished
 
@@ -265,9 +276,17 @@ class Core(Freezable):
         self.plotman.interactive.paused = True
 
         Timers.toc('do_step_pop')
-                
+
     def do_step(self):
         'do a single step of the computation'
+
+        if self.doing_simulation:
+            self.do_step_sim()
+        else:
+            self.do_step_reach()
+            
+    def do_step_reach(self):
+        'do a single reach step of the computation'
 
         Timers.tic('do_step')
 
@@ -389,6 +408,126 @@ class Core(Freezable):
         Timers.reset()
 
         return self.result
+
+    def simulate(self, init_mode, box, num_sims):
+        '''
+        run a number of discrete time simulations (and plot them according to the settings)
+        '''
+
+        # initialize time elapse in each mode of the hybrid automaton
+        ha = init_mode.ha
+
+        for mode in ha.modes.values():
+            mode.init_time_elapse(self.settings.step_size)
+
+        # each simulation is a tuple (mode, pt, num_steps)
+        self.plotman.create_plot()
+
+        assert self.settings.plot.plot_mode != PlotSettings.PLOT_NONE, "simulate called with PLOT_NONE"
+        dims = len(box)
+        assert dims == init_mode.a_csr.shape[0]
+
+        self.doing_simulation = True
+        self.sim_waiting_list = []
+
+        for _ in range(num_sims):
+            rand_array = np.random.rand(dims)
+
+            pt = [box[i][0] + rand_array[i] * (box[i][1] - box[i][0]) for i in range(dims)]
+
+            self.sim_waiting_list.append([init_mode, np.array(pt, dtype=float), 0])
+        
+        self.plotman.compute_and_animate()
+
+    def sim_pop_waiting_list(self):
+        'pop a state off the simulation waiting list'
+
+        min_time_mode = self.settings.aggstrat.get_simulation_pop_mode(self.sim_waiting_list)
+
+        # pop all states in the same mode
+        new_waiting_list = []
+        self.sim_states = []
+
+        for item in self.sim_waiting_list:
+            mode, _, _ = item
+            
+            if mode is min_time_mode:
+                self.sim_states.append(item)
+            else:
+                new_waiting_list.append(item)
+
+        self.sim_waiting_list = new_waiting_list
+
+        assert min_time_mode is not None
+        assert min_time_mode.time_elapse is not None, f"time elapse was None for mode {min_time_mode.name}"
+        self.sim_basis_matrix, ie_mat = min_time_mode.time_elapse.get_basis_matrix(1)
+        assert ie_mat is None, "simulation with inputs unimplemented"
+
+        self.print_verbose(f"Popped {len(self.sim_states)} off waiting list ({len(self.sim_waiting_list)} remaining)")
+                
+    def do_step_sim(self):
+        'do a simulation step'
+
+        if not self.sim_states:
+            # pop minimum time state
+            self.sim_pop_waiting_list()
+
+            self.sim_should_try_guards = self.settings.process_urgent_guards
+            self.sim_took_transition = [False] * len(self.sim_states)
+            self.plotman.interactive.paused = True
+        else:
+            # simulate one step for all states in sim_states
+            finished = True
+            for i, obj in enumerate(self.sim_states):
+                if obj is None:
+                    continue
+
+                mode, pt, steps = obj
+
+                if steps == self.settings.num_steps:
+                    self.print_verbose(f'Sim #{i} reached the time bound')
+                    self.sim_states[i] = None
+                    continue
+
+                if self.sim_took_transition[i]:
+                    self.sim_states[i] = None
+                    continue
+
+                # try guards (before advancing)
+                if self.sim_should_try_guards:
+                    for transition in mode.transitions:
+                        if transition.is_guard_true_for_point(pt):
+                            post_pt, post_mode = transition.apply_reset_for_point(pt)
+
+                            if not post_mode.is_error():
+                                self.sim_waiting_list.append([post_mode, post_pt, steps])
+                                
+                            self.sim_took_transition[i] = True
+                            obj[1] = post_pt
+                            self.print_verbose(f'Sim #{i} took transition {transition}')
+                            break
+
+                if self.sim_took_transition[i]:
+                    finished = False
+                    continue
+                        
+                if not mode.point_in_invariant(pt):
+                    self.print_verbose(f'Invariant became False for Sim #{i}')
+                    self.sim_states[i] = None
+                    continue
+
+                self.sim_should_try_guards = True
+                finished = False
+                
+                # advance time
+                pt = np.dot(self.sim_basis_matrix, pt)
+
+                obj[1] = pt
+                obj[2] = steps + 1
+
+            if finished:
+                self.plotman.commit_cur_sims()
+                self.sim_states = None
 
 class HylaaResult(Freezable): # pylint: disable=too-few-public-methods
     'result object returned by core.run()'

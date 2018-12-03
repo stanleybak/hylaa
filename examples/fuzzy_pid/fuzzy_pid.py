@@ -333,7 +333,7 @@ def define_settings():
 
     # step_size = 0.001, max_time = 0.75
     settings = HylaaSettings(0.005, 0.15)
-    settings.plot.plot_mode = PlotSettings.PLOT_NONE # try PLOT_VIDEO (takes 10 minutes)
+    settings.plot.plot_mode = PlotSettings.PLOT_IMAGE # try PLOT_VIDEO (takes 10 minutes)
     settings.plot.xdim_dir = 2
     settings.plot.ydim_dir = 0
     settings.plot.label.axes_limits = (-0.01, 0.3, -1.1, 1.1) 
@@ -363,7 +363,7 @@ def run_hylaa():
     core = Core(ha, settings)
     result = core.run(init)
 
-    core.aggdag.show()
+    #core.aggdag.show()
 
     return result
 

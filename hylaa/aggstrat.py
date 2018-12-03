@@ -87,6 +87,8 @@ class Aggregated(AggregationStrategy):
         self.deaggregate = deaggregate
         self.deagg_preference = Aggregated.DEAGG_MOST_STATES
 
+        self.sim_avoid_modes = [] # list of mode names to try to avoid during simulation
+
         AggregationStrategy.__init__(self)
 
     def pop_waiting_list(self, waiting_list):
@@ -149,6 +151,28 @@ class Aggregated(AggregationStrategy):
             raise RuntimeError("Unknown waiting list pop strategy: {}".format(self.pop_type))
 
         return score
+
+    def get_simulation_pop_mode(self, sim_waiting_list):
+        '''
+        returns the mode to be popped off the simulation waiting list
+        '''
+
+        # find minimum time mode
+        min_time_mode = None
+        min_time_steps = float('inf')
+
+        for mode, _, steps in sim_waiting_list:
+            if mode.name in self.sim_avoid_modes:
+                steps = float('inf')
+
+            if steps < min_time_steps:
+                min_time_mode = mode
+                min_time_steps = steps
+
+        if min_time_mode is None: # all are avoid modes
+            min_time_mode = sim_waiting_list[0][0]
+                
+        return min_time_mode
 
     def pretransition(self, t, t_lpi, op_transition):
         'event function, called when taking a transition before the reset is applied'

@@ -10,6 +10,27 @@ make_plot_vecs is useful for controlling the accuracy (and decreasing overhead c
 import math
 import numpy as np
 
+def pt_to_plot_xy(pt, xdim=0, ydim=1, cur_time=0.0):
+    '''convert a point to an x/y pair for plotting
+    xdim and ydim can be either an integer (dimension number), an np.array (direction), or None (time will be used)
+    '''
+
+    x = y = float(cur_time)
+
+    if isinstance(xdim, int):
+        x = pt[xdim]
+    elif xdim:
+        assert isinstance(xdim, np.ndarray)
+        x = np.dot(pt, xdim)
+
+    if ydim and isinstance(ydim, int):
+        y = pt[ydim]
+    elif ydim:
+        assert isinstance(ydim, np.ndarray)
+        y = np.dot(pt, ydim)
+
+    return x, y
+
 def get_verts(lpi, xdim=0, ydim=1, plot_vecs=None, cur_time=0.0):
     '''get the vertices defining (an underapproximation) of the outside of the given linear constraints
     These will be usable for plotting, so that rv[0] == rv[-1]. A single point may be returned if the constraints

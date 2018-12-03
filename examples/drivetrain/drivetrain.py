@@ -179,15 +179,13 @@ def define_settings():
     return settings
 
 def run_hylaa():
-    'runs hylaa, returning a HylaaResult object'
+    'runs hylaa'
     
     ha = define_ha()
     init = define_init_states(ha)
     settings = define_settings()
 
     result = Core(ha, settings).run(init)
-
-    return result
 
 if __name__ == '__main__':
     run_hylaa()

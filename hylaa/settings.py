@@ -77,6 +77,8 @@ class PlotSettings(Freezable): # pylint: disable=too-few-public-methods,too-many
         self.reachable_poly_width = 2 # width of reachable polygon outlines
         self.extend_plot_range_ratio = 0.1 # extend plot axis range 10% at a time
 
+        self.sim_line_width = 0.2 # width of simulation lines
+
         self.grid = True
         self.grid_xtics = None # override default xtics value, for example np.linspace(0.0, 5.0, 1.0)
         self.grid_ytics = None # override default ytics value, for example np.linspace(0.0, 5.0, 1.0)

@@ -137,10 +137,14 @@ class DrawnShapes(Freezable):
         self.subplot = subplot
 
         # parent is a string
-        # for modes, prefix is 'mode_'
+        # for modes, prefix is 'mode_{modename}'
+        # for sims, prefix is 'sim_states'
         # for cur state, parent is 'cur_state'
         self.parent_to_polys = OrderedDict()
         self.parent_to_markers = OrderedDict()
+
+        self.cur_sim_lines = [] # list of verts (list of 2d points)
+        self.cur_sim_line2ds = [] # list of Line2D objects
 
         self.extra_collection_list = []
 
@@ -170,6 +174,9 @@ class DrawnShapes(Freezable):
         for name in draw_above:
             if name in self.parent_to_polys:
                 rv.append(self.parent_to_polys.get(name))
+
+        for line2d in self.cur_sim_line2ds:
+            rv.append(line2d)
 
         for markers in self.parent_to_markers.values():
             rv.append(markers)
@@ -226,6 +233,85 @@ class DrawnShapes(Freezable):
                 # create a new polygon
                 codes = [Path.MOVETO] + [Path.LINETO] * (len(verts) - 2) + [Path.CLOSEPOLY]
                 paths.append(Path(verts, codes))
+
+    def commit_cur_sims(self):
+        '''save the current simulation lines (stop appending to them)'''
+
+        lines = self.parent_to_polys.get('sim_lines')
+
+        if lines is None:
+            lw = self.plotman.settings.sim_line_width
+            lines = collections.LineCollection([], lw=lw, animated=True, color='black', zorder=4)
+            self.axes.add_collection(lines)
+            self.parent_to_polys['sim_lines'] = lines
+
+        # append all cur_sim_lines to lines
+        paths = lines.get_paths()
+
+        for verts in self.cur_sim_lines:
+            codes = [Path.MOVETO] + [Path.LINETO] * (len(verts) - 1)
+            paths.append(Path(verts, codes))
+
+        self.cur_sim_lines = []
+        for line2d in self.cur_sim_line2ds:
+            # clear line2d
+            line2d.set_xdata([])
+            line2d.set_ydata([])
+
+        markers = self.parent_to_markers.get('sim_states')
+
+        if markers:
+            markers.set_xdata([])
+            markers.set_ydata([])
+
+    def set_cur_sim(self, verts):
+        '''set the current simulation pts'''
+
+        num_sims = len(verts)
+
+        if not self.cur_sim_lines:
+            # first point
+            while len(self.cur_sim_line2ds) < num_sims:
+                lw = self.plotman.settings.sim_line_width
+                line2d = Line2D([], [], lw=lw, animated=True, color='black', zorder=4)
+                self.axes.add_line(line2d)
+                self.cur_sim_line2ds.append(line2d)
+
+            self.cur_sim_lines = [[] for _ in range(len(verts))]
+
+        # append point to line2ds
+        for i, pt in enumerate(verts):
+            if pt is None:
+                continue
+            
+            self.cur_sim_lines[i].append(pt)
+
+            line2d = self.cur_sim_line2ds[i]
+            xdata = line2d.get_xdata()
+            ydata = line2d.get_ydata()
+            xdata.append(pt[0])
+            ydata.append(pt[1])
+            line2d.set_xdata(xdata)
+            line2d.set_ydata(ydata)
+
+        # append point to sim_states markers list
+        markers = self.parent_to_markers.get('sim_states')
+
+        if markers is None:
+            markers = Line2D([], [], animated=True, ls='None', marker='o', mew=2, ms=2,
+                             mec='red', mfc='red', zorder=5)
+            self.axes.add_line(markers)
+            self.parent_to_markers['sim_states'] = markers
+
+        if verts is None:
+            markers.set_xdata([])
+            markers.set_ydata([])
+        else:
+            xs = [pt[0] for pt in verts if pt is not None]
+            ys = [pt[1] for pt in verts if pt is not None]
+        
+            markers.set_xdata(xs)
+            markers.set_ydata(ys)
 
     def add_reachable_poly(self, stateset):
         '''add a polygon which was reachable'''
@@ -367,7 +453,7 @@ class PlotManager(Freezable):
                 if self.settings.label[i].axes_limits is None:
                     self.update_axis_limits(verts, i)
 
-                lc = collections.LineCollection([verts], lw=w, color='black', zorder=4)
+                lc = collections.LineCollection([verts], lw=1.0, color='black', zorder=4)
 
                 shapes.axes.add_collection(lc)
                 shapes.extra_collection_list.append(lc)
@@ -514,6 +600,38 @@ class PlotManager(Freezable):
 
             self.shapes = [DrawnShapes(self, i) for i in range(self.num_subplots)]
 
+    def plot_current_sim(self):
+        '''
+        plot the current simulation according to the plot settings.
+        '''
+
+        if self.core.sim_states:
+            for subplot in range(self.num_subplots):
+                xdim, ydim = self.settings.xdim_dir[subplot], self.settings.ydim_dir[subplot]
+                plot_pts = []
+
+                for obj in self.core.sim_states:
+                    if obj is None:
+                        plot_pts.append(None)
+                    else:
+                        _, pt, steps = obj
+                        cur_time = steps * self.core.settings.step_size 
+                        x, y = lpplot.pt_to_plot_xy(pt, xdim, ydim, cur_time)
+
+                        plot_pts.append((x, y))
+
+                self.shapes[subplot].set_cur_sim(plot_pts)
+
+                if self.settings.label[subplot].axes_limits is None:
+                    non_none_verts = [pt for pt in plot_pts if pt is not None]
+                    self.update_axis_limits(non_none_verts, subplot)
+
+    def commit_cur_sims(self):
+        'commit the simulation points lines (finished reachability for a mode)'
+
+        for shapes in self.shapes:
+            shapes.commit_cur_sims()
+
     def plot_current_state(self):
         '''
         plot the current StateSet according to the plot settings.
@@ -632,6 +750,9 @@ class PlotManager(Freezable):
 
             if self.core.aggdag.get_cur_state() is not None:
                 self.plot_current_state()
+
+            if self.core.sim_states is not None:
+                self.plot_current_sim()
 
             Timers.toc("frame")
 
@@ -757,6 +878,9 @@ class PlotManager(Freezable):
 
             if compute_plot and self.core.aggdag.get_cur_state():
                 self.plot_current_state()
+
+            if self.core.sim_states is not None:
+                self.plot_current_sim()
 
         Timers.toc("run_to_completion")
 

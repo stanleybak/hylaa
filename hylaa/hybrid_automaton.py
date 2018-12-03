@@ -52,6 +52,11 @@ class LinearConstraint(Freezable):
 
         return rv
 
+    def is_true_for_point(self, point):
+        'is the constraint true for the passed in point?'
+
+        return self.csr * point <= self.rhs
+
     def negate(self):
         'return the negation of the condition'
 
@@ -98,6 +103,18 @@ class Mode(Freezable):
         'is this an error mode'
 
         return self.a_csr is None
+
+    def point_in_invariant(self, point):
+        'is the passed-in point inside the invariant?'
+
+        all_true = True
+
+        for lc in self.inv_list:
+            if not lc.is_true_for_point(point):
+                all_true = False
+                break
+
+        return all_true
 
     def set_invariant(self, constraints_csr, constraints_rhs):
         'sets the invariant'
@@ -258,6 +275,37 @@ class Transition(Freezable):
         from_mode.transitions.append(self)
 
         self.freeze_attrs()
+
+    def is_guard_true_for_point(self, pt):
+        '''is the guard condition true for the given point?'''
+
+        all_true = True
+
+        val = self.guard_csr * pt
+
+        for lhs, rhs in zip(val, self.guard_rhs):
+            if lhs > rhs:
+                all_true = False
+                break
+
+        return all_true
+
+    def apply_reset_for_point(self, pt):
+        '''apply the reset for the passed-in point
+
+        returns new_point, new_mode
+        '''
+
+        assert self.reset_minkowski_csr is None, "resets with minkowski terms are unimplemented"
+
+        new_mode = self.to_mode
+
+        if self.reset_csr is None:
+            new_pt = pt
+        else:
+            new_pt = self.reset_csr * pt
+
+        return new_pt, new_mode
 
     def set_guard_true(self):
         '''sets the guard to be True (always enabled)'''

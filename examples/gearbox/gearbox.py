@@ -147,12 +147,12 @@ def make_automaton(theta_deg, maxi=20):
             
     return ha
 
-def make_init(ha):
+def make_init(ha, box):
     'make the initial states'
 
     mode = ha.modes['move_free']
     # px==-0.0165 & py==0.003 & vx==0 & vy==0 & I==0 & affine==1.0
-    init_lpi = lputil.from_box([(-0.0165, -0.0165), (0.003, 0.005), (0, 0), (0, 0), (0, 0), (1.0, 1.0)], mode)
+    init_lpi = lputil.from_box(box, mode)
 
     
     #init_lpi = lputil.from_box([(-0.02, -0.02), (-0.005, -0.003), (0, 0), (0, 0), (0, 0), (1.0, 1.0)], mode)
@@ -166,11 +166,11 @@ def make_init(ha):
  
     return init_list
 
-def make_settings(theta_deg):
+def make_settings(theta_deg, box):
     'make the reachability settings object'
 
     # see hylaa.settings for a list of reachability settings
-    settings = HylaaSettings(0.001, 0.5) # step: 0.001, bound: 0.1
+    settings = HylaaSettings(0.00025, 0.35) # step: 0.001, bound: 0.1
 
     #settings.stop_on_aggregated_error = False
 
@@ -190,9 +190,20 @@ def make_settings(theta_deg):
     settings.plot.xdim_dir = [0, None]
     settings.plot.ydim_dir = [1, 4]
     settings.plot.label = [LabelSettings(), LabelSettings()]
+
+    settings.plot.label[0].title = "Motor-Transmission Drive System"
+    settings.plot.label[0].title_size = 22
     
     #settings.plot.label.axes_limits = [-0.02, 0, -0.008, 0.004]
     settings.plot.label[0].axes_limits = [-0.02, 0, -0.01, 0.01]
+
+    settings.plot.label[0].x_label = "X Position [m]"
+    settings.plot.label[0].y_label = "Y Position [m]"
+    settings.plot.label[0].label_size = 20
+
+    settings.plot.label[1].x_label = "Time [s]"
+    settings.plot.label[1].y_label = "Impact Impulse [N m]"
+    settings.plot.label[1].label_size = 20
 
     lines = []
 
@@ -213,7 +224,11 @@ def make_settings(theta_deg):
 
     line_col = collections.LineCollection(lines, animated=True, colors=('gray'), linewidths=(2), linestyle='dashed')
 
-    settings.plot.extra_collections = [[line_col], []]
+    verts = [[box[0][0], box[1][0]], [box[0][1], box[1][0]], [box[0][1], box[1][1]], [box[0][0], box[1][1]]]
+
+    poly_col = collections.PolyCollection([verts], animated=True, edgecolor=None, facecolor=(0., 1.0, 0., 0.5))
+
+    settings.plot.extra_collections = [[line_col, poly_col], []]
 
     return settings
 
@@ -221,18 +236,23 @@ def main():
     'main entry point'
 
     theta_deg = 36
-    maxi = 30
+    maxi = 60
 
     ha = make_automaton(theta_deg, maxi)
 
-    init_states = make_init(ha)
+    box = [(-0.017, -0.016), (-0.005, 0.005), (0, 0), (0, 0), (0, 0), (1.0, 1.0)]
 
-    settings = make_settings(theta_deg)
+    settings = make_settings(theta_deg, box)
 
-    result = Core(ha, settings).run(init_states)
+    result = Core(ha, settings).run(make_init(ha, box))
 
-    if result.counterexample:
-        print(f"counterexample start: {result.counterexample[0].start}")
+    #if result.counterexample:
+    #    print(f"counterexample start: {result.counterexample[0].start}")
 
+    #init_mode = ha.modes['move_free']
+    #settings.aggstrat.sim_avoid_modes.append('meshed')
+    #settings.plot.sim_line_width = 1.0
+    #Core(ha, settings, seed=2).simulate(init_mode, box, 1)
+    
 if __name__ == "__main__":
     main()
