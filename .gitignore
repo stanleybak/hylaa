@@ -1,5 +1,6 @@
 *~
 *.pyc
+.directory
 TAGS
 *.png
 *.gv.pdf

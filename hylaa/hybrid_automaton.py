@@ -664,6 +664,7 @@ def is_time_triggered(t, tt_vars, print_func):
             print_func("checking guard {} <= {}".format(row.toarray(), rhs))
                                 
             all_tt_vars = True
+            
             for i, col in enumerate(row.indices):
                 if row.data[i] != 0 and not col in tt_vars:
                     all_tt_vars = False
@@ -704,7 +705,7 @@ def was_tt_taken(state_lpi, t):
     '''
 
     rv = False
-    tt_vars = get_tt_vars(t.to_mode)
+    tt_vars = get_tt_vars(t.from_mode)
 
     # find the tt-guard condition first
     for row, rhs in zip(t.guard_csr, t.guard_rhs):

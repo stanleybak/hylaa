@@ -128,8 +128,6 @@ def test_add_init_constraint():
 
     new_row = lputil.add_init_constraint(lpi, direction, -4.5)
 
-    print(lpi)
-
     assert new_row == 6, "new constraint should have been added in row index 6"
 
     # minimize y should give 4.5

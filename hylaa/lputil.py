@@ -327,11 +327,13 @@ def add_init_constraint(lpi, vec, rhs, basis_matrix=None, input_effects_list=Non
         offset = lpi.input_effects_offsets[1] + dims
 
         for ie_mat in input_effects_list:
-            ie_projection = np.dot(vec, ie_mat)
-            assert len(ie_projection) == num_inputs
+            ie_projection = np.dot(vec, ie_mat)[0]
+
+            assert len(ie_projection) == num_inputs, \
+              f"len(ie_projection) ({len(ie_projection)}) != num_inputs ({num_inputs})"
 
             inds += [offset + i for i in range(num_inputs)]
-            data += [val for val in ie_projection[0]]
+            data += [val for val in ie_projection]
             offset += num_inputs
 
     indptr.append(len(data))

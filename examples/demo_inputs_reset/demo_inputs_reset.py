@@ -12,7 +12,7 @@ This model demonstrates:
 - Time-varying inputs in the dynamics (mode 1)
 - Affine variable to add clock dynamics (c' == a with a(t) = 0 for all t)
 - Reset upon reaching a transition
-- Time-triggered transition (invariantis opposite of guard)
+- Time-triggered transition (invariant is opposite of guard)
 - Modes with different numbers of state variables (mode 1 has four, mode 2 has two)
 - Plot output to an image
 '''
