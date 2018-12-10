@@ -171,12 +171,15 @@ def make_settings(safe):
     settings.aggstrat.deaggregate = True # use deaggregation
     settings.aggstrat.deagg_preference = Aggregated.DEAGG_LEAVES_FIRST
 
-    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+    settings.stdout = HylaaSettings.STDOUT_NORMAL
 
     settings.plot.video_pause_frames = 10
-    settings.plot.plot_mode = PlotSettings.PLOT_LIVE
-    settings.plot.filename = "rendezvous_full_passivity.mp4"
+    settings.plot.plot_mode = PlotSettings.PLOT_IMAGE
+    settings.plot.filename = "rendezvous_full_passivity.png"
     settings.plot.plot_size = (8, 9)
+
+    #settings.plot.plot_mode = PlotSettings.PLOT_VIDEO
+    #settings.plot.filename = "rendezvous_full_passivity.mp4"
 
     settings.plot.xdim_dir = [0] * 3
     settings.plot.ydim_dir = [1] * 3
