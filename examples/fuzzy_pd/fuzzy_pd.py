@@ -1,9 +1,9 @@
 '''
-Fuzzy PID controller example
+Fuzzy PD controller example, from Aaron Fifarek's MS Thesis
 
-From Aaron Fifarek's MS Thesis
+D gain is only nonzero near the setpoint
 
-Actually it's a fuzzy P controller, with some D gain near the setpoint.
+Model was originally converted with Hyst
 '''
 
 from matplotlib import animation
