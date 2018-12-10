@@ -1,5 +1,10 @@
 '''
-Harmonic Oscillator (with time) Example in Hylaa-Continuous
+Harmonic Oscillator (with time) Example in Hylaa
+
+Very simple 2-d example:
+
+x' == y
+y' == -x
 '''
 
 import math
@@ -7,117 +12,63 @@ import math
 import numpy as np
 from scipy.sparse import csr_matrix, csc_matrix
 
-from hylaa.hybrid_automaton import LinearHybridAutomaton
-from hylaa.engine import HylaaSettings
-from hylaa.engine import HylaaEngine
-from hylaa.settings import PlotSettings, TimeElapseSettings
-from hylaa.star import Star
+from hylaa.hybrid_automaton import HybridAutomaton
+from hylaa.settings import HylaaSettings, PlotSettings
+from hylaa.core import Core
+from hylaa.stateset import StateSet
+from hylaa import lputil
 
-def define_ha(sparse_definition):
+def define_ha():
     '''make the hybrid automaton'''
 
-    ha = LinearHybridAutomaton()
+    ha = HybridAutomaton()
 
-    # with time and affine variable
-    a_matrix = np.array([[0, 1, 0, 0], [-1, 0, 0, 0], [0, 0, 0, 1], [0, 0, 0, 0]], dtype=float)
-    a_matrix = csr_matrix(a_matrix, dtype=float)
+    # dynamics: x' = y, y' = -x
+    a_matrix = np.array([[0, 1], [-1, 0]], dtype=float)
+    a_csr = csr_matrix(a_matrix, dtype=float)
 
     mode = ha.new_mode('mode')
-    mode.set_dynamics(a_matrix)
-
-    error = ha.new_mode('error')
-
-    if sparse_definition:
-        # x1 >= 4.0 & x1 <= 4.0
-        output_space = csr_matrix(([1.], [0], [0, 1]), shape=(1, 4), dtype=float)
-
-        mat = csr_matrix(np.array([[1.], [-1.]], dtype=float))
-        rhs = np.array([4.0, -4.0], dtype=float)
-    else:
-        # use full dimensional output space
-        output_space = csr_matrix(np.identity(4))
-
-        mat = csr_matrix(np.array([[1., 0, 0, 0], [-1., 0, 0, 0]], dtype=float))
-        rhs = np.array([4.0, -4.0], dtype=float)
-
-    mode.set_output_space(output_space)
-    trans1 = ha.new_transition(mode, error)
-    trans1.set_guard(mat, rhs)
-
+    mode.set_dynamics(a_csr)
 
     return ha
 
-def make_init_star(ha, hylaa_settings, sparse_definition):
-    '''returns a star'''
+def make_init(ha):
+    '''returns list of initial states'''
 
-    rv = None
+    mode = ha.modes['mode']
+    # init states: x in [-5, -4], y in [0, 1]
+    init_lpi = lputil.from_box([[-5, -4], [0, 1]], mode)
 
-    if sparse_definition:
-        # vec1 is <0, 1, 0, 0> with the constraint that 0 <= vec1 <= 1
-        # vec2 is <-5, 0, 0, 1> with the constraint that vec2 == 1
+    init_list = [StateSet(init_lpi, mode)]
 
-        init_space = csc_matrix(np.array([[0., 1, 0, 0], [-5, 0, 0, 1]], dtype=float).transpose())
-        init_mat = csr_matrix(np.array([[1., 0], [-1, 0], [0, 1], [0, -1]], dtype=float))
-        init_rhs = np.array([[1], [0], [1], [-1.]], dtype=float)
-    else:
-        init_space = csc_matrix(np.identity(4))
-        init_mat = csr_matrix(np.array([[1., 0, 0, 0], [-1, 0, 0, 0], [0, 1, 0, 0], [0, -1, 0, 0], \
-            [0, 0, 1, 0], [0, 0, -1, 0], [0, 0, 0, 1], [0, 0, 0, -1]], dtype=float))
-
-        init_rhs = np.array([[-5.], [5], [1], [0], [0], [0], [1], [-1]], dtype=float)
-
-    rv = Star(hylaa_settings, ha.modes['mode'], init_space, init_mat, init_rhs)
-
-    return rv
+    return init_list
 
 def define_settings():
     'get the hylaa settings object'
-    plot_settings = PlotSettings()
-    plot_settings.plot_mode = PlotSettings.PLOT_NONE #PlotSettings.PLOT_INTERACTIVE
+
+    step = math.pi/8
+    max_time = 3 * math.pi / 2
+    settings = HylaaSettings(step, max_time)
+
+    plot_settings = settings.plot
+    plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
     plot_settings.xdim_dir = 0
     plot_settings.ydim_dir = 1
-
-    # save a video file instead
-    #plot_settings.make_video("vid.mp4", frames=20, fps=5)
-
-    plot_settings.num_angles = 128
-    plot_settings.max_shown_polys = 2048
+    
     plot_settings.label.y_label = '$y$'
     plot_settings.label.x_label = '$x$'
-    plot_settings.label.title = 'Reachable States'
-    plot_settings.plot_size = (12, 7)
-    plot_settings.label.big(size=48)
-
-    plot_settings.reachable_poly_width = 10
-    plot_settings.extra_lines = [[(4.0, 10.0), (4.0, -10.0)]]
-    plot_settings.extra_lines_color = 'red'
-    plot_settings.extra_lines_width = 4
-
-    settings = HylaaSettings(step=math.pi/4, max_time=3 * math.pi / 4, plot_settings=plot_settings)
-    #settings.time_elapse.method = TimeElapseSettings.SCIPY_SIM
-    settings.time_elapse.method = TimeElapseSettings.KRYLOV
-
-    settings.time_elapse.check_answer = True
-
-    #settings.time_elapse.krylov.stdout = True
-
-    #settings.time_elapse.force_init_space = True
+    plot_settings.label.title = 'Harmonic Oscillator'
 
     return settings
 
 def run_hylaa():
-    'Runs hylaa with the given settings, returning the HylaaResult object.'
+    'Runs hylaa with the given settings'
 
-    hylaa_settings = define_settings()
-    sparse_definition = True
+    ha = define_ha()
+    settings = define_settings()
+    init_states = make_init(ha)
 
-    ha = define_ha(sparse_definition)
-    init = make_init_star(ha, hylaa_settings, sparse_definition)
-
-    engine = HylaaEngine(ha, hylaa_settings)
-    engine.run(init)
-
-    return engine.result
+    Core(ha, settings).run(init_states)
 
 if __name__ == '__main__':
     run_hylaa()

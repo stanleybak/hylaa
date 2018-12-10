@@ -23,11 +23,10 @@ from scipy.sparse import csr_matrix, csc_matrix
 from matplotlib import collections
 
 from hylaa.hybrid_automaton import HybridAutomaton
-from hylaa.settings import HylaaSettings, PlotSettings, LabelSettings
+from hylaa.settings import HylaaSettings, PlotSettings
 from hylaa.core import Core
 from hylaa.stateset import StateSet
 from hylaa import lputil
-from hylaa.aggstrat import Aggregated
 
 def define_ha(limit):
     '''make the hybrid automaton and return it'''
@@ -59,7 +58,7 @@ def define_ha(limit):
     return ha
 
 def make_init(ha):
-    '''returns a star'''
+    '''returns list of initial states'''
 
     bounds_list = []
 
