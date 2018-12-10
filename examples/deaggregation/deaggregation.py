@@ -1,5 +1,7 @@
 '''
 Deaggregation Model from Hylaa
+
+A simple demo of deaggregation occuring.
 '''
 
 from matplotlib import collections
@@ -7,6 +9,7 @@ from matplotlib import collections
 from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa.settings import HylaaSettings, PlotSettings, LabelSettings
 from hylaa.core import Core
+from hylaa.aggstrat import Aggregated
 from hylaa.stateset import StateSet
 from hylaa import lputil
 
@@ -70,12 +73,14 @@ def make_settings(unsafe_box):
 
     settings.plot.video_pause_frames = 5
     settings.plot.video_fps = 5
-    settings.plot.plot_mode = PlotSettings.PLOT_INTERACTIVE
-    settings.plot.filename = "deaggregation.mp4"
+    settings.plot.plot_mode = PlotSettings.PLOT_IMAGE
+
+    #settings.plot.plot_mode = PlotSettings.PLOT_VIDEO
+    #settings.plot.filename = "deaggregation.mp4"
 
     settings.stop_on_aggregated_error = False
     settings.aggstrat.deaggregate = True # use deaggregation
-    settings.aggstrat.deagg_leaves_first = False # roots first
+    settings.aggstrat.deagg_preference = Aggregated.DEAGG_LEAVES_FIRST
 
     settings.plot.extra_collections = []
     settings.plot.label = []
