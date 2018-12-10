@@ -286,8 +286,6 @@ class AggDagNode(Freezable):
             self.aggdag.core.print_verbose(f"Aggregating {len(state_list)} states")
             state = self._aggregate_from_state_op_list(state_list, parent_op_list, agg_type)
 
-        assert not state.mode.is_error(), f"Created AddDag node for error mode, is_concrete? {state.is_concrete}"
-
         add_root = False
 
         for op in parent_op_list:

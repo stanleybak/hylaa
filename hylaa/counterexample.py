@@ -45,9 +45,10 @@ def make_counterexample(ha, state, transition_to_error, lpi):
     # first get the number of steps in each mode
     num_steps = []
 
-    for node in get_ancestors(state.aggdag_op_list[0].child_node)[1:]:
-        assert len(node.parent_ops) == 1
-        num_steps.append(node.parent_ops[0].step)
+    if state.aggdag_op_list[0] is not None:
+        for node in get_ancestors(state.aggdag_op_list[0].child_node)[1:]:
+            assert len(node.parent_ops) == 1
+            num_steps.append(node.parent_ops[0].step)
 
     num_steps.append(state.cur_step_in_mode) # add the last mode
 
