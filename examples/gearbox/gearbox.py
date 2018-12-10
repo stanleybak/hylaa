@@ -8,6 +8,11 @@ This model was also used in ARCHCOMP-17 and 18.
 This model shows how to use hylaa.symbolic to construct the dynamics and reset / guard conditions from 
 string expressions.
 
+Unique features:
+- Performs both reachability analysis and simulation on the model
+- Uses deaggregation to find worst-case meshing time and cumulative impulse force
+- Concurrently creates two plots at once (x/y and impuse force/time)
+
 Stanley Bak, Nov 2018
 '''
 
@@ -170,7 +175,7 @@ def make_settings(theta_deg, box):
     'make the reachability settings object'
 
     # see hylaa.settings for a list of reachability settings
-    settings = HylaaSettings(0.00025, 0.35) # step: 0.001, bound: 0.1
+    settings = HylaaSettings(0.001, 0.35) # step: 0.001, bound: 0.1
 
     #settings.stop_on_aggregated_error = False
 
@@ -180,7 +185,7 @@ def make_settings(theta_deg, box):
 
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
 
-    settings.plot.plot_mode = PlotSettings.PLOT_NONE
+    settings.plot.plot_mode = PlotSettings.PLOT_IMAGE
     settings.plot.filename = "gearbox.png"
     settings.plot.plot_size = (8, 9)
 
@@ -196,11 +201,11 @@ def make_settings(theta_deg, box):
     
     #settings.plot.label.axes_limits = [-0.02, 0, -0.008, 0.004]
     settings.plot.label[0].axes_limits = [-0.02, 0, -0.01, 0.01]
-
     settings.plot.label[0].x_label = "X Position [m]"
     settings.plot.label[0].y_label = "Y Position [m]"
     settings.plot.label[0].label_size = 20
 
+    settings.plot.label[1].axes_limits = [0.0, 0.35, 0.0, 40.0]
     settings.plot.label[1].x_label = "Time [s]"
     settings.plot.label[1].y_label = "Impact Impulse [N m]"
     settings.plot.label[1].label_size = 20
@@ -232,7 +237,7 @@ def make_settings(theta_deg, box):
 
     return settings
 
-def main():
+def run(is_sim=False):
     'main entry point'
 
     theta_deg = 36
@@ -244,15 +249,18 @@ def main():
 
     settings = make_settings(theta_deg, box)
 
-    result = Core(ha, settings).run(make_init(ha, box))
+    if not is_sim:
+        result = Core(ha, settings).run(make_init(ha, box))
 
-    #if result.counterexample:
-    #    print(f"counterexample start: {result.counterexample[0].start}")
-
-    #init_mode = ha.modes['move_free']
-    #settings.aggstrat.sim_avoid_modes.append('meshed')
-    #settings.plot.sim_line_width = 1.0
-    #Core(ha, settings, seed=2).simulate(init_mode, box, 1)
+        if result.counterexample:
+            print(f"counterexample start: {result.counterexample[0].start}")
+    else:
+        init_mode = ha.modes['move_free']
+        settings.aggstrat.sim_avoid_modes.append('meshed')
+        settings.plot.sim_line_width = 1.0
+        settings.plot.filename = "gearbox_sim.png"
+        Core(ha, settings, seed=2).simulate(init_mode, box, 100)
     
 if __name__ == "__main__":
-    main()
+    run(is_sim=False)
+    run(is_sim=True)
