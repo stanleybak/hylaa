@@ -1,21 +1,38 @@
 '''
-Building Example in Hylaa-Continuous
+Building Example in Hylaa. This is the building example from 
+
+ARCH-COMP18 Category Report: Continuous and Hybrid Systems with Linear Continuous Dynamics
+
+originally from
+
+H.-D. Tran, L. V. Nguyen, and T. T. Johnson. Large-scale linear systems from order-reduction. In
+Proc. of ARCH16. 3rd International Workshop on Applied Verification for Continuous and Hybrid
+Systems, 2017.
+
+This example demonstrates:
+
+- verification of a linear system with time-varying inputs
+- doing plots over time without introducing new variables
+- adding custom lines to the plot
 '''
 
 import numpy as np
 from scipy.io import loadmat
 from scipy.sparse import csr_matrix, csc_matrix
 
-from hylaa.hybrid_automaton import LinearHybridAutomaton, bounds_list_to_init
-from hylaa.engine import HylaaSettings
-from hylaa.engine import HylaaEngine
-from hylaa.settings import PlotSettings, TimeElapseSettings
-from hylaa.star import Star
+from matplotlib import collections
+
+from hylaa.hybrid_automaton import HybridAutomaton
+from hylaa.settings import HylaaSettings, PlotSettings, LabelSettings
+from hylaa.core import Core
+from hylaa.stateset import StateSet
+from hylaa import lputil
+from hylaa.aggstrat import Aggregated
 
 def define_ha(limit):
     '''make the hybrid automaton and return it'''
 
-    ha = LinearHybridAutomaton()
+    ha = HybridAutomaton()
 
     mode = ha.new_mode('mode')
     dynamics = loadmat('build.mat')
@@ -24,33 +41,31 @@ def define_ha(limit):
 
     mode.set_dynamics(csr_matrix(a_matrix))
 
-    # 0 <= u1 <= 0.1
-    bounds_list = [(0.8, 1.0)]
-    _, u_mat, u_rhs, u_range_tuples = bounds_list_to_init(bounds_list)
+    # 0.8 <= u1 <= 1.0
+    u_mat = [[1.0], [-1.0]]
+    u_rhs = [1.0, -0.8]
 
-    mode.set_inputs(b_matrix, u_mat, u_rhs, u_range_tuples)
+    mode.set_inputs(b_matrix, u_mat, u_rhs)
 
     error = ha.new_mode('error')
 
     y1 = dynamics['C'][0]
-    output_space = csr_matrix(y1)
-
-    mode.set_output_space(output_space)
+    mat = csr_matrix(y1, dtype=float)
 
     trans1 = ha.new_transition(mode, error)
-    mat = csr_matrix(([-1], [0], [0, 1]), dtype=float, shape=(1, 1))
     rhs = np.array([-limit], dtype=float) # safe
     trans1.set_guard(mat, rhs) # y3 >= limit
 
     return ha
 
-def make_init_star(ha, hylaa_settings):
+def make_init(ha):
     '''returns a star'''
 
     bounds_list = []
-    dims = ha.modes.values()[0].a_matrix_csr.shape[0]
 
-    for dim in xrange(dims):
+    dims = list(ha.modes.values())[0].a_csr.shape[0]
+
+    for dim in range(dims):
         if dim < 10:
             lb = 0.0002
             ub = 0.00025
@@ -62,23 +77,20 @@ def make_init_star(ha, hylaa_settings):
 
         bounds_list.append((lb, ub))
 
-    init_space, init_mat, init_mat_rhs, init_range_tuples = bounds_list_to_init(bounds_list)
 
-    return Star(hylaa_settings, ha.modes['mode'], init_space, init_mat, init_mat_rhs, \
-                init_range_tuples=init_range_tuples)
+    mode = ha.modes['mode']
+    init_lpi = lputil.from_box(bounds_list, mode)
+
+    init_list = [StateSet(init_lpi, mode)]
+
+    return init_list
 
 def define_settings(ha, limit):
     'get the hylaa settings object'
-    plot_settings = PlotSettings()
-    #plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
-    plot_settings.plot_mode = PlotSettings.PLOT_NONE
 
-    max_time = 20.0
-    step_size = 0.1
-    settings = HylaaSettings(step=step_size, max_time=max_time, plot_settings=plot_settings)
-
-    settings.time_elapse.method = TimeElapseSettings.SCIPY_SIM
-    settings.time_elapse.check_answer = False
+    step = 0.0025
+    max_time = 1.0
+    settings = HylaaSettings(step, max_time)
 
     #settings.interval_guard_optimization = False
     #settings.time_elapse.scipy_sim.max_step = 0.001
@@ -88,10 +100,13 @@ def define_settings(ha, limit):
 
     #settings.skip_step_times = False
 
-    plot_settings.xdim_dir = None
-    plot_settings.ydim_dir = ha.modes.values()[0].output_space_csr[0]
+    plot_settings = settings.plot
 
-    plot_settings.max_shown_polys = None
+    plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
+        
+    plot_settings.xdim_dir = None
+    plot_settings.ydim_dir = ha.transitions[0].guard_csr[0].toarray()[0]
+
     plot_settings.label.y_label = '$y_{1}$'
     plot_settings.label.x_label = 'Time'
     plot_settings.label.title = 'Building (Uncertain Inputs)'
@@ -99,24 +114,25 @@ def define_settings(ha, limit):
     plot_settings.plot_size = (12, 8)
     plot_settings.label.big(size=36)
 
-    plot_settings.extra_lines = [[(0.0, limit), (max_time, limit)]]
+    settings.stop_on_concrete_error = False
+
+    line = [(0.0, -limit), (max_time, -limit)]
+    lc = collections.LineCollection([line], animated=True, colors=('red'), linewidths=(1), linestyle='dashed')
+    plot_settings.extra_collections = [lc]
 
     return settings
 
 def run_hylaa():
-    'Runs hylaa with the given settings, returning the HylaaResult object.'
+    'Runs hylaa with the given settings'
 
     #limit = 0.004 # reachable
     limit = 0.005 # unreachable
 
     ha = define_ha(limit)
     settings = define_settings(ha, limit)
-    init = make_init_star(ha, settings)
+    init_states = make_init(ha)
 
-    engine = HylaaEngine(ha, settings)
-    engine.run(init)
-
-    return engine.result
+    Core(ha, settings).run(init_states)
 
 if __name__ == '__main__':
     run_hylaa()

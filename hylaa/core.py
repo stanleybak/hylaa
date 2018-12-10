@@ -120,7 +120,8 @@ class Core(Freezable):
                 self.print_verbose("Reached concrete error state; making concrete counter-example")
                 self.result.counterexample = make_counterexample(self.hybrid_automaton, state, t, t_lpi)
 
-                self.plotman.draw_counterexample(self.result.counterexample)
+                # todo: implement this with inputs
+                #self.plotman.draw_counterexample(self.result.counterexample)
 
     def check_guards(self):
         '''check for discrete successors with the guards'''

@@ -15,7 +15,7 @@ from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa.settings import HylaaSettings, PlotSettings, LabelSettings
 from hylaa.core import Core
 from hylaa.stateset import StateSet
-from hylaa import lputil, aggstrat
+from hylaa import lputil
 from hylaa.aggstrat import Aggregated
 
 def make_automaton(safe):

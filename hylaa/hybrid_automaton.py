@@ -245,7 +245,8 @@ class Mode(Freezable):
             self.time_elapse = TimeElapser(self, step_size)
 
     def __str__(self):
-        return '[AutomatonMode with name:{}, a_matrix:{}]'.format(self.name, self.a_csr.toarray())
+        return '[AutomatonMode with name:{}, a_matrix:{}]'.format(self.name, \
+            "None" if self.a_csr is None else self.a_csr.toarray())
 
     def __repr__(self):
         return str(self)
