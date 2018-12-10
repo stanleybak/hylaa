@@ -1,11 +1,12 @@
 '''
-Created by Hyst v1.5
-Hybrid Automaton in Hylaa2
-Converted from file: 
-Command Line arguments: -gen drivetrain "-theta 2 -init_scale 1.0 -reverse_errors" -passes sub_constants "" simplify -p -tool hylaa2 ""
-'''
+Drivetrain example used in ARCHCOMP 18.
 
-import numpy as np
+Originally generated using the Hyst hylaa2 printer and then manually modified.
+
+Shows:
+- declaring an initial set from a zonotope
+- using exact convex hull aggregation (slow)
+'''
 
 from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa.settings import HylaaSettings, PlotSettings
@@ -147,17 +148,17 @@ def define_settings():
     see hylaa/settings.py for a complete list of reachability settings'''
 
     # step_size = 5.0E-4, max_time = 2.0
-    settings = HylaaSettings(5.0E-4, 2.0)
+    settings = HylaaSettings(5.0E-3, 2.0)
     settings.stdout = HylaaSettings.STDOUT_VERBOSE
-    settings.plot.plot_mode = PlotSettings.PLOT_INTERACTIVE
+    settings.plot.plot_mode = PlotSettings.PLOT_IMAGE
     settings.plot.xdim_dir = 0 # [0, None, None]
 
     #x0_dir = np.array([0, 0, 0, 0, 0, 0, 0.0833333333333333, 0, -1, 0, 0, 0, 0], dtype=float)
     #settings.plot.ydim_dir = [2, 6, 8]
     settings.plot.ydim_dir = 2
 
-    settings.stop_on_error = False
-    settings.plot.draw_stride = 10
+    #settings.stop_on_error = False
+    #settings.plot.draw_stride = 5
     #settings.plot.num_angles = 4096 * 128 # required for convex hull to show up correctly
     #settings.aggregation.agg_mode = AggregationSettings.AGG_NONE
 
