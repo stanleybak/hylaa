@@ -676,21 +676,22 @@ class PlotManager(Freezable):
         states is a list of either StateSet objects or a list of verts for each subplot
         '''
 
-        for subplot in range(self.num_subplots):
-            verts_list = []
+        if self.settings.plot_mode != PlotSettings.PLOT_IMAGE:
+            for subplot in range(self.num_subplots):
+                verts_list = []
 
-            for state in states:
-                if isinstance(state, list):
-                    verts = state[subplot] # list of vertices
-                    verts_list.append(verts)
-                else:
-                    verts = state.verts(self, subplot=subplot)
-                    verts_list.append(verts)
+                for state in states:
+                    if isinstance(state, list):
+                        verts = state[subplot] # list of vertices
+                        verts_list.append(verts)
+                    else:
+                        verts = state.verts(self, subplot=subplot)
+                        verts_list.append(verts)
 
-                if self.settings.label[subplot].axes_limits is None:
-                    self.update_axis_limits(verts, subplot)
+                    if self.settings.label[subplot].axes_limits is None:
+                        self.update_axis_limits(verts, subplot)
 
-            self.shapes[subplot].set_gray_state(verts_list)
+                self.shapes[subplot].set_gray_state(verts_list)
 
     def highlight_states(self, states):
         '''highlight the passed-in states (using current_state settings)
