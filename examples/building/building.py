@@ -102,6 +102,9 @@ def define_settings(ha, limit):
     plot_settings = settings.plot
 
     plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
+
+    #plot_settings.plot_mode = PlotSettings.PLOT_VIDEO
+    #plot_settings.filename = 'building.mp4'
         
     plot_settings.xdim_dir = None
     plot_settings.ydim_dir = ha.transitions[0].guard_csr[0].toarray()[0]

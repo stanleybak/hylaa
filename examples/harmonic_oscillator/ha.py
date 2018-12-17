@@ -54,6 +54,12 @@ def define_settings():
     plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
     plot_settings.xdim_dir = 0
     plot_settings.ydim_dir = 1
+
+    #plot_settings.plot_mode = PlotSettings.PLOT_VIDEO
+    #plot_settings.filename = 'ha.mp4'
+    #plot_settings.video_fps = 2
+    #plot_settings.video_extra_frames = 10 # extra frames at the end of a video so it doesn't end so abruptly
+    #plot_settings.video_pause_frames = 5 # frames to render in video whenever a 'pause' occurs
     
     plot_settings.label.y_label = '$y$'
     plot_settings.label.x_label = '$x$'

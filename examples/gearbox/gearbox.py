@@ -262,5 +262,5 @@ def run(is_sim=False):
         Core(ha, settings, seed=2).simulate(init_mode, box, 100)
     
 if __name__ == "__main__":
-    run(is_sim=False)
+    #run(is_sim=False)
     run(is_sim=True)
