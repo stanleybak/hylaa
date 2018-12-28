@@ -200,7 +200,7 @@ def plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step, 
     if inputs is not None:
         _, ax = plt.subplots(2, sharex=not do_2d, figsize=(14, 8))
     else:
-        _, ax = plt.subplots(1, figsize=(14, 5))
+        _, ax = plt.subplots(1, figsize=(8, 3)) # was 5
         ax = [ax]
 
     if do_2d:
@@ -218,13 +218,13 @@ def plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step, 
         normal_trace = np.dot(sim_states, normal_vec)
         ax[0].plot(sim_times, normal_trace, 'k-', lw=2, label='Simulation')
         ax[0].plot(sim_times[-1], normal_trace[-1], 'o', ms=10, mew=3, mec='red', mfc='none')
-        ax[0].plot([sim_times[0], sim_times[-1]], [normal_val, normal_val], 'k--', lw=2, label='Violation')
+        ax[0].plot([sim_times[0], sim_times[-1]], [normal_val, normal_val], 'r--', lw=2, label='Violation')
 
         if inputs is None:
             ax[0].set_xlabel('Time', fontsize=22)
 
-        ax[0].set_ylabel('Projected State', fontsize=22)
-        ax[0].set_title('Counter-Example Trace', fontsize=28)
+        ax[0].set_ylabel('$x_1$', fontsize=22)
+        ax[0].set_title('MNA5 Counter-Example', fontsize=28)
 
     if inputs is not None and len(inputs) > 0:
         inputs.append(inputs[-1]) # there is one less input than time instants
