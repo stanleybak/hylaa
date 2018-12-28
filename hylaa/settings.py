@@ -81,6 +81,7 @@ class KrylovSettings(Freezable):
         self.stdout = False # additional printing for krylov method
 
         self.target_error = 1e-6 # arnoldi/lanczos target a posteriori error
+        self.krylov_approx_error = False # compute relative error after lanczos and exit? (analysis setting)
 
         self.force_arnoldi = False # use arnoldi iteration (False = auto-detect)
         self.force_lanczos = False # use lanczos iteration (False = auto-detect)

@@ -83,7 +83,7 @@ class TimeElapseKrylov(Freezable):
     def find_max_eig_lanczos(self, mat, tol):
         'find the maximum eigenvalue of the passed-in matrix using lanczos ritz values'
 
-        use_lanczos = False
+        use_lanczos = True
         kry_iter = KrylovIteration(self.settings, mat, use_lanczos, None)
         n = mat.shape[0]
         rtol = 1e-4
@@ -414,9 +414,9 @@ def compute_h_list_expmult(h_mat_square, k, h_list_time_step, samples):
 
     return h_list
 
-def get_a_posterori_error(settings, h_mat, nu, error_limit):
+def get_a_posteriori_error(settings, h_mat, nu):
     '''
-    Compute the a posterori error bound
+    Compute the a posteriori error bound
 
     from Theorem 3.1 in "Error Bounds for the Krylov Subspace Methods for Computations of Matrix Exponentials",
     by Hao Wang and Qiang Ye
@@ -427,7 +427,7 @@ def get_a_posterori_error(settings, h_mat, nu, error_limit):
         nu(A) = lamda_{min} (A + A^T)/2
     '''
 
-    Timers.tic('a_posterori_error')
+    Timers.tic('a_posteriori_error')
 
     assert settings.time_elapse.krylov.integral_samples > 4
     samples = settings.time_elapse.krylov.integral_samples
@@ -488,7 +488,7 @@ def get_a_posterori_error(settings, h_mat, nu, error_limit):
 
         rv = h_mat[k, k-1] * simps(y_list, x_list, even='avg')
 
-    Timers.toc('a_posterori_error')
+    Timers.toc('a_posteriori_error')
 
     return rv
 
@@ -519,14 +519,20 @@ def arnoldi_sim_with_max_error(time_elapser, kry_init_vec_csr, iterations, error
         if settings.time_elapse.krylov.skip_error_bound:
             error = np.inf
         else:
-            error = get_a_posterori_error(settings, h_mat, obj.nu_a, error_limit)
+            error = get_a_posteriori_error(settings, h_mat, obj.nu_a)
 
     if stdout:
-        print "{} iterations had a posterori error {}".format(iterations, error)
+        print "{} iterations had a posteriori error {}".format(iterations, error)
+
+    if settings.time_elapse.krylov.krylov_approx_error:
+        print "{} {}".format(iterations, error)
 
     if error_limit is None or error < error_limit:
         if settings.print_output and error_limit is not None:
             print "Krylov error {} was below threshold ({}) with {} iterations".format(error, error_limit, iterations)
+
+            if settings.time_elapse.krylov.krylov_approx_error:
+                compute_approx_errors(settings, pv_mat, h_mat, obj.nu_a)
 
         h_mat = h_mat[:-1, :].copy()
         pv_mat = pv_mat[:, :-1].copy()
@@ -536,6 +542,71 @@ def arnoldi_sim_with_max_error(time_elapser, kry_init_vec_csr, iterations, error
         rv = None
 
     return rv, iterations
+
+def compute_approx_errors(settings, pv_mat, h_mat, nu_a):
+    'compute error approximation comparing k and k+1 iterations given the final h matrix'
+
+    dims = h_mat.shape[1]
+    time_bound = settings.step * settings.num_steps
+
+    # h_mat was negative because -A used in lanczos
+    mat = h_mat[:dims, :dims].toarray() * -1 * time_bound
+
+    print "Relative error estimates at each iteration:"
+
+    last_error = None
+
+    for dims in range(10, dims):
+        small_h = mat[:dims, :dims] 
+        small_pv = pv_mat[:, :dims]
+
+        mat_exp = expm(small_h)
+        
+        res = np.dot(small_pv, mat_exp[:, 0])[0]
+
+        if last_error is not None:
+            # compute relative error
+            rel_error = compute_rel_error(res, last_error)
+
+            print "{} {}".format(dims, rel_error)
+
+        last_error = res
+
+    ################
+    print "\nError bound at each iteration (k, bound):"
+
+    for dims in range(10, dims):
+        small_h = h_mat[:dims+1, :dims]
+
+        error = get_a_posteriori_error(settings, small_h, nu_a)
+        
+        print "{} {}".format(dims, error)
+    
+
+def compute_rel_error(correct, estimate):
+    'compute the relative error between the correct value and an estimate'
+
+    rel_error = 1.0e16 # large error is returned if it can't be computed due to numerical issues
+
+    try:
+        norm = np.linalg.norm(correct)
+
+        if not math.isinf(norm) and not math.isnan(norm):
+            if norm < 1e-13: # if norm is small, return absolute error
+                rel_error = norm
+            else:
+                diff = correct - estimate
+
+                abs_error = np.linalg.norm(diff)
+
+                if not math.isinf(abs_error) and not math.isnan(abs_error):
+                    rel_error = abs_error / norm
+    except FloatingPointError:
+        pass
+
+    assert not math.isinf(rel_error) and not math.isnan(rel_error)
+
+    return rel_error
 
 def arnoldi_sim_autotune(time_elapser, kry_init_vec_csr):
     '''
@@ -550,6 +621,9 @@ def arnoldi_sim_autotune(time_elapser, kry_init_vec_csr):
 
     target_error = settings.time_elapse.krylov.target_error
     arnoldi_iter = 4
+
+    if settings.time_elapse.krylov.krylov_approx_error:
+        print "Printing (k, a posteriori error) at each check:"
 
     while True:
         error_limit = target_error if arnoldi_iter < n else None
