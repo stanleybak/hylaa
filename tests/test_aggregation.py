@@ -256,6 +256,49 @@ def test_aggregate3():
 
     #plt.show()
 
+def test_chull_ha5():
+    'test convex hull aggregation of harmonic oscillator with 5 sets'
+
+    mode = HybridAutomaton().new_mode('mode_name')
+
+    steps = 5
+    step_size = math.pi/4
+
+    lpi_list = []
+
+    a_mat = np.array([[0, 1], [-1, 0]], dtype=float)
+
+    for step_num in range(steps):
+        box = [[-5, -4], [-0.5, 0.5]]
+        
+        lpi = lputil.from_box(box, mode)
+
+        t = step_num * step_size
+        basis_mat = expm(a_mat * t)
+        lputil.set_basis_matrix(lpi, basis_mat)
+
+        lpi_list.append(lpi)
+        
+    verts = []
+
+    for lpi in lpi_list:
+        verts += lpplot.get_verts(lpi)
+
+        xs, ys = zip(*lpplot.get_verts(lpi))
+        #plt.plot(xs, ys, 'k-')
+
+    lpi = lputil.aggregate_chull(lpi_list, mode)
+    #xs, ys = zip(*lpplot.get_verts(lpi))
+    #plt.plot(xs, ys, 'r--')
+
+    #plt.show()
+
+    # test if it's really convex hull
+    assert lputil.is_point_in_lpi([0, 4.5], lpi)
+
+    for vert in verts:
+        assert lputil.is_point_in_lpi(vert, lpi)
+
 def test_chull():
     'tests aggregation of a cirle of sets using convex hull'
 

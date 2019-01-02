@@ -404,6 +404,9 @@ def aggregate_chull(lpi_list, mode):
     "Symbolic Orthogonal Projections: A New Polyhedral Representation for Reachability Analysis of Hybrid Systems"
     '''
 
+    if len(lpi_list) == 1:
+        return lpi_list[0].clone()
+
     # make all the base LP's complete by adding the redudant row 0 * x <= 1
     new_lpi_list = []
 
@@ -419,7 +422,8 @@ def aggregate_chull(lpi_list, mode):
     rhs = lpi.get_rhs()
     types = lpi.get_types()
     names = lpi.get_names()
-    
+
+    # from_constraints assumes left-most variables are current-time variables
     return from_constraints(csr, rhs, mode, types=types, names=names, dims=lpi.dims)
 
 def _aggregate_chull_recursive(lpi_list, mode):
@@ -430,15 +434,15 @@ def _aggregate_chull_recursive(lpi_list, mode):
     "Symbolic Orthogonal Projections: A New Polyhedral Representation for Reachability Analysis of Hybrid Systems"
     '''
 
+    assert len(lpi_list) >= 2
+
     # recursive cases:
     #if isinstance(lpi_list, LpInstance):
     #    return lpi_list
-    
-    if len(lpi_list) == 1:
-        return lpi_list[0]
 
     if len(lpi_list) > 2:
         mid = len(lpi_list) // 2
+
         return aggregate_chull([aggregate_chull(lpi_list[:mid], mode), aggregate_chull(lpi_list[mid:], mode)], mode)
 
     # base case: exactly two lpis in lpi_list
@@ -504,7 +508,7 @@ def _aggregate_chull_recursive(lpi_list, mode):
     lpi.set_constraints_csr(bottom, offset=(top.shape[0], 0))
 
     lpi.dims = dims
-    lpi.cur_vars_offset = 0
+    lpi.cur_vars_offset = 0 # left-most variables are current time variables
 
     return lpi
 
@@ -902,6 +906,10 @@ def is_feasible(csr, rhs):
     lpi.add_rows_less_equal(rhs)
 
     lpi.set_constraints_csr(csr)
+
+    lpi.cur_vars_offset = 0
+    lpi.dims = 0
+    lpi.basis_mat_pos = (0, 0)
 
     return lpi.is_feasible()
 
