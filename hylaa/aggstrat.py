@@ -231,10 +231,12 @@ class Aggregated(AggregationStrategy):
                     node_to_transition[op.parent_node] = op.transition
 
                     assert op.parent_node.node_left_invariant()
-                    
-                    if op.parent_node.op_list[-1].reached_time_bound:
-                        # both a transition and reached time bound... split it
-                        rv = op.parent_node
+
+                    # if it's a single state that looks like it reaches the time bound
+                    #if op.parent_node.op_list[-1].reached_time_bound:
+                    #    # both a transition and reached time bound... split it
+                    #    rv = op.parent_node
+                    #    print(f"rv is state with a transition that also reached the time bound")
 
         # split earlier or latest ancestor, depending on settings
         if rv:

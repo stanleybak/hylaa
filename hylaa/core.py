@@ -114,6 +114,7 @@ class Core(Freezable):
 
         # if this is a concrete state (not aggregated) and we don't yet have a counter-example
         if state.is_concrete:
+            self.print_verbose("Found concrete error")
             self.result.has_concrete_error = True
 
             if not self.result.counterexample:

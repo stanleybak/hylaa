@@ -133,7 +133,9 @@ class DeaggregationManager(Freezable):
                     self.aggdag.core.plotman.add_reachable_poly(child.stateset)
 
             self.aggdag.core.plotman.highlight_states(plot_state_list)
-            should_break = True
+
+        # always break (to get an accurate frame count)
+        should_break = True
 
         return should_break
 
