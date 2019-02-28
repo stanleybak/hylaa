@@ -168,36 +168,42 @@ class Mode(Freezable):
 
         #make sure there are not inputs that are fixed to a constant. This is for efficiency reasons. It is better 
         #to add an affine variable to the a matrix and including this as part of A.
-        if not allow_constants:
-            num_inputs = b_csr.shape[1]
+        
+        num_inputs = b_csr.shape[1]
 
-            for i in range(num_inputs):
-                # does this input only affect a single variable? --> does b_col have a single nonzero?
-                b_col = b_csr[:, i].toarray()
-                nonzeros = sum([1 if x != 0 else 0 for x in b_col])
+        for i in range(num_inputs):
+            # does this input only affect a single variable? --> does b_col have a single nonzero?
+            b_col = b_csr[:, i].toarray()
+            nonzeros = sum([1 if x != 0 else 0 for x in b_col])
 
-                if nonzeros != 1:
-                    continue
+            if nonzeros != 1:
+                continue
 
-                # check if is there a fixed lower and upper bound for this input
-                lb_row = np.array([0 if n != i else 1 for n in range(num_inputs)], dtype=float)
-                ub_row = np.array([0 if n != i else -1 for n in range(num_inputs)], dtype=float)
-                lb = ub = None
+            # check if is there a fixed lower and upper bound for this input
+            lb_row = np.array([0 if n != i else 1 for n in range(num_inputs)], dtype=float)
+            ub_row = np.array([0 if n != i else -1 for n in range(num_inputs)], dtype=float)
+            lb = ub = None
 
-                for row, rhs in zip(u_constraints_csr, u_constraints_rhs):
-                    row = row.toarray()
-                    if np.array_equiv(lb_row, row):
-                        lb = rhs
-                    elif np.array_equiv(ub_row, row):
-                        ub = -rhs
+            for row, rhs in zip(u_constraints_csr, u_constraints_rhs):
+                row = row.toarray()
+                if np.array_equiv(lb_row, row):
+                    lb = rhs
+                elif np.array_equiv(ub_row, row):
+                    ub = -rhs
 
-                if ub is None or lb is None:
-                    continue
+            if ub is None or lb is None:
+                continue
 
-                assert abs(ub-lb) > 1e-9, ("Time-varying input #{} is fixed to {}. This is a (very) inefficient " + \
-                    "way encode affine terms. Instead, introduce a fixed affine varible in the A matrix with a' = 0" + \
+            if abs(ub-lb) < 1e-9:
+                msg = ("Time-varying input #{} is fixed to {}. This is a (very) inefficient " + \
+                    "way encode affine terms. Instead, introduce a fixed affine variable in the A matrix with a' = 0" + \
                     " and a(0) = 1, and refer to that variable in any differential equations that use affine " + \
-                    "terms. This check can be disabled by using 'allow_constants=True' in set_inputs().").format(i, lb)
+                    "terms. This can be made a warning by using 'allow_constants=True' in set_inputs().").format(i, lb)   
+                             
+                if not allow_constants:
+                    raise RuntimeError(msg)
+                else:
+                    print("Warning: " + msg) 
 
     def set_inputs(self, b_csr, u_constraints_csr, u_constraints_rhs, allow_constants=False):
         '''sets the time-varying / uncertain inputs for the mode (optional)
