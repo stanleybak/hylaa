@@ -1,5 +1,0 @@
-This a custom lightweight C++ interface to GLPK for use in Hylaa. GLPK is a free library for solving linear programs. This interface connects GLPK with the Hylaa python code using python's ctypes library.
-
-This was created for efficiency. cvxopt did not support the warm-start LP interface to glpk, and python-glpk was excessively slow in setting up the LP. 
-
-The code is based off of glpk-4.60 (newer than what's available in the ubuntu packages at the time of this writing), so you may need to install that from source: https://ftp.gnu.org/gnu/glpk/ . This should install using the standard "./configure", "make", "sudo make install" process.

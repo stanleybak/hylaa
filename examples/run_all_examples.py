@@ -17,6 +17,8 @@ def main():
     start = time.time()
 
     for filepath in python_files:
+        if "counterexample" in filepath: # skip some files
+            continue
 
         # this script itself will also be a member of the python_files list... skip it
         if os.path.split(filepath)[-1] == __file__:
@@ -55,15 +57,15 @@ def run_example(filepath):
     loaded_module = imp.load_source(mod_name, filepath)
 
     run_hylaa_func = getattr(loaded_module, 'run_hylaa')
-    define_settings_func = getattr(loaded_module, 'define_settings')
+    #define_settings_func = getattr(loaded_module, 'define_settings')
 
-    settings = define_settings_func()
+    #settings = define_settings_func()
 
     working_dir = os.getcwd()
     mod_directory = "/".join(path_parts[:-1])
     os.chdir(mod_directory)
 
-    run_hylaa_func(settings)
+    run_hylaa_func()
 
     os.chdir(working_dir)
 

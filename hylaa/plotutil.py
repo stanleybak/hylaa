@@ -4,47 +4,47 @@ Stanley Bak
 Sept 2016
 '''
 
+import sys
 import time
 import random
-import traceback
 from collections import OrderedDict
-
-from matplotlib import rcParams
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-from matplotlib import collections
-from matplotlib.path import Path
-from matplotlib import colors
-from matplotlib.widgets import Button
-from matplotlib.lines import Line2D
 
 import numpy as np
 
-from hylaa.file_io import write_matlab
-from hylaa.starutil import AggregationParent, ContinuousPostParent
+from matplotlib import collections, animation, colors, rcParams
+import matplotlib.pyplot as plt
+from matplotlib.path import Path
+from matplotlib.widgets import Button
+from matplotlib.lines import Line2D
+
+from hylaa import lpplot
 from hylaa.timerutil import Timers
-from hylaa.containers import PlotSettings
+from hylaa.settings import PlotSettings
 from hylaa.util import Freezable
-from hylaa.glpk_interface import LpInstance
+from hylaa.counterexample import replay_counterexample
 
-def lighter(rgb_col):
-    'return a lighter variant of an rgb color'
-
-    return [(2.0 + val) / 3.0 for val in rgb_col]
-
-def darker(rgb_col):
-    'return a darker variant of an rgb color'
-
-    return [val / 1.2 for val in rgb_col]
-
-class AxisLimits(object):
-    'container object for the plot axis limits'
+class AxisLimits(Freezable):
+    '''the axis limits'''
 
     def __init__(self):
         self.xmin = None
         self.xmax = None
         self.ymin = None
         self.ymax = None
+
+        self.freeze_attrs()
+
+    def __str__(self):
+        return "({}, {}, {}, {})".format(self.xmin, self.xmax, self.ymin, self.ymax)
+
+class InteractiveState(Freezable): # pylint: disable=too-few-public-methods
+    '''the state during PLOT_INTERACTIVE'''
+
+    def __init__(self):
+        self.paused = False
+        self.step = False
+
+        self.freeze_attrs()
 
 class ModeColors(Freezable):
     'maps mode names -> colors'
@@ -55,6 +55,18 @@ class ModeColors(Freezable):
         self.mode_to_color = {} # map mode name -> color string
         self.freeze_attrs()
 
+    @staticmethod
+    def lighter(rgb_col):
+        'return a lighter variant of an rgb color'
+
+        return [(2.0 + val) / 3.0 for val in rgb_col]
+
+    @staticmethod
+    def darker(rgb_col):
+        'return a darker variant of an rgb color'
+
+        return [val / 1.2 for val in rgb_col]
+
     def init_colors(self):
         'initialize all_colors'
 
@@ -63,20 +75,26 @@ class ModeColors(Freezable):
         # remove any colors with 'white' or 'yellow in the name
         skip_colors_substrings = ['white', 'yellow']
         skip_colors_exact = ['black', 'red', 'blue']
+        skip_colors_threshold = 0.75 # skip colors lighter than this threshold (avg rgb value)
 
         for col in colors.cnames:
             skip = False
 
-            for col_substring in skip_colors_substrings:
-                if col_substring in col:
-                    skip = True
-                    break
+            r, g, b, _ = colors.to_rgba(col)
+            avg = (r + g + b) / 3.0
+            if avg > skip_colors_threshold:
+                skip = True
+            else:
+                for col_substring in skip_colors_substrings:
+                    if col_substring in col:
+                        skip = True
+                        break
 
             if not skip and not col in skip_colors_exact:
                 self.all_colors.append(col)
 
         # we'll re-add these later; remove them before shuffling
-        first_colors = ['lime', 'cyan', 'orange', 'magenta', 'green']
+        first_colors = ['lime', 'orange', 'cyan', 'magenta', 'green']
 
         for col in first_colors:
             self.all_colors.remove(col)
@@ -105,266 +123,204 @@ class ModeColors(Freezable):
         edge_col = colors.colorConverter.to_rgb(col_name)
 
         # make the faces a little lighter
-        face_col = lighter(edge_col)
+        face_col = ModeColors.lighter(edge_col)
 
         return (face_col, edge_col)
 
 class DrawnShapes(Freezable):
     'maintains shapes to be drawn'
 
-    def __init__(self, plotman):
+    def __init__(self, plotman, subplot):
         self.plotman = plotman
-        self.axes = plotman.axes
+        self.axes = plotman.axes_list[subplot]
         self.mode_colors = plotman.mode_colors
+        self.subplot = subplot
 
-        # create a blank invariant violation polys
-        self.inv_vio_polys = collections.PolyCollection([], animated=True, alpha=0.7, edgecolor='red', facecolor='red')
-        self.axes.add_collection(self.inv_vio_polys)
-
-        # create a blank currently-tracked set of states poly
-        self.cur_state_line2d = Line2D([], [], animated=True, color='k', lw=2, mew=2, ms=5, fillstyle='none')
-        self.axes.add_line(self.cur_state_line2d)
-
+        # parent is a string
+        # for modes, prefix is 'mode_{modename}'
+        # for sims, prefix is 'sim_states'
+        # for cur state, parent is 'cur_state'
         self.parent_to_polys = OrderedDict()
         self.parent_to_markers = OrderedDict()
 
-        self.waiting_list_mode_to_polys = OrderedDict()
-        self.aggregation_mode_to_polys = OrderedDict()
+        self.cur_sim_lines = [] # list of verts (list of 2d points)
+        self.cur_sim_line2ds = [] # list of Line2D objects
 
-        self.trace = collections.LineCollection(
-            [[(0, 0)]], animated=True, colors=('k'), linewidths=(3), linestyle='dashed')
-        self.axes.add_collection(self.trace)
+        self.extra_collection_list = []
 
-        if plotman.settings.extra_lines is not None:
-            lines = plotman.settings.extra_lines
-            self.extra_lines_col = collections.LineCollection(
-                lines, animated=True, colors=('gray'), linewidths=(2), linestyle='dashed')
-            self.axes.add_collection(self.extra_lines_col)
-        else:
-            self.extra_lines_col = None
+        if plotman.settings.extra_collections:
+            if isinstance(plotman.settings.extra_collections[0], list):
+                self.extra_collection_list = plotman.settings.extra_collections[subplot]
+            elif subplot == 0:
+                self.extra_collection_list = plotman.settings.extra_collections
+
+            for col in self.extra_collection_list:
+                self.axes.add_collection(col)
 
         self.freeze_attrs()
 
-    def get_artists(self, waiting_list):
+    def get_artists(self):
         'get the list of artists, to be returned by animate function'
 
         rv = []
 
-        for polys in self.parent_to_polys.values():
-            rv.append(polys)
+        # objects later in the list will be drawn after (above)
+        draw_above = ['gray_state', 'cur_state']
+        
+        for name, polys in self.parent_to_polys.items():
+            if not name in draw_above:
+                rv.append(polys)
+
+        for name in draw_above:
+            if name in self.parent_to_polys:
+                rv.append(self.parent_to_polys.get(name))
+
+        for line2d in self.cur_sim_line2ds:
+            rv.append(line2d)
 
         for markers in self.parent_to_markers.values():
             rv.append(markers)
 
-        self.set_waiting_list_polys(waiting_list)
-
-        for polys in self.waiting_list_mode_to_polys.values():
-            rv.append(polys)
-
-        for polys in self.aggregation_mode_to_polys.values():
-            rv.append(polys)
-
-        rv.append(self.inv_vio_polys)
-
-        if self.extra_lines_col:
-            rv.append(self.extra_lines_col)
-
-        rv.append(self.trace)
-
-        rv.append(self.cur_state_line2d)
+        for collection in self.extra_collection_list:
+            rv.append(collection)
 
         return rv
 
-    def set_waiting_list_polys(self, waiting_list):
-        'set the polys from the waiting list'
+    def set_gray_state(self, verts_list):
+        'set the dasehd set of states for one frame'
 
-        #print ".plotutil set_waiting_list_polys called... waitinglist ="
-        #waiting_list.print_stats()
+        def init_polycollection_func():
+            "initialization function if polycollection doesn't exist"
+            
+            return collections.PolyCollection([], lw=self.plotman.settings.reachable_poly_width + 3, animated=True,
+                                              edgecolor='gray', facecolor=(0., 0., 0., 0.), zorder=2)
 
-        self.clear_waiting_list_polys()
+        self._set_named_state(verts_list, 'gray_state', init_polycollection_func)
 
-        # add deaggregated
-        for star in waiting_list.deaggregated_list:
-            verts = star.verts()
-            self.add_waiting_list_poly(verts, star.mode.name)
-
-        # add aggregated
-        for star in waiting_list.aggregated_mode_to_state.values():
-            verts = star.verts()
-
-            self.add_aggregation_poly(verts, star.mode.name)
-
-            # also show the sub-stars
-            if isinstance(star.parent, AggregationParent):
-                for substar in star.parent.stars:
-                    verts = substar.verts()
-                    self.add_waiting_list_poly(verts, substar.mode.name)
-
-    def add_aggregation_poly(self, poly_verts, mode_name):
-        '''add a polygon that's an aggregation on the waiting list'''
-
-        polys = self.aggregation_mode_to_polys.get(mode_name)
-
-        if polys is None:
-            _, edge_col = self.mode_colors.get_edge_face_colors(mode_name)
-            edge_col = darker(edge_col)
-
-            polys = collections.PolyCollection([], lw=4, animated=True,
-                                               edgecolor=edge_col, facecolor='none')
-            self.axes.add_collection(polys)
-            self.aggregation_mode_to_polys[mode_name] = polys
-
-        paths = polys.get_paths()
-
-        codes = [Path.MOVETO] + [Path.LINETO] * (len(poly_verts) - 2) + [Path.CLOSEPOLY]
-        paths.append(Path(poly_verts, codes))
-
-    def add_waiting_list_poly(self, poly_verts, mode_name):
-        '''add a polygon on the waiting list'''
-
-        polys = self.waiting_list_mode_to_polys.get(mode_name)
-
-        if polys is None:
-            face_col, edge_col = self.mode_colors.get_edge_face_colors(mode_name)
-
-            polys = collections.PolyCollection([], lw=2, animated=True, alpha=0.3,
-                                               edgecolor=edge_col, facecolor=face_col)
-            self.axes.add_collection(polys)
-            self.waiting_list_mode_to_polys[mode_name] = polys
-
-        paths = polys.get_paths()
-
-        codes = [Path.MOVETO] + [Path.LINETO] * (len(poly_verts) - 2) + [Path.CLOSEPOLY]
-        paths.append(Path(poly_verts, codes))
-
-    def clear_waiting_list_polys(self):
-        'clears all the polygons drawn representing the waiting list'
-
-        for polys in self.waiting_list_mode_to_polys.values():
-            polys.get_paths()[:] = []
-
-        for polys in self.aggregation_mode_to_polys.values():
-            polys.get_paths()[:] = []
-
-    def add_trace(self, trace_pts):
-        'add to the current frame counter-example trace'
-
-        paths = self.trace.get_segments()
-
-        pts = np.array(trace_pts, dtype=float)
-
-        val = [pts] + paths
-        self.trace.set_segments(val)
-
-        segs = self.trace.get_segments()
-
-        # matplotlib does interpolation for larger lines, make sure it was disabled
-        assert len(segs[0]) == len(pts), "matplotlib interpolation was not disabled"
-
-    def reset_temp_polys(self):
-        '''
-        clear cur_state and invariant violation polygons. call at each step.
-        '''
-
-        self.inv_vio_polys.get_paths()[:] = []
-
-        self.set_cur_state(None)
-
-        self.trace.set_paths([])
-
-    def set_cur_state(self, verts):
+    def set_cur_state(self, verts_list):
         'set the currently tracked set of states for one frame'
 
-        l = self.cur_state_line2d
+        def init_polycollection_func():
+            "initialization function if polycollection doesn't exist"
+            
+            return collections.PolyCollection([], lw=self.plotman.settings.reachable_poly_width, animated=True,
+                                              edgecolor='k', facecolor=(0., 0., 0., 0.0), zorder=3)
 
-        if verts is None:
-            l.set_visible(False)
-        else:
-            l.set_visible(True)
+        self._set_named_state(verts_list, 'cur_state', init_polycollection_func)
 
-            if len(verts) <= 2:
-                l.set_marker('o')
-            else:
-                l.set_marker(None)
+    def _set_named_state(self, verts_list, name, init_polycollection_func):
+        'set a tracked set of states by name for one frame (for example "cur_state")'
 
-            xdata = [x for x, _ in verts]
-            ydata = [y for _, y in verts]
+        assert verts_list is None or isinstance(verts_list, list)
 
-            l.set_xdata(xdata)
-            l.set_ydata(ydata)
+        polys = self.parent_to_polys.get(name)
+        
+        if polys is None:
+            # setup for first time drawing cur_state
 
-    def add_inv_vio_poly(self, poly_verts):
-        'add an invariant violation polygon'
+            polys = init_polycollection_func()
+            self.axes.add_collection(polys)
 
-        paths = self.inv_vio_polys.get_paths()
+            self.parent_to_polys[name] = polys
 
-        codes = [Path.MOVETO] + [Path.LINETO] * (len(poly_verts) - 2) + [Path.CLOSEPOLY]
-        paths.append(Path(poly_verts, codes))
+        paths = polys.get_paths()
 
-    def del_reachable_polys_from_parent(self, parent):
-        '''
-        stop drawing all polygons which were reached from a star and previously-
-        added with add_reachable_poly_from_star
-        '''
+        while polys is not None and paths:
+            paths.pop() # remove the old polygon(s)
 
-        assert isinstance(parent, ContinuousPostParent)
+        if verts_list is not None:
+            for verts in verts_list:
+                # create a new polygon
+                codes = [Path.MOVETO] + [Path.LINETO] * (len(verts) - 2) + [Path.CLOSEPOLY]
+                paths.append(Path(verts, codes))
 
-        polys = self.parent_to_polys.pop(parent, None)
+    def commit_cur_sims(self):
+        '''save the current simulation lines (stop appending to them)'''
 
-        # polys may be none if it was an urgent transition
-        if polys is not None:
-            polys.remove() # reverses axes.add_collection
-            polys.get_paths()[:] = []
+        lines = self.parent_to_polys.get('sim_lines')
 
-        markers = self.parent_to_markers.pop(parent, None)
+        if lines is None:
+            lw = self.plotman.settings.sim_line_width
+            lines = collections.LineCollection([], lw=lw, animated=True, color='black', zorder=4)
+            self.axes.add_collection(lines)
+            self.parent_to_polys['sim_lines'] = lines
 
-        if markers is not None:
-            markers.remove()
+        # append all cur_sim_lines to lines
+        paths = lines.get_paths()
+
+        for verts in self.cur_sim_lines:
+            codes = [Path.MOVETO] + [Path.LINETO] * (len(verts) - 1)
+            paths.append(Path(verts, codes))
+
+        self.cur_sim_lines = []
+        for line2d in self.cur_sim_line2ds:
+            # clear line2d
+            line2d.set_xdata([])
+            line2d.set_ydata([])
+
+        markers = self.parent_to_markers.get('sim_states')
+
+        if markers:
             markers.set_xdata([])
             markers.set_ydata([])
 
-    def thin_reachable_set(self):
-        '''thin our the drawn reachable set to have less polygons (drawing optimization)'''
+    def set_cur_sim(self, verts):
+        '''set the current simulation pts'''
 
-        for poly_col in self.parent_to_polys.values():
-            paths = poly_col.get_paths()
+        num_sims = len(verts)
 
-            keep = True
-            new_paths = []
+        if not self.cur_sim_lines:
+            # first point
+            while len(self.cur_sim_line2ds) < num_sims:
+                lw = self.plotman.settings.sim_line_width
+                line2d = Line2D([], [], lw=lw, animated=True, color='black', zorder=4)
+                self.axes.add_line(line2d)
+                self.cur_sim_line2ds.append(line2d)
 
-            for p in paths:
-                if keep:
-                    new_paths.append(p)
-    
-                keep = not keep
+            self.cur_sim_lines = [[] for _ in range(len(verts))]
 
-            paths[:] = new_paths
+        # append point to line2ds
+        for i, pt in enumerate(verts):
+            if pt is None:
+                continue
+            
+            self.cur_sim_lines[i].append(pt)
 
-        for line in self.parent_to_markers.values():
-            xdata = line.get_xdata()
-            ydata = line.get_ydata()
-            new_xdata = []
-            new_ydata = []
+            line2d = self.cur_sim_line2ds[i]
+            xdata = line2d.get_xdata()
+            ydata = line2d.get_ydata()
+            xdata.append(pt[0])
+            ydata.append(pt[1])
+            line2d.set_xdata(xdata)
+            line2d.set_ydata(ydata)
 
-            keep = True
+        # append point to sim_states markers list
+        markers = self.parent_to_markers.get('sim_states')
 
-            for i in xrange(len(xdata)):
-                if keep:
-                    new_xdata.append(xdata[i])
-                    new_ydata.append(ydata[i])
+        if markers is None:
+            markers = Line2D([], [], animated=True, ls='None', marker='o', mew=2, ms=2,
+                             mec='red', mfc='red', zorder=5)
+            self.axes.add_line(markers)
+            self.parent_to_markers['sim_states'] = markers
 
-                keep = not keep
+        if verts is None:
+            markers.set_xdata([])
+            markers.set_ydata([])
+        else:
+            xs = [pt[0] for pt in verts if pt is not None]
+            ys = [pt[1] for pt in verts if pt is not None]
+        
+            markers.set_xdata(xs)
+            markers.set_ydata(ys)
 
-            line.set_xdata(new_xdata)
-            line.set_ydata(new_ydata)
-
-    def add_reachable_poly(self, poly_verts, parent, mode_name):
+    def add_reachable_poly(self, stateset):
         '''add a polygon which was reachable'''
 
-        assert isinstance(parent, ContinuousPostParent)
+        poly_verts = stateset.verts(self.plotman, self.subplot)
+        mode_name = stateset.mode.name
 
-        if len(poly_verts) <= 2:
-            markers = self.parent_to_markers.get(parent)
+        if len(poly_verts) <= 2 and self.plotman.settings.use_markers_for_small:
+            markers = self.parent_to_markers.get('mode_' + mode_name)
 
             if markers is None:
                 face_col, edge_col = self.mode_colors.get_edge_face_colors(mode_name)
@@ -372,7 +328,7 @@ class DrawnShapes(Freezable):
                 markers = Line2D([], [], animated=True, ls='None', alpha=0.5, marker='o', mew=2, ms=5,
                                  mec=edge_col, mfc=face_col)
                 self.axes.add_line(markers)
-                self.parent_to_markers[parent] = markers
+                self.parent_to_markers['mode_' + mode_name] = markers
 
             xdata = markers.get_xdata()
             ydata = markers.get_ydata()
@@ -381,41 +337,37 @@ class DrawnShapes(Freezable):
             markers.set_xdata(xdata)
             markers.set_ydata(ydata)
         else:
-            polys = self.parent_to_polys.get(parent)
+            polys = self.parent_to_polys.get(mode_name)
 
             if polys is None:
+                lw = self.plotman.settings.reachable_poly_width
                 face_col, edge_col = self.mode_colors.get_edge_face_colors(mode_name)
-                polys = collections.PolyCollection([], lw=2, animated=True, alpha=0.5,
+                polys = collections.PolyCollection([], lw=lw, animated=True, alpha=0.5,
                                                    edgecolor=edge_col, facecolor=face_col)
                 self.axes.add_collection(polys)
-                self.parent_to_polys[parent] = polys
+                self.parent_to_polys[mode_name] = polys
 
             paths = polys.get_paths()
 
             codes = [Path.MOVETO] + [Path.LINETO] * (len(poly_verts) - 2) + [Path.CLOSEPOLY]
             paths.append(Path(poly_verts, codes))
 
-class InteractiveState(object):
-    'container object for interactive plot state'
-
-    def __init__(self):
-        self.paused = False
-        self.step = False
+            # save the Path list in the StateSet
+            stateset.set_plot_path(self.subplot, paths, len(paths) - 1)
 
 class PlotManager(Freezable):
     'manager object for plotting during or after computation'
 
-    def __init__(self, hylaa_engine, plot_settings):
-        assert isinstance(plot_settings, PlotSettings)
-
+    def __init__(self, hylaa_core):
         # matplotlib default rcParams caused incorrect trace output due to interpolation
         rcParams['path.simplify'] = False
 
-        self.engine = hylaa_engine
-        self.settings = plot_settings
+        self.core = hylaa_core
+        self.settings = hylaa_core.settings.plot
 
         self.fig = None
-        self.axes = None
+        self.axes_list = None
+        
         self.actual_limits = None # AxisLimits object
         self.drawn_limits = None # AxisLimits object
 
@@ -423,63 +375,121 @@ class PlotManager(Freezable):
         self.shapes = None # instance of DrawnShapes
         self.interactive = InteractiveState()
 
-        self.drew_first_frame = False # one-time flag
         self._anim = None # animation object
+        self.num_frames_drawn = 0
 
-        if self.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE or \
-           self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
-            self.settings.min_frame_time = 0.0 # for interactive or video plots, draw every frame
+        self.pause_frames = None # for video plots
+        self.frame_text = None # for video plots when settings.video_show_frame = True
 
-        self.cur_reachable_polys = 0 # number of polygons currently drawn
-        self.draw_stride = plot_settings.draw_stride # draw every 2nd poly, or every 4th, ect. (if over poly limit)
-        self.draw_cur_step = 0 # the current poly in the step
-
-        if self.settings.plot_mode == PlotSettings.PLOT_MATLAB:
-            self.reach_poly_data = OrderedDict()
+        self.plot_vec_list = [] # a list of plot_vecs for each subplot
+        self.num_subplots = None
+        self.init_plot_vecs()
 
         self.freeze_attrs()
 
-    def plot_trace(self, num_steps, sim_bundle, start_basis_matrix, basis_point):
-        'plot a trace to a basis_point in a symbolic state'
+    def init_plot_vecs(self):
+        'initialize plot_vecs'
 
-        if self.shapes is not None and self.settings.plot_traces:
-            pts = []
+        if isinstance(self.settings.xdim_dir, list):
+            assert isinstance(self.settings.ydim_dir, list)
+            assert len(self.settings.xdim_dir) == len(self.settings.ydim_dir)
+        else:
+            self.settings.xdim_dir = [self.settings.xdim_dir]
+            self.settings.ydim_dir = [self.settings.ydim_dir]
 
-            for step in xrange(num_steps+1):
-                basis_vec_list, sim_center = sim_bundle.get_vecs_origin_at_step(step, num_steps)
+        for xdim_dir, ydim_dir in zip(self.settings.xdim_dir, self.settings.ydim_dir):
+            assert not (xdim_dir is None and ydim_dir is None)
 
-                if start_basis_matrix is None:
-                    basis_matrix = basis_vec_list
+            plot_vecs = []
+
+            if xdim_dir is None:
+                plot_vecs.append(np.array([0, 1.], dtype=float))
+                plot_vecs.append(np.array([0, -1.], dtype=float))
+            elif self.settings.ydim_dir is None:
+                plot_vecs.append(np.array([1., 0], dtype=float))
+                plot_vecs.append(np.array([-1., 0], dtype=float))
+            else:
+                assert self.settings.num_angles >= 3, "needed at least 3 directions in plot_settings.num_angles"
+
+                plot_vecs = lpplot.make_plot_vecs(self.settings.num_angles)
+
+            self.plot_vec_list.append(plot_vecs)
+            
+        self.num_subplots = len(self.plot_vec_list)
+        self.core.print_verbose("Num subplots = {}".format(self.num_subplots))
+
+    def draw_counterexample(self, ce_segments):
+        '''we got a concrete counter example, draw it (if we're plotting)
+        
+        currently this only works for simple plots
+        '''
+
+        if self.settings.plot_mode != PlotSettings.PLOT_NONE and self.settings.show_counterexample:
+            pts, times = replay_counterexample(ce_segments, self.core.hybrid_automaton, self.core.settings)
+
+            for i, shapes in enumerate(self.shapes):
+                w = self.settings.reachable_poly_width
+
+                # project pts onto axis
+                xdim = self.settings.xdim_dir[i]
+                ydim = self.settings.ydim_dir[i]
+
+                if xdim is None:
+                    xs = times
+                elif isinstance(xdim, int):
+                    xs = [pt[xdim] for pt in pts]
                 else:
-                    basis_matrix = np.dot(start_basis_matrix, basis_vec_list)
+                    continue
 
-                offset = np.dot(basis_matrix.T, basis_point)
-                point = np.add(sim_center, offset)
+                if ydim is None:
+                    ys = times
+                elif isinstance(ydim, int):
+                    ys = [pt[ydim] for pt in pts]
+                else:
+                    continue
 
-                x = point[self.settings.xdim]
-                y = point[self.settings.ydim]
+                verts = [v for v in zip(xs, ys)]
 
-                pts.append((x, y))
+                if self.settings.label[i].axes_limits is None:
+                    self.update_axis_limits(verts, i)
 
-            self.shapes.add_trace(pts)
+                lc = collections.LineCollection([verts], lw=1.0, color='black', zorder=4)
 
-    def update_axis_limits(self, points_list):
+                shapes.axes.add_collection(lc)
+                shapes.extra_collection_list.append(lc)
+
+    def state_popped(self):
+        'a state was popped off the waiting list'
+
+        if self.settings.plot_mode != PlotSettings.PLOT_NONE:
+            for subplot in range(self.num_subplots):
+                self.shapes[subplot].set_cur_state(None)
+
+    def update_axis_limits(self, points_list, subplot):
         'update the axes limits to include the passed-in point list'
 
         first_draw = False
 
         if self.drawn_limits is None:
+            self.drawn_limits = [None] * self.num_subplots
+            self.actual_limits = [None] * self.num_subplots
+
+        if self.drawn_limits[subplot] is None:
             first_draw = True
             first_x, first_y = points_list[0]
-            self.actual_limits = AxisLimits()
-            self.drawn_limits = AxisLimits()
-            self.actual_limits.xmin = self.actual_limits.xmax = first_x
-            self.actual_limits.ymin = self.actual_limits.ymax = first_y
-            self.drawn_limits.xmin = self.drawn_limits.xmax = first_x
-            self.drawn_limits.ymin = self.drawn_limits.ymax = first_y
+            self.actual_limits[subplot] = AxisLimits()
+            self.drawn_limits[subplot] = AxisLimits()
 
-        lim = self.actual_limits
-        drawn = self.drawn_limits
+            lim = self.actual_limits[subplot]
+            drawn = self.drawn_limits[subplot]
+            
+            lim.xmin = lim.xmax = first_x
+            lim.ymin = lim.ymax = first_y
+            drawn.xmin = drawn.xmax = first_x
+            drawn.ymin = drawn.ymax = first_y
+
+        lim = self.actual_limits[subplot]
+        drawn = self.drawn_limits[subplot]
 
         for p in points_list:
             x, y = p
@@ -508,233 +518,327 @@ class PlotManager(Freezable):
             drawn.ymax = lim.ymax + dy * ratio
 
             if drawn.xmin == drawn.xmax:
-                self.axes.set_xlim(drawn.xmin - 1e-1, drawn.xmax + 1e-1)
+                self.axes_list[subplot].set_xlim(drawn.xmin - 1e-1, drawn.xmax + 1e-1)
             else:
-                self.axes.set_xlim(drawn.xmin, drawn.xmax)
+                self.axes_list[subplot].set_xlim(drawn.xmin, drawn.xmax)
 
             if drawn.ymin == drawn.ymax:
-                self.axes.set_ylim(drawn.ymin - 1e-1, drawn.ymax + 1e-1)
+                self.axes_list[subplot].set_ylim(drawn.ymin - 1e-1, drawn.ymax + 1e-1)
             else:
-                self.axes.set_ylim(drawn.ymin, drawn.ymax)
-
-    def reset_temp_polys(self):
-        'clear the invariant violation polygons (called once per iteration)'
-
-        if self.shapes is not None:
-            self.shapes.reset_temp_polys()
-
-    def add_inv_violation_star(self, star):
-        'add an invariant violation region'
-
-        if self.shapes is not None:
-            verts = star.verts()
-
-            self.shapes.add_inv_vio_poly(verts)
-
-            if self.settings.label.axes_limits is None:
-                self.update_axis_limits(verts)
+                self.axes_list[subplot].set_ylim(drawn.ymin, drawn.ymax)
 
     def create_plot(self):
         'create the plot'
 
-        if self.settings.plot_mode != PlotSettings.PLOT_NONE and self.settings.plot_mode != PlotSettings.PLOT_MATLAB:
-            self.fig, self.axes = plt.subplots(nrows=1, figsize=self.settings.plot_size)
-            ha = self.engine.hybrid_automaton
+        if not self.settings.plot_mode in [PlotSettings.PLOT_NONE]:
+            self.fig, axes_list = plt.subplots(nrows=self.num_subplots, ncols=1, figsize=self.settings.plot_size, \
+                                                    squeeze=False)
 
-            title = self.settings.label.title
+            self.axes_list = []
+            
+            for row in axes_list:
+                for axes in row:
+                    self.axes_list.append(axes)
+
+            ha = self.core.hybrid_automaton
+
+            if not isinstance(self.settings.label, list):
+                self.settings.label = [self.settings.label]
+
+            # only use title for the first subplot the first plot
+            title = self.settings.label[0].title
             title = title if title is not None else ha.name
+            self.axes_list[0].set_title(title, fontsize=self.settings.label[0].title_size)
 
-            x_label = self.settings.label.x_label
-            x_label = x_label if x_label is not None else ha.variables[self.settings.xdim].capitalize()
-            y_label = self.settings.label.y_label
-            y_label = y_label if y_label is not None else ha.variables[self.settings.ydim].capitalize()
+            if self.settings.video_show_frame and self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
+                ax = self.axes_list[0]
+                self.frame_text = ax.text(0.01, 0.99, '', transform=ax.transAxes, verticalalignment='top')
 
-            self.axes.set_xlabel(x_label, fontsize=self.settings.label.label_size)
-            self.axes.set_ylabel(y_label, fontsize=self.settings.label.label_size)
-            self.axes.set_title(title, fontsize=self.settings.label.title_size)
+            for i in range(self.num_subplots):
+                labels = []
+                label_settings = [self.settings.xdim_dir[i], self.settings.ydim_dir[i]]
+                label_strings = [self.settings.label[i].x_label, self.settings.label[i].y_label]
 
-            if self.settings.label.axes_limits is not None:
-                # hardcoded axes limits
-                xmin, xmax, ymin, ymax = self.settings.label.axes_limits
+                for label_setting, text in zip(label_settings, label_strings):
+                    if text is not None:
+                        labels.append(text)
+                    elif label_setting is None:
+                        labels.append('Time')
+                    elif isinstance(label_setting, int):
+                        labels.append('$x_{{ {} }}$'.format(label_setting))
+                    else:
+                        labels.append('')
 
-                self.axes.set_xlim(xmin, xmax)
-                self.axes.set_ylim(ymin, ymax)
+                self.axes_list[i].set_xlabel(labels[0], fontsize=self.settings.label[i].label_size)
+                self.axes_list[i].set_ylabel(labels[1], fontsize=self.settings.label[i].label_size)
+
+                if self.settings.label[i].axes_limits is not None:
+                    # hardcoded axes limits
+                    xmin, xmax, ymin, ymax = self.settings.label[i].axes_limits
+
+                    self.axes_list[i].set_xlim(xmin, xmax)
+                    self.axes_list[i].set_ylim(ymin, ymax)
 
             if self.settings.grid:
-                self.axes.grid(True)
+                for axes in self.axes_list:
+                    axes.grid(True, linestyle='dashed')
+
+                    if self.settings.grid_xtics is not None:
+                        axes.set_xticks(self.settings.grid_xtics)
+
+                    if self.settings.grid_ytics is not None:
+                        axes.set_yticks(self.settings.grid_ytics)
 
             # make the x and y axis animated in case of rescaling
-            self.axes.xaxis.set_animated(True)
-            self.axes.yaxis.set_animated(True)
+            for i, axes in enumerate(self.axes_list):
+                axes.xaxis.set_animated(True)
+                axes.yaxis.set_animated(True)
 
-            plt.tick_params(axis='both', which='major', labelsize=self.settings.label.tick_label_size)
+                axes.tick_params(axis='both', which='major', labelsize=self.settings.label[i].tick_label_size)
+
             plt.tight_layout()
 
-            self.shapes = DrawnShapes(self)
+            self.shapes = [DrawnShapes(self, i) for i in range(self.num_subplots)]
 
-    def del_parent_successors(self, parent):
-        '''stop plotting a parent's's sucessors'''
-
-        if self.shapes is not None:
-            self.shapes.del_reachable_polys_from_parent(parent)
-
-            # maybe we want to revert axis limits here?
-
-    def state_popped(self):
-        'called whenever a state is popped from the waiting list'
-
-        self.draw_cur_step = 0 # reset the cur_step counter
-
-    def add_reachable_poly_data(self, verts, mode_name):
+    def plot_current_sim(self):
         '''
-        Add raw reachable poly data for use with certain plotting modes (matlab).
+        plot the current simulation according to the plot settings.
         '''
 
-        data = self.reach_poly_data
-        # values are a tuple (color, [poly1, poly2, ...])
+        if self.core.sim_states:
+            for subplot in range(self.num_subplots):
+                xdim, ydim = self.settings.xdim_dir[subplot], self.settings.ydim_dir[subplot]
+                plot_pts = []
 
-        if mode_name not in data:
-            ecol, fcol = self.mode_colors.get_edge_face_colors(mode_name)
-            data[mode_name] = (ecol, fcol, [])
-            
-        data[mode_name][2].append(verts)
+                for obj in self.core.sim_states:
+                    if obj is None:
+                        plot_pts.append(None)
+                    else:
+                        _, pt, steps = obj
+                        cur_time = steps * self.core.settings.step_size 
+                        x, y = lpplot.pt_to_plot_xy(pt, xdim, ydim, cur_time)
 
-    def plot_current_star(self, star):
+                        plot_pts.append((x, y))
+
+                self.shapes[subplot].set_cur_sim(plot_pts)
+
+                if self.settings.label[subplot].axes_limits is None:
+                    non_none_verts = [pt for pt in plot_pts if pt is not None]
+                    self.update_axis_limits(non_none_verts, subplot)
+
+    def commit_cur_sims(self):
+        'commit the simulation points lines (finished reachability for a mode)'
+
+        for shapes in self.shapes:
+            shapes.commit_cur_sims()
+
+    def plot_current_state(self):
         '''
-        plot the current SymbolicState according to the plot settings
-
-        returns True if the plot was skipped (due to too many polyons on the screen
+        plot the current StateSet according to the plot settings.
         '''
 
-        skipped_plot = True
+        state = self.core.aggdag.get_cur_state()
 
-        if self.settings.plot_mode == PlotSettings.PLOT_MATLAB:
-            verts = star.verts()
+        for subplot in range(self.num_subplots):
+            if self.settings.store_plot_result and subplot == 0: # only subplot 0 is saved
+                verts = state.verts(self, subplot=subplot)
 
-            self.add_reachable_poly_data(verts, star.mode.name)
-        elif self.settings.plot_mode != PlotSettings.PLOT_NONE:
-            Timers.tic("plot_current_star()")
+                self.core.result.mode_to_polys[state.mode.name].append(verts)
 
-            if self.draw_cur_step % self.draw_stride == 0:
-                skipped_plot = False
+            if self.settings.plot_mode != PlotSettings.PLOT_NONE:
+                verts = state.verts(self, subplot=subplot)
+                verts_list = [verts]
 
-                verts = star.verts()
+                # if it's an aggregation, also add the predecessors to the plot
+                if state.cur_step_in_mode == 0 and len(state.aggdag_op_list) > 1:
+                    for op in state.aggdag_op_list:
+                        if op is not None:
+                            verts_list.append(op.poststate.verts(self, subplot=subplot))
 
-                if self.settings.print_lp_at_each_step:
-                    star.print_lp()
+                self.shapes[subplot].set_cur_state(verts_list)
 
-                self.shapes.set_cur_state(verts)
+                if self.settings.label[subplot].axes_limits is None:
+                    self.update_axis_limits(verts, subplot)
 
-                if self.settings.label.axes_limits is None:
-                    self.update_axis_limits(verts)
+        # finally, add a reachable poly for the current state
+        if self.settings.plot_mode != PlotSettings.PLOT_NONE:
+            self.add_reachable_poly(state)
 
-                # possibly thin out the reachable set of states
-                max_polys = self.settings.max_shown_polys
+    def add_reachable_poly(self, state):
+        'add a reacahble poly to all subplots'
 
-                if max_polys > 0 and self.cur_reachable_polys >= max_polys:
-                    self.shapes.thin_reachable_set()
-                    self.cur_reachable_polys /= 2
-                    self.draw_cur_step = 0
-                    self.draw_stride *= 2
+        for shape in self.shapes:
+            shape.add_reachable_poly(state)
 
-                self.cur_reachable_polys += 1
+    def highlight_states_gray(self, states):
+        '''highlight the passed-in states (using gray line settings)
 
-                self.shapes.add_reachable_poly(verts, star.parent, star.mode.name)
+        states is a list of either StateSet objects or a list of verts for each subplot
+        '''
 
-            self.draw_cur_step += 1
+        if self.settings.plot_mode != PlotSettings.PLOT_IMAGE:
+            for subplot in range(self.num_subplots):
+                verts_list = []
 
-            Timers.toc("plot_current_star()")
+                for state in states:
+                    if isinstance(state, list):
+                        verts = state[subplot] # list of vertices
+                        verts_list.append(verts)
+                    else:
+                        verts = state.verts(self, subplot=subplot)
+                        verts_list.append(verts)
 
-        return skipped_plot
+                    if self.settings.label[subplot].axes_limits is None:
+                        self.update_axis_limits(verts, subplot)
 
-    def compute_and_animate(self, step_func, is_finished_func):
-        'do the computation, plotting during the process'
+                self.shapes[subplot].set_gray_state(verts_list)
 
-        def anim_func(force_single_frame):
-            'performs several steps of the computation and draws an animation frame'
+    def highlight_states(self, states):
+        '''highlight the passed-in states (using current_state settings)
 
-            if not force_single_frame and self.interactive.paused:
-                Timers.tic("paused")
-                time.sleep(0.1)
-                Timers.toc("paused")
+        states is a list of either StateSet objects or a list of verts for each subplot
+        '''
+
+        for subplot in range(self.num_subplots):
+            verts_list = []
+
+            for state in states:
+                if isinstance(state, list):
+                    verts_list.append(state[subplot])
+                else:
+                    verts = state.verts(self, subplot=subplot)
+                    verts_list.append(verts)
+
+                if self.settings.label[subplot].axes_limits is None:
+                    self.update_axis_limits(verts, subplot)
+
+            self.shapes[subplot].set_cur_state(verts_list)
+
+    def anim_func(self, frame):
+        'animation draw function'
+
+        if self.settings.video_show_frame and self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
+            self.frame_text.set_text(f'Frame: {frame}')
+
+        if self.interactive.paused and self.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
+            Timers.tic("paused")
+            time.sleep(0.1)
+            Timers.toc("paused")
+        elif self.interactive.paused and self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
+            if self.pause_frames is None:
+                self.pause_frames = self.settings.video_pause_frames
             else:
-                Timers.tic("frame")
+                self.pause_frames -= 1
 
-                start_time = time.time()
-                while not is_finished_func():
-                    step_func()
+                if self.pause_frames == 0:
+                    self.pause_frames = None
+                    self.interactive.paused = False
+        else:
+            Timers.tic("frame")
 
-                    # do several computation steps per frame if they're fast (optimization)
-                    if force_single_frame or time.time() - start_time > self.settings.min_frame_time:
-                        break
+            for ds in self.shapes:
+                ds.set_cur_state(None)
+                ds.set_gray_state(None)
 
-                # if we just wanted a single step
-                if self.interactive.step:
+            for _ in range(self.settings.draw_stride):
+                self.core.do_step()
+
+                # if we just wanted a single step (or do_step() caused paused to be set to True)
+                if self.interactive.step or self.interactive.paused:
                     self.interactive.step = False
                     self.interactive.paused = True
+                    break
 
-                if is_finished_func():
-                    self.shapes.inv_vio_polys.set_visible(False)
+            if self.core.aggdag.get_cur_state() is not None:
+                self.plot_current_state()
 
-                Timers.toc("frame")
+            if self.core.sim_states is not None:
+                self.plot_current_sim()
 
-                if self.interactive.paused and not force_single_frame:
-                    print "Paused After Frame #{}".format(Timers.timers['frame'].num_calls)
+            Timers.toc("frame")
 
-            rv = self.shapes.get_artists(self.engine.waiting_list)
+            if self.interactive.paused:
+                self.core.print_normal("Paused After Frame #{}".format(self.num_frames_drawn))
 
-            rv += [self.axes.xaxis, self.axes.yaxis]
+            self.num_frames_drawn += 1
 
-            return rv
+        # return a list of animated artists
+        rv = []
 
-        def init_func():
-            'animation init function'
+        for axes in self.axes_list:
+            rv.append(axes.xaxis)
+            rv.append(axes.yaxis)
 
-            rv = self.shapes.get_artists(self.engine.waiting_list)
+        for subplot in range(self.num_subplots):
+            rv += self.shapes[subplot].get_artists()
 
-            # it seems we only need to do this once...
-            #if not self.drew_first_frame:
-            #    self.drew_first_frame = True
+        if self.settings.video_show_frame and self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
+            rv.append(self.frame_text)
 
-            #    print "drew first frame"
-            rv += [self.axes.xaxis, self.axes.yaxis]
+        return rv
 
-            return rv
+    def anim_init_func(self):
+        'animation init function'
 
-        def anim_iterator():
-            'generator for the computation iterator'
-            Timers.tic("total")
+        rv = []
 
-            # do the computation until its done
-            while not is_finished_func():
-                yield False
+        for axes in self.axes_list:
+            rv.append(axes.xaxis)
+            rv.append(axes.yaxis)
 
-            # redraw one more (will clear cur_state)
-            #yield False
+        for subplot in range(self.num_subplots):
+            rv += self.shapes[subplot].get_artists()
 
-            Timers.toc("total")
+        return rv
 
-            LpInstance.print_stats()
-            Timers.print_stats()
+    def anim_iterator(self):
+        'generator for the computation iterator'
+        Timers.tic("anim_iterator")
+
+        frame_counter = 0
+
+        # do the computation until its done
+        while not self.core.is_finished():
+            if self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
+                self.core.print_verbose("Saving Video Frame #{}".format(frame_counter))
+                
+            yield frame_counter
+            frame_counter += 1
+
+        if self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
+            for _ in range(self.settings.video_extra_frames):
+                frame_counter += 1
+                yield frame_counter
+
+        Timers.toc("anim_iterator")
+
+
+    def compute_and_animate(self):
+        'do the computation, plotting during the process'
 
         def next_pressed(_):
             'event function for next button press'
             self.interactive.paused = False
 
+            if self.core.is_finished():
+                self.core.print_normal("Computation is finished")
+
         def step_pressed(_):
             'event function for step button press'
+            
             self.interactive.paused = False
             self.interactive.step = True
 
-        iterator = anim_iterator
-
-        if self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
-            if self.settings.video.frames is None:
-                print "Warning: PLOT_VIDEO requires explicitly setting plot_settings.video.frames (default is 100)."
-            else:
-                iterator = self.settings.video.frames
+            if self.core.is_finished():
+                self.core.print_normal("Computation is finished")
 
         if self.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
+            # do one frame
+            self.interactive.paused = False
+            self.interactive.step = True
+
+            #plt.figure(2)
+
             # shrink plot, add buttons
             plt.subplots_adjust(bottom=0.12)
 
@@ -746,40 +850,55 @@ class PlotManager(Freezable):
             bstep = Button(axstep, 'Step', color='0.85', hovercolor='0.85')
             bstep.on_clicked(step_pressed)
 
-        # process a certain number of frames if the settings desire it
-        for _ in xrange(self.settings.skip_frames):
-            anim_func(True)
+        if self.settings.plot_mode == PlotSettings.PLOT_IMAGE:
+            self.run_to_completion()
+            self.save_image()
+        else:
+            interval = 1 if self.settings.plot_mode == PlotSettings.PLOT_VIDEO else 0
 
-        self._anim = animation.FuncAnimation(self.fig, anim_func, iterator, init_func=init_func,
-                                             interval=self.settings.anim_delay_interval, blit=True, repeat=False)
+            self.num_frames_drawn = 0
+            self._anim = animation.FuncAnimation(self.fig, self.anim_func, self.anim_iterator, \
+                init_func=self.anim_init_func, interval=interval, blit=True, repeat=False, save_count=sys.maxsize)
 
-        if not self.settings.skip_show_gui:
             if self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
-                self.save_video(self._anim)
-            elif self.settings.plot_mode == PlotSettings.PLOT_IMAGE:
-                self.save_image()
+                self.save_video()
             else:
                 plt.show()
 
-    def save_matlab(self):
-        'save a matlab script'
+    def run_to_completion(self, compute_plot=True):
+        'run to completion, creating the plot at each step'
 
-        self.engine.run_to_completion()
+        Timers.tic("run_to_completion")
 
-        filename = self.settings.filename
+        while not self.core.is_finished():
+            if compute_plot and self.shapes is not None:
+                for subplot in range(self.num_subplots):
+                    self.shapes[subplot].set_cur_state(None)
 
-        if filename is None:
-            filename = "plot_reach.m"
+            self.core.do_step()
 
-        if not filename.endswith('.m'):
-            filename = filename + '.m'
+            if compute_plot and self.core.aggdag.get_cur_state():
+                self.plot_current_state()
 
-        write_matlab(filename, self.reach_poly_data, self.settings, self.engine.hybrid_automaton)
+            if self.core.sim_states is not None:
+                self.plot_current_sim()
+
+        Timers.toc("run_to_completion")
+
+    def save_video(self):
+        'save a video file'
+
+        writer = self.settings.make_video_writer_func()
+
+        filename = self.settings.filename if self.settings.filename is not None else "anim.mp4"
+
+        self._anim.save(filename, writer=writer)
+
+        if not self.core.is_finished():
+            raise RuntimeError("saving video exited before computation completed (is_finished() returned false)")
 
     def save_image(self):
         'save an image file'
-
-        self.engine.run_to_completion()
 
         filename = self.settings.filename
 
@@ -787,54 +906,6 @@ class PlotManager(Freezable):
             filename = "plot.png"
 
         plt.savefig(filename, bbox_inches='tight')
-
-    def save_video(self, func_anim_obj):
-        'save a video file of the given FuncAnimation object'
-
-        filename = self.settings.filename
-
-        if filename is None:
-            filename = "video.avi" # mp4 is also possible
-
-        fps = self.settings.video.fps
-        codec = self.settings.video.codec
-
-        print "Saving {} at {:.2f} fps using ffmpeg with codec '{}'.".format(
-            filename, fps, codec)
-
-        # if this fails do: 'sudo apt-get install ffmpeg'
-        try:
-            start = time.time()
-
-            extra_args = []
-
-            if codec is not None:
-                extra_args += ['-vcodec', str(codec)]
-
-            func_anim_obj.save(filename, fps=fps, extra_args=extra_args)
-
-            dif = time.time() - start
-            print "Finished creating {} ({:.2f} seconds)!".format(filename, dif)
-        except AttributeError:
-            traceback.print_exc()
-
-            print "\nSaving video file failed! Is ffmpeg installed? Can you run 'ffmpeg' in the terminal?"
-
-def debug_plot_star(star, col='k-', lw=1):
-    '''
-    debug function for plotting a star. This calls plt.plot(), so it's up to you
-    to call plt.show() afterwards
-    '''
-
-    verts = star.verts()
-
-    # wrap polygon back to first point
-    verts.append(verts[0])
-
-    xs = [ele[0] for ele in verts]
-    ys = [ele[1] for ele in verts]
-
-    plt.plot(xs, ys, col, lw=lw)
 
 # monkey patch function for blitting tick-labels
 # see http://stackoverflow.com/questions/17558096/animated-title-in-matplotlib
@@ -860,7 +931,4 @@ def _blit_draw(_self, artists, bg_cache):
         # ax.figure.canvas.blit(ax.bbox)
         ax.figure.canvas.blit(ax.figure.bbox)
 
-animation.Animation._blit_draw = _blit_draw
-
-
-
+animation.Animation._blit_draw = _blit_draw # pylint: disable=protected-access

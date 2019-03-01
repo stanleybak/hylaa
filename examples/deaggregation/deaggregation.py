@@ -1,97 +1,133 @@
 '''
-Manually created hybrid automaton for hylaa testing.
+Deaggregation Model from Hylaa
+
+A simple demo of deaggregation occuring.
 '''
 
-import math
-from hylaa.hybrid_automaton import LinearHybridAutomaton, LinearConstraint
-from hylaa.hybrid_automaton import HyperRectangle
-from hylaa.engine import HylaaSettings
-from hylaa.engine import HylaaEngine
-from hylaa.plotutil import PlotSettings
+from matplotlib import collections
 
-from numpy import array as nparray
+from hylaa.hybrid_automaton import HybridAutomaton
+from hylaa.settings import HylaaSettings, PlotSettings, LabelSettings
+from hylaa.core import Core
+from hylaa.aggstrat import Aggregated
+from hylaa.stateset import StateSet
+from hylaa import lputil
 
-def define_ha():
-    '''make the hybrid automaton and return it'''
+def make_automaton(unsafe_box):
+    'make the hybrid automaton'
 
-    ha = LinearHybridAutomaton('Trimmed Harmonic Oscillator w/ successor')
-    ha.variables = ["x", "y"]
+    ha = HybridAutomaton('Deaggregation Example')
 
-    loc1 = ha.new_mode('green')
-    loc1.a_matrix = nparray([[0, 1], [-1, 0]])
-    loc1.c_vector = nparray([0, 0])
-    
-    inv1 = LinearConstraint([0., -1.], 0.0) # y >= 0
-    loc1.inv_list = [inv1]
-    
-    loc2 = ha.new_mode('cyan')
-    loc2.a_matrix = nparray([[0, 0], [0, 0]])
-    loc2.c_vector = nparray([0, -2])
-    
-    inv2 = LinearConstraint([0., -1.], 2.5) # y >= -2.5
-    loc2.inv_list = [inv2]
-    
-    loc3 = ha.new_mode('orange')
-    loc3.a_matrix = nparray([[0, 0], [0, 0]])
-    loc3.c_vector = nparray([0, -2])
-    inv3 = LinearConstraint([0., -1.], 4.0) # y >= -4
-    loc3.inv_list = [inv3]
-    
-    guard = LinearConstraint([0., -1.], 0.0) # y >= 0
-    trans = ha.new_transition(loc1, loc2)
-    trans.condition_list = [guard]
-    
-    guard1 = LinearConstraint([0., 1.], -0) # y <= -0
-    guard2 = LinearConstraint([1., 0], 0.5) # x <= 0.5
-    guard3 = LinearConstraint([-1., 0], 0.5) # x >= -0.5
-    trans = ha.new_transition(loc2, loc3)
-    trans.condition_list = [guard1, guard2, guard3]
+    # x' = 2
+    m1 = ha.new_mode('mode0_right')
+    m1.set_dynamics([[0, 0, 2], [0, 0, 0], [0, 0, 0]])
+    m1.set_invariant([[1, 0, 0]], [3.5]) # x <= 3.5
 
+    # y' == 2
+    m2 = ha.new_mode('mode1_up')
+    m2.set_dynamics([[0, 0, 0], [0, 0, 2], [0, 0, 0]])
+    m2.set_invariant([0., 1., 0], [3.5]) # y <= 3.5
+
+    # x' == 2 
+    m3 = ha.new_mode('mode2_right')
+    m3.set_dynamics([[0, 0, 2], [0, 0, -0], [0, 0, 0]])
+    m3.set_invariant([1., 0, 0], [7]) # x <= 7
+
+    t = ha.new_transition(m1, m2)
+    t.set_guard_true()
+
+    t = ha.new_transition(m2, m3)
+    t.set_guard_true()
+
+    error = ha.new_mode('error')
+    t = ha.new_transition(m3, error)
+
+    unsafe_rhs = [-unsafe_box[0][0], unsafe_box[0][1], -unsafe_box[1][0], unsafe_box[1][1]]
+    
+    # x >= 1.1 x <= 1.9, y >= 2.7, y <= 4.3
+    t.set_guard([[-1, 0, 0], [1, 0, 0], [0, -1, 0], [0, 1, 0]], unsafe_rhs)
+
+    t = ha.new_transition(m2, error)
+    # x >= 1.1 x <= 1.9, y >= 2.7, y <= 4.3
+    t.set_guard([[-1, 0, 0], [1, 0, 0], [0, -1, 0], [0, 1, 0]], unsafe_rhs) 
+    
     return ha
 
-def define_init_states(ha):
-    '''returns a list of (mode, HyperRectangle)'''
-    # Variable ordering: [x, y]
-    rv = []
+def make_init(ha):
+    'make the initial states'
 
-    r = HyperRectangle([(-5.5, -4.5), (0, 1)])
-    rv.append((ha.modes['green'], r))
-
-    return rv
-
-def define_settings():
-    'get the hylaa settings object'
-                            
-    plot_settings = PlotSettings()
-
-    # save to a video file
-    plot_settings.make_video("deaggregation.mp4", frames=150, fps=5)
-    #plot_settings.plot_mode = PlotSettings.PLOT_IMAGE
+    mode = ha.modes['mode0_right']
+    init_lpi = lputil.from_box([(0, 1), (0, 1.0), (1.0, 1.0)], mode)
     
-    plot_settings.xdim = 0
-    plot_settings.ydim = 1
-    plot_settings.extra_lines = [[(-0.5, -4), (-0.5, -0), (0.5, -0), (0.5, -4)]] 
-    
-    settings = HylaaSettings(step=0.25, max_time=6.0, plot_settings=plot_settings)
+    init_list = [StateSet(init_lpi, mode)]
+
+    return init_list
+
+def make_settings(unsafe_box):
+    'make the reachability settings object'
+
+    # see hylaa.settings for a list of reachability settings
+    settings = HylaaSettings(1.0, 20.0)
     settings.process_urgent_guards = True
-    #settings.deaggregation = False
-    #settings.aggregation = False
-    settings.skip_step_times = True
- 
-    settings.simulation.threads=1
+    settings.stdout = HylaaSettings.STDOUT_VERBOSE
+
+    settings.plot.video_pause_frames = 5
+    settings.plot.video_fps = 5
+    settings.plot.plot_mode = PlotSettings.PLOT_IMAGE
+
+    #settings.plot.plot_mode = PlotSettings.PLOT_VIDEO
+    #settings.plot.filename = "deaggregation.mp4"
+
+    settings.stop_on_aggregated_error = False
+    settings.aggstrat.deaggregate = True # use deaggregation
+    settings.aggstrat.deagg_preference = Aggregated.DEAGG_LEAVES_FIRST
+
+    settings.plot.extra_collections = []
+    settings.plot.label = []
+
+    ls = LabelSettings()
+    ls.axes_limits = [-1, 12, -1, 6]
+    settings.plot.label.append(ls)
+
+    ls.big(size=24)
+
+    ls.x_label = '$x$'
+    ls.y_label = '$y$'
+
+    cols = []
+
+    line = [(3.5, -20), (3.5, 20)]
+    cols.append(collections.LineCollection([line], animated=True, colors=('gray'), linewidths=(2), linestyle='dashed'))
+
+    line = [(-20, 3.5), (20, 3.5)]
+    cols.append(collections.LineCollection([line], animated=True, colors=('gray'), linewidths=(2), linestyle='dashed'))
+
+    # x >= 1.1 x <= 1.9, y >= 2.7, y <= 4.3
+    line = []
+    line.append((unsafe_box[0][0], unsafe_box[1][0]))
+    line.append((unsafe_box[0][1], unsafe_box[1][0]))
+    line.append((unsafe_box[0][1], unsafe_box[1][1]))
+    line.append((unsafe_box[0][0], unsafe_box[1][1]))
+    line.append((unsafe_box[0][0], unsafe_box[1][0]))
+
+    cols.append(collections.LineCollection([line], animated=True, colors=('red'), linewidths=(2), linestyle='dashed'))
+
+    settings.plot.extra_collections.append(cols)
 
     return settings
-    
-def run_hylaa(settings):
-    'Runs hylaa with the given settings, returning the HylaaResult object.'
-    ha = define_ha()
-    init = define_init_states(ha)
 
-    engine = HylaaEngine(ha, settings)
-    engine.run(init)
+def main():
+    'main entry point'
 
-    return engine.result
+    unsafe_box = [[5.1, 5.9], [4.1, 4.9]]
 
-if __name__ == '__main__':
-    run_hylaa(define_settings())
+    ha = make_automaton(unsafe_box)
 
+    init_states = make_init(ha)
+
+    settings = make_settings(unsafe_box)
+
+    Core(ha, settings).run(init_states)
+
+if __name__ == "__main__":
+    main()

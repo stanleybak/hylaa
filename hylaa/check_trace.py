@@ -13,54 +13,69 @@ import math
 
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.integrate import odeint
 
-def make_der_func(a_matrix, b_matrix, c_vector, input_vec):
+from scipy.integrate import odeint
+from scipy.sparse import csr_matrix
+
+from hylaa.util import Freezable
+
+class CheckTraceData(Freezable):
+    'class containing data about the counter-example trace'
+
+    def __init__(self):
+        self.sim_time = None
+        self.abs_error = None
+        self.rel_error = None
+
+        self.freeze_attrs()
+
+def make_der_func(a_matrix, b_matrix, input_vec):
     'make the derivative function with the given paremeters'
+
+    assert isinstance(a_matrix, csr_matrix)
+
+    if b_matrix is not None:
+        assert isinstance(b_matrix, csr_matrix)
 
     input_vec = np.array(input_vec, dtype=float)
 
     def der_func(state, _):
         'the constructed derivative function'
 
-        no_input = np.add(np.dot(a_matrix, state), c_vector)
+        no_input = a_matrix * state
+        no_input.shape = (state.shape[0],)
 
         if b_matrix is None:
             rv = no_input
         else:
-            input_effects = np.dot(b_matrix, input_vec)
+            input_effects = b_matrix * input_vec
+            input_effects.shape = (state.shape[0],)
+
             rv = np.add(no_input, input_effects)
 
         return rv
 
     return der_func
 
-def check(a_matrix, b_matrix, c_vector, step, max_time, start_point, inputs, hylaa_end_point,
+def check(a_matrix, b_matrix, step, max_time, start_point, inputs, normal_vec, end_val, \
           quick=False, stdout=True, approx_samples=2000):
     '''Run a simulation with the given dynamics and inputs to see how close it matches with HyLAA's prediction
 
-    The comparison is printed showing the differences between the simulation and expected result.
+    The comparison is printed showing the differences between the simulation's projection onto normal_vec
+    and expected result (passed in as end_val), both in terms of abs_error and rel_error
 
-    Returns the simulation state computed at each time step (list of np.array)
+    Returns a tuple, (states, times, CheckTraceData) where states is the projected simulation state at each time step
     '''
 
-    if c_vector is None:
-        c_vector = np.array([0.0] * a_matrix.shape[0])
-
-    a_matrix = np.array(a_matrix, dtype=float)
+    a_matrix = csr_matrix(a_matrix)
 
     if b_matrix is not None:
-        b_matrix = np.array(b_matrix, dtype=float)
+        b_matrix = csr_matrix(b_matrix)
 
-    c_vector = np.array(c_vector, dtype=float)
-
-    num_dims = c_vector.shape[0]
+    num_dims = a_matrix.shape[0]
     assert num_dims > 0
     assert a_matrix.shape[0] == a_matrix.shape[1], "expected A matrix to be a square"
-    assert len(c_vector.shape) == 1, "expected c_vector to be a single row: {}".format(c_vector)
-    assert a_matrix.shape[0] == c_vector.shape[0], "A matrix and c vector sizes should match"
     assert len(start_point) == num_dims
-    assert len(hylaa_end_point) == num_dims
     total_steps = int(round(max_time / step))
 
     assert abs(total_steps * step - max_time) < 1e-9, "Rounding issue with number of steps"
@@ -70,9 +85,12 @@ def check(a_matrix, b_matrix, c_vector, step, max_time, start_point, inputs, hyl
 
     assert len(inputs) <= total_steps, "more inputs({}) than steps({})?".format(len(inputs), total_steps)
 
+    data = CheckTraceData()
+    data.sim_time = max_time
+
     # we want to roughly get the desired number of sample points, so we may need to do multiple
     # samples per input
-    samples_per_input = approx_samples / len(inputs)
+    samples_per_input = approx_samples / max(1, len(inputs))
     if samples_per_input < 1:
         samples_per_input = 1
 
@@ -92,15 +110,16 @@ def check(a_matrix, b_matrix, c_vector, step, max_time, start_point, inputs, hyl
             else:
                 break
 
-        if stdout and num_steps > 1:
+        elapsed = time.time() - start
+        remaining = elapsed / ((1.0+index) / len(inputs)) - elapsed
+
+        if stdout and num_steps > 1 and remaining > 2.0:
             print "Combining {} steps (identical inputs)".format(num_steps)
 
-        if stdout:
-            elapsed = time.time() - start
-            remaining = elapsed / ((1.0+index) / len(inputs)) - elapsed
+        if stdout and remaining > 2.0:
             print "{} / {} (ETA: {:.2f} sec)".format(index, len(inputs), remaining)
 
-        der_func = make_der_func(a_matrix, b_matrix, c_vector, inputs[index])
+        der_func = make_der_func(a_matrix, b_matrix, inputs[index])
         new_states, new_times = sim(sim_states[-1], der_func, step * num_steps, samples_per_input * num_steps, quick)
 
         sim_states += [s for s in new_states]
@@ -112,36 +131,28 @@ def check(a_matrix, b_matrix, c_vector, step, max_time, start_point, inputs, hyl
 
         index += num_steps
 
-    print "Final Time: {}".format(index * step)
-
     last_sim_point = sim_states[-1].copy()
-    diff = last_sim_point - hylaa_end_point
-    zero_row = np.array([0.0] * a_matrix.shape[0], dtype=float)
 
-    for row in xrange(a_matrix.shape[0]):
-        if np.allclose(a_matrix[row], zero_row):
-            print "Skipping row {} from the error norm computation (dynamics row was zero)".format(row)
-            diff[row] = 0.0
-            last_sim_point[row] = 0.0
-            hylaa_end_point[row] = 0.0
+    sim_val = np.dot(last_sim_point, normal_vec)
+    diff = sim_val - end_val
 
-    numerator = np.linalg.norm(diff, ord=2)
-    print "Absolute Error (l-2 norm): {}".format(numerator)
+    # normal_vec is -1.0
 
-    denominator = np.linalg.norm(last_sim_point, ord=2)
-    
+    data.abs_error = numerator = abs(diff)
+    denominator = abs(sim_val)
+
     if denominator == 0:
-        print "Relative Error (l-2 norm): N/A (denominator was 0)"
+        data.rel_error = 0.0
     else:
-        print "Relative Error (l-2 norm): {}".format(numerator / denominator)
+        data.rel_error = numerator / denominator
 
-    #for i in xrange(diff.shape[0]):
-    #    print "Dim #{} Got {}, expected {}, diff: {}".format(i, last_sim_point[i], hylaa_end_point[i],
-    #                                                         abs(hylaa_end_point[i] - last_sim_point[i]))
+    if stdout:
+        print "Final Time: {}".format(index * step)
+        print "Absolute Error (l-2 norm): {}".format(numerator)
+        print "Relative Error (l-2 norm): {}".format(data.rel_error)
+        print "Runtime: {:.2f} seconds".format(time.time() - start)
 
-    print "Runtime: {:.2f} seconds".format(time.time() - start)
-
-    return (sim_states, sim_times)
+    return (sim_states, sim_times, data)
 
 def sim(start, der_func, time_amount, num_steps, quick):
     'simulate for some fixed time, and return the resultant (states, times) tuple'
@@ -152,7 +163,7 @@ def sim(start, der_func, time_amount, num_steps, quick):
         tol /= 1e5 # more accurate simulation
 
     times = np.linspace(0, time_amount, num=1 + num_steps)
-    states = odeint(der_func, start, times, col_deriv=True, rtol=tol, atol=tol, mxstep=50000)
+    states = odeint(der_func, start, times, col_deriv=True, rtol=tol, atol=tol, mxstep=100000)
 
     states = states[1:]
     times = times[1:]
@@ -173,11 +184,15 @@ def plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step, 
     total_steps = int(math.ceil(max_time / step))
     end_point = sim_states[-1]
     end_val = np.dot(end_point, normal_vec)
+    tol = 1e-6
 
-    if end_val <= normal_val:
-        print "End Point is a violation: {} <= {}".format(end_val, normal_val)
+    if len(end_point) < 10:
+        print "End Point: {}".format(end_point)
+
+    if end_val - tol <= normal_val:
+        print "End Point is a violation (within tolerance): {} - {} <= {}".format(end_val, tol, normal_val)
     else:
-        print "End point is NOT a violation: {} > {}".format(end_val, normal_val)
+        print "End point is NOT a violation: {} - {} (tolerance) > {}".format(end_val, tol, normal_val)
 
     epsilon = step / 8.0 # to prevent round-off error on the end range
     input_times = np.arange(0.0, max_time + epsilon, step)
@@ -203,11 +218,15 @@ def plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step, 
         normal_trace = np.dot(sim_states, normal_vec)
         ax[0].plot(sim_times, normal_trace, 'k-', lw=2, label='Simulation')
         ax[0].plot(sim_times[-1], normal_trace[-1], 'o', ms=10, mew=3, mec='red', mfc='none')
+        ax[0].plot([sim_times[0], sim_times[-1]], [normal_val, normal_val], 'k--', lw=2, label='Violation')
 
-        ax[0].set_ylabel('State', fontsize=22)
+        if inputs is None:
+            ax[0].set_xlabel('Time', fontsize=22)
+
+        ax[0].set_ylabel('Projected State', fontsize=22)
         ax[0].set_title('Counter-Example Trace', fontsize=28)
 
-    if inputs is not None:
+    if inputs is not None and len(inputs) > 0:
         inputs.append(inputs[-1]) # there is one less input than time instants
         inputs = np.array(inputs, dtype=float)
 
@@ -255,7 +274,7 @@ def plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step, 
 
     if not do_2d:
         plt.xlim(0, max_time * 1.02)
-    else:
+    elif len(ax) > 1:
         ax[1].set_xlim(0, max_time * 1.02)
 
     plt.tight_layout()
