@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/stanleybak/hylaa.svg?branch=master)](https://travis-ci.org/stanleybak/hylaa)
+
 # Hylaa #
 
 <p align="center"> <img src="hylaa_logo_small.png" alt="Hylaa Logo"/> </p>

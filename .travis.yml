@@ -18,3 +18,5 @@ script:
 - docker run hylaa
 # run all examples
 - docker run hylaa python3 /hylaa/examples/run_all_examples.py
+
+# to get a shell: docker run -it hylaa bash
