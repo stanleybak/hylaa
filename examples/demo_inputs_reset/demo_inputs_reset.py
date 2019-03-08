@@ -82,7 +82,7 @@ def make_settings():
 
     return settings
 
-def main():
+def run_hylaa():
     'main entry point'
 
     ha = make_automaton()
@@ -94,4 +94,4 @@ def main():
     Core(ha, settings).run(init_states)
 
 if __name__ == "__main__":
-    main()
+    run_hylaa()

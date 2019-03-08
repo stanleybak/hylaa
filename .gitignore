@@ -16,3 +16,4 @@ test
 *_flymake.py
 .pytest_cache
 .cache
+__pycache__

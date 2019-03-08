@@ -116,7 +116,7 @@ def make_settings(unsafe_box):
 
     return settings
 
-def main():
+def run_hylaa():
     'main entry point'
 
     unsafe_box = [[5.1, 5.9], [4.1, 4.9]]
@@ -130,4 +130,4 @@ def main():
     Core(ha, settings).run(init_states)
 
 if __name__ == "__main__":
-    main()
+    run_hylaa()

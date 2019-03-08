@@ -1,0 +1,20 @@
+
+# configuration file for continuous integration testing using travis-ci.org
+
+sudo: required
+
+dist:
+ - trusty
+
+services:
+  - docker
+
+script:
+# build Docker container
+- docker build -t hylaa .
+# run simple example
+- docker run hylaa python3 /hylaa/examples/harmonic_oscillator/ha.py
+# run unit tests
+- docker run hylaa
+# run all examples
+- docker run hylaa python3 /hylaa/examples/run_all_examples.py

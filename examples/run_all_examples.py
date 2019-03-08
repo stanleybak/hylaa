@@ -24,12 +24,12 @@ def main():
         if os.path.split(filepath)[-1] == __file__:
             continue
 
-        print "\nRunning example: {}".format(filepath)
+        print(f"\nRunning example: {filepath}")
 
         run_example(filepath)
 
     diff = time.time() - start
-    print "\nDone! Ran all examples in {:.1f} seconds".format(diff)
+    print("\nDone! Ran all examples in {:.1f} seconds".format(diff))
 
 def get_files(filename, extension='.py'):
     '''recursively get all the files with the given extension in the passed-in directory'''

@@ -237,7 +237,7 @@ def make_settings(theta_deg, box):
 
     return settings
 
-def run(is_sim=False):
+def run_hylaa(is_sim=False):
     'main entry point'
 
     theta_deg = 36
@@ -263,4 +263,4 @@ def run(is_sim=False):
     
 if __name__ == "__main__":
     #run(is_sim=False)
-    run(is_sim=True)
+    run_hylaa(is_sim=True)
