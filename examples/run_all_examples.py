@@ -21,7 +21,7 @@ def main():
             continue
 
         # this script itself will also be a member of the python_files list... skip it
-        if os.path.split(filepath)[-1] == __file__:
+        if __file__ in os.path.split(filepath):
             continue
 
         print(f"\nRunning example: {filepath}")
