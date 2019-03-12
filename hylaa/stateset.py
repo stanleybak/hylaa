@@ -208,15 +208,21 @@ class StateSet(Freezable):
         lpi_one_step = self.lpi.clone()
 
         Timers.tic('get_bm')
-        bm, _ = self.mode.time_elapse.get_basis_matrix(1)
+        bm, ie_mat = self.mode.time_elapse.get_basis_matrix(1)
         Timers.toc('get_bm')
 
         Timers.tic('set_bm')
         lputil.set_basis_matrix(lpi_one_step, bm)
         Timers.toc('set_bm')
 
+        Timers.tic('input effects matrix')
+        lputil.add_input_effects_matrix(lpi_one_step, ie_mat, self.mode)
+        Timers.toc('input effects matrix')
+
         lpi_list = [self.lpi, lpi_one_step]
         self.lpi = lputil.aggregate_chull(lpi_list, self.mode)
+
+        print(f"debug: checking feasible: {self.lpi.is_feasible()}")
 
     def apply_approx_lgg(self):
         '''

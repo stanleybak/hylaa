@@ -2,9 +2,12 @@
 Harmonic Oscillator Example in Hylaa, demonstrating using
 various approximation models for continuous-time reachability
 
-Very simple 2-d example:
-x' == y
-y' == -x
+
+dynamics are:
+x' = y + u1
+y' = -x + u2
+starting from [-5, -4], [0, 1]
+with u1, u2 in [-0.2, 0.2]
 '''
 
 import math
@@ -23,12 +26,16 @@ def define_ha():
 
     ha = HybridAutomaton()
 
-    # dynamics: x' = y, y' = -x
     a_matrix = np.array([[0, 1], [-1, 0]], dtype=float)
     a_csr = csr_matrix(a_matrix, dtype=float)
 
+    b_mat = [[1, 0], [0, 1]]
+    b_constraints = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+    b_rhs = [0.2, 0.2, 0.2, 0.2]
+
     mode = ha.new_mode('mode')
     mode.set_dynamics(a_csr)
+    mode.set_inputs(b_mat, b_constraints, b_rhs)
 
     return ha
 
@@ -37,8 +44,8 @@ def make_init(ha):
 
     mode = ha.modes['mode']
     # init states: x in [-5, -4], y in [0, 1]
-    #init_lpi = lputil.from_box([[-5, -4], [0, 1]], mode)
-    init_lpi = lputil.from_box([[-5, -5], [0, 0]], mode)
+    init_lpi = lputil.from_box([[-5, -4], [0, 1]], mode)
+    #init_lpi = lputil.from_box([[-5, -5], [0, 0]], mode)
 
     init_list = [StateSet(init_lpi, mode)]
 
@@ -47,7 +54,7 @@ def make_init(ha):
 def define_settings():
     'get the hylaa settings object'
 
-    step = math.pi/8
+    step = math.pi/4
     max_time = math.pi / 2
     settings = HylaaSettings(step, max_time)
 
@@ -83,6 +90,7 @@ def run_hylaa():
         settings.approx_model, settings.plot.filename = model, filename
 
         init_states = make_init(ha)
+        print(f"\Making {filename}...")
         Core(ha, settings).run(init_states)
 
 if __name__ == '__main__':
