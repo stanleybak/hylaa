@@ -243,11 +243,10 @@ class StateSet(Freezable):
         r_x0 = lputil.compute_radius_inf(self.lpi)
 
         alpha = (math.exp(tau * a_norm) - 1 - tau * a_norm) * (r_x0)
+        print(alpha)
 
         # bloat lpi_one_step by alpha (minkowski sum)
         lputil.bloat(lpi_one_step, alpha)
-
-        print(lpi_one_step)
 
         lpi_list = [self.lpi, lpi_one_step]
         self.lpi = lputil.aggregate_chull(lpi_list, self.mode)

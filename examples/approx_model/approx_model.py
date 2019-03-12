@@ -37,7 +37,8 @@ def make_init(ha):
 
     mode = ha.modes['mode']
     # init states: x in [-5, -4], y in [0, 1]
-    init_lpi = lputil.from_box([[-5, -4], [0, 1]], mode)
+    #init_lpi = lputil.from_box([[-5, -4], [0, 1]], mode)
+    init_lpi = lputil.from_box([[-5, -5], [0, 0]], mode)
 
     init_list = [StateSet(init_lpi, mode)]
 
@@ -46,8 +47,8 @@ def make_init(ha):
 def define_settings():
     'get the hylaa settings object'
 
-    step = math.pi/4
-    max_time = 1 * math.pi / 2
+    step = math.pi/8
+    max_time = math.pi / 2
     settings = HylaaSettings(step, max_time)
 
     plot_settings = settings.plot
