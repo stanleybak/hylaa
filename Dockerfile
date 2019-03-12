@@ -8,9 +8,13 @@ ENV DEBIAN_FRONTEND=noninteractive
 # RUN sed 's@archive.ubuntu.com@ftp.fau.de@' -i /etc/apt/sources.list
 
 
-################################
+############################
+### Install dependencies ###
 
-# install dependencies
+# ffmpeg is only needed if you want video (.mp4) export
+RUN apt-get update && apt-get -qy install curl ffmpeg
+
+# install other (required) dependencies
 RUN apt-get update && apt-get -qy install curl unzip python3 python3-pip python3-matplotlib
 RUN pip3 install pytest numpy scipy sympy matplotlib termcolor swiglpk graphviz
 
@@ -23,9 +27,8 @@ COPY . /hylaa
 # only for CI testing: Switch matplotlib backend to from TkAgg (interactive) to Agg (noninteractive).
 RUN sed -i 's/^backend *: *TkAgg$/backend: Agg/i' /etc/matplotlibrc
 
-##################
-# As default command: run the tests
-##################
+#########################################
+### As default command: run the tests ###
 
 CMD python3 -m pytest /hylaa/tests
 
