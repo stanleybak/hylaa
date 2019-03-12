@@ -579,6 +579,44 @@ def get_basis_matrix(lpi):
 
     return lpi.get_dense_constraints(lpi.basis_mat_pos[0], lpi.basis_mat_pos[1], lpi.dims, lpi.dims)
 
+def bloat(lpi, amount, var_name_prefix='bloat'):
+    '''
+    bloat the current set of states
+    '''
+
+    assert amount >= 0
+
+    # strategy add n variables with bounds -amount <= x <= amount
+    names = [f"{var_name_prefix}{n}" for n in range(lpi.dims)]
+    precols = lpi.get_num_cols()
+    prerows = lpi.get_num_rows()
+
+    data = []
+    inds = []
+    indptr = [0]
+
+    for n in range(lpi.dims):
+        # 1.0 entry in the basis matrix row for variable n
+        data.append(1)
+        inds.append(lpi.basis_mat_pos[0] + n)
+        
+        # x <= amount
+        data.append(1)
+        inds.append(prerows + 2*n)
+
+        # -x <= amount ---> x >= -amount
+        data.append(-1)
+        inds.append(prerows + 2*n + 1)
+        indptr.append(len(data))
+
+    mat = csc_matrix((data, inds, indptr), shape=(prerows + 2*lpi.dims, lpi.dims), dtype=float)
+
+    rhs = [amount] * (2 * lpi.dims)
+    lpi.add_rows_less_equal(rhs)
+    lpi.add_cols(names)
+
+    lpi.set_constraints_csc(mat, offset=(0, precols))
+
 def add_reset_variables(lpi, mode_id, transition_index, # pylint: disable=too-many-locals, too-many-statements
                         reset_csr=None, minkowski_csr=None,
                         minkowski_constraints_csr=None, minkowski_constraints_rhs=None, successor_has_inputs=False): 
@@ -948,3 +986,22 @@ def is_point_in_lpi(point, orig_lpi):
     add_curtime_constraints(lpi, csr, rhs)
 
     return lpi.is_feasible()
+
+def compute_radius_inf(lpi):
+    '''
+    compute the max ||x||, x in lpi, according to the infinity norm
+
+    This uses 2*n LPs and then returns the maximum over all components
+    '''
+
+    max_val = -float('inf')
+
+    for n in range(lpi.dims):
+        for posneg in [1.0, -1.0]:
+            dir_vec = [posneg if n == d else 0.0 for d in range(lpi.dims)]
+
+            lp_result = lpi.minimize(dir_vec)
+
+            max_val = max(max_val, abs(lp_result[n]))
+
+    return max_val

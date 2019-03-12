@@ -4,18 +4,20 @@ Stanley Bak
 Aug 2016
 '''
 
+import math
+
 import numpy as np
+import scipy as sp
 
 from matplotlib.path import Path
 
-from hylaa import lputil
+from hylaa import lpplot, lputil
 
 from hylaa.hybrid_automaton import Mode
 from hylaa.timerutil import Timers
 from hylaa.util import Freezable
 from hylaa.lpinstance import LpInstance
-
-from hylaa import lpplot
+from hylaa.settings import HylaaSettings
 
 class StateSet(Freezable):
     '''
@@ -197,3 +199,71 @@ class StateSet(Freezable):
             path_list[index] = Path(verts, codes)
 
         return rv
+
+    def apply_approx_chull(self):
+        '''
+        apply convex hull approximation model
+        '''
+
+        lpi_one_step = self.lpi.clone()
+
+        Timers.tic('get_bm')
+        bm, _ = self.mode.time_elapse.get_basis_matrix(1)
+        Timers.toc('get_bm')
+
+        Timers.tic('set_bm')
+        lputil.set_basis_matrix(lpi_one_step, bm)
+        Timers.toc('set_bm')
+
+        lpi_list = [self.lpi, lpi_one_step]
+        self.lpi = lputil.aggregate_chull(lpi_list, self.mode)
+
+    def apply_approx_lgg(self):
+        '''
+        apply lgg approximation model from equation (2) in Lemma 1 of:
+        "Reachability analysis of linear systems using support functions",
+        Le Guernic, C., Girard, A., Nonlinear Analysis: Hybrid Systems, 2010
+        '''
+
+        assert self.mode.b_csr is None, "inputs not currently supported with approx_lgg"
+
+        lpi_one_step = self.lpi.clone()
+
+        Timers.tic('get_bm')
+        bm, _ = self.mode.time_elapse.get_basis_matrix(1)
+        Timers.toc('get_bm')
+
+        Timers.tic('set_bm')
+        lputil.set_basis_matrix(lpi_one_step, bm)
+        Timers.toc('set_bm')
+
+        # use infinity norm
+        a_norm = sp.sparse.linalg.norm(self.mode.a_csr, ord=np.inf)
+        tau = self.mode.time_elapse.step_size
+        r_x0 = lputil.compute_radius_inf(self.lpi)
+
+        alpha = (math.exp(tau * a_norm) - 1 - tau * a_norm) * (r_x0)
+
+        # bloat lpi_one_step by alpha (minkowski sum)
+        lputil.bloat(lpi_one_step, alpha)
+
+        print(lpi_one_step)
+
+        lpi_list = [self.lpi, lpi_one_step]
+        self.lpi = lputil.aggregate_chull(lpi_list, self.mode)
+
+    def apply_approx_model(self, approx_model):
+        '''
+        apply the approximation model to bloat the current (initial) set of states
+
+        approx_model - one of the APPROX_ values defined in HylaaSettings
+        '''
+
+        assert self.cur_step_in_mode == 0, "approximation model should be applied before any continuous post operations"
+
+        if approx_model == HylaaSettings.APPROX_CHULL:
+            self.apply_approx_chull()
+        elif approx_model == HylaaSettings.APPROX_LGG:
+            self.apply_approx_lgg()
+        elif approx_model != HylaaSettings.APPROX_NONE:
+            assert f"Unknown approx_model from settings: {approx_model}"

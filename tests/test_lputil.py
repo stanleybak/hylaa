@@ -785,3 +785,14 @@ def test_box_inputs():
 
     verts = lpplot.get_verts(lpi)
     assert_verts_is_box(verts, [(2, 21), (4, 41)])
+
+def test_bloat():
+    'tests bloat'
+    
+    lpi = lputil.from_box([[-5, -4], [0, 1]], HybridAutomaton().new_mode('mode_name'))
+
+    lputil.bloat(lpi, 0.5)
+
+    verts = lpplot.get_verts(lpi)
+
+    assert_verts_is_box(verts, [(-5.5, -3.5), (-0.5, 1.5)])

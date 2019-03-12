@@ -273,6 +273,8 @@ class Core(Freezable):
             if not still_feasible:
                 self.print_normal("Continuous state was outside of the mode's invariant; skipping.")
                 self.aggdag.cur_state_left_invariant()
+            else:
+                cur_state.apply_approx_model(self.settings.approx_model)
 
         # pause plot
         self.plotman.interactive.paused = True
