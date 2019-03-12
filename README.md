@@ -15,7 +15,6 @@ The main citation to use for Hylaa is: "HyLAA: A Tool for Computing Simulation-E
 The code was mostly written by Stanley Bak (http://stanleybak.com) with input from Parasara Sridhar Duggirala (http://engr.uconn.edu/~psd).
 
 Hylaa is released under the GPL v3 license (see the LICENSE file). Earlier versions have been approved for public release (DISTRIBUTION A: Approved for public release; distribution unlimited #88ABW-2016-5976, 22 NOV 2016).
-[![Build Status](https://travis-ci.org/stanleybak/hylaa.svg?branch=master)](https://travis-ci.org/stanleybak/hylaa)
 
 ### Installation ###
 
