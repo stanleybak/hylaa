@@ -12,6 +12,7 @@ import numpy as np
 import scipy as sp
 from scipy.sparse import csr_matrix, csc_matrix, hstack
 
+import swiglpk as glpk
 from hylaa.lpinstance import LpInstance, SwigArray
 from hylaa.timerutil import Timers
 
@@ -579,6 +580,14 @@ def get_basis_matrix(lpi):
 
     return lpi.get_dense_constraints(lpi.basis_mat_pos[0], lpi.basis_mat_pos[1], lpi.dims, lpi.dims)
 
+def scale_with_bm(lpi, amount):
+    '''
+    scale the current set using the basis matrix
+    '''
+
+    bm = get_basis_matrix(lpi)
+    set_basis_matrix(lpi, amount * bm)
+
 def bloat(lpi, amount, var_name_prefix='bloat'):
     '''
     bloat the current set of states
@@ -1005,3 +1014,63 @@ def compute_radius_inf(lpi):
             max_val = max(max_val, abs(lp_result[n]))
 
     return max_val
+
+def minkowski_sum(lpi_list, mode):
+    '''
+    perform a minkowski sum of the passed-in sets, and return the resultant lpi
+    '''
+
+    for lpi in lpi_list:
+        assert lpi.dims == lpi_list[0].dims, "dimension mismatch during minkowski sum"
+
+    dims = lpi_list[0].dims
+
+    csr_list = []
+    combined_rhs = [0] * dims
+    combined_types = [glpk.GLP_FX] * dims
+    combined_names = [f"c{n}" for n in range(dims)]
+
+    total_new_vars = dims
+
+    for lpi, i in enumerate(lpi_list):
+        csr = lpi.get_full_constraints()
+        csr_list.append(csr)
+        combined_rhs += lpi.get_rhs()
+        combined_types += lpi.get_types()
+
+        total_new_vars += csr.shape[1]
+        comined_names += [f"l{i}_{v}" for v in range(csr.shape[1])]
+
+    # create combined_csr constraints
+    data = []
+    indices = []
+    indptr = [0]
+
+    for d in range(dims):
+        data.append(1)
+        indices.append(d)
+
+        for lpi in lpi_list:
+            data.append(-1)
+            indices.append(d + lpi.cur_vars_offset)
+
+        indptr.append(len(data))
+
+    # copy constraints from each lpi
+    col_offset = dims
+    indptr_offset = indptr[-1]
+    
+    for csr in csr_list:
+        data += csr.data
+        indices += [col_offset + i for i in csr.indices]
+        indptr += [indptr_offset + i for i in csr.indptr]
+
+        col_offset += csr.shape[1]
+        indptr_offset = indptr[-1]
+
+    rows = len(combined_rhs)
+    cols = col_offset
+    combined_csr = csr_matrix((data, indices, indptr), shape=(rows, cols), dtype=float)
+    
+    # from_constraints assumes left-most variables are current-time variables
+    return from_constraints(combined_csr, combined_rhs, mode, types=combined_types, names=combined_names, dims=dims)

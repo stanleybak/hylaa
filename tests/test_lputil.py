@@ -796,3 +796,28 @@ def test_bloat():
     verts = lpplot.get_verts(lpi)
 
     assert_verts_is_box(verts, [(-5.5, -3.5), (-0.5, 1.5)])
+
+def test_scale():
+    'tests scale'
+    
+    lpi = lputil.from_box([[4, 5], [-1, 1]], HybridAutomaton().new_mode('mode_name'))
+
+    lputil.scale_with_bm(lpi, 2.0)
+
+    verts = lpplot.get_verts(lpi)
+
+    assert_verts_is_box(verts, [(8, 10), (-2, 2)])
+
+def test_minkowski_sum_box():
+    'tests minkowski_sum with 2 box sets'
+
+    mode = HybridAutomaton().new_mode('mode_name')
+    
+    lpi1 = lputil.from_box([[-1, 1], [-2, 2]], mode)
+    lpi2 = lputil.from_box([[-.1, .1], [-.2, .2]], mode)
+
+    lpi = lputil.minkowski_sum([lpi1, lpi2], mode)
+
+    verts = lpplot.get_verts(lpi)
+
+    assert_verts_is_box(verts, [(-1.1, 1.1), (-2.2, 2.2)])

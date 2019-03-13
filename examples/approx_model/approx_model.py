@@ -44,8 +44,8 @@ def make_init(ha):
 
     mode = ha.modes['mode']
     # init states: x in [-5, -4], y in [0, 1]
-    init_lpi = lputil.from_box([[-5, -4], [0, 1]], mode)
-    #init_lpi = lputil.from_box([[-5, -5], [0, 0]], mode)
+    #init_lpi = lputil.from_box([[-5, -4], [0, 1]], mode)
+    init_lpi = lputil.from_box([[-5, -5], [0, 0]], mode)
 
     init_list = [StateSet(init_lpi, mode)]
 
@@ -82,9 +82,9 @@ def run_hylaa():
     settings = define_settings()
 
     tuples = []
-    #tuples.append((HylaaSettings.APPROX_NONE, "approx_none.png"))
+    tuples.append((HylaaSettings.APPROX_NONE, "approx_none.png"))
     tuples.append((HylaaSettings.APPROX_CHULL, "approx_chull.png"))
-    #tuples.append((HylaaSettings.APPROX_LGG, "approx_lgg.png"))
+    tuples.append((HylaaSettings.APPROX_LGG, "approx_lgg.png"))
 
     for model, filename in tuples: 
         settings.approx_model, settings.plot.filename = model, filename
