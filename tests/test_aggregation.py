@@ -759,8 +759,8 @@ def test_chull_drivetrain():
     for vert in all_verts:
         assert lputil.is_point_in_lpi(vert, chull_lpi)
 
-def test_approx_chull():
-    'test convex hull approximation model'
+def test_chull_one_step_inputs():
+    'test convex hull with one-step lpi for a system with inputs (bug where current vars was not set correctly)'
 
     mode = HybridAutomaton().new_mode('mode_name')
 
@@ -779,9 +779,14 @@ def test_approx_chull():
     box = [[-5, -4], [0.0, 1.0]]
     lpi = lputil.from_box(box, mode)
 
-    ss = StateSet(lpi, mode)
+    lpi_one_step = lpi.clone()
+    bm, ie_mat = mode.time_elapse.get_basis_matrix(1)
 
-    ss.apply_approx_chull()
+    lputil.set_basis_matrix(lpi_one_step, bm)
+    lputil.add_input_effects_matrix(lpi_one_step, ie_mat, mode)
+
+    lpi_list = [lpi, lpi_one_step]
+    chull_lpi = lputil.aggregate_chull(lpi_list, mode)
 
     # 2 current vars and 2 total input effect vars, so expected to be 4 from the end
-    assert ss.lpi.cur_vars_offset == ss.lpi.get_num_cols() - 4, "cur_vars in wrong place"
+    assert chull_lpi.cur_vars_offset == chull_lpi.get_num_cols() - 4, "cur_vars in wrong place"
