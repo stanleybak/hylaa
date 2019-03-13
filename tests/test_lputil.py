@@ -864,12 +864,19 @@ def test_minkowski_box_diamond():
 def test_from_input_constraints():
     'test making an lpi set from input constraints'
 
+    mode = HybridAutomaton().new_mode('mode_name')
+
     b_mat = [[1], [0]]
     b_constraints = [[1], [-1]]
     b_rhs = [0.2, 0.2]
 
     # result should have two vertices, at (-0.2, 0) and (0.2, 0)
-    lpi = lputil.from_input_constraints(b_mat, b_constraints, b_rhs)
+    lpi = lputil.from_input_constraints(b_mat, b_constraints, b_rhs, mode)
+
+    print(lpi)
+
+    assert lpi.get_num_cols() == 5
+    assert lpi.cur_vars_offset == 3
     
     verts = lpplot.get_verts(lpi)
     assert len(verts) == 3 # 2 + wrap

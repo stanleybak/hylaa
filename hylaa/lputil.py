@@ -186,12 +186,6 @@ def from_constraints(csr, rhs, mode, types=None, names=None, dims=None):
 
     return lpi
 
-def from_input_constraints(b_mat, b_constraints, b_rhs):
-    'create an lpi from input constriants (B matrix and constraints on U)'
-
-    pass
-    
-
 def set_basis_matrix(lpi, basis_mat):
     'modify the lpi in place to set the basis matrix'
 
@@ -1079,6 +1073,56 @@ def minkowski_sum(lpi_list, mode):
 
     rows = len(combined_rhs)
     cols = col_offset
+    combined_csr = csr_matrix((data, indices, indptr), shape=(rows, cols), dtype=float)
+
+    # from_constraints assumes left-most variables are current-time variables
+    return from_constraints(combined_csr, combined_rhs, mode, types=combined_types, names=combined_names, dims=dims)
+
+def from_input_constraints(b_mat, u_constraints, u_rhs, mode):
+    'create an lpi from input constraints (B matrix and constraints on U)'
+
+    if not isinstance(b_mat, csr_matrix):
+        b_mat = csr_matrix(b_mat, dtype=float)
+
+    if not isinstance(u_constraints, csr_matrix):
+        u_constraints = csr_matrix(u_constraints, dtype=float)
+
+    if not isinstance(u_rhs, np.ndarray):
+        u_rhs = np.array(u_rhs, dtype=float)
+
+    # V = B U
+    dims = b_mat.shape[0]
+
+    combined_rhs = [0] * dims
+    combined_types = [glpk.GLP_FX] * dims
+    combined_names = [f"c{n}" for n in range(dims)]
+
+    combined_rhs += [v for v in u_rhs]
+    combined_types += [glpk.GLP_UP] * u_constraints.shape[0]
+    combined_names += [f"u{n}" for n in range(b_mat.shape[1])]
+
+    # create combined_csr constraints
+    data = []
+    indices = []
+    indptr = [0]
+
+    for d in range(dims):
+        data.append(-1)
+        indices.append(d)
+
+        data += [d for d in b_mat.data[b_mat.indptr[d]:b_mat.indptr[d+1]]]
+        indices += [dims + i for i in b_mat.indices[b_mat.indptr[d]:b_mat.indptr[d+1]]]
+
+        indptr.append(len(data))
+
+    indptr_offset = indptr[-1]
+    
+    data += [d for d in u_constraints.data]
+    indices += [dims + i for i in u_constraints.indices]
+    indptr += [indptr_offset + i for i in u_constraints.indptr[1:]]
+
+    rows = dims + u_constraints.shape[0]
+    cols = dims + b_mat.shape[1]
     combined_csr = csr_matrix((data, indices, indptr), shape=(rows, cols), dtype=float)
 
     # from_constraints assumes left-most variables are current-time variables
