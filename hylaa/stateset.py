@@ -91,7 +91,6 @@ class StateSet(Freezable):
           f"{self.mode.name}, cur_step_in_mode: {self.cur_step_in_mode}, requested_step: {step_in_mode})"
 
         if num_steps > 0:
-
             Timers.tic('get_bm')
             self.basis_matrix, input_effects_matrix = self.mode.time_elapse.get_basis_matrix(step_in_mode)
             Timers.toc('get_bm')
@@ -221,8 +220,6 @@ class StateSet(Freezable):
 
         lpi_list = [self.lpi, lpi_one_step]
         self.lpi = lputil.aggregate_chull(lpi_list, self.mode)
-
-        print(f"debug: checking feasible: {self.lpi.is_feasible()}")
 
     def apply_approx_lgg(self):
         '''

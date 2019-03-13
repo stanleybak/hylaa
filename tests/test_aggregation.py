@@ -758,3 +758,30 @@ def test_chull_drivetrain():
 
     for vert in all_verts:
         assert lputil.is_point_in_lpi(vert, chull_lpi)
+
+def test_approx_chull():
+    'test convex hull approximation model'
+
+    mode = HybridAutomaton().new_mode('mode_name')
+
+    step_size = math.pi/4
+
+    a_mat = np.array([[0, 1], [-1, 0]], dtype=float)
+
+    b_mat = [[1], [0]]
+    b_constraints = [[1], [-1]]
+    b_rhs = [0.2, 0.2]
+
+    mode.set_dynamics(a_mat)
+    mode.set_inputs(b_mat, b_constraints, b_rhs)
+    mode.init_time_elapse(step_size)
+
+    box = [[-5, -4], [0.0, 1.0]]
+    lpi = lputil.from_box(box, mode)
+
+    ss = StateSet(lpi, mode)
+
+    ss.apply_approx_chull()
+
+    # 2 current vars and 2 total input effect vars, so expected to be 4 from the end
+    assert ss.lpi.cur_vars_offset == ss.lpi.get_num_cols() - 4, "cur_vars in wrong place"

@@ -175,8 +175,8 @@ def from_constraints(csr, rhs, mode, types=None, names=None, dims=None):
         lpi.add_rows_equal_zero(dims)
 
         # -I
-        csr = -1 * sp.sparse.identity(dims, dtype=float, format='csr')
-        lpi.set_constraints_csr(csr, offset=ie_pos)
+        csr_ti = -1 * sp.sparse.identity(dims, dtype=float, format='csr')
+        lpi.set_constraints_csr(csr_ti, offset=ie_pos)
     else:
         ie_pos = None
 

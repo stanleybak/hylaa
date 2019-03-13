@@ -5,9 +5,9 @@ various approximation models for continuous-time reachability
 
 dynamics are:
 x' = y + u1
-y' = -x + u2
+y' = -x
 starting from [-5, -4], [0, 1]
-with u1, u2 in [-0.2, 0.2]
+with u1 in [-0.2, 0.2]
 '''
 
 import math
@@ -29,9 +29,9 @@ def define_ha():
     a_matrix = np.array([[0, 1], [-1, 0]], dtype=float)
     a_csr = csr_matrix(a_matrix, dtype=float)
 
-    b_mat = [[1, 0], [0, 1]]
-    b_constraints = [[1, 0], [-1, 0], [0, 1], [0, -1]]
-    b_rhs = [0.2, 0.2, 0.2, 0.2]
+    b_mat = [[1], [0]]
+    b_constraints = [[1], [-1]]
+    b_rhs = [0.2, 0.2]
 
     mode = ha.new_mode('mode')
     mode.set_dynamics(a_csr)
@@ -82,15 +82,15 @@ def run_hylaa():
     settings = define_settings()
 
     tuples = []
-    tuples.append((HylaaSettings.APPROX_NONE, "approx_none.png"))
+    #tuples.append((HylaaSettings.APPROX_NONE, "approx_none.png"))
     tuples.append((HylaaSettings.APPROX_CHULL, "approx_chull.png"))
-    tuples.append((HylaaSettings.APPROX_LGG, "approx_lgg.png"))
+    #tuples.append((HylaaSettings.APPROX_LGG, "approx_lgg.png"))
 
     for model, filename in tuples: 
         settings.approx_model, settings.plot.filename = model, filename
 
         init_states = make_init(ha)
-        print(f"\Making {filename}...")
+        print(f"\nMaking {filename}...")
         Core(ha, settings).run(init_states)
 
 if __name__ == '__main__':
