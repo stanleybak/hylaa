@@ -14,7 +14,9 @@ import swiglpk as glpk
 from hylaa import lputil, lpplot
 from hylaa.hybrid_automaton import HybridAutomaton, LinearConstraint
 
-from util import assert_verts_is_box
+from util import assert_verts_is_box, pair_almost_in
+
+import matplotlib.pyplot as plt
 
 def test_from_box():
     'tests from_box'
@@ -821,3 +823,58 @@ def test_minkowski_sum_box():
     verts = lpplot.get_verts(lpi)
 
     assert_verts_is_box(verts, [(-1.1, 1.1), (-2.2, 2.2)])
+
+def test_minkowski_box_diamond():
+    'tests minkowski_sum of a box and a diamond'
+
+    mode = HybridAutomaton().new_mode('mode_name')
+    
+    lpi1 = lputil.from_box([[-1, 1], [-1, 1]], mode)
+
+    # -1 <= x + y <= 1
+    # -1 <= x - y <= 1
+    constraints_mat = [[1, 1], [-1, -1], [1, -1], [-1, 1]]
+    constraints_rhs = [1, 1, 1, 1]
+    lpi2 = lputil.from_constraints(constraints_mat, constraints_rhs, mode)
+    
+    #verts = lpplot.get_verts(lpi1)
+    #xs, ys = zip(*verts)
+    #plt.plot(xs, ys, 'r--')
+
+    #verts = lpplot.get_verts(lpi2)
+    #xs, ys = zip(*verts)
+    #plt.plot(xs, ys, 'b--')
+
+    lpi = lputil.minkowski_sum([lpi1, lpi2], mode)
+
+    #verts = lpplot.get_verts(lpi)
+    #xs, ys = zip(*verts)
+    #plt.plot(xs, ys, 'k:')
+    
+    #plt.show()
+
+    verts = lpplot.get_verts(lpi)
+    assert len(verts) == 9 # octogon + wrap
+
+    expected = [(-2, 1), (-2, -1), (-1, -2), (1, -2), (2, -1), (2, 1), (1, 2), (-1, 2)]
+
+    for pt in expected:
+        assert pair_almost_in(pt, verts), f"{pt} not found in verts: {verts}"
+
+def test_from_input_constraints():
+    'test making an lpi set from input constraints'
+
+    b_mat = [[1], [0]]
+    b_constraints = [[1], [-1]]
+    b_rhs = [0.2, 0.2]
+
+    # result should have two vertices, at (-0.2, 0) and (0.2, 0)
+    lpi = lputil.from_input_constraints(b_mat, b_constraints, b_rhs)
+    
+    verts = lpplot.get_verts(lpi)
+    assert len(verts) == 3 # 2 + wrap
+
+    expected = [(-0.2, 0), (0.2, 0)]
+
+    for pt in expected:
+        assert pair_almost_in(pt, verts), f"{pt} not found in verts: {verts}"

@@ -186,6 +186,12 @@ def from_constraints(csr, rhs, mode, types=None, names=None, dims=None):
 
     return lpi
 
+def from_input_constraints(b_mat, b_constraints, b_rhs):
+    'create an lpi from input constriants (B matrix and constraints on U)'
+
+    pass
+    
+
 def set_basis_matrix(lpi, basis_mat):
     'modify the lpi in place to set the basis matrix'
 
@@ -1032,14 +1038,14 @@ def minkowski_sum(lpi_list, mode):
 
     total_new_vars = dims
 
-    for lpi, i in enumerate(lpi_list):
+    for i, lpi in enumerate(lpi_list):
         csr = lpi.get_full_constraints()
         csr_list.append(csr)
-        combined_rhs += lpi.get_rhs()
+        combined_rhs += [v for v in lpi.get_rhs()]
         combined_types += lpi.get_types()
 
         total_new_vars += csr.shape[1]
-        comined_names += [f"l{i}_{v}" for v in range(csr.shape[1])]
+        combined_names += [f"l{i}_{v}" for v in range(csr.shape[1])]
 
     # create combined_csr constraints
     data = []
@@ -1049,10 +1055,13 @@ def minkowski_sum(lpi_list, mode):
     for d in range(dims):
         data.append(1)
         indices.append(d)
+        col_offset = dims
 
         for lpi in lpi_list:
             data.append(-1)
-            indices.append(d + lpi.cur_vars_offset)
+            indices.append(col_offset + lpi.cur_vars_offset + d)
+
+            col_offset += lpi.get_num_cols()
 
         indptr.append(len(data))
 
@@ -1061,9 +1070,9 @@ def minkowski_sum(lpi_list, mode):
     indptr_offset = indptr[-1]
     
     for csr in csr_list:
-        data += csr.data
+        data += [d for d in csr.data]
         indices += [col_offset + i for i in csr.indices]
-        indptr += [indptr_offset + i for i in csr.indptr]
+        indptr += [indptr_offset + i for i in csr.indptr[1:]]
 
         col_offset += csr.shape[1]
         indptr_offset = indptr[-1]
@@ -1071,6 +1080,6 @@ def minkowski_sum(lpi_list, mode):
     rows = len(combined_rhs)
     cols = col_offset
     combined_csr = csr_matrix((data, indices, indptr), shape=(rows, cols), dtype=float)
-    
+
     # from_constraints assumes left-most variables are current-time variables
     return from_constraints(combined_csr, combined_rhs, mode, types=combined_types, names=combined_names, dims=dims)
