@@ -56,8 +56,7 @@ class StateSet(Freezable):
         
         self.input_effects_list = None if mode.b_csr is None else [] # list of input effects at each step
 
-        # used for some approximation models
-        self.approx_model = None # set on call to apply_approx_model()
+        # approximation model variables
         self.lgg_beta = None
 
         #### plotting variables below ####
@@ -109,11 +108,11 @@ class StateSet(Freezable):
                 for step in range(self.cur_step_in_mode + 1, step_in_mode):
                     _, ie_mat = self.mode.time_elapse.get_basis_matrix(step)
                     self.input_effects_list.append(ie_mat)
-                    lputil.add_input_effects_matrix(self.lpi, ie_mat, self.mode)
+                    lputil.add_input_effects_matrix(self.lpi, ie_mat, self.mode, self.lgg_beta)
 
                 # add the input effects matrix for the final step (computed before with basis matrix)
                 self.input_effects_list.append(input_effects_matrix)
-                lputil.add_input_effects_matrix(self.lpi, input_effects_matrix, self.mode)
+                lputil.add_input_effects_matrix(self.lpi, input_effects_matrix, self.mode, self.lgg_beta)
                 Timers.toc('input effects matrix')
 
             self.cur_step_in_mode += num_steps
@@ -277,6 +276,8 @@ class StateSet(Freezable):
         else:
             self.lgg_beta = 0
 
+        self.mode.time_elapse.use_lgg_approx()
+
     def apply_approx_model(self, approx_model):
         '''
         apply the approximation model to bloat the current (initial) set of states
@@ -286,7 +287,6 @@ class StateSet(Freezable):
 
         assert self.cur_step_in_mode == 0, "approximation model should be applied before any continuous post operations"
         assert self.mode.time_elapse is not None, "init_time_elapse() must be called before apply_approx_model()"
-        self.approx_model = approx_model
 
         if approx_model == HylaaSettings.APPROX_CHULL:
             self.apply_approx_chull()

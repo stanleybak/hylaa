@@ -127,7 +127,7 @@ def test_approx_lgg_inputs():
     # we'll manually assign beta to be 0.02, in order to be able to check that the constraints are correct
     # A norm is 1
 
-    tau = 0.08
+    tau = 0.05
 
     a_matrix = [[0, 0, 1], [0, 0, 0], [0, 0, 0]]
     b_mat = [[0], [1], [0]]
@@ -139,6 +139,7 @@ def test_approx_lgg_inputs():
     mode.set_inputs(b_mat, b_constraints, b_rhs)
 
     init_lpi = lputil.from_box([[0, 0], [0, 0], [1, 1]], mode)
+    assert lputil.compute_radius_inf(init_lpi) == 1
 
     ss = StateSet(init_lpi, mode)
     mode.init_time_elapse(tau)
@@ -147,31 +148,42 @@ def test_approx_lgg_inputs():
     ss.apply_approx_model(HylaaSettings.APPROX_LGG)
 
     assert np.linalg.norm(a_matrix, ord=np.inf) == 1.0
+
+    v_set = lputil.from_input_constraints(mode.b_csr, mode.u_constraints_csc, mode.u_constraints_rhs, mode)
+    assert lputil.compute_radius_inf(v_set) == 0.2
     alpha = (math.exp(tau) - 1 - tau) * (1 + 0.2)
 
     assert_verts_equals(lpplot.get_verts(ss.lpi), \
                         [(0, 0), (tau-alpha, 0.2*tau + alpha), (tau+alpha, 0.2*tau+alpha), (tau+alpha, 0.1*tau-alpha)])
 
+    # note: c gets bloated by alpha as well
+    assert (ss.lpi.minimize([0, 0, -1])[ss.lpi.cur_vars_offset + 2]) - (1 + alpha) < 1e-9
+    assert (ss.lpi.minimize([0, 0, 1])[ss.lpi.cur_vars_offset + 2]) - (1 - alpha) < 1e-9
+
+    # c is actually growing, starting at (1,1) at x=0 and going to [1-alpha, 1+alpha] at x=tau
+    assert_verts_equals(lpplot.get_verts(ss.lpi, xdim=0, ydim=2), \
+                    [(0, 1), (tau-alpha, 1+alpha), (tau+alpha, 1+alpha), (tau+alpha, 1-alpha), (tau-alpha, 1-alpha)])
+
     # ready to start    
     ss.step()
 
     beta = (math.exp(tau) - 1 - tau) * 0.2
-    print(f"alpha = {alpha}, beta = {beta}")
 
+    # note: c gets bloated as well! so now it's [1-epsilon, 1+epsilon], where epsilon=alpha
+    # so x will grow by [tau * (1 - alpha), tau * (1 + alpha)]
     expected = [(tau + beta, -beta + tau * 0.1), \
              (tau - beta, -beta + tau * 0.1), \
              (tau - beta, beta + tau * 0.2), \
-             (2*tau-alpha-beta, 2*0.2*tau + alpha + beta), \
-             (2*tau+alpha+beta, 2*0.2*tau+alpha + beta), \
-             (2*tau+alpha+beta, 2*0.1*tau-alpha - beta)]
+             ((tau - alpha) + tau * (1 - alpha) - beta, 2*0.2*tau + alpha + beta), \
+             ((tau + alpha) + tau * (1 + alpha) + beta, 2*0.2*tau+alpha + beta), \
+             ((tau + alpha) + tau * (1 + alpha) + beta, 2*0.1*tau-alpha - beta)]
 
     #xs, ys = zip(*expected)
-    #plt.plot([x for x in xs] + [xs[0]], [y for y in ys] + [ys[0]], 'r-')
-    #verts = lpplot.get_verts(ss.lpi)
+    #plt.plot([x for x in xs] + [xs[0]], [y for y in ys] + [ys[0]], 'r-') # expected is red
+    
+    verts = lpplot.get_verts(ss.lpi)
     #xs, ys = zip(*verts)
-    #plt.plot(xs, ys, 'k:')
+    #plt.plot(xs, ys, 'k-+') # computed is black
     #plt.show()
 
-    assert_verts_equals(lpplot.get_verts(ss.lpi), \
-                expected)
-
+    assert_verts_equals(verts, expected)

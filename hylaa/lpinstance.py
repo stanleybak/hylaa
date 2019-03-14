@@ -538,10 +538,10 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         Timers.toc("set_minimize_direction")
 
     def minimize(self, direction_vec=None, columns=None, fail_on_unsat=True):
-        '''minimize the lp
+        '''minimize the lp, returning a list of assigments to each of the variables
 
-        if direction_vec is not None, this will first assign the optimization direction
-        if columns is not None, will only return the requested columns (default= all columns)
+        if direction_vec is not None, this will first assign the optimization direction (note: relative to cur_vars)
+        if columns is not None, will only return the requested columns (default: all columns)
         if fail_on_unsat is True and the LP is infeasible, an UnsatError is raised
         unsat (sometimes happens in GLPK due to likely bug, see space station model)
 

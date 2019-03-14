@@ -51,6 +51,17 @@ class TimeElapser(Freezable):
             assert input_effects_mat is None
         else:
             assert isinstance(input_effects_mat, np.ndarray)
-            assert input_effects_mat.shape == (self.dims, self.inputs)
+
+            if self.time_elapse_obj.use_lgg:
+                assert input_effects_mat.shape == (self.dims, self.inputs + self.dims)
+            else:
+                assert input_effects_mat.shape == (self.dims, self.inputs)
 
         return basis_mat, input_effects_mat
+
+    def use_lgg_approx(self):
+        '''
+        set this time elapse object to use lgg approximation model
+        '''
+
+        self.time_elapse_obj.use_lgg_approx()

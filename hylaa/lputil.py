@@ -215,27 +215,43 @@ def set_basis_matrix(lpi, basis_mat):
         
     lpi.set_constraints_swigvec_rows(data_vec_list, lpi.bm_indices, count_list, lpi.basis_mat_pos[0])
 
-def add_input_effects_matrix(lpi, input_mat, mode):
+def add_input_effects_matrix(lpi, input_mat, mode, lgg_beta=None):
     'add an input effects matrix to this lpi'
 
     assert lpi.input_effects_offsets is not None
     assert mode.b_csr is not None
-    assert mode.b_csr.shape[1] == input_mat.shape[1]
-    assert input_mat.shape[0] == mode.a_csr.shape[0]
-    assert lpi.dims == mode.a_csr.shape[0]
 
-    num_inputs = input_mat.shape[1]
+    num_vars = mode.a_csr.shape[1]
+    num_inputs = mode.b_csr.shape[1]
     num_constraints = len(mode.u_constraints_rhs)
+
+    # if lgg approximation model is used, then input effects will also bloat in every dimension by beta
+    # this makes the input effects matrix wider
+    if lgg_beta is None:
+        assert input_mat.shape[1] == num_inputs
+    else:
+        assert input_mat.shape[1] + num_inputs + num_vars
+    
+    assert input_mat.shape[0] == num_vars
+    assert lpi.dims == num_vars
 
     # add new row/cols
     names = ["m{}_I{}".format(mode.mode_id, i) for i in range(num_inputs)]
+
+    if lgg_beta is not None: # bloating variables
+        names += ["m{}_b{}".format(mode.mode_id, i) for i in range(num_vars)]
+    
     pre_cols = lpi.get_num_cols()
     lpi.add_cols(names)
 
     pre_rows = lpi.get_num_rows()
     lpi.add_rows_less_equal(mode.u_constraints_rhs)
 
-    # set constaints on the rows/cols, as well as the input basis matrix using a csc_matrix
+    if lgg_beta is not None: # bloating constraints
+        pre_bloat_rows = lpi.get_num_rows()
+        lpi.add_rows_less_equal([lgg_beta] * (2 * num_vars))
+
+    # set constraints on the rows/cols, as well as the input basis matrix using a csc_matrix
     data = []
     inds = []
     indptr = [0]
@@ -256,9 +272,30 @@ def add_input_effects_matrix(lpi, input_mat, mode):
 
         indptr.append(len(data))
 
+    if lgg_beta is not None: # constraints for bloating
+        for v in range(num_vars):
+            # input basis matrix column num_inputs + v
+            for row in range(num_vars):
+                data.append(input_mat[row, num_inputs + v])
+                inds.append(row + lpi.input_effects_offsets[0])
+
+            # constraints_csr column corresponding to variable v
+            data.append(1)
+            inds.append(pre_bloat_rows + 2*v)
+
+            data.append(-1)
+            inds.append(pre_bloat_rows + 2*v + 1)
+
+            indptr.append(len(data))
+
+    num_cols = num_inputs
     num_rows = pre_rows + num_constraints
+
+    if lgg_beta is not None:
+        num_rows += 2 * num_vars
+        num_cols += num_vars
     
-    csc = csc_matrix((data, inds, indptr), shape=(num_rows, num_inputs), dtype=float)
+    csc = csc_matrix((data, inds, indptr), shape=(num_rows, num_cols), dtype=float)
     csc.check_format()
 
     lpi.set_constraints_csc(csc, offset=(0, pre_cols))
