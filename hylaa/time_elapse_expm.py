@@ -130,6 +130,9 @@ class TimeElapseExpmMult(Freezable):
 
         self.cur_step = step_num
 
+        if self.cur_input_effects_matrix is not None:
+            print(f".expm use_lgg:{self.use_lgg}, cur_input_effects_matrix size = {self.cur_input_effects_matrix.shape}")
+
     def use_lgg_approx(self):
         '''
         set this time elapse object to use lgg approximation model

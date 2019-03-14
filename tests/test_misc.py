@@ -187,3 +187,6 @@ def test_approx_lgg_inputs():
     #plt.show()
 
     assert_verts_equals(verts, expected)
+
+    # one more step should work without errors
+    ss.step()
