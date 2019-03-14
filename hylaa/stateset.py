@@ -56,6 +56,10 @@ class StateSet(Freezable):
         
         self.input_effects_list = None if mode.b_csr is None else [] # list of input effects at each step
 
+        # used for some approximation models
+        self.approx_model = None # set on call to apply_approx_model()
+        self.lgg_beta = None
+
         #### plotting variables below ####
         self._verts = None # cached vertices at the current step
         self.assigned_plot_dim = False # set to True on first call to verts()
@@ -228,31 +232,50 @@ class StateSet(Freezable):
         Le Guernic, C., Girard, A., Nonlinear Analysis: Hybrid Systems, 2010
         '''
 
-        assert self.mode.b_csr is None, "inputs not currently supported with approx_lgg"
-
-        lpi_one_step = self.lpi.clone()
-
-        Timers.tic('get_bm')
-        bm, _ = self.mode.time_elapse.get_basis_matrix(1)
-        Timers.toc('get_bm')
-
-        Timers.tic('set_bm')
-        lputil.set_basis_matrix(lpi_one_step, bm)
-        Timers.toc('set_bm')
+        has_inputs = self.mode.b_csr is not None
 
         # use infinity norm
         a_norm = sp.sparse.linalg.norm(self.mode.a_csr, ord=np.inf)
-        tau = self.mode.time_elapse.step_size
-        r_x0 = lputil.compute_radius_inf(self.lpi)
 
-        alpha = (math.exp(tau * a_norm) - 1 - tau * a_norm) * (r_x0)
-        print(alpha)
+        if a_norm != 0:
+            lpi_one_step = self.lpi.clone()
 
-        # bloat lpi_one_step by alpha (minkowski sum)
-        lputil.bloat(lpi_one_step, alpha)
+            Timers.tic('get_bm')
+            bm, _ = self.mode.time_elapse.get_basis_matrix(1)
+            Timers.toc('get_bm')
 
-        lpi_list = [self.lpi, lpi_one_step]
-        self.lpi = lputil.aggregate_chull(lpi_list, self.mode)
+            Timers.tic('set_bm')
+            lputil.set_basis_matrix(lpi_one_step, bm)
+            Timers.toc('set_bm')
+
+            mode = self.mode
+            v_set = lputil.from_input_constraints(mode.b_csr, mode.u_constraints_csc, mode.u_constraints_rhs, mode)
+        
+            tau = mode.time_elapse.step_size
+            r_x0 = lputil.compute_radius_inf(self.lpi)
+
+            if has_inputs:
+                r_v = lputil.compute_radius_inf(v_set)
+            else:
+                r_v = 0
+
+            alpha = (math.exp(tau * a_norm) - 1 - tau * a_norm) * (r_x0 + r_v/a_norm)
+
+            # minkowski sum with tau * V
+            # V is the input set, V = B U
+            lputil.scale_with_bm(v_set, tau)
+
+            msum = lputil.minkowski_sum([lpi_one_step, v_set], mode)
+
+            # bloat by alpha (minkowski sum)
+            lputil.bloat(msum, alpha)
+
+            self.lpi = lputil.aggregate_chull([self.lpi, msum], mode)
+
+            # precompute beta as well
+            self.lgg_beta = (math.exp(tau * a_norm) - 1 - tau * a_norm) * (r_v/a_norm)
+        else:
+            self.lgg_beta = 0
 
     def apply_approx_model(self, approx_model):
         '''
@@ -262,6 +285,8 @@ class StateSet(Freezable):
         '''
 
         assert self.cur_step_in_mode == 0, "approximation model should be applied before any continuous post operations"
+        assert self.mode.time_elapse is not None, "init_time_elapse() must be called before apply_approx_model()"
+        self.approx_model = approx_model
 
         if approx_model == HylaaSettings.APPROX_CHULL:
             self.apply_approx_chull()

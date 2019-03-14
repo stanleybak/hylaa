@@ -2,13 +2,17 @@
 tests for misc aspects of hylaa
 '''
 
+import math
+import matplotlib.pyplot as plt
 
 import numpy as np
 
-from sympy.parsing.sympy_parser import parse_expr
-
+from hylaa import symbolic, lputil, lpplot
 from hylaa.hybrid_automaton import HybridAutomaton
-from hylaa import symbolic
+from hylaa.stateset import StateSet
+from hylaa.settings import HylaaSettings
+
+from util import assert_verts_equals
 
 def test_step_slow():
     'tests slow-step with non-one step size'
@@ -114,3 +118,60 @@ def test_symbolic_condition():
     assert np.allclose(mat, expected_mat)
     assert np.allclose(rhs, expected_rhs)
     
+def test_approx_lgg_inputs():
+    'test lgg approximation model with inputs'
+
+    # simple dynamics, x' = 1, y' = 0 + u, a' = 0, u in [0.1, 0.2]
+    # step size (tau) 0.02
+    # after one step, the input effect size should by tau*V \oplus beta*B
+    # we'll manually assign beta to be 0.02, in order to be able to check that the constraints are correct
+    # A norm is 1
+
+    tau = 0.08
+
+    a_matrix = [[0, 0, 1], [0, 0, 0], [0, 0, 0]]
+    b_mat = [[0], [1], [0]]
+    b_constraints = [[1], [-1]]
+    b_rhs = [0.2, -0.1]
+
+    mode = HybridAutomaton().new_mode('mode')
+    mode.set_dynamics(a_matrix)
+    mode.set_inputs(b_mat, b_constraints, b_rhs)
+
+    init_lpi = lputil.from_box([[0, 0], [0, 0], [1, 1]], mode)
+
+    ss = StateSet(init_lpi, mode)
+    mode.init_time_elapse(tau)
+    assert_verts_equals(lpplot.get_verts(ss.lpi), [(0, 0)])
+
+    ss.apply_approx_model(HylaaSettings.APPROX_LGG)
+
+    assert np.linalg.norm(a_matrix, ord=np.inf) == 1.0
+    alpha = (math.exp(tau) - 1 - tau) * (1 + 0.2)
+
+    assert_verts_equals(lpplot.get_verts(ss.lpi), \
+                        [(0, 0), (tau-alpha, 0.2*tau + alpha), (tau+alpha, 0.2*tau+alpha), (tau+alpha, 0.1*tau-alpha)])
+
+    # ready to start    
+    ss.step()
+
+    beta = (math.exp(tau) - 1 - tau) * 0.2
+    print(f"alpha = {alpha}, beta = {beta}")
+
+    expected = [(tau + beta, -beta + tau * 0.1), \
+             (tau - beta, -beta + tau * 0.1), \
+             (tau - beta, beta + tau * 0.2), \
+             (2*tau-alpha-beta, 2*0.2*tau + alpha + beta), \
+             (2*tau+alpha+beta, 2*0.2*tau+alpha + beta), \
+             (2*tau+alpha+beta, 2*0.1*tau-alpha - beta)]
+
+    #xs, ys = zip(*expected)
+    #plt.plot([x for x in xs] + [xs[0]], [y for y in ys] + [ys[0]], 'r-')
+    #verts = lpplot.get_verts(ss.lpi)
+    #xs, ys = zip(*verts)
+    #plt.plot(xs, ys, 'k:')
+    #plt.show()
+
+    assert_verts_equals(lpplot.get_verts(ss.lpi), \
+                expected)
+

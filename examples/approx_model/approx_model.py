@@ -54,7 +54,7 @@ def make_init(ha):
 def define_settings():
     'get the hylaa settings object'
 
-    step = math.pi/4
+    step = math.pi/32
     max_time = math.pi / 2
     settings = HylaaSettings(step, max_time)
 
