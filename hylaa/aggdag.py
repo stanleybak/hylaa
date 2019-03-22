@@ -261,7 +261,8 @@ class AggDag(Freezable):
 
         # sanity check: all nodes in waiting list were drawn
         for op in self.waiting_list:
-            assert op.parent_node in already_drawn_nodes
+            if op.parent_node is not None:
+                assert op.parent_node in already_drawn_nodes, f"parent node {op.parent_node} not found in drawn nodes"
 
 class AggDagNode(Freezable):
     'A node of the Aggregation DAG'

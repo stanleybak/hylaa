@@ -86,6 +86,7 @@ class DeaggregationManager(Freezable):
                 
             self.deagg_parent = self.deagg_children = self.replay_step = self.nodes_to_ops = None
 
+            #print(".deaggregation calling aggdag.save_viz()")
             #self.aggdag.save_viz()
 
         if self.doing_replay():

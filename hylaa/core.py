@@ -307,12 +307,16 @@ class Core(Freezable):
                 self.aggdag.deagg_man.do_step_replay()
             else:
                 # begin a deaggregation replay or pop a state off the waiting list
-                deagg_node = self.settings.aggstrat.get_deagg_node(self.aggdag)
+                #deagg_node = self.settings.aggstrat.get_deagg_node(self.aggdag)
+                #print(f".core deagg_node = {deagg_node}")
 
                 if deagg_node:
                     self.aggdag.deagg_man.begin_replay(deagg_node)
                     self.aggdag.deagg_man.do_step_replay() # do the first step
                 else:
+                    #print(".core popping, calling aggdag.save_viz()")
+                    #self.aggdag.save_viz()
+            
                     # pop state off waiting list
                     self.do_step_pop()
 

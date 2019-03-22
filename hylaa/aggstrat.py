@@ -220,6 +220,7 @@ class Aggregated(AggregationStrategy):
                 # highest deaggregation priority: non-concrete states that reach an error mode
                 if state.mode.is_error():
                     rv = op.parent_node
+                    #break
 
                 # other deaggregation condition: different outgoing transitions from the same node
                 if op.parent_node in node_to_transition:
