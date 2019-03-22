@@ -531,6 +531,7 @@ class PlotManager(Freezable):
         'create the plot'
 
         if not self.settings.plot_mode in [PlotSettings.PLOT_NONE]:
+            
             self.fig, axes_list = plt.subplots(nrows=self.num_subplots, ncols=1, figsize=self.settings.plot_size, \
                                                     squeeze=False)
 
@@ -744,7 +745,11 @@ class PlotManager(Freezable):
                 self.core.do_step()
 
                 # if we just wanted a single step (or do_step() caused paused to be set to True)
-                if self.interactive.step or self.interactive.paused:
+                if (self.interactive.step or self.interactive.paused) and \
+                       (self.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE or
+                        self.settings.plot_mode == PlotSettings.PLOT_VIDEO):
+                    self.core.print_verbose(f"Paused due to interactive.step = {self.interactive.step}, " + \
+                                            f"i.paused = {self.interactive.paused}")
                     self.interactive.step = False
                     self.interactive.paused = True
                     break

@@ -66,7 +66,7 @@ class AggregationStrategy(Freezable):
         This returns an instance of AggType
         '''
 
-        raise RuntimeError("Unaggregated strategy does not implement get_agg_type")
+        raise NotImplementedError("Unaggregated strategy does not implement get_agg_type")
 
 class Unaggregated(AggregationStrategy):
     'another name for the base implementation of AggregationStrategy'

@@ -26,15 +26,14 @@ def define_ha():
 
     ha = HybridAutomaton()
 
-    a_matrix = np.array([[0, 1], [-1, 0]], dtype=float)
-    a_csr = csr_matrix(a_matrix, dtype=float)
+    a_matrix = [[0, 1], [-1, 0]]
 
     b_mat = [[1], [0]]
     b_constraints = [[1], [-1]]
     b_rhs = [0.2, 0.2]
 
     mode = ha.new_mode('mode')
-    mode.set_dynamics(a_csr)
+    mode.set_dynamics(a_matrix)
     mode.set_inputs(b_mat, b_constraints, b_rhs)
 
     return ha
@@ -54,8 +53,8 @@ def make_init(ha):
 def define_settings():
     'get the hylaa settings object'
 
-    step = math.pi/32
-    max_time = math.pi / 2
+    step = math.pi/16
+    max_time = 2*math.pi
     settings = HylaaSettings(step, max_time)
 
     plot_settings = settings.plot

@@ -90,6 +90,7 @@ class DeaggregationManager(Freezable):
 
         if self.doing_replay():
             self.aggdag.core.plotman.interactive.paused = True
+            self.aggdag.core.print_verbose("Pausing due to step_replay()")
 
     def update_transition_successors(self, old_op, new_op):
         '''

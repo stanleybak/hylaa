@@ -518,7 +518,7 @@ class HybridAutomaton(Freezable):
         '''
 
         for t in self.transitions:
-            if t.from_mode == t.to_mode or t.time_triggered:
+            if t.from_mode == t.to_mode or t.time_triggered or t.reset_csr is not None:
                 continue
 
             inv_list = t.to_mode.inv_list

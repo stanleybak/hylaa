@@ -106,18 +106,21 @@ class Core(Freezable):
         if step_num[0] == step_num[1]:
             step_num = step_num[0]
             times = times[0]
-        
-        self.print_normal("Unsafe Mode Reached at Step: {} / {}, time {}".format( \
-            step_num, self.settings.num_steps, times))
 
-        self.result.has_aggregated_error = True
+        if not self.result.has_aggregated_error and not state.is_concrete:
+            self.result.has_aggregated_error = True
+            
+            self.print_normal(f"Unsafe Mode (aggregated) Reached at Step: {step_num} / {self.settings.num_steps}, " +
+                              f"time {times}")
 
         # if this is a concrete state (not aggregated) and we don't yet have a counter-example
-        if state.is_concrete:
-            self.print_verbose("Found concrete error")
+        if not self.result.has_concrete_error and state.is_concrete:
             self.result.has_concrete_error = True
+            self.print_normal(f"Unsafe Mode (concrete) Reached at Step: {step_num} / " + \
+                              f"{self.settings.num_steps}, time {times}")
 
-            if not self.result.counterexample:
+
+            if self.settings.make_counterexample and not self.result.counterexample:
                 self.print_verbose("Reached concrete error state; making concrete counter-example")
                 self.result.counterexample = make_counterexample(self.hybrid_automaton, state, t, t_lpi)
 
@@ -277,6 +280,7 @@ class Core(Freezable):
                 cur_state.apply_approx_model(self.settings.approx_model)
 
         # pause plot
+        self.print_verbose("Pausing due to step_pop()")
         self.plotman.interactive.paused = True
 
         Timers.toc('do_step_pop')
@@ -479,6 +483,7 @@ class Core(Freezable):
             self.sim_should_try_guards = self.settings.process_urgent_guards
             self.sim_took_transition = [False] * len(self.sim_states)
             self.plotman.interactive.paused = True
+            self.print_verbose("Pausing due to sim pop()")
         else:
             # simulate one step for all states in sim_states
             finished = True

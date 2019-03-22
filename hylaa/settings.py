@@ -46,6 +46,7 @@ class HylaaSettings(Freezable):  # pylint: disable=too-few-public-methods
         # what to do when an error appears reachable
         self.stop_on_aggregated_error = False # stop whenever any state (aggregated or not) reaches an error mode
         self.stop_on_concrete_error = True # stop whenver a concrete state reaches an error
+        self.make_counterexample = True # save counter-example to data structure / file?
         
         self.aggstrat = aggstrat.Aggregated() # aggregation strategy class
 

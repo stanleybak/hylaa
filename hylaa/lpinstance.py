@@ -18,7 +18,7 @@ class StaticSettings(): # pylint: disable=too-few-public-methods
 
     # swiglpk has a memory leak: https://github.com/biosustain/swiglpk/issues/31
     # how much memory should we allow to be used before we print a message and quit
-    MAX_MEMORY_SWIGLPK_LEAK_GB = 1.0 # 2.0
+    MAX_MEMORY_SWIGLPK_LEAK_GB = 8.0
 
 def simple_print(s):
     'print using the print function'
@@ -533,7 +533,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
             for i, direction in enumerate(direction_vec):
                 col = int(1 + offset + i)
                 self.obj_cols.append(col)
-                glpk.glp_set_obj_coef(self.lp, col, direction)
+                glpk.glp_set_obj_coef(self.lp, col, float(direction))
 
         Timers.toc("set_minimize_direction")
 

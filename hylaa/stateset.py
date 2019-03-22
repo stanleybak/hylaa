@@ -115,6 +115,8 @@ class StateSet(Freezable):
                 lputil.add_input_effects_matrix(self.lpi, input_effects_matrix, self.mode, self.lgg_beta)
                 Timers.toc('input effects matrix')
 
+                #print(f".ss lp columns = {self.lpi.get_num_cols()}")
+
             self.cur_step_in_mode += num_steps
             self.cur_steps_since_start[0] += num_steps
             self.cur_steps_since_start[1] += num_steps
@@ -217,9 +219,10 @@ class StateSet(Freezable):
         lputil.set_basis_matrix(lpi_one_step, bm)
         Timers.toc('set_bm')
 
-        Timers.tic('input effects matrix')
-        lputil.add_input_effects_matrix(lpi_one_step, ie_mat, self.mode)
-        Timers.toc('input effects matrix')
+        if ie_mat is not None:
+            Timers.tic('input effects matrix')
+            lputil.add_input_effects_matrix(lpi_one_step, ie_mat, self.mode)
+            Timers.toc('input effects matrix')
 
         lpi_list = [self.lpi, lpi_one_step]
         self.lpi = lputil.aggregate_chull(lpi_list, self.mode)
@@ -236,47 +239,61 @@ class StateSet(Freezable):
         # use infinity norm
         a_norm = sp.sparse.linalg.norm(self.mode.a_csr, ord=np.inf)
 
-        if a_norm != 0:
-            lpi_one_step = self.lpi.clone()
+        lpi_one_step = self.lpi.clone()
 
-            Timers.tic('get_bm')
-            bm, _ = self.mode.time_elapse.get_basis_matrix(1)
-            Timers.toc('get_bm')
+        Timers.tic('get_bm')
+        bm, _ = self.mode.time_elapse.get_basis_matrix(1)
+        Timers.toc('get_bm')
 
-            Timers.tic('set_bm')
-            lputil.set_basis_matrix(lpi_one_step, bm)
-            Timers.toc('set_bm')
+        Timers.tic('set_bm')
+        lputil.set_basis_matrix(lpi_one_step, bm)
+        Timers.toc('set_bm')
 
-            mode = self.mode
+        mode = self.mode
+
+        tau = mode.time_elapse.step_size
+        r_x0 = lputil.compute_radius_inf(self.lpi)
+
+        if has_inputs:
             v_set = lputil.from_input_constraints(mode.b_csr, mode.u_constraints_csc, mode.u_constraints_rhs, mode)
-        
-            tau = mode.time_elapse.step_size
-            r_x0 = lputil.compute_radius_inf(self.lpi)
-
-            if has_inputs:
-                r_v = lputil.compute_radius_inf(v_set)
-            else:
-                r_v = 0
-
-            alpha = (math.exp(tau * a_norm) - 1 - tau * a_norm) * (r_x0 + r_v/a_norm)
-
+            r_v = lputil.compute_radius_inf(v_set)
+            
             # minkowski sum with tau * V
             # V is the input set, V = B U
             lputil.scale_with_bm(v_set, tau)
-
             msum = lputil.minkowski_sum([lpi_one_step, v_set], mode)
+        else:
+            r_v = 0
+            msum = lpi_one_step
 
+        tol = 1e-7
+
+        if a_norm < tol:
+            print(f"Warning: norm of dynamics A matrix was small ({a_norm}), using alpha = 0 and " +
+                                  "beta = 0 in LGG approximation model")
+            alpha = 0
+        else:
+            alpha = (math.exp(tau * a_norm) - 1 - tau * a_norm) * (r_x0 + r_v/a_norm)
+
+        print(f".ss alpha={alpha}")
+
+        if alpha != 0:
             # bloat by alpha (minkowski sum)
             lputil.bloat(msum, alpha)
 
-            self.lpi = lputil.aggregate_chull([self.lpi, msum], mode)
+        self.lpi = lputil.aggregate_chull([self.lpi, msum], mode)
 
+        if a_norm > tol and has_inputs:
             # precompute beta as well
             self.lgg_beta = (math.exp(tau * a_norm) - 1 - tau * a_norm) * (r_v/a_norm)
-        else:
-            self.lgg_beta = 0
+            print(f".ss beta={self.lgg_beta}")
 
-        self.mode.time_elapse.use_lgg_approx()
+            assert self.lgg_beta > tol, f"lgg approx model beta was too close to zero: {self.lgg_beta}"
+            assert self.lgg_beta < 1e5, f"lgg approx model beta was too large (use a smaller step): {self.lgg_beta}"
+
+            self.lpi.set_minimize_direction([-1] * self.lpi.dims)
+
+            self.mode.time_elapse.use_lgg_approx()
 
     def apply_approx_model(self, approx_model):
         '''

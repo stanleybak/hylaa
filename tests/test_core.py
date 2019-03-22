@@ -708,3 +708,5 @@ def test_zero_dynamics():
     core.do_step() # propagate and remove
 
     assert core.aggdag.get_cur_state() is None, "cur state should be none, since mode dynamics were zero"
+
+ADD TEST FOR MULTIPLE INITIAL STATES IN SAME MODE (TRIES TO DO AGGREGATION)

@@ -96,6 +96,10 @@ class TimeElapseExpmMult(Freezable):
 
             # inputs
             if self.b_csc is not None:
+                if self.use_lgg:
+                    # cut cur_input_effects matrix into the relevant portion
+                    self.cur_input_effects_matrix = self.cur_input_effects_matrix[:, 0:self.time_elapser.inputs]
+                
                 self.cur_input_effects_matrix = np.dot(self.one_step_matrix_exp, self.cur_input_effects_matrix)
 
                 if self.use_lgg:
@@ -129,9 +133,6 @@ class TimeElapseExpmMult(Freezable):
             Timers.toc('slow_step')
 
         self.cur_step = step_num
-
-        if self.cur_input_effects_matrix is not None:
-            print(f".expm use_lgg:{self.use_lgg}, cur_input_effects_matrix size = {self.cur_input_effects_matrix.shape}")
 
     def use_lgg_approx(self):
         '''

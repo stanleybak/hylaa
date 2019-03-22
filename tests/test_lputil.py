@@ -7,7 +7,8 @@ import math
 import numpy as np
 
 from scipy.linalg import expm
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, csc_matrix
+from scipy.io import loadmat
 
 import swiglpk as glpk
 
