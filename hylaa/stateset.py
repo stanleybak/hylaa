@@ -56,6 +56,8 @@ class StateSet(Freezable):
         
         self.input_effects_list = None if mode.b_csr is None else [] # list of input effects at each step
 
+        self.aggstring = None # aggstring that led to this state, like 'full', or '010'
+
         # approximation model variables
         self.lgg_beta = None
 
@@ -73,7 +75,25 @@ class StateSet(Freezable):
     def __str__(self):
         'short string representation of this state set'
 
-        return f"[StateSet in mode '{self.mode.name}' @ step '{self.cur_step_in_mode}']"
+        return f"[StateSet, mode:{self.mode.name} @ step {self.cur_step_in_mode}, {self.get_full_aggstring()}]"
+
+    def get_full_aggstring(self):
+        'get the full aggstring that led to this stateset'
+
+        rv = None
+
+        if self.aggdag_op_list[0] is None:
+            assert self.aggstring == 'full'
+            rv = 'init'
+        else:
+            op = self.aggdag_op_list[0]
+            parent = op.parent_node.stateset
+            parent_aggstring = parent.get_full_aggstring()
+            tindex = parent.mode.transitions.index(op.transition)
+
+            rv = parent_aggstring + f":t{tindex}_" + self.aggstring
+
+        return rv
 
     def step(self, step_in_mode=None):
         '''update the star based on values from a new simulation time instant
@@ -188,19 +208,26 @@ class StateSet(Freezable):
         '''
         delete a plotted matplotlib Path object for this stateset.
 
-        returns a list of verts (one for each subplot) that was deleted
+        returns a list of verts (one for each subplot) that was deleted, or None if stateset was
+        already deleted (can happen with recursive deaggregation)
         '''
 
         rv = []
-        l = self.step_to_paths[step]
 
-        codes = [Path.MOVETO, Path.CLOSEPOLY]
-        verts = [(0, 0), (0, 0)]
+        if not step in self.step_to_paths:
+            rv = None
+        else:
+            l = self.step_to_paths.pop(step) # removes it from step_to_paths as well
 
-        # for every subplot
-        for path_list, index in l:
-            rv.append(path_list[index].vertices)
-            path_list[index] = Path(verts, codes)
+            codes = [Path.MOVETO, Path.CLOSEPOLY]
+            verts = [(0, 0), (0, 0)]
+
+            # for every subplot
+            for path_list, index in l:
+                rv.append(path_list[index].vertices)
+
+                # this is what actually removes it from the plot
+                path_list[index] = Path(verts, codes)
 
         return rv
 

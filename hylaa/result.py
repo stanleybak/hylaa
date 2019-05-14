@@ -41,51 +41,70 @@ class PlotData(Freezable):
     'used if setting.plot.store_plot_result is True, stores data about the plots'
 
     def __init__(self, num_plots):
-        self.mode_to_verts_list = [defaultdict(list) for _ in range(num_plots)]
+        self.mode_to_obj_list = [defaultdict(list) for _ in range(num_plots)]
 
         self.freeze_attrs()
 
     def get_verts_list(self, mode_name, plot_index=0):
         'get a list of lists for the passed-in mode'
 
-        return self.mode_to_verts_list[plot_index][mode_name][0]
+        return self.mode_to_obj_list[plot_index][mode_name][0]
 
     def add_state(self, state, verts, plot_index):
         'add a plotted state'
 
         mode_name = state.mode.name
 
-        obj = (verts, f"{mode_name} at step {state.cur_step_in_mode}")
-        self.mode_to_verts_list[plot_index][mode_name].append(obj)
+        obj = (verts, state, state.cur_step_in_mode, f"{mode_name} at step {state.cur_step_in_mode}")
+
+        print(f".######result adding state {state.get_full_aggstring()} at step {state.cur_step_in_mode}")
+        self.mode_to_obj_list[plot_index][mode_name].append(obj)
+
+    def remove_state(self, state, step):
+        'remove a state that was previously added'
+
+        found = False
+
+        print(f".##### result removing state {state.get_full_aggstring()} at step {step}")
+
+        for mode_to_obj in self.mode_to_obj_list:
+            obj_list = mode_to_obj[state.mode.name]
+
+            for index, obj in enumerate(obj_list):
+                _, istate, istep, desc = obj
+
+                if istate is state and step == istep:
+                    found = True
+
+                    obj_list.pop(index)
+                    break
+
+            if found:
+                break
+
+        assert found
 
     def get_plot_data(self, x, y, subplot=0):
         'get the plot data at x, y, or None if not found'
 
         rv = None
 
-        mode_to_verts = self.mode_to_verts_list[subplot]
+        mode_to_obj = self.mode_to_obj_list[subplot]
         clicked = Point(x, y)
 
-        for mode, verts_list in mode_to_verts.items():
-            print(f"mode {mode} has {len(verts_list)} verts")
+        for mode, obj_list in mode_to_obj.items():
             
-            for obj in verts_list:
+            for obj in obj_list:
                 verts = obj[0]
 
-                print(f"verts len = {len(verts)}: {verts}")
-
-                if len(verts) < 4:
+                if len(verts) < 4: # need at least 3 points (4 with wrap) to be clicked inside
                     continue
 
-                verts_2dp = [Point2D(x,y) for x,y in verts[1:]]
-                print(f"verts2d: {verts_2dp}")
+                verts_2dp = [Point2D(x, y) for x, y in verts[1:]]
                                 
                 poly = Polygon(*verts_2dp)
 
-                print(f"poly = {poly}")
-
                 if poly.encloses_point(clicked):
-                    print("found!")
                     rv = obj
                     break
 

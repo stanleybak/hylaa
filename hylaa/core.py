@@ -3,8 +3,6 @@ Main Hylaa Reachability Implementation
 Stanley Bak, 2018
 '''
 
-from collections import defaultdict
-
 import numpy as np
 from termcolor import cprint
 
@@ -12,7 +10,7 @@ from hylaa.settings import HylaaSettings, PlotSettings
 
 from hylaa.plotutil import PlotManager
 from hylaa.aggdag import AggDag
-from hylaa.counterexample import make_counterexample
+from hylaa.result import HylaaResult, make_counterexample
 from hylaa.stateset import StateSet
 from hylaa.hybrid_automaton import HybridAutomaton, was_tt_taken
 from hylaa.timerutil import Timers
@@ -149,8 +147,7 @@ class Core(Freezable):
                 
                 self.aggdag.add_transition_successor(t, t_lpi)
 
-                self.print_verbose("Added Discrete Successor to '{}' at step {}".format( \
-                                   t.to_mode.name, cur_state.cur_steps_since_start))
+                self.print_verbose(f"Took transition {t} at steps {cur_state.cur_steps_since_start}")
 
                 # if it's a time-triggered transition, we may remove cur_state immediately
                 if self.settings.optimize_tt_transitions and t.time_triggered:
@@ -281,7 +278,7 @@ class Core(Freezable):
 
         # pause plot
         self.print_verbose("Pausing due to step_pop()")
-        self.plotman.interactive.paused = True
+        self.plotman.pause()
 
         Timers.toc('do_step_pop')
 
@@ -307,12 +304,11 @@ class Core(Freezable):
                 self.aggdag.deagg_man.do_step_replay()
             else:
                 # begin a deaggregation replay or pop a state off the waiting list
-                #deagg_node = self.settings.aggstrat.get_deagg_node(self.aggdag)
-                #print(f".core deagg_node = {deagg_node}")
+                deagg_node = self.settings.aggstrat.get_deagg_node(self.aggdag)
 
                 if deagg_node:
                     self.aggdag.deagg_man.begin_replay(deagg_node)
-                    self.aggdag.deagg_man.do_step_replay() # do the first step
+                    self.aggdag.deagg_man.do_step_replay()
                 else:
                     #print(".core popping, calling aggdag.save_viz()")
                     #self.aggdag.save_viz()
@@ -409,7 +405,7 @@ class Core(Freezable):
         if self.result.has_concrete_error:
             self.print_normal("Result: Error modes are reachable (found counter-example).\n")
         elif self.result.has_aggregated_error:
-            self.print_normal("Result: Error modes are reachable when aggergation (overapproximation) was used.\n")
+            self.print_normal("Result: System is safe, although error modes were reachable when aggregation (overapproximation) was used.\n")
         else:
             self.print_normal("Result: System is safe. Error modes are NOT reachable.\n")
 
@@ -486,7 +482,7 @@ class Core(Freezable):
 
             self.sim_should_try_guards = self.settings.process_urgent_guards
             self.sim_took_transition = [False] * len(self.sim_states)
-            self.plotman.interactive.paused = True
+            self.plotman.pause()
             self.print_verbose("Pausing due to sim pop()")
         else:
             # simulate one step for all states in sim_states
@@ -541,23 +537,3 @@ class Core(Freezable):
             if finished:
                 self.plotman.commit_cur_sims()
                 self.sim_states = None
-
-class HylaaResult(Freezable): # pylint: disable=too-few-public-methods
-    'result object returned by core.run()'
-
-    def __init__(self):
-        self.top_level_timer = None # TimerData for total time
-
-        # verification result:
-        self.has_aggregated_error = False
-        self.has_concrete_error = False
-
-        self.counterexample = [] # if unsafe, a list of CounterExampleSegment objects
-
-        # assigned if setting.plot.store_plot_result is True, a map name -> list of lists (the verts at each step)
-        self.mode_to_polys = defaultdict(list)
-
-        # the last core.cur_state object... used for unit testing
-        self.last_cur_state = None
-
-        self.freeze_attrs()

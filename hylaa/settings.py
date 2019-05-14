@@ -93,6 +93,8 @@ class PlotSettings(Freezable): # pylint: disable=too-few-public-methods,too-many
 
         self.show_counterexample = True # draw concrete counter-example in the last frame?
 
+        self.interactive_skip_count = 0 # when using PLOT_INTERACTIVE, auto-click 'next' this many times
+
         self.video_fps = 40
         self.video_extra_frames = 40 # extra frames at the end of a video so it doesn't end so abruptly
         self.video_pause_frames = 20 # frames to render in video whenever a 'pause' occurs

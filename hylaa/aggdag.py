@@ -3,35 +3,16 @@ Stanley Bak
 Aggregation Directed Acyclic Graph (DAG) implementation
 '''
 
-from collections import namedtuple
-
 from termcolor import cprint
 
 from graphviz import Digraph
 
-from hylaa.settings import HylaaSettings, PlotSettings
+from hylaa.settings import HylaaSettings
 from hylaa.util import Freezable
 from hylaa.stateset import StateSet
 from hylaa.timerutil import Timers
 from hylaa import lputil, aggregate
-from hylaa.deaggregation import DeaggregationManager
-
-# Operation types
-OpInvIntersect = namedtuple('OpInvIntersect', ['step', 'node', 'i_index', 'is_stronger'])
-OpLeftInvariant = namedtuple('OpLeftInvariant', ['step', 'node', 'reached_time_bound'])
-
-class OpTransition(): # pylint: disable=too-few-public-methods
-    'a transition operation'
-
-    def __init__(self, step, parent_node, child_node, transition, poststate):
-        self.step = step
-        self.parent_node = parent_node
-        self.child_node = child_node
-        self.transition = transition
-        self.poststate = poststate
-
-    def __str__(self):
-        return f"[OpTransition({self.step}, {self.transition})]"
+from hylaa.deaggregation import DeaggregationManager, OpInvIntersect, OpLeftInvariant, OpTransition
 
 class AggDag(Freezable):
     'Aggregation directed acyclic graph (DAG) used to manage the deaggregation process'
@@ -45,7 +26,7 @@ class AggDag(Freezable):
 
         self.waiting_list = [] # a list of OpTransition (with child_node = None). StateSet is in op.poststate
 
-        self.deagg_man = DeaggregationManager(self, self.settings.plot.plot_mode != PlotSettings.PLOT_NONE)
+        self.deagg_man = DeaggregationManager(self)
 
         self.viz_count = 0
         
@@ -175,7 +156,7 @@ class AggDag(Freezable):
 
         return rv
 
-    def remove_node_from_waiting_list(self, node):
+    def remove_node_decendants_from_waiting_list(self, node):
         'remove all waiting list states originating from the passed-in node'
 
         to_remove_ops = self._get_node_leaf_ops(node)
@@ -213,21 +194,36 @@ class AggDag(Freezable):
             agg_type = self.settings.aggstrat.get_agg_type(op_list)
 
         # create a new AggDagNode for the current computation
-        self.cur_node = AggDagNode(op_list, agg_type, self)
+        self.cur_node = self.make_node(op_list, agg_type, 'full')
 
         return self.cur_node.get_cur_state()
 
-    def make_node(self, ops, agg_type):
-        'make an aggdag node'
+    def make_node(self, ops, agg_type, aggstring):
+        '''make an aggdag node
 
-        return AggDagNode(ops, agg_type, self)
+        aggstring is a string that describes the current aggregation from the previous transition
+        'full' -> full aggergation
+        'init' -> from initial state
+        '0100' -> transition was split four times, this is the state from the first, second, first, first partitions
+        '''
+
+        node = AggDagNode(ops, agg_type, self, aggstring)
+
+        #if plot:
+        #    print(".aggdag make_node() plotting aggdagnode")
+        #    self.core.plotman.add_plotted_states([node.stateset])
+            
+        return node
 
     def save_viz(self):
-        'save the viz to a sequentially-named file'
+        '''save the viz to a sequentially-named file, returns the filename'''
 
-        self.viz(filename=f"viz{self.viz_count}")
-
+        filename = f"aggdag_{self.viz_count:02d}"
         self.viz_count += 1
+                
+        self.viz(filename=filename)
+
+        return filename
 
     def viz(self, lr=True, filename=None):
         'visualize the aggdag using graphviz'
@@ -267,7 +263,7 @@ class AggDag(Freezable):
 class AggDagNode(Freezable):
     'A node of the Aggregation DAG'
 
-    def __init__(self, parent_op_list, agg_type, aggdag):
+    def __init__(self, parent_op_list, agg_type, aggdag, aggstring):
         self.aggdag = aggdag
         self.op_list = [] # list of Op* objects
         self.stateset = None # StateSet
@@ -286,6 +282,8 @@ class AggDagNode(Freezable):
         else:
             self.aggdag.core.print_verbose(f"Aggregating {len(state_list)} states")
             state = self._aggregate_from_state_op_list(state_list, parent_op_list, agg_type)
+
+        state.aggstring = aggstring
 
         add_root = False
 
@@ -318,13 +316,19 @@ class AggDagNode(Freezable):
 
         assert len(self.parent_ops) > 1, "attempted to split() unaggregated aggdag node"
 
+        parent_aggstring = self.stateset.aggstring
+
+        if parent_aggstring == 'full':
+            parent_aggstring = ''
+
         rv = []
         
         mid_index = len(self.parent_ops) // 2
         parent_op_lists = [self.parent_ops[:mid_index], self.parent_ops[mid_index:]]
 
-        for parent_op_list in parent_op_lists:
-            node = AggDagNode(parent_op_list, self.agg_type_from_parents, self.aggdag)
+        for agg_suffix, parent_op_list in zip(['0', '1'], parent_op_lists):
+            aggstring = parent_aggstring + agg_suffix
+            node = self.aggdag.make_node(parent_op_list, self.agg_type_from_parents, aggstring)
 
             rv.append(node)
 
@@ -406,12 +410,21 @@ class AggDagNode(Freezable):
 
                     break
 
-            if not skip:           
+            print(".aggdag %%%% debug never skipping invariant intersection")
+            # hmm, skipping invariant intersections is only valid if deaggregation is a subset of aggregated set...
+            # for our krylov aggregation, this isn't really the case though... so in general you need to invaraint
+            # intersect at every step... plus this is really an optimization rather than the main algorithm
+            
+            if True or not skip:
+                self.aggdag.core.print_verbose(
+                    f"doing invariant intersection in replay at step {cur_state.cur_step_in_mode}")
                 is_feasible = self.replay_op_intersect_invariant(cur_state, op)
 
                 if not is_feasible:
                     op = OpLeftInvariant(op.step, self, False)
                     self.op_list.append(op)
+            else:
+                self.aggdag.core.print_verbose("skipping invariant intersection because stronger one is coming up")
 
         Timers.toc('replay_op')
 
@@ -421,7 +434,8 @@ class AggDagNode(Freezable):
 
         print_verbose = self.aggdag.core.print_verbose
 
-        state.step(op.step)
+        state.step(op.step) # advance the state first
+
         # check if the transition is still enabled
         
         t = op.transition
@@ -437,15 +451,15 @@ class AggDagNode(Freezable):
 
             if op.child_node is None:
                 self.aggdag.waiting_list.append(new_op)
-                print_verbose("Replay Transition added new Discrete Successor to '{}' at step {}".format( \
-                              t.to_mode.name, state.cur_steps_since_start))
+                print_verbose("Replay Transition {} when deaggreaged to steps {}".format( \
+                              t, state.cur_steps_since_start))
             else:
                 self.aggdag.deagg_man.update_transition_successors(op, new_op)
                 
-                print_verbose("Replay Transition refined Discrete Successor to '{}' at step {}".format( \
-                              t.to_mode.name, state.cur_steps_since_start))
+                print_verbose("Replay Transition refined transition {} when deaggregated at steps {}".format( \
+                              t, state.cur_steps_since_start))
         else:
-            print_verbose(f"Replay skipped transition at step {state.cur_steps_since_start}")
+            print_verbose(f"Replay skipped transition {t} when deaggregated to steps {state.cur_steps_since_start}")
 
     def replay_op_intersect_invariant(self, state, op):
         '''replay a single operation of type OpInvIntersect
@@ -514,7 +528,8 @@ class AggDagNode(Freezable):
             else:
                 label += f" ({steps})"
         else:
-            label += " (incomplete)"
+            steps = self.stateset.cur_step_in_mode
+            label += f" (incomplete, {steps} so far)"
 
         print(f"vizing node {name} ({label}) with {len(self.parent_ops)} parent ops")
         g.node(name, label=label)
