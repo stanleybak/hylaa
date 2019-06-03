@@ -306,7 +306,7 @@ class StateSet(Freezable):
         else:
             alpha = (math.exp(tau * a_norm) - 1 - tau * a_norm) * (r_x0 + r_v/a_norm)
 
-        print(f".ss alpha={alpha}")
+        #print(f".ss alpha={alpha}")
 
         if alpha != 0:
             # bloat by alpha (minkowski sum)
@@ -317,7 +317,7 @@ class StateSet(Freezable):
         if a_norm > tol and has_inputs:
             # precompute beta as well
             self.lgg_beta = (math.exp(tau * a_norm) - 1 - tau * a_norm) * (r_v/a_norm)
-            print(f".ss beta={self.lgg_beta}")
+            #print(f".ss beta={self.lgg_beta}")
 
             assert self.lgg_beta > tol, f"lgg approx model beta was too close to zero: {self.lgg_beta}"
             assert self.lgg_beta < 1e5, f"lgg approx model beta was too large (use a smaller step): {self.lgg_beta}"

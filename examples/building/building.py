@@ -86,8 +86,8 @@ def make_init(ha):
 def define_settings(ha, limit):
     'get the hylaa settings object'
 
-    step = 0.1
-    max_time = 0.002
+    step = 0.0025
+    max_time = 1.0
     settings = HylaaSettings(step, max_time)
 
     #settings.interval_guard_optimization = False
@@ -135,7 +135,7 @@ def run_hylaa():
     tuples = []
     tuples.append((HylaaSettings.APPROX_NONE, "approx_none.png"))
     tuples.append((HylaaSettings.APPROX_CHULL, "approx_chull.png"))
-    tuples.append((HylaaSettings.APPROX_LGG, "approx_lgg.png"))
+    #tuples.append((HylaaSettings.APPROX_LGG, "approx_lgg.png"))
 
     for model, filename in tuples:
         settings = define_settings(ha, limit)
