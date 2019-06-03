@@ -416,7 +416,7 @@ class AggDagNode(Freezable):
 
                     break
 
-            print(".aggdag %%%% debug never skipping invariant intersection")
+            #print(".aggdag %%%% debug never skipping invariant intersection")
             # hmm, skipping invariant intersections is only valid if deaggregation is a subset of aggregated set...
             # for our krylov aggregation, this isn't really the case though... so in general you need to invaraint
             # intersect at every step... plus this is really an optimization rather than the main algorithm
