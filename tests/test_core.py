@@ -51,10 +51,12 @@ def test_ha():
     assert np.allclose(ce.end, np.array([4, 3.07106, 2.35619, 1], dtype=float))
 
     # check the reachable state (should always have x <= 3.5)
-    polys = result.mode_to_polys[mode.name]
+    obj_list = result.plot_data.mode_to_obj_list[0][mode.name]
 
-    for poly in polys:
-        for vert in poly:
+    for obj in obj_list:
+        verts = obj[0]
+        
+        for vert in verts:
             x, _ = vert
 
             assert x <= 4.9
@@ -111,15 +113,16 @@ def test_plot_over_time():
 
     # check the reachable state
     # we would expect at the end that x = [4, 5], t = pi
-    polys = result.mode_to_polys[mode.name]
 
-    for vert in polys[0]:
+    obj_list = result.plot_data.mode_to_obj_list[0][mode.name]
+
+    for vert in obj_list[0][0]:
         x, y = vert
 
         assert abs(y) < 1e-6, "initial poly time is wrong"
         assert abs(-5 - x) < 1e-6 or abs(-4 - x) < 1e-6
 
-    for vert in polys[-1]:
+    for vert in obj_list[-1][0]:
         x, y = vert
 
         assert abs(math.pi - y) < 1e-6, "final poly time is wrong"
@@ -180,7 +183,7 @@ def test_invariants():
     result = Core(ha, settings).run(init_list)
 
     # check the reachable state
-    polys = result.mode_to_polys[mode.name]
+    polys = [obj[0] for obj in result.plot_data.mode_to_obj_list[0][mode.name]]
 
     # 4 steps because invariant is allowed to be false for the final step
     assert len(polys) == 4, "expected invariant to become false after 4 steps"
@@ -241,8 +244,11 @@ def test_transition():
     assert ce[1].start[0] + 1e-9 >= 3.0
     assert ce[1].end[0] - 1e-9 <= 2.0
 
-    assert len(result.mode_to_polys['m1']) == 4
-    assert len(result.mode_to_polys['m2']) == 3
+    polys = [obj[0] for obj in result.plot_data.mode_to_obj_list[0]['m1']]
+    assert len(polys) == 4
+
+    polys = [obj[0] for obj in result.plot_data.mode_to_obj_list[0]['m2']]
+    assert len(polys) == 3
 
     assert result.last_cur_state.cur_steps_since_start[0] == 5
 
@@ -304,8 +310,11 @@ def test_time_triggered():
     assert abs(ce[1].start[0] - 2.0) < 1e-5
     assert abs(ce[1].end[0] - 4.0) < 1e-5
 
-    assert len(result.mode_to_polys['m1']) == 3 # time 0, 1, 2
-    assert len(result.mode_to_polys['m2']) == 3 # times 2, 3, 4
+    polys = [obj[0] for obj in result.plot_data.mode_to_obj_list[0]['m1']]
+    assert len(polys) == 3 # time 0, 1, 2
+
+    polys = [obj[0] for obj in result.plot_data.mode_to_obj_list[0]['m2']]
+    assert len(polys) == 3 # times 2, 3, 4
 
 def test_redundant_invariants():
     'test removing of redundant invariants'
@@ -490,7 +499,7 @@ def test_inputs_reset():
 
     # reset: x := 1, y += 2 [should go from (e^3, 3.0) -> (1, 5.0)]
     # (1, 5.0) -> (e^2, [7, 9]) -> (e^4, [9, 13])
-    polys2 = result.mode_to_polys['m2']
+    polys2 = [obj[0] for obj in result.plot_data.mode_to_obj_list[0]['m2']]
     assert_verts_is_box(polys2[0], [[1, 1], [5, 5]])
     assert_verts_is_box(polys2[1], [[math.exp(2), math.exp(2)], [7, 9]])
     assert_verts_is_box(polys2[2], [[math.exp(4), math.exp(4)], [9, 13]])
@@ -581,7 +590,7 @@ def test_over_time_range():
 
     result = Core(ha, settings).run(init_list)
 
-    polys = result.mode_to_polys[mode_b.name]
+    polys = [obj[0] for obj in result.plot_data.mode_to_obj_list[0][mode_b.name]]
     # expected with aggegregation: [0, 2.5] -> [1, 3.5] -> [2, 4.5] -> [3, 5.5] -> [4, 6.5]
 
     # 4 steps because invariant is allowed to be false for the final step
@@ -709,4 +718,40 @@ def test_zero_dynamics():
 
     assert core.aggdag.get_cur_state() is None, "cur state should be none, since mode dynamics were zero"
 
-ADD TEST FOR MULTIPLE INITIAL STATES IN SAME MODE (TRIES TO DO AGGREGATION)
+def test_multiple_init_states():
+    'test with multiple initial states in the same mode (should NOT do aggregation)'
+
+    ha = HybridAutomaton()
+
+    # with time and affine variable
+    mode = ha.new_mode('mode')
+    mode.set_dynamics([[0, 0], [0, 0]])
+
+    # initial set
+    init_lpi = lputil.from_box([(-5, -4), (0, 1)], mode)
+    init_lpi2 = lputil.from_box([(-5, -5), (2, 3)], mode)
+    
+    init_list = [StateSet(init_lpi, mode), StateSet(init_lpi2, mode)]
+
+    # settings
+    settings = HylaaSettings(math.pi/4, math.pi)
+    settings.stdout = HylaaSettings.STDOUT_NONE
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
+    
+    core = Core(ha, settings)
+
+    core.run(init_list)
+
+def test_stateset_bad_init():
+    'test constructing a stateset with a basis matrix that is not the identity (should raise error)'
+
+    # this is from an issue reported by Mojtaba Zarei 
+
+    assert False, "todo"
+
+def test_tt_09():
+    'test time-triggered transition at 0.9 bug'
+
+    # this is from an issue reported by Mojtaba Zarei 
+
+    assert False, "todo"

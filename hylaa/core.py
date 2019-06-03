@@ -17,6 +17,7 @@ from hylaa.timerutil import Timers
 from hylaa.util import Freezable
 from hylaa.lpinstance import LpInstance
 from hylaa import lputil
+from hylaa.result import PlotData
 
 class Core(Freezable):
     'main computation object. initialize and call run()'
@@ -376,6 +377,9 @@ class Core(Freezable):
     def run_to_completion(self):
         'run the model to completion (called by run() if not plot is desired)'
 
+        if self.settings.plot.store_plot_result and self.result.plot_data is None:
+            self.result.plot_data = PlotData(self.plotman.num_subplots)
+
         self.plotman.run_to_completion(compute_plot=self.settings.plot.store_plot_result)
 
     def run(self, init_state_list):
@@ -391,6 +395,9 @@ class Core(Freezable):
         Timers.tic("total")
 
         self.setup(init_state_list)
+
+        if self.settings.plot.store_plot_result:
+            self.result.plot_data = PlotData(self.plotman.num_subplots)
 
         if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE:
             self.run_to_completion()

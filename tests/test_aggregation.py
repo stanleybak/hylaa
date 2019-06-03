@@ -417,7 +417,7 @@ def test_plain():
     assert op0.parent_node.stateset.aggdag_op_list[0] is None
      
     # check polygons in m2
-    polys2 = result.mode_to_polys['m2']
+    polys2 = [obj[0] for obj in result.plot_data.mode_to_obj_list[0]['m2']]
 
     assert 4 <= len(polys2) <= 5
 
@@ -525,7 +525,7 @@ def test_agg_to_more_vars():
 
     result = Core(ha, settings).run(init_list)
 
-    polys = result.mode_to_polys['m1']
+    polys = [obj[0] for obj in result.plot_data.mode_to_obj_list[0]['m1']]
 
     # 4 steps because invariant is allowed to be false for the final step
     assert 4 <= len(polys) <= 5, "expected invariant to become false after 4/5 steps"
@@ -535,7 +535,7 @@ def test_agg_to_more_vars():
     assert_verts_is_box(polys[2], [[2, 3], [1, 1]])
     assert_verts_is_box(polys[3], [[3, 4], [1, 1]])
 
-    polys = result.mode_to_polys['m2']
+    polys = [obj[0] for obj in result.plot_data.mode_to_obj_list[0]['m2']]
 
     assert_verts_is_box(polys[0], [[1, 4], [3, 3]])
     assert_verts_is_box(polys[1], [[1, 4], [4, 4]])

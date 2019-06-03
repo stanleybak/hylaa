@@ -182,6 +182,12 @@ class AggDag(Freezable):
         if op_list[0].poststate.mode.a_csr is None: 
             op_list = [op_list[0]]
 
+        # if we're popping a mode with no predecessor, an initial mode, pop one at a time
+        for op in op_list:
+            if op.parent_node is None:
+                op_list = [op]
+                break
+
         # remove each element of opr_list from the waiting_list
         waiting_list_presize = len(self.waiting_list)
         self.waiting_list = [op for op in self.waiting_list if not op in op_list]

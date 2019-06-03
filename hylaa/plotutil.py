@@ -21,7 +21,7 @@ from hylaa import lpplot
 from hylaa.timerutil import Timers
 from hylaa.settings import PlotSettings
 from hylaa.util import Freezable
-from hylaa.result import replay_counterexample, PlotData
+from hylaa.result import replay_counterexample
 
 class AxisLimits(Freezable):
     '''the axis limits'''
@@ -422,7 +422,6 @@ class PlotManager(Freezable):
             self.plot_vec_list.append(plot_vecs)
             
         self.num_subplots = len(self.plot_vec_list)
-        self.core.print_verbose("Num subplots = {}".format(self.num_subplots))
 
     def draw_counterexample(self, ce_segments):
         '''we got a concrete counter example, draw it (if we're plotting)
@@ -930,9 +929,6 @@ class PlotManager(Freezable):
 
             # make sure to store plot result for on_click listener to report on
             self.settings.store_plot_result = True
-
-        if self.settings.store_plot_result:
-            self.core.result.plot_data = PlotData(self.num_subplots)
 
         if self.settings.plot_mode == PlotSettings.PLOT_IMAGE:
             self.run_to_completion()

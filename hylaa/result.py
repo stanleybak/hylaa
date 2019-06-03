@@ -41,6 +41,8 @@ class PlotData(Freezable):
     'used if setting.plot.store_plot_result is True, stores data about the plots'
 
     def __init__(self, num_plots):
+        # first index is plot number, second is mode name, result is a list of obj
+        # each obj is a tuple: (verts, state, cur_step_in_mode, str_description)
         self.mode_to_obj_list = [defaultdict(list) for _ in range(num_plots)]
 
         self.freeze_attrs()
@@ -57,15 +59,12 @@ class PlotData(Freezable):
 
         obj = (verts, state, state.cur_step_in_mode, f"{mode_name} at step {state.cur_step_in_mode}")
 
-        print(f".######result adding state {state.get_full_aggstring()} at step {state.cur_step_in_mode}")
         self.mode_to_obj_list[plot_index][mode_name].append(obj)
 
     def remove_state(self, state, step):
         'remove a state that was previously added'
 
         found = False
-
-        print(f".##### result removing state {state.get_full_aggstring()} at step {step}")
 
         for mode_to_obj in self.mode_to_obj_list:
             obj_list = mode_to_obj[state.mode.name]
@@ -202,7 +201,6 @@ def make_counterexample(ha, state, transition_to_error, lpi):
 
     return counterexample
 
-######################
 
 def replay_counterexample(ce_segment_list, ha, settings):
     '''replay the counterexample
