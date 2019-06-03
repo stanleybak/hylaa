@@ -23,6 +23,10 @@ class HylaaSettings(Freezable):  # pylint: disable=too-few-public-methods
 
     STDOUT_NONE, STDOUT_NORMAL, STDOUT_VERBOSE, STDOUT_DEBUG = range(4)
 
+    # Approximation Models: None: discrete-time, chull: convex hull only (different simulation semantics),
+    #                       lgg: support function method from Le Guernic'10
+    APPROX_NONE, APPROX_CHULL, APPROX_LGG = range(3)
+
     def __init__(self, step_size, max_time):
         plot_settings = PlotSettings()
 
@@ -37,10 +41,12 @@ class HylaaSettings(Freezable):  # pylint: disable=too-few-public-methods
         self.process_urgent_guards = False # allow zero continuous-post steps between transitions?
         self.do_guard_strengthening = True # add invariants of target modes to each guard?
         self.optimize_tt_transitions = True # auto-detect time-triggered transitions and use single-step semantics?
+        self.approx_model = HylaaSettings.APPROX_NONE
 
         # what to do when an error appears reachable
         self.stop_on_aggregated_error = False # stop whenever any state (aggregated or not) reaches an error mode
         self.stop_on_concrete_error = True # stop whenver a concrete state reaches an error
+        self.make_counterexample = True # save counter-example to data structure / file?
         
         self.aggstrat = aggstrat.Aggregated() # aggregation strategy class
 
@@ -86,6 +92,8 @@ class PlotSettings(Freezable): # pylint: disable=too-few-public-methods,too-many
         self.use_markers_for_small = True # draw markers when the reachable set is tiny instead of (invisible) polygons
 
         self.show_counterexample = True # draw concrete counter-example in the last frame?
+
+        self.interactive_skip_count = 0 # when using PLOT_INTERACTIVE, auto-click 'next' this many times
 
         self.video_fps = 40
         self.video_extra_frames = 40 # extra frames at the end of a video so it doesn't end so abruptly

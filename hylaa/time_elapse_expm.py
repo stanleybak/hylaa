@@ -29,6 +29,9 @@ class TimeElapseExpmMult(Freezable):
         self.one_step_matrix_exp = None # one step matrix exponential
         self.one_step_input_effects_matrix = None # one step input effects matrix, if inputs exist
 
+        # lgg approximation model vars
+        self.use_lgg = False
+
         self.freeze_attrs()
 
     def init_matrices(self):
@@ -79,13 +82,30 @@ class TimeElapseExpmMult(Freezable):
         elif step_num == 1:
             self.cur_basis_matrix = self.one_step_matrix_exp
             self.cur_input_effects_matrix = self.one_step_input_effects_matrix
+
+            if self.use_lgg and self.b_csc is not None:
+                prev_step_mat_exp = np.identity(self.dims, dtype=float)
+                # make new (wider) input effects matrix
+                blocks = [self.cur_input_effects_matrix, prev_step_mat_exp]
+                self.cur_input_effects_matrix = np.concatenate(blocks, axis=1)
+            
         elif step_num == self.cur_step + 1:
             Timers.tic('quick_step')
+            prev_step_mat_exp = self.cur_basis_matrix
             self.cur_basis_matrix = np.dot(self.cur_basis_matrix, self.one_step_matrix_exp)
 
             # inputs
             if self.b_csc is not None:
+                if self.use_lgg:
+                    # cut cur_input_effects matrix into the relevant portion
+                    self.cur_input_effects_matrix = self.cur_input_effects_matrix[:, 0:self.time_elapser.inputs]
+                
                 self.cur_input_effects_matrix = np.dot(self.one_step_matrix_exp, self.cur_input_effects_matrix)
+
+                if self.use_lgg:
+                    # make new (wider) input effects matrix
+                    blocks = [self.cur_input_effects_matrix, prev_step_mat_exp]
+                    self.cur_input_effects_matrix = np.concatenate(blocks, axis=1)
 
             Timers.toc('quick_step')
         else:
@@ -105,6 +125,19 @@ class TimeElapseExpmMult(Freezable):
                 self.cur_input_effects_matrix = prev_step_mat_exp * self.one_step_input_effects_matrix
                 Timers.toc("input effects")
 
+                if self.use_lgg:
+                    # make new (wider) input effects matrix
+                    blocks = [self.cur_input_effects_matrix, prev_step_mat_exp]
+                    self.cur_input_effects_matrix = np.concatenate(blocks, axis=1)
+
             Timers.toc('slow_step')
 
         self.cur_step = step_num
+
+    def use_lgg_approx(self):
+        '''
+        set this time elapse object to use lgg approximation model
+        '''
+
+        self.use_lgg = True
+        self.one_step_input_effects_matrix = self.b_csc.toarray() * self.time_elapser.step_size

@@ -4,15 +4,113 @@ Stanley Bak
 Code assocaited with counterexamples.
 '''
 
+from collections import defaultdict
 from collections import deque
 
 import numpy as np
+
+from sympy import Polygon, Point, Point2D
 
 from scipy.integrate import odeint
 from scipy.sparse import csr_matrix
 
 from hylaa.aggstrat import get_ancestors
 from hylaa.util import Freezable
+
+class HylaaResult(Freezable): # pylint: disable=too-few-public-methods
+    'result object returned by core.run()'
+
+    def __init__(self):
+        self.top_level_timer = None # TimerData for total time
+
+        # verification result:
+        self.has_aggregated_error = False
+        self.has_concrete_error = False
+
+        self.counterexample = [] # if unsafe, a list of CounterExampleSegment objects
+
+        # assigned if setting.plot.store_plot_result is True, an instance of PlotData
+        self.plot_data = None
+
+        # the last core.cur_state object... used for unit testing
+        self.last_cur_state = None
+
+        self.freeze_attrs()
+
+class PlotData(Freezable):
+    'used if setting.plot.store_plot_result is True, stores data about the plots'
+
+    def __init__(self, num_plots):
+        # first index is plot number, second is mode name, result is a list of obj
+        # each obj is a tuple: (verts, state, cur_step_in_mode, str_description)
+        self.mode_to_obj_list = [defaultdict(list) for _ in range(num_plots)]
+
+        self.freeze_attrs()
+
+    def get_verts_list(self, mode_name, plot_index=0):
+        'get a list of lists for the passed-in mode'
+
+        return self.mode_to_obj_list[plot_index][mode_name][0]
+
+    def add_state(self, state, verts, plot_index):
+        'add a plotted state'
+
+        mode_name = state.mode.name
+
+        obj = (verts, state, state.cur_step_in_mode, f"{mode_name} at step {state.cur_step_in_mode}")
+
+        self.mode_to_obj_list[plot_index][mode_name].append(obj)
+
+    def remove_state(self, state, step):
+        'remove a state that was previously added'
+
+        found = False
+
+        for mode_to_obj in self.mode_to_obj_list:
+            obj_list = mode_to_obj[state.mode.name]
+
+            for index, obj in enumerate(obj_list):
+                _, istate, istep, desc = obj
+
+                if istate is state and step == istep:
+                    found = True
+
+                    obj_list.pop(index)
+                    break
+
+            if found:
+                break
+
+        assert found
+
+    def get_plot_data(self, x, y, subplot=0):
+        'get the plot data at x, y, or None if not found'
+
+        rv = None
+
+        mode_to_obj = self.mode_to_obj_list[subplot]
+        clicked = Point(x, y)
+
+        for mode, obj_list in mode_to_obj.items():
+            
+            for obj in obj_list:
+                verts = obj[0]
+
+                if len(verts) < 4: # need at least 3 points (4 with wrap) to be clicked inside
+                    continue
+
+                verts_2dp = [Point2D(x, y) for x, y in verts[1:]]
+                                
+                poly = Polygon(*verts_2dp)
+
+                if poly.encloses_point(clicked):
+                    rv = obj
+                    break
+
+            if rv is not None:
+                break
+
+        return rv
 
 class CounterExampleSegment(Freezable):
     'a part of a counter-example trace'
@@ -103,7 +201,6 @@ def make_counterexample(ha, state, transition_to_error, lpi):
 
     return counterexample
 
-######################
 
 def replay_counterexample(ce_segment_list, ha, settings):
     '''replay the counterexample

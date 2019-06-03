@@ -21,7 +21,7 @@ from hylaa import lpplot
 from hylaa.timerutil import Timers
 from hylaa.settings import PlotSettings
 from hylaa.util import Freezable
-from hylaa.counterexample import replay_counterexample
+from hylaa.result import replay_counterexample
 
 class AxisLimits(Freezable):
     '''the axis limits'''
@@ -387,6 +387,12 @@ class PlotManager(Freezable):
 
         self.freeze_attrs()
 
+    def pause(self):
+        '''pause the plot animation'''
+
+        self.interactive.step = False
+        self.interactive.paused = True
+
     def init_plot_vecs(self):
         'initialize plot_vecs'
 
@@ -416,7 +422,6 @@ class PlotManager(Freezable):
             self.plot_vec_list.append(plot_vecs)
             
         self.num_subplots = len(self.plot_vec_list)
-        self.core.print_verbose("Num subplots = {}".format(self.num_subplots))
 
     def draw_counterexample(self, ce_segments):
         '''we got a concrete counter example, draw it (if we're plotting)
@@ -531,6 +536,7 @@ class PlotManager(Freezable):
         'create the plot'
 
         if not self.settings.plot_mode in [PlotSettings.PLOT_NONE]:
+            
             self.fig, axes_list = plt.subplots(nrows=self.num_subplots, ncols=1, figsize=self.settings.plot_size, \
                                                     squeeze=False)
 
@@ -640,10 +646,10 @@ class PlotManager(Freezable):
         state = self.core.aggdag.get_cur_state()
 
         for subplot in range(self.num_subplots):
-            if self.settings.store_plot_result and subplot == 0: # only subplot 0 is saved
+            if self.settings.store_plot_result:
                 verts = state.verts(self, subplot=subplot)
 
-                self.core.result.mode_to_polys[state.mode.name].append(verts)
+                self.core.result.plot_data.add_state(state, verts, subplot)
 
             if self.settings.plot_mode != PlotSettings.PLOT_NONE:
                 verts = state.verts(self, subplot=subplot)
@@ -669,6 +675,38 @@ class PlotManager(Freezable):
 
         for shape in self.shapes:
             shape.add_reachable_poly(state)
+
+    def delete_plotted_state(self, stateset, step):
+        'delete an already-plotted state'
+
+        if self.settings.plot_mode != PlotSettings.PLOT_NONE:
+            verts = stateset.del_plot_path(step)
+
+            if verts is None:
+                print(f".#######plotutil plot was already deleted: {stateset}")
+            else:
+                # delete it from the result object
+                if self.core.result.plot_data is not None:
+                    self.core.result.plot_data.remove_state(stateset, step)
+
+                # plot the verts of the deleted old plotted state
+                self.highlight_states_gray([verts])
+
+    def add_plotted_states(self, stateset_list):
+        'add the passed-in statesets to be plotted'
+
+
+        if self.settings.plot_mode != PlotSettings.PLOT_NONE:
+            for state in stateset_list:
+                self.add_reachable_poly(state)
+
+                # add it to result as well
+                if self.settings.store_plot_result:
+                    for subplot in range(self.num_subplots):
+                        verts = state.verts(self, subplot=subplot)
+                        self.core.result.plot_data.add_state(state, verts, subplot)
+
+            self.highlight_states(stateset_list)
 
     def highlight_states_gray(self, states):
         '''highlight the passed-in states (using gray line settings)
@@ -724,6 +762,12 @@ class PlotManager(Freezable):
             Timers.tic("paused")
             time.sleep(0.1)
             Timers.toc("paused")
+
+            if self.settings.interactive_skip_count > 0:
+                self.settings.interactive_skip_count -= 1 # modify the setting in-place... probably okay
+                self.interactive.paused = False
+                self.core.print_verbose(f"Unpausing plot. Skip count is now {self.settings.interactive_skip_count}.")
+                
         elif self.interactive.paused and self.settings.plot_mode == PlotSettings.PLOT_VIDEO:
             if self.pause_frames is None:
                 self.pause_frames = self.settings.video_pause_frames
@@ -744,9 +788,12 @@ class PlotManager(Freezable):
                 self.core.do_step()
 
                 # if we just wanted a single step (or do_step() caused paused to be set to True)
-                if self.interactive.step or self.interactive.paused:
-                    self.interactive.step = False
-                    self.interactive.paused = True
+                if (self.interactive.step or self.interactive.paused) and \
+                       (self.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE or
+                        self.settings.plot_mode == PlotSettings.PLOT_VIDEO):
+                    self.core.print_verbose(f"Paused due to interactive.step = {self.interactive.step}, " + \
+                                            f"i.paused = {self.interactive.paused}")
+                    self.pause()
                     break
 
             if self.core.aggdag.get_cur_state() is not None:
@@ -832,6 +879,29 @@ class PlotManager(Freezable):
             if self.core.is_finished():
                 self.core.print_normal("Computation is finished")
 
+        def aggdag_pressed(_):
+            'event function for save aggdag button press'
+            
+            filename = self.core.aggdag.save_viz()
+
+            self.core.print_normal(f"Saved to filename: {filename}")
+
+        def on_click(event):
+            'on-click listener during interactive plots'
+
+            x, y, ax = event.xdata, event.ydata, event.inaxes
+
+            try:
+                subplot = self.axes_list.index(ax)
+            except ValueError:
+                subplot = None
+
+            if subplot is not None:
+                # check which polygon you're in
+                d = self.core.result.plot_data.get_plot_data(x, y, subplot)
+
+                print(d[1:])
+
         if self.settings.plot_mode == PlotSettings.PLOT_INTERACTIVE:
             # do one frame
             self.interactive.paused = False
@@ -849,6 +919,13 @@ class PlotManager(Freezable):
             axstep = plt.axes([0.61, 0.02, 0.1, 0.05])
             bstep = Button(axstep, 'Step', color='0.85', hovercolor='0.85')
             bstep.on_clicked(step_pressed)
+
+            axaggdag = plt.axes([0.31, 0.02, 0.15, 0.05])
+            baggdag = Button(axaggdag, 'Save Aggdag', color='0.85', hovercolor='0.85')
+            baggdag.on_clicked(aggdag_pressed)
+
+            # add mouse-click listener
+            cid = self.fig.canvas.mpl_connect('button_press_event', on_click)
 
         if self.settings.plot_mode == PlotSettings.PLOT_IMAGE:
             self.run_to_completion()

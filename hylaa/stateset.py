@@ -4,18 +4,20 @@ Stanley Bak
 Aug 2016
 '''
 
+import math
+
 import numpy as np
+import scipy as sp
 
 from matplotlib.path import Path
 
-from hylaa import lputil
+from hylaa import lpplot, lputil
 
 from hylaa.hybrid_automaton import Mode
 from hylaa.timerutil import Timers
 from hylaa.util import Freezable
 from hylaa.lpinstance import LpInstance
-
-from hylaa import lpplot
+from hylaa.settings import HylaaSettings
 
 class StateSet(Freezable):
     '''
@@ -51,8 +53,17 @@ class StateSet(Freezable):
 
         # mode might be an error mode, in which case a_csr is None
         self.basis_matrix = None if mode.a_csr is None else np.identity(mode.a_csr.shape[0])
+
+        if mode.a_csr is not None and not np.allclose(lputil.get_basis_matrix(lpi), self.basis_matrix):
+            raise RuntimeError("lpi basis matrix in StateSet constructor was not the identity. " + \
+                               "Did you construct the lpi using the lputil.from_*() functions?")
         
         self.input_effects_list = None if mode.b_csr is None else [] # list of input effects at each step
+
+        self.aggstring = None # aggstring that led to this state, like 'full', or '010'
+
+        # approximation model variables
+        self.lgg_beta = None
 
         #### plotting variables below ####
         self._verts = None # cached vertices at the current step
@@ -68,7 +79,25 @@ class StateSet(Freezable):
     def __str__(self):
         'short string representation of this state set'
 
-        return f"[StateSet in mode '{self.mode.name}' @ step '{self.cur_step_in_mode}']"
+        return f"[StateSet, mode:{self.mode.name} @ step {self.cur_step_in_mode}, {self.get_full_aggstring()}]"
+
+    def get_full_aggstring(self):
+        'get the full aggstring that led to this stateset'
+
+        rv = None
+
+        if self.aggdag_op_list[0] is None:
+            assert self.aggstring == 'full'
+            rv = 'init'
+        else:
+            op = self.aggdag_op_list[0]
+            parent = op.parent_node.stateset
+            parent_aggstring = parent.get_full_aggstring()
+            tindex = parent.mode.transitions.index(op.transition)
+
+            rv = parent_aggstring + f":t{tindex}_" + self.aggstring
+
+        return rv
 
     def step(self, step_in_mode=None):
         '''update the star based on values from a new simulation time instant
@@ -89,7 +118,6 @@ class StateSet(Freezable):
           f"{self.mode.name}, cur_step_in_mode: {self.cur_step_in_mode}, requested_step: {step_in_mode})"
 
         if num_steps > 0:
-
             Timers.tic('get_bm')
             self.basis_matrix, input_effects_matrix = self.mode.time_elapse.get_basis_matrix(step_in_mode)
             Timers.toc('get_bm')
@@ -104,12 +132,14 @@ class StateSet(Freezable):
                 for step in range(self.cur_step_in_mode + 1, step_in_mode):
                     _, ie_mat = self.mode.time_elapse.get_basis_matrix(step)
                     self.input_effects_list.append(ie_mat)
-                    lputil.add_input_effects_matrix(self.lpi, ie_mat, self.mode)
+                    lputil.add_input_effects_matrix(self.lpi, ie_mat, self.mode, self.lgg_beta)
 
                 # add the input effects matrix for the final step (computed before with basis matrix)
                 self.input_effects_list.append(input_effects_matrix)
-                lputil.add_input_effects_matrix(self.lpi, input_effects_matrix, self.mode)
+                lputil.add_input_effects_matrix(self.lpi, input_effects_matrix, self.mode, self.lgg_beta)
                 Timers.toc('input effects matrix')
+
+                #print(f".ss lp columns = {self.lpi.get_num_cols()}")
 
             self.cur_step_in_mode += num_steps
             self.cur_steps_since_start[0] += num_steps
@@ -182,18 +212,133 @@ class StateSet(Freezable):
         '''
         delete a plotted matplotlib Path object for this stateset.
 
-        returns a list of verts (one for each subplot) that was deleted
+        returns a list of verts (one for each subplot) that was deleted, or None if stateset was
+        already deleted (can happen with recursive deaggregation)
         '''
 
         rv = []
-        l = self.step_to_paths[step]
 
-        codes = [Path.MOVETO, Path.CLOSEPOLY]
-        verts = [(0, 0), (0, 0)]
+        if not step in self.step_to_paths:
+            rv = None
+        else:
+            l = self.step_to_paths.pop(step) # removes it from step_to_paths as well
 
-        # for every subplot
-        for path_list, index in l:
-            rv.append(path_list[index].vertices)
-            path_list[index] = Path(verts, codes)
+            codes = [Path.MOVETO, Path.CLOSEPOLY]
+            verts = [(0, 0), (0, 0)]
+
+            # for every subplot
+            for path_list, index in l:
+                rv.append(path_list[index].vertices)
+
+                # this is what actually removes it from the plot
+                path_list[index] = Path(verts, codes)
 
         return rv
+
+    def apply_approx_chull(self):
+        '''
+        apply convex hull approximation model
+        '''
+
+        lpi_one_step = self.lpi.clone()
+
+        Timers.tic('get_bm')
+        bm, ie_mat = self.mode.time_elapse.get_basis_matrix(1)
+        Timers.toc('get_bm')
+
+        Timers.tic('set_bm')
+        lputil.set_basis_matrix(lpi_one_step, bm)
+        Timers.toc('set_bm')
+
+        if ie_mat is not None:
+            Timers.tic('input effects matrix')
+            lputil.add_input_effects_matrix(lpi_one_step, ie_mat, self.mode)
+            Timers.toc('input effects matrix')
+
+        lpi_list = [self.lpi, lpi_one_step]
+        self.lpi = lputil.aggregate_chull(lpi_list, self.mode)
+
+    def apply_approx_lgg(self):
+        '''
+        apply lgg approximation model from equation (2) in Lemma 1 of:
+        "Reachability analysis of linear systems using support functions",
+        Le Guernic, C., Girard, A., Nonlinear Analysis: Hybrid Systems, 2010
+        '''
+
+        has_inputs = self.mode.b_csr is not None
+
+        # use infinity norm
+        a_norm = sp.sparse.linalg.norm(self.mode.a_csr, ord=np.inf)
+
+        lpi_one_step = self.lpi.clone()
+
+        Timers.tic('get_bm')
+        bm, _ = self.mode.time_elapse.get_basis_matrix(1)
+        Timers.toc('get_bm')
+
+        Timers.tic('set_bm')
+        lputil.set_basis_matrix(lpi_one_step, bm)
+        Timers.toc('set_bm')
+
+        mode = self.mode
+
+        tau = mode.time_elapse.step_size
+        r_x0 = lputil.compute_radius_inf(self.lpi)
+
+        if has_inputs:
+            v_set = lputil.from_input_constraints(mode.b_csr, mode.u_constraints_csc, mode.u_constraints_rhs, mode)
+            r_v = lputil.compute_radius_inf(v_set)
+            
+            # minkowski sum with tau * V
+            # V is the input set, V = B U
+            lputil.scale_with_bm(v_set, tau)
+            msum = lputil.minkowski_sum([lpi_one_step, v_set], mode)
+        else:
+            r_v = 0
+            msum = lpi_one_step
+
+        tol = 1e-7
+
+        if a_norm < tol:
+            print(f"Warning: norm of dynamics A matrix was small ({a_norm}), using alpha = 0 and " +
+                                  "beta = 0 in LGG approximation model")
+            alpha = 0
+        else:
+            alpha = (math.exp(tau * a_norm) - 1 - tau * a_norm) * (r_x0 + r_v/a_norm)
+
+        #print(f".ss alpha={alpha}")
+
+        if alpha != 0:
+            # bloat by alpha (minkowski sum)
+            lputil.bloat(msum, alpha)
+
+        self.lpi = lputil.aggregate_chull([self.lpi, msum], mode)
+
+        if a_norm > tol and has_inputs:
+            # precompute beta as well
+            self.lgg_beta = (math.exp(tau * a_norm) - 1 - tau * a_norm) * (r_v/a_norm)
+            #print(f".ss beta={self.lgg_beta}")
+
+            assert self.lgg_beta > tol, f"lgg approx model beta was too close to zero: {self.lgg_beta}"
+            assert self.lgg_beta < 1e5, f"lgg approx model beta was too large (use a smaller step): {self.lgg_beta}"
+
+            self.lpi.set_minimize_direction([-1] * self.lpi.dims)
+
+            self.mode.time_elapse.use_lgg_approx()
+
+    def apply_approx_model(self, approx_model):
+        '''
+        apply the approximation model to bloat the current (initial) set of states
+
+        approx_model - one of the APPROX_ values defined in HylaaSettings
+        '''
+
+        assert self.cur_step_in_mode == 0, "approximation model should be applied before any continuous post operations"
+        assert self.mode.time_elapse is not None, "init_time_elapse() must be called before apply_approx_model()"
+
+        if approx_model == HylaaSettings.APPROX_CHULL:
+            self.apply_approx_chull()
+        elif approx_model == HylaaSettings.APPROX_LGG:
+            self.apply_approx_lgg()
+        elif approx_model != HylaaSettings.APPROX_NONE:
+            assert f"Unknown approx_model from settings: {approx_model}"

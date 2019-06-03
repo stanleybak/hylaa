@@ -73,10 +73,11 @@ def make_settings(unsafe_box):
 
     settings.plot.video_pause_frames = 5
     settings.plot.video_fps = 5
-    settings.plot.plot_mode = PlotSettings.PLOT_IMAGE
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
+    settings.plot.interactive_skip_count = 5
 
     #settings.plot.plot_mode = PlotSettings.PLOT_VIDEO
-    #settings.plot.filename = "deaggregation.mp4"
+    #settings.plot.filename = "deagg_example.mp4"
 
     settings.stop_on_aggregated_error = False
     settings.aggstrat.deaggregate = True # use deaggregation

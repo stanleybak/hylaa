@@ -3,8 +3,6 @@ Main Hylaa Reachability Implementation
 Stanley Bak, 2018
 '''
 
-from collections import defaultdict
-
 import numpy as np
 from termcolor import cprint
 
@@ -12,13 +10,14 @@ from hylaa.settings import HylaaSettings, PlotSettings
 
 from hylaa.plotutil import PlotManager
 from hylaa.aggdag import AggDag
-from hylaa.counterexample import make_counterexample
+from hylaa.result import HylaaResult, make_counterexample
 from hylaa.stateset import StateSet
 from hylaa.hybrid_automaton import HybridAutomaton, was_tt_taken
 from hylaa.timerutil import Timers
 from hylaa.util import Freezable
 from hylaa.lpinstance import LpInstance
 from hylaa import lputil
+from hylaa.result import PlotData
 
 class Core(Freezable):
     'main computation object. initialize and call run()'
@@ -106,18 +105,21 @@ class Core(Freezable):
         if step_num[0] == step_num[1]:
             step_num = step_num[0]
             times = times[0]
-        
-        self.print_normal("Unsafe Mode Reached at Step: {} / {}, time {}".format( \
-            step_num, self.settings.num_steps, times))
 
-        self.result.has_aggregated_error = True
+        if not self.result.has_aggregated_error and not state.is_concrete:
+            self.result.has_aggregated_error = True
+            
+            self.print_normal(f"Unsafe Mode (aggregated) Reached at Step: {step_num} / {self.settings.num_steps}, " +
+                              f"time {times}")
 
         # if this is a concrete state (not aggregated) and we don't yet have a counter-example
-        if state.is_concrete:
-            self.print_verbose("Found concrete error")
+        if not self.result.has_concrete_error and state.is_concrete:
             self.result.has_concrete_error = True
+            self.print_normal(f"Unsafe Mode (concrete) Reached at Step: {step_num} / " + \
+                              f"{self.settings.num_steps}, time {times}")
 
-            if not self.result.counterexample:
+
+            if self.settings.make_counterexample and not self.result.counterexample:
                 self.print_verbose("Reached concrete error state; making concrete counter-example")
                 self.result.counterexample = make_counterexample(self.hybrid_automaton, state, t, t_lpi)
 
@@ -146,12 +148,11 @@ class Core(Freezable):
                 
                 self.aggdag.add_transition_successor(t, t_lpi)
 
-                self.print_verbose("Added Discrete Successor to '{}' at step {}".format( \
-                                   t.to_mode.name, cur_state.cur_steps_since_start))
+                self.print_verbose(f"Took transition {t} at steps {cur_state.cur_steps_since_start}")
 
                 # if it's a time-triggered transition, we may remove cur_state immediately
                 if self.settings.optimize_tt_transitions and t.time_triggered:
-                    if was_tt_taken(cur_state.lpi, t):
+                    if was_tt_taken(cur_state.lpi, t, self.settings.step_size, self.settings.num_steps):
                         self.print_verbose("Transition was time-triggered, finished with current state analysis")
                         self.took_tt_transition = True
                     else:
@@ -273,9 +274,12 @@ class Core(Freezable):
             if not still_feasible:
                 self.print_normal("Continuous state was outside of the mode's invariant; skipping.")
                 self.aggdag.cur_state_left_invariant()
+            else:
+                cur_state.apply_approx_model(self.settings.approx_model)
 
         # pause plot
-        self.plotman.interactive.paused = True
+        self.print_verbose("Pausing due to step_pop()")
+        self.plotman.pause()
 
         Timers.toc('do_step_pop')
 
@@ -305,8 +309,11 @@ class Core(Freezable):
 
                 if deagg_node:
                     self.aggdag.deagg_man.begin_replay(deagg_node)
-                    self.aggdag.deagg_man.do_step_replay() # do the first step
+                    self.aggdag.deagg_man.do_step_replay()
                 else:
+                    #print(".core popping, calling aggdag.save_viz()")
+                    #self.aggdag.save_viz()
+            
                     # pop state off waiting list
                     self.do_step_pop()
 
@@ -320,10 +327,10 @@ class Core(Freezable):
 
         Timers.tic('setup')
 
+        assert init_state_list and isinstance(init_state_list, list), "expected list of initial states"
+
         for state in init_state_list:
             assert isinstance(state, StateSet), "initial states should be a list of StateSet objects"
-
-        assert init_state_list, "expected list of initial states"
 
         self.result = HylaaResult()
 
@@ -334,7 +341,7 @@ class Core(Freezable):
             mode.init_time_elapse(self.settings.step_size)
 
         if self.settings.optimize_tt_transitions:
-            ha.detect_tt_transitions(self.print_debug)
+            ha.detect_tt_transitions(self.settings.step_size, self.settings.num_steps, self.print_debug)
 
         if self.settings.do_guard_strengthening:
             ha.do_guard_strengthening()
@@ -370,6 +377,9 @@ class Core(Freezable):
     def run_to_completion(self):
         'run the model to completion (called by run() if not plot is desired)'
 
+        if self.settings.plot.store_plot_result and self.result.plot_data is None:
+            self.result.plot_data = PlotData(self.plotman.num_subplots)
+
         self.plotman.run_to_completion(compute_plot=self.settings.plot.store_plot_result)
 
     def run(self, init_state_list):
@@ -386,6 +396,14 @@ class Core(Freezable):
 
         self.setup(init_state_list)
 
+        if self.settings.plot.plot_mode == PlotSettings.PLOT_INTERACTIVE:
+            # make sure to store plot result for on_click listener to report on
+            self.print_verbose(f"Setting store_plot_result to true since PLOT_INTERACTIVE has click listener")
+            self.settings.plot.store_plot_result = True
+
+        if self.settings.plot.store_plot_result:
+            self.result.plot_data = PlotData(self.plotman.num_subplots)
+
         if self.settings.plot.plot_mode == PlotSettings.PLOT_NONE:
             self.run_to_completion()
         else:
@@ -399,7 +417,7 @@ class Core(Freezable):
         if self.result.has_concrete_error:
             self.print_normal("Result: Error modes are reachable (found counter-example).\n")
         elif self.result.has_aggregated_error:
-            self.print_normal("Result: Error modes are reachable when aggergation (overapproximation) was used.\n")
+            self.print_normal("Result: System is safe, although error modes were reachable when aggregation (overapproximation) was used.\n")
         else:
             self.print_normal("Result: System is safe. Error modes are NOT reachable.\n")
 
@@ -476,7 +494,8 @@ class Core(Freezable):
 
             self.sim_should_try_guards = self.settings.process_urgent_guards
             self.sim_took_transition = [False] * len(self.sim_states)
-            self.plotman.interactive.paused = True
+            self.plotman.pause()
+            self.print_verbose("Pausing due to sim pop()")
         else:
             # simulate one step for all states in sim_states
             finished = True
@@ -530,23 +549,3 @@ class Core(Freezable):
             if finished:
                 self.plotman.commit_cur_sims()
                 self.sim_states = None
-
-class HylaaResult(Freezable): # pylint: disable=too-few-public-methods
-    'result object returned by core.run()'
-
-    def __init__(self):
-        self.top_level_timer = None # TimerData for total time
-
-        # verification result:
-        self.has_aggregated_error = False
-        self.has_concrete_error = False
-
-        self.counterexample = [] # if unsafe, a list of CounterExampleSegment objects
-
-        # assigned if setting.plot.store_plot_result is True, a map name -> list of lists (the verts at each step)
-        self.mode_to_polys = defaultdict(list)
-
-        # the last core.cur_state object... used for unit testing
-        self.last_cur_state = None
-
-        self.freeze_attrs()

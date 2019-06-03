@@ -114,10 +114,10 @@ def check(a_matrix, b_matrix, step, max_time, start_point, inputs, normal_vec, e
         remaining = elapsed / ((1.0+index) / len(inputs)) - elapsed
 
         if stdout and num_steps > 1 and remaining > 2.0:
-            print "Combining {} steps (identical inputs)".format(num_steps)
+            print("Combining {} steps (identical inputs)".format(num_steps))
 
         if stdout and remaining > 2.0:
-            print "{} / {} (ETA: {:.2f} sec)".format(index, len(inputs), remaining)
+            print("{} / {} (ETA: {:.2f} sec)".format(index, len(inputs), remaining))
 
         der_func = make_der_func(a_matrix, b_matrix, inputs[index])
         new_states, new_times = sim(sim_states[-1], der_func, step * num_steps, samples_per_input * num_steps, quick)
@@ -147,10 +147,10 @@ def check(a_matrix, b_matrix, step, max_time, start_point, inputs, normal_vec, e
         data.rel_error = numerator / denominator
 
     if stdout:
-        print "Final Time: {}".format(index * step)
-        print "Absolute Error (l-2 norm): {}".format(numerator)
-        print "Relative Error (l-2 norm): {}".format(data.rel_error)
-        print "Runtime: {:.2f} seconds".format(time.time() - start)
+        print("Final Time: {}".format(index * step))
+        print("Absolute Error (l-2 norm): {}".format(numerator))
+        print("Relative Error (l-2 norm): {}".format(data.rel_error))
+        print("Runtime: {:.2f} seconds".format(time.time() - start))
 
     return (sim_states, sim_times, data)
 
@@ -187,12 +187,12 @@ def plot(sim_states, sim_times, inputs, normal_vec, normal_val, max_time, step, 
     tol = 1e-6
 
     if len(end_point) < 10:
-        print "End Point: {}".format(end_point)
+        print("End Point: {}".format(end_point))
 
     if end_val - tol <= normal_val:
-        print "End Point is a violation (within tolerance): {} - {} <= {}".format(end_val, tol, normal_val)
+        print("End Point is a violation (within tolerance): {} - {} <= {}".format(end_val, tol, normal_val))
     else:
-        print "End point is NOT a violation: {} - {} (tolerance) > {}".format(end_val, tol, normal_val)
+        print("End point is NOT a violation: {} - {} (tolerance) > {}".format(end_val, tol, normal_val))
 
     epsilon = step / 8.0 # to prevent round-off error on the end range
     input_times = np.arange(0.0, max_time + epsilon, step)

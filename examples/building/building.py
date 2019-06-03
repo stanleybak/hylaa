@@ -1,7 +1,7 @@
 '''
 Building Example in Hylaa. This is the building example from 
 
-ARCH-COMP18 Category Report: Continuous and Hybrid Systems with Linear Continuous Dynamics
+ARCH-COMP19 Category Report: Continuous and Hybrid Systems with Linear Continuous Dynamics
 
 originally from
 
@@ -76,7 +76,6 @@ def make_init(ha):
 
         bounds_list.append((lb, ub))
 
-
     mode = ha.modes['mode']
     init_lpi = lputil.from_box(bounds_list, mode)
 
@@ -97,7 +96,7 @@ def define_settings(ha, limit):
     #settings.time_elapse.scipy_sim.rtol = 1e-9
     #settings.time_elapse.scipy_sim.atol = 1e-12
 
-    #settings.skip_step_times = False
+    settings.stdout = stdout = HylaaSettings.STDOUT_VERBOSE
 
     plot_settings = settings.plot
 
@@ -117,6 +116,7 @@ def define_settings(ha, limit):
     plot_settings.label.big(size=36)
 
     settings.stop_on_concrete_error = False
+    settings.make_counterexample = False
 
     line = [(0.0, -limit), (max_time, -limit)]
     lc = collections.LineCollection([line], animated=True, colors=('red'), linewidths=(1), linestyle='dashed')
@@ -131,10 +131,19 @@ def run_hylaa():
     limit = 0.005 # unreachable
 
     ha = define_ha(limit)
-    settings = define_settings(ha, limit)
-    init_states = make_init(ha)
+    
+    tuples = []
+    tuples.append((HylaaSettings.APPROX_NONE, "approx_none.png"))
+    tuples.append((HylaaSettings.APPROX_CHULL, "approx_chull.png"))
+    #tuples.append((HylaaSettings.APPROX_LGG, "approx_lgg.png"))
 
-    Core(ha, settings).run(init_states)
+    for model, filename in tuples:
+        settings = define_settings(ha, limit)
+        settings.approx_model, settings.plot.filename = model, filename
+
+        init_states = make_init(ha)
+        print(f"\nMaking {filename}...")
+        Core(ha, settings).run(init_states)
 
 if __name__ == '__main__':
     run_hylaa()

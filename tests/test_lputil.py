@@ -7,14 +7,17 @@ import math
 import numpy as np
 
 from scipy.linalg import expm
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, csc_matrix
+from scipy.io import loadmat
 
 import swiglpk as glpk
 
 from hylaa import lputil, lpplot
 from hylaa.hybrid_automaton import HybridAutomaton, LinearConstraint
 
-from util import assert_verts_is_box
+from util import assert_verts_is_box, pair_almost_in
+
+import matplotlib.pyplot as plt
 
 def test_from_box():
     'tests from_box'
@@ -785,3 +788,101 @@ def test_box_inputs():
 
     verts = lpplot.get_verts(lpi)
     assert_verts_is_box(verts, [(2, 21), (4, 41)])
+
+def test_bloat():
+    'tests bloat'
+    
+    lpi = lputil.from_box([[-5, -4], [0, 1]], HybridAutomaton().new_mode('mode_name'))
+
+    lputil.bloat(lpi, 0.5)
+
+    verts = lpplot.get_verts(lpi)
+
+    assert_verts_is_box(verts, [(-5.5, -3.5), (-0.5, 1.5)])
+
+def test_scale():
+    'tests scale'
+    
+    lpi = lputil.from_box([[4, 5], [-1, 1]], HybridAutomaton().new_mode('mode_name'))
+
+    lputil.scale_with_bm(lpi, 2.0)
+
+    verts = lpplot.get_verts(lpi)
+
+    assert_verts_is_box(verts, [(8, 10), (-2, 2)])
+
+def test_minkowski_sum_box():
+    'tests minkowski_sum with 2 box sets'
+
+    mode = HybridAutomaton().new_mode('mode_name')
+    
+    lpi1 = lputil.from_box([[-1, 1], [-2, 2]], mode)
+    lpi2 = lputil.from_box([[-.1, .1], [-.2, .2]], mode)
+
+    lpi = lputil.minkowski_sum([lpi1, lpi2], mode)
+
+    verts = lpplot.get_verts(lpi)
+
+    assert_verts_is_box(verts, [(-1.1, 1.1), (-2.2, 2.2)])
+
+def test_minkowski_box_diamond():
+    'tests minkowski_sum of a box and a diamond'
+
+    mode = HybridAutomaton().new_mode('mode_name')
+    
+    lpi1 = lputil.from_box([[-1, 1], [-1, 1]], mode)
+
+    # -1 <= x + y <= 1
+    # -1 <= x - y <= 1
+    constraints_mat = [[1, 1], [-1, -1], [1, -1], [-1, 1]]
+    constraints_rhs = [1, 1, 1, 1]
+    lpi2 = lputil.from_constraints(constraints_mat, constraints_rhs, mode)
+    
+    #verts = lpplot.get_verts(lpi1)
+    #xs, ys = zip(*verts)
+    #plt.plot(xs, ys, 'r--')
+
+    #verts = lpplot.get_verts(lpi2)
+    #xs, ys = zip(*verts)
+    #plt.plot(xs, ys, 'b--')
+
+    lpi = lputil.minkowski_sum([lpi1, lpi2], mode)
+
+    #verts = lpplot.get_verts(lpi)
+    #xs, ys = zip(*verts)
+    #plt.plot(xs, ys, 'k:')
+    
+    #plt.show()
+
+    verts = lpplot.get_verts(lpi)
+    assert len(verts) == 9 # octogon + wrap
+
+    expected = [(-2, 1), (-2, -1), (-1, -2), (1, -2), (2, -1), (2, 1), (1, 2), (-1, 2)]
+
+    for pt in expected:
+        assert pair_almost_in(pt, verts), f"{pt} not found in verts: {verts}"
+
+def test_from_input_constraints():
+    'test making an lpi set from input constraints'
+
+    mode = HybridAutomaton().new_mode('mode_name')
+
+    b_mat = [[1], [0]]
+    b_constraints = [[1], [-1]]
+    b_rhs = [0.2, 0.2]
+
+    # result should have two vertices, at (-0.2, 0) and (0.2, 0)
+    lpi = lputil.from_input_constraints(b_mat, b_constraints, b_rhs, mode)
+
+    print(lpi)
+
+    assert lpi.get_num_cols() == 5
+    assert lpi.cur_vars_offset == 3
+    
+    verts = lpplot.get_verts(lpi)
+    assert len(verts) == 3 # 2 + wrap
+
+    expected = [(-0.2, 0), (0.2, 0)]
+
+    for pt in expected:
+        assert pair_almost_in(pt, verts), f"{pt} not found in verts: {verts}"

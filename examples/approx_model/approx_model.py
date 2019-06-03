@@ -1,10 +1,13 @@
 '''
-Harmonic Oscillator (with time) Example in Hylaa
+Harmonic Oscillator Example in Hylaa, demonstrating using
+various approximation models for continuous-time reachability
 
-Very simple 2-d example:
 
-x' == y
-y' == -x
+dynamics are:
+x' = y + u1
+y' = -x
+starting from [-5, -4], [0, 1]
+with u1 in [-0.2, 0.2]
 '''
 
 import math
@@ -23,12 +26,15 @@ def define_ha():
 
     ha = HybridAutomaton()
 
-    # dynamics: x' = y, y' = -x
-    a_matrix = np.array([[0, 1], [-1, 0]], dtype=float)
-    a_csr = csr_matrix(a_matrix, dtype=float)
+    a_matrix = [[0, 1], [-1, 0]]
+
+    b_mat = [[1], [0]]
+    b_constraints = [[1], [-1]]
+    b_rhs = [0.2, 0.2]
 
     mode = ha.new_mode('mode')
-    mode.set_dynamics(a_csr)
+    mode.set_dynamics(a_matrix)
+    mode.set_inputs(b_mat, b_constraints, b_rhs)
 
     return ha
 
@@ -37,7 +43,8 @@ def make_init(ha):
 
     mode = ha.modes['mode']
     # init states: x in [-5, -4], y in [0, 1]
-    init_lpi = lputil.from_box([[-5, -4], [0, 1]], mode)
+    #init_lpi = lputil.from_box([[-5, -4], [0, 1]], mode)
+    init_lpi = lputil.from_box([[-5, -5], [0, 0]], mode)
 
     init_list = [StateSet(init_lpi, mode)]
 
@@ -46,8 +53,8 @@ def make_init(ha):
 def define_settings():
     'get the hylaa settings object'
 
-    step = math.pi/4
-    max_time = 1 * math.pi / 2
+    step = math.pi/16
+    max_time = 2*math.pi
     settings = HylaaSettings(step, max_time)
 
     plot_settings = settings.plot
@@ -72,9 +79,18 @@ def run_hylaa():
 
     ha = define_ha()
     settings = define_settings()
-    init_states = make_init(ha)
 
-    Core(ha, settings).run(init_states)
+    tuples = []
+    tuples.append((HylaaSettings.APPROX_NONE, "approx_none.png"))
+    tuples.append((HylaaSettings.APPROX_CHULL, "approx_chull.png"))
+    tuples.append((HylaaSettings.APPROX_LGG, "approx_lgg.png"))
+
+    for model, filename in tuples: 
+        settings.approx_model, settings.plot.filename = model, filename
+
+        init_states = make_init(ha)
+        print(f"\nMaking {filename}...")
+        Core(ha, settings).run(init_states)
 
 if __name__ == '__main__':
     run_hylaa()

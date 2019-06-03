@@ -12,6 +12,7 @@ import numpy as np
 import scipy as sp
 from scipy.sparse import csr_matrix, csc_matrix, hstack
 
+import swiglpk as glpk
 from hylaa.lpinstance import LpInstance, SwigArray
 from hylaa.timerutil import Timers
 
@@ -175,8 +176,8 @@ def from_constraints(csr, rhs, mode, types=None, names=None, dims=None):
         lpi.add_rows_equal_zero(dims)
 
         # -I
-        csr = -1 * sp.sparse.identity(dims, dtype=float, format='csr')
-        lpi.set_constraints_csr(csr, offset=ie_pos)
+        csr_ti = -1 * sp.sparse.identity(dims, dtype=float, format='csr')
+        lpi.set_constraints_csr(csr_ti, offset=ie_pos)
     else:
         ie_pos = None
 
@@ -214,27 +215,43 @@ def set_basis_matrix(lpi, basis_mat):
         
     lpi.set_constraints_swigvec_rows(data_vec_list, lpi.bm_indices, count_list, lpi.basis_mat_pos[0])
 
-def add_input_effects_matrix(lpi, input_mat, mode):
+def add_input_effects_matrix(lpi, input_mat, mode, lgg_beta=None):
     'add an input effects matrix to this lpi'
 
     assert lpi.input_effects_offsets is not None
     assert mode.b_csr is not None
-    assert mode.b_csr.shape[1] == input_mat.shape[1]
-    assert input_mat.shape[0] == mode.a_csr.shape[0]
-    assert lpi.dims == mode.a_csr.shape[0]
 
-    num_inputs = input_mat.shape[1]
+    num_vars = mode.a_csr.shape[1]
+    num_inputs = mode.b_csr.shape[1]
     num_constraints = len(mode.u_constraints_rhs)
+
+    # if lgg approximation model is used, then input effects will also bloat in every dimension by beta
+    # this makes the input effects matrix wider
+    if lgg_beta is None:
+        assert input_mat.shape[1] == num_inputs
+    else:
+        assert input_mat.shape[1] + num_inputs + num_vars
+    
+    assert input_mat.shape[0] == num_vars
+    assert lpi.dims == num_vars
 
     # add new row/cols
     names = ["m{}_I{}".format(mode.mode_id, i) for i in range(num_inputs)]
+
+    if lgg_beta is not None: # bloating variables
+        names += ["m{}_b{}".format(mode.mode_id, i) for i in range(num_vars)]
+    
     pre_cols = lpi.get_num_cols()
     lpi.add_cols(names)
 
     pre_rows = lpi.get_num_rows()
     lpi.add_rows_less_equal(mode.u_constraints_rhs)
 
-    # set constaints on the rows/cols, as well as the input basis matrix using a csc_matrix
+    if lgg_beta is not None: # bloating constraints
+        pre_bloat_rows = lpi.get_num_rows()
+        lpi.add_rows_less_equal([lgg_beta] * (2 * num_vars))
+
+    # set constraints on the rows/cols, as well as the input basis matrix using a csc_matrix
     data = []
     inds = []
     indptr = [0]
@@ -255,9 +272,30 @@ def add_input_effects_matrix(lpi, input_mat, mode):
 
         indptr.append(len(data))
 
+    if lgg_beta is not None: # constraints for bloating
+        for v in range(num_vars):
+            # input basis matrix column num_inputs + v
+            for row in range(num_vars):
+                data.append(input_mat[row, num_inputs + v])
+                inds.append(row + lpi.input_effects_offsets[0])
+
+            # constraints_csr column corresponding to variable v
+            data.append(1)
+            inds.append(pre_bloat_rows + 2*v)
+
+            data.append(-1)
+            inds.append(pre_bloat_rows + 2*v + 1)
+
+            indptr.append(len(data))
+
+    num_cols = num_inputs
     num_rows = pre_rows + num_constraints
+
+    if lgg_beta is not None:
+        num_rows += 2 * num_vars
+        num_cols += num_vars
     
-    csc = csc_matrix((data, inds, indptr), shape=(num_rows, num_inputs), dtype=float)
+    csc = csc_matrix((data, inds, indptr), shape=(num_rows, num_cols), dtype=float)
     csc.check_format()
 
     lpi.set_constraints_csc(csc, offset=(0, pre_cols))
@@ -577,7 +615,57 @@ def aggregate(lpi_list, direction_matrix, mode):
 def get_basis_matrix(lpi):
     'get the basis matrix from the lpi'
 
-    return lpi.get_dense_constraints(lpi.basis_mat_pos[0], lpi.basis_mat_pos[1], lpi.dims, lpi.dims)
+    row = lpi.basis_mat_pos[0]
+    col = lpi.basis_mat_pos[1]
+
+    # get_dense_constraints takes in x and y
+    return lpi.get_dense_constraints(col, row, lpi.dims, lpi.dims)
+
+def scale_with_bm(lpi, amount):
+    '''
+    scale the current set using the basis matrix
+    '''
+
+    bm = get_basis_matrix(lpi)
+    set_basis_matrix(lpi, amount * bm)
+
+def bloat(lpi, amount, var_name_prefix='bloat'):
+    '''
+    bloat the current set of states
+    '''
+
+    assert amount >= 0
+
+    # strategy add n variables with bounds -amount <= x <= amount
+    names = [f"{var_name_prefix}{n}" for n in range(lpi.dims)]
+    precols = lpi.get_num_cols()
+    prerows = lpi.get_num_rows()
+
+    data = []
+    inds = []
+    indptr = [0]
+
+    for n in range(lpi.dims):
+        # 1.0 entry in the basis matrix row for variable n
+        data.append(1)
+        inds.append(lpi.basis_mat_pos[0] + n)
+        
+        # x <= amount
+        data.append(1)
+        inds.append(prerows + 2*n)
+
+        # -x <= amount ---> x >= -amount
+        data.append(-1)
+        inds.append(prerows + 2*n + 1)
+        indptr.append(len(data))
+
+    mat = csc_matrix((data, inds, indptr), shape=(prerows + 2*lpi.dims, lpi.dims), dtype=float)
+
+    rhs = [amount] * (2 * lpi.dims)
+    lpi.add_rows_less_equal(rhs)
+    lpi.add_cols(names)
+
+    lpi.set_constraints_csc(mat, offset=(0, precols))
 
 def add_reset_variables(lpi, mode_id, transition_index, # pylint: disable=too-many-locals, too-many-statements
                         reset_csr=None, minkowski_csr=None,
@@ -948,3 +1036,135 @@ def is_point_in_lpi(point, orig_lpi):
     add_curtime_constraints(lpi, csr, rhs)
 
     return lpi.is_feasible()
+
+def compute_radius_inf(lpi):
+    '''
+    compute the max ||x||, x in lpi, according to the infinity norm
+
+    This uses 2*n LPs and then returns the maximum over all components
+    '''
+
+    max_val = -float('inf')
+
+    for n in range(lpi.dims):
+        for posneg in [1.0, -1.0]:
+            dir_vec = [posneg if n == d else 0.0 for d in range(lpi.dims)]
+
+            lp_result = lpi.minimize(dir_vec)
+
+            max_val = max(max_val, abs(lp_result[n]))
+
+    return max_val
+
+def minkowski_sum(lpi_list, mode):
+    '''
+    perform a minkowski sum of the passed-in sets, and return the resultant lpi
+    '''
+
+    for lpi in lpi_list:
+        assert lpi.dims == lpi_list[0].dims, "dimension mismatch during minkowski sum"
+
+    dims = lpi_list[0].dims
+
+    csr_list = []
+    combined_rhs = [0] * dims
+    combined_types = [glpk.GLP_FX] * dims
+    combined_names = [f"c{n}" for n in range(dims)]
+
+    total_new_vars = dims
+
+    for i, lpi in enumerate(lpi_list):
+        csr = lpi.get_full_constraints()
+        csr_list.append(csr)
+        combined_rhs += [v for v in lpi.get_rhs()]
+        combined_types += lpi.get_types()
+
+        total_new_vars += csr.shape[1]
+        combined_names += [f"l{i}_{v}" for v in range(csr.shape[1])]
+
+    # create combined_csr constraints
+    data = []
+    indices = []
+    indptr = [0]
+
+    for d in range(dims):
+        data.append(1)
+        indices.append(d)
+        col_offset = dims
+
+        for lpi in lpi_list:
+            data.append(-1)
+            indices.append(col_offset + lpi.cur_vars_offset + d)
+
+            col_offset += lpi.get_num_cols()
+
+        indptr.append(len(data))
+
+    # copy constraints from each lpi
+    col_offset = dims
+    indptr_offset = indptr[-1]
+    
+    for csr in csr_list:
+        data += [d for d in csr.data]
+        indices += [col_offset + i for i in csr.indices]
+        indptr += [indptr_offset + i for i in csr.indptr[1:]]
+
+        col_offset += csr.shape[1]
+        indptr_offset = indptr[-1]
+
+    rows = len(combined_rhs)
+    cols = col_offset
+    combined_csr = csr_matrix((data, indices, indptr), shape=(rows, cols), dtype=float)
+
+    # from_constraints assumes left-most variables are current-time variables
+    return from_constraints(combined_csr, combined_rhs, mode, types=combined_types, names=combined_names, dims=dims)
+
+def from_input_constraints(b_mat, u_constraints, u_rhs, mode):
+    'create an lpi from input constraints (B matrix and constraints on U)'
+
+    if not isinstance(b_mat, csr_matrix):
+        b_mat = csr_matrix(b_mat, dtype=float)
+
+    if not isinstance(u_constraints, csr_matrix):
+        u_constraints = csr_matrix(u_constraints, dtype=float)
+
+    if not isinstance(u_rhs, np.ndarray):
+        u_rhs = np.array(u_rhs, dtype=float)
+
+    # V = B U
+    dims = b_mat.shape[0]
+
+    combined_rhs = [0] * dims
+    combined_types = [glpk.GLP_FX] * dims
+    combined_names = [f"c{n}" for n in range(dims)]
+
+    combined_rhs += [v for v in u_rhs]
+    combined_types += [glpk.GLP_UP] * u_constraints.shape[0]
+    combined_names += [f"u{n}" for n in range(b_mat.shape[1])]
+
+    # create combined_csr constraints
+    data = []
+    indices = []
+    indptr = [0]
+
+    for d in range(dims):
+        data.append(-1)
+        indices.append(d)
+
+        data += [d for d in b_mat.data[b_mat.indptr[d]:b_mat.indptr[d+1]]]
+        indices += [dims + i for i in b_mat.indices[b_mat.indptr[d]:b_mat.indptr[d+1]]]
+
+        indptr.append(len(data))
+
+    indptr_offset = indptr[-1]
+    
+    data += [d for d in u_constraints.data]
+    indices += [dims + i for i in u_constraints.indices]
+    indptr += [indptr_offset + i for i in u_constraints.indptr[1:]]
+
+    rows = dims + u_constraints.shape[0]
+    cols = dims + b_mat.shape[1]
+    combined_csr = csr_matrix((data, indices, indptr), shape=(rows, cols), dtype=float)
+
+    # from_constraints assumes left-most variables are current-time variables
+    return from_constraints(combined_csr, combined_rhs, mode, types=combined_types, names=combined_names, dims=dims)

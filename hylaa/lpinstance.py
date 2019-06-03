@@ -18,7 +18,7 @@ class StaticSettings(): # pylint: disable=too-few-public-methods
 
     # swiglpk has a memory leak: https://github.com/biosustain/swiglpk/issues/31
     # how much memory should we allow to be used before we print a message and quit
-    MAX_MEMORY_SWIGLPK_LEAK_GB = 1.0 # 2.0
+    MAX_MEMORY_SWIGLPK_LEAK_GB = 8.0
 
 def simple_print(s):
     'print using the print function'
@@ -39,7 +39,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
 
         # these are assigned on set_reach_vars()
         self.dims = None
-        self.basis_mat_pos = None # 2-tuple
+        self.basis_mat_pos = None # 2-tuple, row, column (NOT X/Y)
         self.cur_vars_offset = None
         self.input_effects_offsets = None # None or 2-tuple, row of input constraints / col of accumulated input effects
 
@@ -533,15 +533,15 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
             for i, direction in enumerate(direction_vec):
                 col = int(1 + offset + i)
                 self.obj_cols.append(col)
-                glpk.glp_set_obj_coef(self.lp, col, direction)
+                glpk.glp_set_obj_coef(self.lp, col, float(direction))
 
         Timers.toc("set_minimize_direction")
 
     def minimize(self, direction_vec=None, columns=None, fail_on_unsat=True):
-        '''minimize the lp
+        '''minimize the lp, returning a list of assigments to each of the variables
 
-        if direction_vec is not None, this will first assign the optimization direction
-        if columns is not None, will only return the requested columns (default= all columns)
+        if direction_vec is not None, this will first assign the optimization direction (note: relative to cur_vars)
+        if columns is not None, will only return the requested columns (default: all columns)
         if fail_on_unsat is True and the LP is infeasible, an UnsatError is raised
         unsat (sometimes happens in GLPK due to likely bug, see space station model)
 
@@ -766,7 +766,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         lp_rows = self.get_num_rows()
         lp_cols = self.get_num_cols()
 
-        assert x >= 0 and w >= 0 and x + w <= lp_cols, "invalid x range requested"
+        assert x >= 0 and w >= 0 and x + w <= lp_cols, f"invalid x range requested, lpcols = {lp_cols}"
         assert y >= 0 and h >= 0 and y + h <= lp_rows, "invalid y range requested"
 
         inds_row = glpk.intArray(lp_cols + 1)

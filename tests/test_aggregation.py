@@ -417,7 +417,7 @@ def test_plain():
     assert op0.parent_node.stateset.aggdag_op_list[0] is None
      
     # check polygons in m2
-    polys2 = result.mode_to_polys['m2']
+    polys2 = [obj[0] for obj in result.plot_data.mode_to_obj_list[0]['m2']]
 
     assert 4 <= len(polys2) <= 5
 
@@ -525,7 +525,7 @@ def test_agg_to_more_vars():
 
     result = Core(ha, settings).run(init_list)
 
-    polys = result.mode_to_polys['m1']
+    polys = [obj[0] for obj in result.plot_data.mode_to_obj_list[0]['m1']]
 
     # 4 steps because invariant is allowed to be false for the final step
     assert 4 <= len(polys) <= 5, "expected invariant to become false after 4/5 steps"
@@ -535,7 +535,7 @@ def test_agg_to_more_vars():
     assert_verts_is_box(polys[2], [[2, 3], [1, 1]])
     assert_verts_is_box(polys[3], [[3, 4], [1, 1]])
 
-    polys = result.mode_to_polys['m2']
+    polys = [obj[0] for obj in result.plot_data.mode_to_obj_list[0]['m2']]
 
     assert_verts_is_box(polys[0], [[1, 4], [3, 3]])
     assert_verts_is_box(polys[1], [[1, 4], [4, 4]])
@@ -758,3 +758,35 @@ def test_chull_drivetrain():
 
     for vert in all_verts:
         assert lputil.is_point_in_lpi(vert, chull_lpi)
+
+def test_chull_one_step_inputs():
+    'test convex hull with one-step lpi for a system with inputs (bug where current vars was not set correctly)'
+
+    mode = HybridAutomaton().new_mode('mode_name')
+
+    step_size = math.pi/4
+
+    a_mat = np.array([[0, 1], [-1, 0]], dtype=float)
+
+    b_mat = [[1], [0]]
+    b_constraints = [[1], [-1]]
+    b_rhs = [0.2, 0.2]
+
+    mode.set_dynamics(a_mat)
+    mode.set_inputs(b_mat, b_constraints, b_rhs)
+    mode.init_time_elapse(step_size)
+
+    box = [[-5, -4], [0.0, 1.0]]
+    lpi = lputil.from_box(box, mode)
+
+    lpi_one_step = lpi.clone()
+    bm, ie_mat = mode.time_elapse.get_basis_matrix(1)
+
+    lputil.set_basis_matrix(lpi_one_step, bm)
+    lputil.add_input_effects_matrix(lpi_one_step, ie_mat, mode)
+
+    lpi_list = [lpi, lpi_one_step]
+    chull_lpi = lputil.aggregate_chull(lpi_list, mode)
+
+    # 2 current vars and 2 total input effect vars, so expected to be 4 from the end
+    assert chull_lpi.cur_vars_offset == chull_lpi.get_num_cols() - 4, "cur_vars in wrong place"
