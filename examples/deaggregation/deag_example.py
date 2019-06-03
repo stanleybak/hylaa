@@ -73,7 +73,7 @@ def make_settings(unsafe_box):
 
     settings.plot.video_pause_frames = 5
     settings.plot.video_fps = 5
-    settings.plot.plot_mode = PlotSettings.PLOT_INTERACTIVE
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
     settings.plot.interactive_skip_count = 5
 
     #settings.plot.plot_mode = PlotSettings.PLOT_VIDEO

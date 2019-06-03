@@ -396,6 +396,11 @@ class Core(Freezable):
 
         self.setup(init_state_list)
 
+        if self.settings.plot.plot_mode == PlotSettings.PLOT_INTERACTIVE:
+            # make sure to store plot result for on_click listener to report on
+            self.print_verbose(f"Setting store_plot_result to true since PLOT_INTERACTIVE has click listener")
+            self.settings.plot.store_plot_result = True
+
         if self.settings.plot.store_plot_result:
             self.result.plot_data = PlotData(self.plotman.num_subplots)
 

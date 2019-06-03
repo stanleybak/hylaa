@@ -927,9 +927,6 @@ class PlotManager(Freezable):
             # add mouse-click listener
             cid = self.fig.canvas.mpl_connect('button_press_event', on_click)
 
-            # make sure to store plot result for on_click listener to report on
-            self.settings.store_plot_result = True
-
         if self.settings.plot_mode == PlotSettings.PLOT_IMAGE:
             self.run_to_completion()
             self.save_image()
