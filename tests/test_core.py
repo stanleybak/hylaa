@@ -665,7 +665,7 @@ def test_tt_split():
     settings.plot.plot_mode = PlotSettings.PLOT_IMAGE
     settings.plot.xdim_dir = 0
     settings.plot.ydim_dir = 3
-    settings.stdout = HylaaSettings.STDOUT_NONE
+    settings.stdout = HylaaSettings.STDOUT_DEBUG
 
     init_list = []
     mode = ha.modes['pole']
@@ -683,6 +683,7 @@ def test_tt_split():
         [-0, -0, -0, -0, -0, -1, -0], \
         [0, 0, 0, 0, 0, 0, 1], \
         [-0, -0, -0, -0, -0, -0, -1], ]
+        
     rhs = [0, -0, 0, -0, 0, -0, 1.3, -1.3, 0, -0, 0, -0, 1, -1, ]
     init_list.append(StateSet(lputil.from_constraints(mat, rhs, mode), mode))
 
@@ -745,13 +746,108 @@ def test_multiple_init_states():
 def test_stateset_bad_init():
     'test constructing a stateset with a basis matrix that is not the identity (should raise error)'
 
-    # this is from an issue reported by Mojtaba Zarei 
+    # this is from an issue reported by Mojtaba Zarei
 
-    assert False, "todo"
+    ha = HybridAutomaton()
 
+    mode = ha.new_mode('mode')
+    mode.set_dynamics([[0, 1], [-1, 0]])
+
+    # initial set
+    init_lpi = lputil.from_box([(-5, -5), (0, 1)], mode)
+    init_list = [StateSet(init_lpi, mode)]
+
+    # settings
+    settings = HylaaSettings(math.pi/4, math.pi)
+    settings.stdout = HylaaSettings.STDOUT_NONE
+    settings.plot.store_plot_result = True
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
+    
+    core = Core(ha, settings)
+    result = core.run(init_list)
+
+    # use last result
+    stateset = result.last_cur_state
+    mode = stateset.mode
+    lpi = stateset.lpi
+
+    try:
+        init_states = [StateSet(lpi, mode)]
+        settings = HylaaSettings(0.1, 0.1)
+        core = Core(ha, settings)
+
+        result = core.run(init_states)
+        assert False, "assertion should be raised if init basis matrix is not identity"
+    except RuntimeError:
+        pass
+        
 def test_tt_09():
     'test time-triggered transition at 0.9 bug'
 
-    # this is from an issue reported by Mojtaba Zarei 
+    # this test is from an issue reported by Mojtaba Zarei
+    tt_time = 0.9
+    
+    ha = HybridAutomaton()
 
-    assert False, "todo"
+    # the test seems to be sensitive to the a_matrix... my guess is the LP is barely feasible at the tt_time
+    a_matrix = np.array(
+        [[6.037291088, -4.007840286, 2.870370645, 43.12729646, 10.06751155, 23.26084098, -0.001965587832, 0, 0],
+         [3.896645707, -0.03417905392, -9.564966476, 15.25894014, -21.57196438, 16.60548055, 0.03473846441, 0, 0],
+         [22.72995871, 14.12055097, -0.9315267908, 136.9851951, -71.66383111, 109.7143863, 0.1169799769, 0, 0],
+         [-38.16694597, 3.349061908, -9.10171149, -185.1866526, 9.210877185, -165.8086527, -0.06858712649, 0, 0],
+         [46.78596597, 27.7996521, 17.18120319, 285.4632424, -135.289626, 235.9427441, 0.228154713, 0, 0],
+         [-8.31135303, 3.243945466, -4.523811735, -39.26067436, -9.385678542, -36.63193931, -0.0008874747046, 0, 0],
+         [0, 0, 0, 0, 0, 0, 0, 0, 0],
+         [0, 0, 0, 0, 0, 0, 0, 0, 1],
+         [0, 0, 0, 0, 0, 0, 0, 0, 0]], dtype=float)
+
+    mode1 = ha.new_mode('mode')
+    mode1.set_dynamics(a_matrix)
+
+    # time-triggered invariant: t <= tt_time
+    mat = np.array([[0, 0, 0, 0, 0, 0, 0, 1, 0]], dtype=float)
+    rhs = [tt_time]
+
+    mode1.set_invariant(mat, rhs)
+    
+    mode2 = ha.new_mode('mode2')
+    mode2.set_dynamics(a_matrix)
+
+    # transition, guard: x >= -2 & y > 4 & t >= tt_time
+
+    # transition, guard: t >= 0.9
+    mat = np.array([[0, 0, 0, 0, 0, 0, 0, -1, 0]], dtype=float)
+    rhs = [-tt_time]
+    
+    t = ha.new_transition(mode1, mode2)
+    t.set_guard(mat, rhs)
+
+    # initial set
+    init_box = np.array([[-0.1584, -0.1000],
+                         [-0.0124, 0.0698],
+                         [-0.3128, 0.0434],
+                         [-0.0208, 0.0998],
+                         [-0.4895, 0.1964],
+                         [-0.0027, 0.0262],
+                         [42.40, 42.5],
+                         [0, 0], # t(0) = 0
+                         [1, 1]]) # affine(0) = 1
+    
+    init_lpi = lputil.from_box(init_box, mode1)
+    init_list = [StateSet(init_lpi, mode1)]
+
+    # settings
+    settings = HylaaSettings(0.05, 1.0)
+    settings.stdout = HylaaSettings.STDOUT_DEBUG
+    settings.plot.store_plot_result = True
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE #INTERACTIVE
+
+    #settings.plot.xdim_dir = 7 #None
+    #settings.plot.ydim_dir = 0
+    
+    core = Core(ha, settings)
+    result = core.run(init_list)
+
+    mode2_list = result.plot_data.mode_to_obj_list[0]['mode2']
+    assert len(mode2_list) == 3, f"mode2_list len was {len(mode2_list)}, expected 3 (0.9, 0.95, 1.0)"
+

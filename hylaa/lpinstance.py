@@ -766,7 +766,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         lp_rows = self.get_num_rows()
         lp_cols = self.get_num_cols()
 
-        assert x >= 0 and w >= 0 and x + w <= lp_cols, "invalid x range requested"
+        assert x >= 0 and w >= 0 and x + w <= lp_cols, f"invalid x range requested, lpcols = {lp_cols}"
         assert y >= 0 and h >= 0 and y + h <= lp_rows, "invalid y range requested"
 
         inds_row = glpk.intArray(lp_cols + 1)

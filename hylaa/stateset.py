@@ -53,6 +53,10 @@ class StateSet(Freezable):
 
         # mode might be an error mode, in which case a_csr is None
         self.basis_matrix = None if mode.a_csr is None else np.identity(mode.a_csr.shape[0])
+
+        if mode.a_csr is not None and not np.allclose(lputil.get_basis_matrix(lpi), self.basis_matrix):
+            raise RuntimeError("lpi basis matrix in StateSet constructor was not the identity. " + \
+                               "Did you construct the lpi using the lputil.from_*() functions?")
         
         self.input_effects_list = None if mode.b_csr is None else [] # list of input effects at each step
 

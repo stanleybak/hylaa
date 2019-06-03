@@ -615,7 +615,11 @@ def aggregate(lpi_list, direction_matrix, mode):
 def get_basis_matrix(lpi):
     'get the basis matrix from the lpi'
 
-    return lpi.get_dense_constraints(lpi.basis_mat_pos[0], lpi.basis_mat_pos[1], lpi.dims, lpi.dims)
+    row = lpi.basis_mat_pos[0]
+    col = lpi.basis_mat_pos[1]
+
+    # get_dense_constraints takes in x and y
+    return lpi.get_dense_constraints(col, row, lpi.dims, lpi.dims)
 
 def scale_with_bm(lpi, amount):
     '''

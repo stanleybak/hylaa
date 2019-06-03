@@ -152,7 +152,7 @@ class Core(Freezable):
 
                 # if it's a time-triggered transition, we may remove cur_state immediately
                 if self.settings.optimize_tt_transitions and t.time_triggered:
-                    if was_tt_taken(cur_state.lpi, t):
+                    if was_tt_taken(cur_state.lpi, t, self.settings.step_size, self.settings.num_steps):
                         self.print_verbose("Transition was time-triggered, finished with current state analysis")
                         self.took_tt_transition = True
                     else:
@@ -327,10 +327,10 @@ class Core(Freezable):
 
         Timers.tic('setup')
 
+        assert init_state_list and isinstance(init_state_list, list), "expected list of initial states"
+
         for state in init_state_list:
             assert isinstance(state, StateSet), "initial states should be a list of StateSet objects"
-
-        assert init_state_list, "expected list of initial states"
 
         self.result = HylaaResult()
 
@@ -341,7 +341,7 @@ class Core(Freezable):
             mode.init_time_elapse(self.settings.step_size)
 
         if self.settings.optimize_tt_transitions:
-            ha.detect_tt_transitions(self.print_debug)
+            ha.detect_tt_transitions(self.settings.step_size, self.settings.num_steps, self.print_debug)
 
         if self.settings.do_guard_strengthening:
             ha.do_guard_strengthening()

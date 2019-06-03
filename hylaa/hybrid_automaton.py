@@ -569,7 +569,7 @@ class HybridAutomaton(Freezable):
                 t.guard_csr = new_guard_csr
                 t.guard_rhs = new_guard_rhs
 
-    def detect_tt_transitions(self, print_func=None):
+    def detect_tt_transitions(self, step_size=1.0, num_steps=100, print_func=None):
         '''
         Mark all time-triggered transitions within the automaton.
 
@@ -581,6 +581,9 @@ class HybridAutomaton(Freezable):
         at verification-time, a further check will make sure that a is a constant (not an interval), not equal to 0, 
         and that x is flat (not an interval)
         '''
+
+        # relax constaints by epsilon to prevent missing transition due to floating-point errors
+        epsilon = step_size / num_steps / 1000.0
 
         if print_func is None:
             def simple_print(s):
@@ -605,7 +608,7 @@ class HybridAutomaton(Freezable):
 
             # at this point, we know which variables are constantly changing... check guards / invariants
             for t in mode.transitions:
-                if is_time_triggered(t, tt_vars, print_func):
+                if check_and_relax_time_triggered(t, tt_vars, epsilon, print_func):
                     t.time_triggered = True
 
 def get_tt_vars(mode):
@@ -636,10 +639,10 @@ def get_tt_vars(mode):
         if all_constant:
             tt_vars.append(row_index)
 
-    return tt_vars    
+    return tt_vars
 
-def is_time_triggered(t, tt_vars, print_func):
-    '''is the passed-in transition time triggered?
+def check_and_relax_time_triggered(t, tt_vars, epsilon, print_func):
+    '''is the passed-in transition time triggered? If so, relax it by epsilon
 
     t is a transition
     tt_vars is a list of variables with derivatives that only depend on constant terms, like 't' in: t' = a, a' = 0
@@ -666,7 +669,7 @@ def is_time_triggered(t, tt_vars, print_func):
     if all_invariant_tt:
         print_func("all invariant conditions are on time-triggered variables... checking for tt guard")
 
-        for row, rhs in zip(t.guard_csr, t.guard_rhs):
+        for index, (row, rhs) in enumerate(zip(t.guard_csr, t.guard_rhs)):
             print_func("checking guard {} <= {}".format(row.toarray(), rhs))
                                 
             all_tt_vars = True
@@ -691,27 +694,33 @@ def is_time_triggered(t, tt_vars, print_func):
                         break
 
                 if found_invariant:
+                    t.guard_rhs[index] += epsilon # perform epsilon relaxation
+                    print_func("relaxed guard to {} <= {}".format(row.toarray(), t.guard_rhs[index]))
+                
                     rv = True
-                    break
 
-                print_func("Guard {} <= {} {} time triggered".format(row.toarray(), rhs, "is" if rv else "is NOT"))
-
-                if rv:
-                    break
+            print_func("Guard {} <= {} {} time triggered".format(row.toarray(), rhs, "was" if rv else "was NOT"))
+                
 
         print_func("Static Check: Transition {} {} time triggered".format(t, "is" if rv else "is NOT"))
                    
     return rv
 
-def was_tt_taken(state_lpi, t):
+def was_tt_taken(state_lpi, t, step_size, num_steps):
     '''do the run-time checks to see if this transition was a time-triggred one
 
     if we have x <= K, with x' = -5 * a,
     make sure that a is a constant (not an interval), not equal to 0, and that x is flat (not an interval)
     '''
 
+    # epsilon tolerance is computed to be fatter than the relaxation performed for tt transition
+    epsilon = 2 * step_size / num_steps / 1000.0
+    #print(f". epsilon in was_tt_taken: {epsilon}")
+
     rv = False
     tt_vars = get_tt_vars(t.from_mode)
+
+    #print(f". tt_vars: {tt_vars}")
 
     # find the tt-guard condition first
     for row, rhs in zip(t.guard_csr, t.guard_rhs):
@@ -732,7 +741,7 @@ def was_tt_taken(state_lpi, t):
             for lc in t.from_mode.inv_list:
                 #print(". checking for inverse with invariant {} <= {}".format(lc.csr.toarray(), lc.rhs))
 
-                if lc.rhs == -1 * rhs and (-1 * lc.csr != row[0]).nnz == 0:
+                if abs(lc.rhs - (-1 * rhs)) < epsilon and (-1 * lc.csr != row[0]).nnz == 0:
                     #print(". found opposite invariant condition")
                     found_invariant = True
                     break
@@ -772,7 +781,7 @@ def was_tt_taken(state_lpi, t):
 
             #print(". affine var {}, min_val = {}, max_val = {}".format(var, min_val, max_val))
 
-            if abs(max_val - min_val) > 1e-9 or abs(max_val) < 1e-9:
+            if abs(max_val - min_val) > epsilon or abs(max_val) < epsilon:
                 all_affine_nonzero = False
                 break
 
@@ -791,7 +800,7 @@ def was_tt_taken(state_lpi, t):
 
             #print(". min_val = {}, max_val = {}, rhs = {}".format(min_val, max_val, rhs))
 
-            if abs(max_val - min_val) < 1e-9 and min_val <= rhs:
+            if abs(max_val - min_val) < epsilon and min_val <= rhs:
                 rv = True
-
+                
     return rv
