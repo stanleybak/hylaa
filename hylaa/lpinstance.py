@@ -39,7 +39,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
 
         # these are assigned on set_reach_vars()
         self.dims = None
-        self.basis_mat_pos = None # 2-tuple
+        self.basis_mat_pos = None # 2-tuple, row, column (NOT X/Y)
         self.cur_vars_offset = None
         self.input_effects_offsets = None # None or 2-tuple, row of input constraints / col of accumulated input effects
 
