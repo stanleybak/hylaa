@@ -11,8 +11,8 @@ import math
 import numpy as np
 from scipy.spatial import ConvexHull
 
-import kamenev
-from timerutil import Timers
+import hylaa.kamenev as kamenev
+from hylaa.timerutil import Timers
 
 def pt_to_plot_xy(pt, xdim=0, ydim=1, cur_time=0.0):
     '''convert a point to an x/y pair for plotting
@@ -154,12 +154,8 @@ def get_verts(lpi, xdim=0, ydim=1, plot_vecs=None, cur_time=0.0):
         if len(verts) > 2:
             # make 2-d convex hull to fix the order
             hull = ConvexHull(verts)
-            rv = []
 
-            for simplex in hull.simplices:
-                rv.append((verts[simplex, 0], verts[simplex, 1]))
-
-            verts = rv
+            verts = [[verts[i, 0], verts[i, 1]] for i in hull.vertices]
 
         # old method
         #pts = find_boundary_pts(lpi, xdim, ydim, plot_vecs, bboxw)

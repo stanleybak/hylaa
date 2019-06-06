@@ -11,8 +11,7 @@ import numpy as np
 import scipy as sp
 from scipy.spatial import ConvexHull
 
-
-from timerutil import Timers
+from hylaa.timerutil import Timers
 
 def _get_orthonormal_rank(vecs, tol=1e-7):
     '''
@@ -129,22 +128,6 @@ def get_verts(dims, supp_point_func, epsilon=1e-7):
         return init_simplex # for 0-d and 1-d sets, the init_simplex corners are the only possible extreme points
     
     rv, _ = _v_h_rep_given_init_simplex(init_simplex, supp_point_func, epsilon=epsilon)
-
-    return rv
-
-def get_equations(dims, supp_point_func, epsilon=1e-7):
-    '''
-    get the h-rep for the (epsilon approximation of) the polytope
-    '''
-
-    init_simplex = _find_init_simplex(dims, supp_point_func)
-
-    if len(init_simplex) < 3:
-        return init_simplex # for 0-d and 1-d sets, the init_simplex corners are the only possible extreme points
-    
-    _, equations = _v_h_rep_given_init_simplex(init_simplex, supp_point_func, epsilon=epsilon)
-
-    WORKING HERE, convert equations to a better format. use this for computing minkowski difference.
 
     return rv
 
