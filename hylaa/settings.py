@@ -42,6 +42,7 @@ class HylaaSettings(Freezable):  # pylint: disable=too-few-public-methods
         self.do_guard_strengthening = True # add invariants of target modes to each guard?
         self.optimize_tt_transitions = True # auto-detect time-triggered transitions and use single-step semantics?
         self.approx_model = HylaaSettings.APPROX_NONE
+        self.skip_zero_dynamics_modes = True
 
         # what to do when an error appears reachable
         self.stop_on_aggregated_error = False # stop whenever any state (aggregated or not) reaches an error mode

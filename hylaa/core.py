@@ -237,7 +237,7 @@ class Core(Freezable):
                     self.check_guards() # check guards here, before doing an invariant intersection
 
                     # if the current mode has zero dynamics, remove it here
-                    if cur_state.mode.a_csr.nnz == 0:
+                    if cur_state.mode.a_csr.nnz == 0 and self.settings.skip_zero_dynamics_modes:
                         self.print_normal("State in mode '{}' with zero dynamics, skipping remaining steps".format( \
                             cur_state.mode.name))
                         self.aggdag.cur_state_left_invariant()
@@ -322,6 +322,21 @@ class Core(Freezable):
 
         Timers.toc('do_step')
 
+    def setup_ha(self, ha):
+        'setup hybrid automata for computation / simulation; a substep of setup()'
+
+        # initialize time elapse in each mode of the hybrid automaton
+        for mode in ha.modes.values():
+            mode.init_time_elapse(self.settings.step_size)
+
+        if self.settings.optimize_tt_transitions:
+            ha.detect_tt_transitions(self.settings.step_size, self.settings.num_steps, self.print_debug)
+
+        if self.settings.do_guard_strengthening:
+            ha.do_guard_strengthening()
+
+        ha.check_transitions()
+
     def setup(self, init_state_list):
         'setup the computation (called by run())'
 
@@ -334,19 +349,7 @@ class Core(Freezable):
 
         self.result = HylaaResult()
 
-        # initialize time elapse in each mode of the hybrid automaton
-        ha = init_state_list[0].mode.ha
-
-        for mode in ha.modes.values():
-            mode.init_time_elapse(self.settings.step_size)
-
-        if self.settings.optimize_tt_transitions:
-            ha.detect_tt_transitions(self.settings.step_size, self.settings.num_steps, self.print_debug)
-
-        if self.settings.do_guard_strengthening:
-            ha.do_guard_strengthening()
-
-        ha.check_transitions()
+        self.setup_ha(init_state_list[0].mode.ha)
         
         self.plotman.create_plot()
 
@@ -417,7 +420,8 @@ class Core(Freezable):
         if self.result.has_concrete_error:
             self.print_normal("Result: Error modes are reachable (found counter-example).\n")
         elif self.result.has_aggregated_error:
-            self.print_normal("Result: System is safe, although error modes were reachable when aggregation (overapproximation) was used.\n")
+            self.print_normal("Result: System is safe, although error modes were reachable when aggregation " + \
+                              "(overapproximation) was used.\n")
         else:
             self.print_normal("Result: System is safe. Error modes are NOT reachable.\n")
 
@@ -432,13 +436,18 @@ class Core(Freezable):
     def simulate(self, init_mode, box, num_sims):
         '''
         run a number of discrete time simulations (and plot them according to the settings)
+
+        if num_sims is a tuple, it will skip a certain number of simulations, 
+            for example num_sims=[5, 10] will plot simulations 5-10
         '''
+
+        if isinstance(num_sims, int):
+            num_sims = [0, num_sims]
 
         # initialize time elapse in each mode of the hybrid automaton
         ha = init_mode.ha
 
-        for mode in ha.modes.values():
-            mode.init_time_elapse(self.settings.step_size)
+        self.setup_ha(ha)
 
         # each simulation is a tuple (mode, pt, num_steps)
         self.plotman.create_plot()
@@ -450,8 +459,11 @@ class Core(Freezable):
         self.doing_simulation = True
         self.sim_waiting_list = []
 
-        for _ in range(num_sims):
+        for sim_index in range(num_sims[1]):
             rand_array = np.random.rand(dims)
+
+            if sim_index < num_sims[0]:
+                continue
 
             pt = [box[i][0] + rand_array[i] * (box[i][1] - box[i][0]) for i in range(dims)]
 
@@ -518,6 +530,10 @@ class Core(Freezable):
                 if self.sim_should_try_guards:
                     for transition in mode.transitions:
                         if transition.is_guard_true_for_point(pt):
+
+                            #print(f"guard was true for point {pt}, MAT:")
+                            #print(f"{transition.guard_csr.toarray()}\nRHS:\n{transition.guard_rhs}")
+                            
                             post_pt, post_mode = transition.apply_reset_for_point(pt)
 
                             if not post_mode.is_error():

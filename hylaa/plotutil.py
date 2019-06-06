@@ -49,9 +49,10 @@ class InteractiveState(Freezable): # pylint: disable=too-few-public-methods
 class ModeColors(Freezable):
     'maps mode names -> colors'
 
-    def __init__(self):
+    def __init__(self, settings):
         self.init_colors()
 
+        self.settings = settings
         self.mode_to_color = {} # map mode name -> color string
         self.freeze_attrs()
 
@@ -65,7 +66,7 @@ class ModeColors(Freezable):
     def darker(rgb_col):
         'return a darker variant of an rgb color'
 
-        return [val / 1.2 for val in rgb_col]
+        return [val / 2.0 for val in rgb_col]
 
     def init_colors(self):
         'initialize all_colors'
@@ -371,7 +372,7 @@ class PlotManager(Freezable):
         self.actual_limits = None # AxisLimits object
         self.drawn_limits = None # AxisLimits object
 
-        self.mode_colors = ModeColors()
+        self.mode_colors = ModeColors(self.settings)
         self.shapes = None # instance of DrawnShapes
         self.interactive = InteractiveState()
 
