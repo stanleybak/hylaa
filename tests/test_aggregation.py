@@ -479,7 +479,7 @@ def test_agg_with_reset():
 
     verts = result.last_cur_state.verts(core.plotman)
     assert len(verts) == 3
-    assert verts[0] == verts[-1]
+    assert np.allclose(verts[0], verts[-1])
     
     assert pair_almost_in((0, 0), verts)
     assert pair_almost_in((-0.5, -0.5), verts)
