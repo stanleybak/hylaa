@@ -35,6 +35,11 @@ class HylaaResult(Freezable): # pylint: disable=too-few-public-methods
         # the last core.cur_state object... used for unit testing
         self.last_cur_state = None
 
+        # lines plotted for simulations
+        # nested lists. first index is plot number, second is segment number,
+        # third is simulation number, last is list of 2-d points 
+        self.sim_lines = None 
+
         self.freeze_attrs()
 
 class PlotData(Freezable):

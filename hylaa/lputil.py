@@ -304,6 +304,10 @@ def check_intersection(lpi, lc, tol=1e-13):
     '''check if there is an intersection between the LP constriants and the LinearConstraint object lc
 
     This solves an LP optimizing in the given direction... without adding the constraint to the LP
+
+    This returns True/False if an intersection is possible
+
+    it also can return None if the lp is infeasible
     '''
 
     Timers.tic("check_intersection")
@@ -313,13 +317,19 @@ def check_intersection(lpi, lc, tol=1e-13):
     columns = lc.csr.indices[0:lc.csr.indptr[1]]
     lp_columns = [lpi.cur_vars_offset + c for c in columns]
 
-    lp_res = lpi.minimize(columns=lp_columns)
+    lp_res = lpi.minimize(columns=lp_columns, fail_on_unsat=False)
 
-    dot_res = np.dot(lc.csr.data, lp_res)
+    if lp_res is None:
+        # sometimes, changing optimization direction makes lp infeasible (up to numerical accuracy)
+        # this happens in gearbox with small time steps. In this case, return no intersection
+        rv = None
+    else:
+        dot_res = np.dot(lc.csr.data, lp_res)
+        rv = dot_res + tol <= lc.rhs
 
     Timers.toc("check_intersection")
 
-    return dot_res + tol <= lc.rhs
+    return rv
 
 def add_init_constraint(lpi, vec, rhs, basis_matrix=None, input_effects_list=None, row_index=None):
     '''
@@ -831,7 +841,10 @@ def add_curtime_constraints(lpi, csr, rhs_vec):
     lpi.set_constraints_csr(csr, offset=(prerows, lpi.cur_vars_offset))
 
 def get_box_center(lpi):
-    '''get the center of the box overapproximation of the passed-in lpi'''
+    '''get the center of the box overapproximation of the passed-in lpi
+
+    may return None if lp solving fails (numerical issues)
+    '''
 
     Timers.tic('get_box_center')
 
@@ -843,8 +856,15 @@ def get_box_center(lpi):
         min_dir = [1 if i == dim else 0 for i in range(dims)]
         max_dir = [-1 if i == dim else 0 for i in range(dims)]
         
-        min_val = lpi.minimize(direction_vec=min_dir, columns=[col])[0]
-        max_val = lpi.minimize(direction_vec=max_dir, columns=[col])[0]
+        min_val = lpi.minimize(direction_vec=min_dir, columns=[col], fail_on_unsat=False)
+        max_val = lpi.minimize(direction_vec=max_dir, columns=[col], fail_on_unsat=False)
+
+        if min_val is None or max_val is None:
+            pt = None
+            break
+        
+        min_val = min_val[0]
+        max_val = max_val[0]
 
         pt.append((min_val + max_val) / 2.0)
 

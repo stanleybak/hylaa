@@ -51,6 +51,9 @@ class HylaaSettings(Freezable):  # pylint: disable=too-few-public-methods
         
         self.aggstrat = aggstrat.Aggregated() # aggregation strategy class
 
+        # for deterministic random numbers (simulations / color selection)
+        self.random_seed = 0
+
         self.freeze_attrs()
 
 class PlotSettings(Freezable): # pylint: disable=too-few-public-methods,too-many-instance-attributes
@@ -84,6 +87,7 @@ class PlotSettings(Freezable): # pylint: disable=too-few-public-methods,too-many
         self.reachable_poly_width = 2 # width of reachable polygon outlines
         self.extend_plot_range_ratio = 0.1 # extend plot axis range 10% at a time
 
+        self.sim_line_color = 'black' # simulation line color
         self.sim_line_width = 0.2 # width of simulation lines
 
         self.grid = True

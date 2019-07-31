@@ -22,7 +22,7 @@ from hylaa.result import PlotData
 class Core(Freezable):
     'main computation object. initialize and call run()'
 
-    def __init__(self, ha, hylaa_settings, seed=0):
+    def __init__(self, ha, hylaa_settings):
         assert isinstance(hylaa_settings, HylaaSettings)
         assert isinstance(ha, HybridAutomaton)
 
@@ -52,7 +52,7 @@ class Core(Freezable):
         self.sim_took_transition = None  # list of booleans for each sim
 
         # make random number generation (for example, to find orthogonal directions) deterministic
-        np.random.seed(seed=seed)
+        np.random.seed(hylaa_settings.random_seed)
 
         LpInstance.print_normal = self.print_normal
         LpInstance.print_verbose = self.print_verbose
@@ -447,6 +447,9 @@ class Core(Freezable):
         # initialize time elapse in each mode of the hybrid automaton
         ha = init_mode.ha
 
+        # initialize result object (many fields unused during simulation)
+        self.result = HylaaResult()
+
         self.setup_ha(ha)
 
         # each simulation is a tuple (mode, pt, num_steps)
@@ -470,6 +473,8 @@ class Core(Freezable):
             self.sim_waiting_list.append([init_mode, np.array(pt, dtype=float), 0])
         
         self.plotman.compute_and_animate()
+
+        return self.result
 
     def sim_pop_waiting_list(self):
         'pop a state off the simulation waiting list'
@@ -501,13 +506,14 @@ class Core(Freezable):
         'do a simulation step'
 
         if not self.sim_states:
-            # pop minimum time state
-            self.sim_pop_waiting_list()
+            if self.sim_waiting_list: # if simulation is not done
+                # pop minimum time state
+                self.sim_pop_waiting_list()
 
-            self.sim_should_try_guards = self.settings.process_urgent_guards
-            self.sim_took_transition = [False] * len(self.sim_states)
-            self.plotman.pause()
-            self.print_verbose("Pausing due to sim pop()")
+                self.sim_should_try_guards = self.settings.process_urgent_guards
+                self.sim_took_transition = [False] * len(self.sim_states)
+                self.plotman.pause()
+                self.print_verbose("Pausing due to sim pop()")
         else:
             # simulate one step for all states in sim_states
             finished = True

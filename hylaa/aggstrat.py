@@ -177,8 +177,15 @@ class Aggregated(AggregationStrategy):
     def pretransition(self, t, t_lpi, op_transition):
         'event function, called when taking a transition before the reset is applied'
 
+        rv = True
+
         if self.agg_type == Aggregated.AGG_ARNOLDI_BOX:
             op_transition.premode_center = lputil.get_box_center(t_lpi)
+
+            if op_transition.premode_center is None:
+                rv = False
+
+        return rv
 
     def get_agg_type(self, op_list):
         '''

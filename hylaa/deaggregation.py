@@ -8,6 +8,7 @@ Nov 2018
 from collections import deque, namedtuple
 
 from hylaa.util import Freezable
+from hylaa.timerutil import Timers
 
 # Operation types
 OpInvIntersect = namedtuple('OpInvIntersect', ['step', 'node', 'i_index', 'is_stronger'])
@@ -193,8 +194,12 @@ class DeaggregationManager(Freezable):
     def begin_replay(self, node):
         'begin a deaggregation replay with the passed-in node'
 
+        Timers.tic('begin deagg replay')
+
         # remove all states in the waiting list that come from this node
         self.aggdag.remove_node_decendants_from_waiting_list(node)
 
         # start to populate waiting_nodes
         self.waiting_nodes.append((node, node.split()))
+
+        Timers.toc('begin deagg replay')
