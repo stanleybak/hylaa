@@ -9,6 +9,10 @@ make_plot_vecs is useful for controlling the accuracy (and decreasing overhead c
 
 import math
 import numpy as np
+from scipy.spatial import ConvexHull
+
+import hylaa.kamenev as kamenev
+from hylaa.timerutil import Timers
 
 def pt_to_plot_xy(pt, xdim=0, ydim=1, cur_time=0.0):
     '''convert a point to an x/y pair for plotting
@@ -115,8 +119,47 @@ def get_verts(lpi, xdim=0, ydim=1, plot_vecs=None, cur_time=0.0):
         # 2-d plot
         bboxw = bbox_widths(lpi, xdim, ydim)
 
-        pts = find_boundary_pts(lpi, xdim, ydim, plot_vecs, bboxw)
-        verts = [[pt[0], pt[1]] for pt in pts]
+        # use bbox to determine acceptable accuracy... might be better to somehow do this
+        epsilon = min(bboxw) / 1000.0
+        dim_list = [xdim, ydim]
+
+        def supp_point_nd(vec):
+            'return a supporting point for the given direction (maximize)'
+
+            assert len(vec) == len(dim_list)
+
+            d = np.zeros((lpi.dims,), dtype=float)
+            # negative here because we want to MAXIMIZE not minimize
+
+            for i, dim_index in enumerate(dim_list):
+                d[dim_index] = -vec[i]
+
+            lpi.set_minimize_direction(d)
+
+            res = lpi.minimize(columns=[lpi.cur_vars_offset + n for n in range(lpi.dims)])
+
+            rv = []
+
+            for dim in dim_list:
+                rv.append(res[dim])
+
+            rv = np.array(rv, dtype=float)
+
+            return rv
+
+        Timers.tic('kamenev.get_verts')
+        verts = kamenev.get_verts(len(dim_list), supp_point_nd, epsilon=epsilon)
+        Timers.toc('kamenev.get_verts')
+
+        if len(verts) > 2:
+            # make 2-d convex hull to fix the order
+            hull = ConvexHull(verts)
+
+            verts = [[verts[i, 0], verts[i, 1]] for i in hull.vertices]
+
+        # old method
+        #pts = find_boundary_pts(lpi, xdim, ydim, plot_vecs, bboxw)
+        #verts = [[pt[0], pt[1]] for pt in pts]
 
     # wrap polygon back to first point
     verts.append(verts[0])

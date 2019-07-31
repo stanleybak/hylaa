@@ -49,10 +49,11 @@ class InteractiveState(Freezable): # pylint: disable=too-few-public-methods
 class ModeColors(Freezable):
     'maps mode names -> colors'
 
-    def __init__(self):
-        self.init_colors()
-
+    def __init__(self, settings):
+        self.settings = settings
         self.mode_to_color = {} # map mode name -> color string
+
+        self.init_colors()
         self.freeze_attrs()
 
     @staticmethod
@@ -65,7 +66,7 @@ class ModeColors(Freezable):
     def darker(rgb_col):
         'return a darker variant of an rgb color'
 
-        return [val / 1.2 for val in rgb_col]
+        return [val / 2.0 for val in rgb_col]
 
     def init_colors(self):
         'initialize all_colors'
@@ -100,7 +101,7 @@ class ModeColors(Freezable):
             self.all_colors.remove(col)
 
         # deterministic shuffle of all remaining colors
-        random.seed(0)
+        random.seed(self.settings.random_seed)
         random.shuffle(self.all_colors)
 
         # prepend first_colors so they get used first
@@ -237,11 +238,14 @@ class DrawnShapes(Freezable):
     def commit_cur_sims(self):
         '''save the current simulation lines (stop appending to them)'''
 
+        rv_verts = self.cur_sim_lines
+        
         lines = self.parent_to_polys.get('sim_lines')
 
         if lines is None:
             lw = self.plotman.settings.sim_line_width
-            lines = collections.LineCollection([], lw=lw, animated=True, color='black', zorder=4)
+            color = self.plotman.settings.sim_line_color
+            lines = collections.LineCollection([], lw=lw, animated=True, color=color, zorder=4)
             self.axes.add_collection(lines)
             self.parent_to_polys['sim_lines'] = lines
 
@@ -264,6 +268,8 @@ class DrawnShapes(Freezable):
             markers.set_xdata([])
             markers.set_ydata([])
 
+        return rv_verts
+
     def set_cur_sim(self, verts):
         '''set the current simulation pts'''
 
@@ -273,7 +279,8 @@ class DrawnShapes(Freezable):
             # first point
             while len(self.cur_sim_line2ds) < num_sims:
                 lw = self.plotman.settings.sim_line_width
-                line2d = Line2D([], [], lw=lw, animated=True, color='black', zorder=4)
+                color = self.plotman.settings.sim_line_color
+                line2d = Line2D([], [], lw=lw, animated=True, color=color, zorder=4)
                 self.axes.add_line(line2d)
                 self.cur_sim_line2ds.append(line2d)
 
@@ -371,7 +378,7 @@ class PlotManager(Freezable):
         self.actual_limits = None # AxisLimits object
         self.drawn_limits = None # AxisLimits object
 
-        self.mode_colors = ModeColors()
+        self.mode_colors = ModeColors(hylaa_core.settings)
         self.shapes = None # instance of DrawnShapes
         self.interactive = InteractiveState()
 
@@ -635,8 +642,18 @@ class PlotManager(Freezable):
     def commit_cur_sims(self):
         'commit the simulation points lines (finished reachability for a mode)'
 
-        for shapes in self.shapes:
-            shapes.commit_cur_sims()
+        # setup result if it's not setup already
+        if self.core.result.sim_lines is None:
+
+            self.core.result.sim_lines = []
+
+            for _ in self.shapes:
+                self.core.result.sim_lines.append([])
+
+        for i, shapes in enumerate(self.shapes):
+            line = shapes.commit_cur_sims()
+
+            self.core.result.sim_lines[i].append(line)
 
     def plot_current_state(self):
         '''
@@ -683,7 +700,8 @@ class PlotManager(Freezable):
             verts = stateset.del_plot_path(step)
 
             if verts is None:
-                print(f".#######plotutil plot was already deleted: {stateset}")
+                pass # this happens during normal operation (nested deaggregation)
+                #print(f".#######plotutil plot was already deleted: {stateset}")
             else:
                 # delete it from the result object
                 if self.core.result.plot_data is not None:
@@ -774,7 +792,7 @@ class PlotManager(Freezable):
             else:
                 self.pause_frames -= 1
 
-                if self.pause_frames == 0:
+                if self.pause_frames <= 0:
                     self.pause_frames = None
                     self.interactive.paused = False
         else:

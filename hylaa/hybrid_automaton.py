@@ -427,12 +427,15 @@ class Transition(Freezable):
             
             lpi.set_minimize_direction(row, is_csr=True)
 
-            #print('.1 hybrid_automaton t={}, is_feasible before = {}'.format(i, lpi.is_feasible()))
-            #print('.2 hybrid_automaton t={}, is_feasible before = {}'.format(i, lpi.is_feasible()))
-            
             columns = [lpi.cur_vars_offset + i for i in row.indices]
 
-            result = lpi.minimize(columns=columns)
+            result = lpi.minimize(columns=columns, fail_on_unsat=False)
+
+            # sometimes, changing the objective function makes lp infeasible (due to numerical precision issues)
+            # this happens on gearbox with small time steps. in this case, just return no transition is possible
+            if result is None:
+                all_sat = False
+                break
 
             dot_res = np.dot(result, row.data)
 

@@ -98,7 +98,7 @@ class AggDag(Freezable):
         self.cur_node.op_list.append(op)
 
     def make_op_transition(self, t, t_lpi, state, parent_node):
-        'make an OpTransition object'
+        'make an OpTransition object, can return null if lp solving fails'
 
         step_in_mode = state.cur_step_in_mode
         steps_since_start = state.cur_steps_since_start
@@ -108,19 +108,22 @@ class AggDag(Freezable):
 
         op = OpTransition(step_in_mode, parent_node, None, t, None)
 
-        self.settings.aggstrat.pretransition(t, t_lpi, op)
+        succeeded = self.settings.aggstrat.pretransition(t, t_lpi, op)
 
-        lputil.add_reset_variables(t_lpi, t.to_mode.mode_id, t.transition_index, \
-            reset_csr=t.reset_csr, minkowski_csr=t.reset_minkowski_csr, \
-            minkowski_constraints_csr=t.reset_minkowski_constraints_csr, \
-            minkowski_constraints_rhs=t.reset_minkowski_constraints_rhs, successor_has_inputs=successor_has_inputs)
+        if not succeeded:
+            op = None
+        else:
+            lputil.add_reset_variables(t_lpi, t.to_mode.mode_id, t.transition_index, \
+                reset_csr=t.reset_csr, minkowski_csr=t.reset_minkowski_csr, \
+                minkowski_constraints_csr=t.reset_minkowski_constraints_csr, \
+                minkowski_constraints_rhs=t.reset_minkowski_constraints_rhs, successor_has_inputs=successor_has_inputs)
 
-        if not t_lpi.is_feasible():
-            raise RuntimeError("cur_state became infeasible after reset was applied")
+            if not t_lpi.is_feasible():
+                raise RuntimeError("cur_state became infeasible after reset was applied")
 
-        op_list = [op]
-        state = StateSet(t_lpi, t.to_mode, steps_since_start, op_list, is_concrete)
-        op.poststate = state
+            op_list = [op]
+            state = StateSet(t_lpi, t.to_mode, steps_since_start, op_list, is_concrete)
+            op.poststate = state
 
         return op
 
@@ -147,12 +150,17 @@ class AggDag(Freezable):
 
         rv = []
 
+        child_nodes = []
+
         for op in node.op_list:
             if isinstance(op, OpTransition):
                 if op.child_node is None:
                     rv.append(op)
-                else:
-                    rv += self._get_node_leaf_ops(op.child_node)
+                elif not op.child_node in child_nodes: # don't insert the same node twice
+                    child_nodes.append(op.child_node)
+
+        for child_node in child_nodes:
+            rv += self._get_node_leaf_ops(child_node)
 
         return rv
 
@@ -424,6 +432,7 @@ class AggDagNode(Freezable):
             if True or not skip:
                 self.aggdag.core.print_verbose(
                     f"doing invariant intersection in replay at step {cur_state.cur_step_in_mode}")
+                
                 is_feasible = self.replay_op_intersect_invariant(cur_state, op)
 
                 if not is_feasible:
@@ -453,17 +462,21 @@ class AggDagNode(Freezable):
                 self.aggdag.core.error_reached(state, t, t_lpi)
 
             new_op = self.aggdag.make_op_transition(t, t_lpi, state, self)
-            self.op_list.append(new_op)
 
-            if op.child_node is None:
-                self.aggdag.waiting_list.append(new_op)
-                print_verbose("Replay Transition {} when deaggreaged to steps {}".format( \
-                              t, state.cur_steps_since_start))
+            if not new_op: # make_op_transition can fail due to numerical issues
+                print_verbose("Replay Transition {} became infeasible after changing opt direction, skipping")
             else:
-                self.aggdag.deagg_man.update_transition_successors(op, new_op)
-                
-                print_verbose("Replay Transition refined transition {} when deaggregated at steps {}".format( \
-                              t, state.cur_steps_since_start))
+                self.op_list.append(new_op)
+
+                if op.child_node is None:
+                    self.aggdag.waiting_list.append(new_op)
+                    print_verbose("Replay Transition {} when deaggreaged to steps {}".format( \
+                                  t, state.cur_steps_since_start))
+                else:
+                    self.aggdag.deagg_man.update_transition_successors(op, new_op)
+
+                    print_verbose("Replay Transition refined transition {} when deaggregated at steps {}".format( \
+                                  t, state.cur_steps_since_start))
         else:
             print_verbose(f"Replay skipped transition {t} when deaggregated to steps {state.cur_steps_since_start}")
 
@@ -478,8 +491,14 @@ class AggDagNode(Freezable):
         state.step(step)
 
         lc = state.mode.inv_list[invariant_index]
+
+        has_intersection = lputil.check_intersection(state.lpi, lc.negate())
         
-        if lputil.check_intersection(state.lpi, lc.negate()):
+        if has_intersection is None:
+            rv = False # not feasible
+        elif not has_intersection:
+            rv = True # no intersection and still feasible
+        else: 
             old_row = state.invariant_constraint_rows[invariant_index]
             vec = lc.csr.toarray()[0]
             rhs = lc.rhs
@@ -500,7 +519,9 @@ class AggDagNode(Freezable):
             op = OpInvIntersect(step, self, invariant_index, is_stronger)
             self.op_list.append(op)
 
-        return state.lpi.is_feasible()
+            rv = state.lpi.is_feasible()
+
+        return rv
 
     def get_cur_state(self):
         'get the current state for this node (None if it has left the invariant)'

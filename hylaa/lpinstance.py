@@ -115,7 +115,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
     def _column_names_str(self, cur_var_print):
         'get the line in __str__ for the column names'
 
-        rv = "   "
+        rv = "       "
 
         for col, name in enumerate(self.names):
             name = self.names[col]
@@ -140,7 +140,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
 
         lp = self.lp
         cols = self.get_num_cols()
-        rv = "min"
+        rv = "min    "
 
         for col in range(1, cols + 1):
             val = glpk.glp_get_obj_coef(lp, col)
@@ -537,7 +537,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
 
         Timers.toc("set_minimize_direction")
 
-    def minimize(self, direction_vec=None, columns=None, fail_on_unsat=True):
+    def minimize(self, direction_vec=None, columns=None, fail_on_unsat=True, print_on=False):
         '''minimize the lp, returning a list of assigments to each of the variables
 
         if direction_vec is not None, this will first assign the optimization direction (note: relative to cur_vars)
@@ -557,7 +557,7 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
         params = glpk.glp_smcp()
         glpk.glp_init_smcp(params)
         params.meth = glpk.GLP_DUALP # use dual simplex since we're reoptimizing often
-        params.msg_lev = glpk.GLP_MSG_OFF
+        params.msg_lev = glpk.GLP_MSG_ALL if print_on else glpk.GLP_MSG_OFF
         params.tm_lim = 1000 # 1000 ms time limit
 
         Timers.tic('glp_simplex')
@@ -586,10 +586,10 @@ class LpInstance(Freezable): # pylint: disable=too-many-public-methods
 
         if rv is None and fail_on_unsat:
             LpInstance.print_normal("Note: minimize failed with fail_on_unsat was true, resetting and retrying...")
-                        
+
             glpk.glp_cpx_basis(self.lp) # resets the initial basis
 
-            rv = self.minimize(direction_vec, columns, False)
+            rv = self.minimize(direction_vec, columns, False, print_on=True)
 
             if rv is not None:
                 LpInstance.print_verbose("Note: LP was infeasible, but then feasible after resetting statuses")

@@ -42,6 +42,7 @@ class HylaaSettings(Freezable):  # pylint: disable=too-few-public-methods
         self.do_guard_strengthening = True # add invariants of target modes to each guard?
         self.optimize_tt_transitions = True # auto-detect time-triggered transitions and use single-step semantics?
         self.approx_model = HylaaSettings.APPROX_NONE
+        self.skip_zero_dynamics_modes = True
 
         # what to do when an error appears reachable
         self.stop_on_aggregated_error = False # stop whenever any state (aggregated or not) reaches an error mode
@@ -49,6 +50,9 @@ class HylaaSettings(Freezable):  # pylint: disable=too-few-public-methods
         self.make_counterexample = True # save counter-example to data structure / file?
         
         self.aggstrat = aggstrat.Aggregated() # aggregation strategy class
+
+        # for deterministic random numbers (simulations / color selection)
+        self.random_seed = 0
 
         self.freeze_attrs()
 
@@ -83,6 +87,7 @@ class PlotSettings(Freezable): # pylint: disable=too-few-public-methods,too-many
         self.reachable_poly_width = 2 # width of reachable polygon outlines
         self.extend_plot_range_ratio = 0.1 # extend plot axis range 10% at a time
 
+        self.sim_line_color = 'black' # simulation line color
         self.sim_line_width = 0.2 # width of simulation lines
 
         self.grid = True
