@@ -9,7 +9,7 @@ from hylaa.hybrid_automaton import HybridAutomaton
 from hylaa.stateset import StateSet
 from hylaa.settings import HylaaSettings, PlotSettings
 from hylaa.core import Core
-from hylaa import lputil, lpplot
+from hylaa import lputil, lpplot, aggstrat
 
 from util import assert_verts_is_box
 
@@ -851,3 +851,47 @@ def test_tt_09():
     mode2_list = result.plot_data.mode_to_obj_list[0]['mode2']
     assert len(mode2_list) == 3, f"mode2_list len was {len(mode2_list)}, expected 3 (0.9, 0.95, 1.0)"
 
+def test_unaggregation():
+    'test an unaggregated discrete transition'
+
+    ha = HybridAutomaton()
+
+    # mode one: x' = 1, t' = 1, a' = 0 
+    m1 = ha.new_mode('m1')
+    m1.set_dynamics([[0, 0, 1], [0, 0, 1], [0, 0, 0]])
+
+    # mode two: x' = -1, t' = 1, a' = 0 
+    m2 = ha.new_mode('m2')
+    m2.set_dynamics([[0, 0, -1], [0, 0, 1], [0, 0, 0]])
+
+    # invariant: t <= 2.5
+    m1.set_invariant([[0, 1, 0]], [2.5])
+
+    # guard: t >= 0.5
+    trans1 = ha.new_transition(m1, m2, 'trans1')
+    trans1.set_guard([[0, -1, 0]], [-0.5])
+
+    # error x >= 4.5
+    error = ha.new_mode('error')
+    trans2 = ha.new_transition(m2, error, "to_error")
+    trans2.set_guard([[-1, 0, 0]], [-4.5])
+
+    # initial set has x0 = [0, 0.2], t = [0, 0.2], a = 1
+    init_lpi = lputil.from_box([(0, 0.2), (0, 0.2), (1, 1)], m1)
+    init_list = [StateSet(init_lpi, m1)]
+
+    # settings, step size = 1.0
+    settings = HylaaSettings(1.0, 10.0)
+    settings.stdout = HylaaSettings.STDOUT_DEBUG
+    settings.plot.store_plot_result = True
+    settings.plot.plot_mode = PlotSettings.PLOT_NONE
+
+    settings.aggstrat = aggstrat.Unaggregated()
+
+    result = Core(ha, settings).run(init_list)
+
+    # expected no exception
+
+    # m2 should be reachable
+    polys = [obj[0] for obj in result.plot_data.mode_to_obj_list[0]['m2']]
+    assert len(polys) > 15

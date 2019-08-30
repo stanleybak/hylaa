@@ -78,6 +78,8 @@ class AggDag(Freezable):
 
             if len(self.waiting_list) < 20:
                 for op in self.waiting_list:
+                    assert isinstance(op, OpTransition), f"expected OpTransition, but instead had: {op}"
+                            
                     state = op.poststate
                     trans = ''
 
@@ -111,6 +113,7 @@ class AggDag(Freezable):
         succeeded = self.settings.aggstrat.pretransition(t, t_lpi, op)
 
         if not succeeded:
+            self.core.print_verbose(f"Warning: aggstrat.pretransition returned None (LP solving failed)")
             op = None
         else:
             lputil.add_reset_variables(t_lpi, t.to_mode.mode_id, t.transition_index, \
@@ -142,8 +145,9 @@ class AggDag(Freezable):
 
         op = self.make_op_transition(t, t_lpi, cur_state, cur_node)
 
-        cur_node.op_list.append(op)
-        self.waiting_list.append(op)
+        if op:
+            cur_node.op_list.append(op)
+            self.waiting_list.append(op)
 
     def _get_node_leaf_ops(self, node):
         'recursively get all the leaf ops originating from the given node'
@@ -183,7 +187,7 @@ class AggDag(Freezable):
         op_list = self.settings.aggstrat.pop_waiting_list(self.waiting_list)
 
         assert op_list, "pop_waiting_list should return non-empty list"
-        assert isinstance(op_list[0], OpTransition)
+        assert isinstance(op_list[0], OpTransition), f"expected OpTransition, but instead popped: {op_list[0]}"
 
         # if we're popping error mode, pop them one at a time
         # this is to prevent aggregation, which may use successor mode dynamics information

@@ -1,4 +1,4 @@
-'''
+''''
 Stanley Bak
 Aggregation Strategy Classes
 '''
@@ -54,10 +54,13 @@ class AggregationStrategy(Freezable):
         return None
 
     def pretransition(self, t, t_lpi, op_transition):
-        'event function, called when taking a transition before the reset is applied'
+        '''event function, called when taking a transition before the reset is applied
+
+        returns True if succeeded, False on LP errors
+        '''
 
         # premode_center = lputil.get_box_center(t_lpi)
-        pass
+        return True
 
     def get_agg_type(self, op_list):
         '''
