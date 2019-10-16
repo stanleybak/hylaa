@@ -180,7 +180,8 @@ def _v_h_rep_given_init_simplex(init_simplex, supp_point_func, epsilon=1e-7):
             error = np.dot(supporting_pt, normal) - rhs
             max_error = max(max_error, error)
 
-            assert error >= -1e-7, "supporting point was inside facet?"
+            if error <= -1e-4:
+                print(f"Kamenev Plot warning: supporting point was inside facet? error was {error}")
 
             if error >= epsilon:
                 # add the point
