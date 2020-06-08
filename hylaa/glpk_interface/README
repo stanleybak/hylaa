@@ -10,6 +10,7 @@ Commands:
 
 wget https://ftp.gnu.org/gnu/glpk/glpk-4.60.tar.gz
 tar -xvf glpk-4.60.tar.gz
+cd glpk-4.60
 ./configure
 make
 sudo make install
