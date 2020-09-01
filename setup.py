@@ -1,5 +1,6 @@
 # Based on: 
-# https://dzone.com/articles/executable-package-pip-install
+# https://betterscientificsoftware.github.io/
+# python-for-hpc/tutorials/python-pypi-packaging/
 
 from setuptools import setup
 
