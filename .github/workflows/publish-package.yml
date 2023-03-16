@@ -1,0 +1,47 @@
+name: Publish Hylaa 
+
+on: [push]
+
+jobs:
+  publish-whl:
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 5
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python 3.9
+      uses: actions/setup-python@v2
+      with:
+        python-version: 3.9
+    - name: Create Virtual Python Env 
+      run: |
+        python -m venv env 
+        source env/bin/activate
+        echo "VIRTUAL ENV:" $VIRTUAL_ENV
+    - name: Prepare build requirements 
+      run: >-
+        source env/bin/activate &&
+        python -m
+        pip install
+        build
+    - name: Build a binary wheel and a source tarball
+      run: >-
+        source env/bin/activate &&
+        python -m
+        build
+        --sdist
+        --wheel
+        --outdir dist/
+        .
+    - name: Publish distribution 📦 to Test PyPI
+      if: startsWith(github.ref, 'refs/tags')
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        password: ${{ secrets.TEST_PYPI_API_TOKEN }}
+        repository_url: https://test.pypi.org/legacy/
+    - name: Publish distribution 📦 to PyPI
+      if: startsWith(github.ref, 'refs/tags')
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        password: ${{ secrets.PYPI_API_TOKEN }}
