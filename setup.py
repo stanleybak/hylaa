@@ -21,7 +21,7 @@ setup(
     license="GPLv3",
     packages=["hylaa"],
     install_requires=[
-        "ffmpeg",
+        "ffmpeg-python",
         "pytest",
         "numpy",
         "scipy",
