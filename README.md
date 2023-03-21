@@ -1,8 +1,9 @@
 [![Build Status](https://travis-ci.org/stanleybak/hylaa.svg?branch=master)](https://travis-ci.org/stanleybak/hylaa)
+[![PyPI version](https://badge.fury.io/py/hylaa.svg)](https://badge.fury.io/py/hylaa)
 
 # Hylaa #
 
-<p align="center"> <img src="hylaa_logo_small.png" alt="Hylaa Logo"/> </p>
+<p align="center"> <img src="https://raw.githubusercontent.com/stanleybak/hylaa/master/hylaa_logo_small.png" alt="Hylaa Logo"/> </p>
 
 Hylaa (**HY**brid **L**inear **A**utomata **A**nalyzer) is a verification tool for system models with linear ODEs, time-varying inputs, and possibly hybrid dynamics. 
 
